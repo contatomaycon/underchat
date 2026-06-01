@@ -23,6 +23,10 @@ import {
   type TextStyle,
 } from 'react-native';
 import {
+  PanGestureHandler,
+  State,
+} from 'react-native-gesture-handler';
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -50,10 +54,16 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import Constants from 'expo-constants';
 import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import {
+  ContactFormModal,
+  type ContactFormInitialValues,
+} from '../components/ContactFormModal';
 import {
   buildInternalOptimisticFileMessage,
   createInternalChatMessageHash,
@@ -64,8 +74,8 @@ import {
   appendInternalChatFile,
   generateInternalChatLinkPreview,
   listInternalChatContacts,
-  viewInternalChatContactPhone,
 } from '../api/internalChatApi';
+import { getChatContactById, getChatContactByPhone } from '../api/chatApi';
 import { getPermissions } from '../storage/authStorage';
 import {
   canManageInternalChatGroupMembers,
@@ -125,6 +135,21 @@ type PendingGroupAction =
   | { type: 'remove'; member: InternalChatParticipant }
   | { type: 'transfer'; member: InternalChatParticipant }
   | { type: 'leave' };
+type DownloadKind = 'image' | 'video' | 'document';
+type ViewerMediaItem = {
+  src: string;
+  caption: string;
+  downloadName: string;
+};
+type MediaViewerState = {
+  visible: boolean;
+  kind: 'image' | 'video';
+  src: string;
+  caption: string;
+  downloadName: string;
+  items: ViewerMediaItem[];
+  activeIndex: number;
+};
 type InternalAttachmentActionKey =
   | 'document'
   | 'photo'
@@ -186,10 +211,14 @@ const mapLibreStyleUrl = (() => {
 const hasNativeMapSupport =
   NativeMapView != null && Platform.OS !== 'web' && !isExpoGoStoreClient;
 
+const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
+const VIEWER_SWIPE_CLOSE_DISTANCE = 120;
+const VIEWER_SWIPE_CLOSE_VELOCITY = 1.05;
+const VIEWER_SWIPE_ACTIVATION_DISTANCE = 10;
 const WAVEFORM_BAR_WIDTH = 2;
 const WAVEFORM_BAR_GAP = 2;
 const WAVEFORM_HORIZONTAL_INSET = 2;
@@ -544,6 +573,205 @@ function getExtensionFromUrl(url: string): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
+function isDirectoryPickerCancellationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const record = error as {
+    code?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+  const code = typeof record.code === 'string' ? record.code : '';
+  const name = typeof record.name === 'string' ? record.name : '';
+  const message = typeof record.message === 'string' ? record.message : '';
+  const normalized = `${code} ${name} ${message}`.toLowerCase();
+  return (
+    normalized.includes('cancel') ||
+    normalized.includes('aborted') ||
+    normalized.includes('user')
+  );
+}
+
+function splitFileNameParts(fileName: string): {
+  base: string;
+  extension: string;
+} {
+  const dotIndex = fileName.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === fileName.length - 1) {
+    return { base: fileName, extension: '' };
+  }
+  return {
+    base: fileName.slice(0, dotIndex),
+    extension: fileName.slice(dotIndex),
+  };
+}
+
+function resolveUniqueFileName(
+  directory: Directory,
+  requestedFileName: string
+): string {
+  if (!new File(directory, requestedFileName).exists) {
+    return requestedFileName;
+  }
+
+  const { base, extension } = splitFileNameParts(requestedFileName);
+  for (let index = 1; index < 1000; index += 1) {
+    const candidate = `${base} (${index})${extension}`;
+    if (!new File(directory, candidate).exists) {
+      return candidate;
+    }
+  }
+
+  return `${base}-${Date.now()}${extension}`;
+}
+
+function resolveDownloadMimeType(fileName: string, kind: DownloadKind): string {
+  const extension = extractFileExtension(fileName);
+  if (kind === 'image') {
+    if (extension === 'png') return 'image/png';
+    if (extension === 'gif') return 'image/gif';
+    if (extension === 'webp') return 'image/webp';
+    return 'image/jpeg';
+  }
+  if (kind === 'video') {
+    if (extension === 'mov') return 'video/quicktime';
+    if (extension === 'webm') return 'video/webm';
+    return 'video/mp4';
+  }
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'txt') return 'text/plain';
+  if (extension === 'csv') return 'text/csv';
+  if (extension === 'json') return 'application/json';
+  if (extension === 'mp3') return 'audio/mpeg';
+  if (extension === 'm4a' || extension === 'aac') return 'audio/mp4';
+  if (extension === 'ogg' || extension === 'opus') return 'audio/ogg';
+  return 'application/octet-stream';
+}
+
+function resolveDownloadSuccessMessage(kind: DownloadKind): string {
+  if (kind === 'image') return pt.image_download_success;
+  if (kind === 'video') return pt.video_download_success;
+  return pt.file_download_success;
+}
+
+function resolveDownloadErrorMessage(kind: DownloadKind): string {
+  if (kind === 'image') return pt.image_download_error;
+  if (kind === 'video') return pt.video_download_error;
+  return pt.file_download_error;
+}
+
+async function saveDownloadedFileToPickedDirectory(
+  downloadedFile: File,
+  requestedFileName: string,
+  kind: DownloadKind
+): Promise<void> {
+  const pickedDirectory = await Directory.pickDirectoryAsync();
+  const targetFileName = resolveUniqueFileName(
+    pickedDirectory,
+    requestedFileName
+  );
+  const mimeType = resolveDownloadMimeType(targetFileName, kind);
+  const destinationFile = pickedDirectory.createFile(targetFileName, mimeType);
+
+  try {
+    const bytes = await downloadedFile.bytes();
+    destinationFile.write(bytes);
+    const savedSize = destinationFile.size;
+    if (typeof savedSize === 'number' && savedSize <= 0) {
+      throw new Error('saved-file-empty');
+    }
+  } catch (error) {
+    try {
+      if (destinationFile.exists) destinationFile.delete();
+    } catch {}
+    throw error;
+  }
+}
+
+async function forceDownloadToDevice(
+  sourceUrl: string,
+  preferredFileName: string,
+  kind: DownloadKind = 'document'
+): Promise<void> {
+  const fileName =
+    sanitizeFilename(preferredFileName || '') || `arquivo-${Date.now()}`;
+
+  if (Platform.OS === 'web') {
+    const webDocument = (globalThis as { document?: any }).document;
+    const webURL = (globalThis as { URL?: any }).URL;
+
+    if (webDocument?.createElement && webURL?.createObjectURL) {
+      try {
+        const response = await fetch(sourceUrl);
+        const blob = await response.blob();
+        const blobUrl = webURL.createObjectURL(blob);
+        const anchor = webDocument.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = fileName;
+        anchor.style.display = 'none';
+        webDocument.body?.appendChild?.(anchor);
+        anchor.click();
+        anchor.remove?.();
+        setTimeout(() => {
+          webURL.revokeObjectURL?.(blobUrl);
+        }, 100);
+        return;
+      } catch {}
+    }
+
+    if (webDocument?.createElement) {
+      const anchor = webDocument.createElement('a');
+      anchor.href = sourceUrl;
+      anchor.download = fileName;
+      anchor.rel = 'noopener';
+      anchor.target = '_blank';
+      anchor.style.display = 'none';
+      webDocument.body?.appendChild?.(anchor);
+      anchor.click();
+      anchor.remove?.();
+      return;
+    }
+
+    void Linking.openURL(sourceUrl);
+    return;
+  }
+
+  const temporaryDirectory = new Directory(Paths.cache, 'internal-downloads');
+  if (!temporaryDirectory.exists) {
+    temporaryDirectory.create({ intermediates: true, idempotent: true });
+  }
+
+  const temporaryFile = new File(
+    temporaryDirectory,
+    `${Date.now()}-${fileName}`
+  );
+  if (temporaryFile.exists) temporaryFile.delete();
+
+  let downloadedFile: File | null = null;
+
+  const cleanupDownloadedFile = () => {
+    if (!downloadedFile?.exists) return;
+    try {
+      downloadedFile.delete();
+    } catch {}
+  };
+
+  try {
+    downloadedFile = await File.downloadFileAsync(sourceUrl, temporaryFile, {
+      idempotent: true,
+    });
+    await saveDownloadedFileToPickedDirectory(downloadedFile, fileName, kind);
+    Alert.alert(pt.success_title, resolveDownloadSuccessMessage(kind));
+  } catch (error) {
+    if (isDirectoryPickerCancellationError(error)) {
+      Alert.alert(pt.warning_title, pt.download_cancelled);
+      return;
+    }
+    Alert.alert(pt.error_title, resolveDownloadErrorMessage(kind));
+  } finally {
+    cleanupDownloadedFile();
+  }
+}
+
 function resolveDocumentDisplayName(
   document: MessageContentDocument | null | undefined
 ): string {
@@ -591,6 +819,102 @@ function resolveVideoMeta(
   return [ext, size, duration === '0:00' ? '' : duration]
     .filter(Boolean)
     .join(' • ');
+}
+
+function resolveVideoDownloadName(
+  video: MessageContentVideo | null | undefined
+): string {
+  if (!video) return 'video.mp4';
+  if (video.name && video.name.trim().length > 0) {
+    return sanitizeFilename(video.name);
+  }
+  const ext = (video.extension ?? '').replace(/^\./, '').toLowerCase() || 'mp4';
+  return `video.${ext}`;
+}
+
+function resolveImageDownloadName(
+  message: InternalChatMessage,
+  sourceUrl: string
+): string {
+  const image = message.content?.image;
+  const extFromPayload = image?.extension?.replace(/^\./, '').toLowerCase();
+  const extension = extFromPayload || getExtensionFromUrl(sourceUrl) || 'jpg';
+  const captionName = image?.caption ? sanitizeFilename(image.caption) : '';
+  const fallbackName = `imagem-${message.message_id.slice(-8)}`;
+  const baseName = captionName || fallbackName;
+  return `${baseName}.${extension}`;
+}
+
+function resolveMessageDownloadInfo(
+  message: InternalChatMessage
+): { url: string; name: string; kind: DownloadKind } | null {
+  const content = message.content;
+  const imageUrl = resolveMediaUri(content?.image?.url);
+  if (imageUrl) {
+    return {
+      url: imageUrl,
+      name: resolveImageDownloadName(message, imageUrl),
+      kind: 'image',
+    };
+  }
+
+  const videoUrl = resolveMediaUri(content?.video?.url);
+  if (videoUrl) {
+    return {
+      url: videoUrl,
+      name: resolveVideoDownloadName(content?.video),
+      kind: 'video',
+    };
+  }
+
+  const documentUrl = resolveMediaUri(content?.document?.url);
+  if (documentUrl) {
+    return {
+      url: documentUrl,
+      name: resolveDocumentDisplayName(content?.document),
+      kind: 'document',
+    };
+  }
+
+  const audioUrl = resolveMediaUri(content?.audio?.url);
+  if (audioUrl) {
+    const audioName =
+      readNonEmptyString(content?.audio?.name) ??
+      `audio-${message.message_id.slice(-8)}.${
+        content?.audio?.extension?.replace(/^\./, '') || 'm4a'
+      }`;
+    return {
+      url: audioUrl,
+      name: sanitizeFilename(audioName),
+      kind: 'document',
+    };
+  }
+
+  return null;
+}
+
+function normalizePhoneDigits(value: string | null | undefined): string {
+  if (!value) return '';
+  return value.replace(/\D/g, '');
+}
+
+function buildContactFormInitialValues(
+  contact: MessageContentContact,
+  defaultPhoneDdi: string
+): ContactFormInitialValues {
+  const resolvedName = readNonEmptyString(contact.name) ?? '';
+  const resolvedLastName = readNonEmptyString(contact.last_name) ?? '';
+  const resolvedPhoneDdi =
+    readNonEmptyString(contact.phone_ddi) ?? defaultPhoneDdi;
+  const rawPhone = contact.phone ?? contact.phone_partial ?? '';
+
+  return {
+    name: resolvedName,
+    lastName: resolvedLastName,
+    phoneDdi: resolvedPhoneDdi,
+    phone: normalizePhoneDigits(rawPhone),
+    email: readNonEmptyString(contact.email) ?? null,
+  };
 }
 
 function resolvePreviewThumbnail(
@@ -1734,11 +2058,25 @@ function InternalMessageContent({
   fromMe,
   audioCtrl,
   onOpenActions,
+  onOpenImage,
+  onOpenVideo,
+  onPressContactCard,
+  onPressContactsGroup,
 }: {
   msg: InternalChatMessage;
   fromMe: boolean;
   audioCtrl: InternalAudioCtrl;
   onOpenActions: (message: InternalChatMessage) => void;
+  onOpenImage: (message: InternalChatMessage) => void;
+  onOpenVideo: (message: InternalChatMessage) => void;
+  onPressContactCard: (
+    message: InternalChatMessage,
+    contact: MessageContentContact
+  ) => void;
+  onPressContactsGroup: (
+    message: InternalChatMessage,
+    contacts: MessageContentContact[]
+  ) => void;
 }) {
   const [isLongTextExpanded, setIsLongTextExpanded] = useState(false);
   const [isLongTextByLines, setIsLongTextByLines] = useState(false);
@@ -1798,9 +2136,7 @@ function InternalMessageContent({
     return renderWithContextCards(
       <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
         <Pressable
-          onPress={() => {
-            void Linking.openURL(imageUri);
-          }}
+          onPress={() => onOpenImage(msg)}
           onLongPress={() => onOpenActions(msg)}
           delayLongPress={220}
         >
@@ -1833,9 +2169,7 @@ function InternalMessageContent({
         <InternalVideoMessagePreview
           sourceUri={videoUri}
           thumbnailUri={thumbUri}
-          onPress={() => {
-            void Linking.openURL(videoUri);
-          }}
+          onPress={() => onOpenVideo(msg)}
           onLongPress={() => onOpenActions(msg)}
         />
         {videoMeta ? <Text style={styles.mediaMeta}>{videoMeta}</Text> : null}
@@ -2049,7 +2383,11 @@ function InternalMessageContent({
               fromMe && styles.documentDownloadBtnRight,
             ]}
             onPress={() => {
-              void Linking.openURL(docUrl);
+              void forceDownloadToDevice(
+                docUrl,
+                resolveDocumentDisplayName(doc),
+                'document'
+              );
             }}
             onLongPress={() => onOpenActions(msg)}
             delayLongPress={220}
@@ -2078,6 +2416,7 @@ function InternalMessageContent({
       <InternalContactCard
         contact={content.contact}
         fromMe={fromMe}
+        onPress={() => onPressContactCard(msg, content.contact!)}
         onLongPress={() => onOpenActions(msg)}
       />
     );
@@ -2096,6 +2435,7 @@ function InternalMessageContent({
           fromMe && styles.contactWrapRight,
           pressed && styles.contactWrapPressed,
         ]}
+        onPress={() => onPressContactsGroup(msg, list)}
         onLongPress={() => onOpenActions(msg)}
         delayLongPress={220}
       >
@@ -2152,10 +2492,12 @@ function InternalMessageContent({
 function InternalContactCard({
   contact,
   fromMe,
+  onPress,
   onLongPress,
 }: {
   contact: MessageContentContact;
   fromMe: boolean;
+  onPress: () => void;
   onLongPress?: () => void;
 }) {
   const contactName =
@@ -2176,19 +2518,7 @@ function InternalContactCard({
         fromMe && styles.contactWrapRight,
         pressed && styles.contactWrapPressed,
       ]}
-      onPress={() => {
-        if (!contact.contact_id) return;
-        void viewInternalChatContactPhone(contact.contact_id).then(
-          (contactPhone) => {
-            Alert.alert(
-              contactName,
-              contactPhone?.phone
-                ? `+${contactPhone.phone_ddi ?? ''} ${contactPhone.phone}`
-                : 'Telefone indisponível'
-            );
-          }
-        );
-      }}
+      onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={220}
     >
@@ -2308,6 +2638,10 @@ function InternalMessageBubble({
   documentBubbleWidth,
   audioCtrl,
   onOpenActions,
+  onOpenImage,
+  onOpenVideo,
+  onPressContactCard,
+  onPressContactsGroup,
 }: {
   msg: InternalChatMessage;
   fromMe: boolean;
@@ -2316,6 +2650,16 @@ function InternalMessageBubble({
   documentBubbleWidth: number;
   audioCtrl: InternalAudioCtrl;
   onOpenActions: (message: InternalChatMessage) => void;
+  onOpenImage: (message: InternalChatMessage) => void;
+  onOpenVideo: (message: InternalChatMessage) => void;
+  onPressContactCard: (
+    message: InternalChatMessage,
+    contact: MessageContentContact
+  ) => void;
+  onPressContactsGroup: (
+    message: InternalChatMessage,
+    contacts: MessageContentContact[]
+  ) => void;
 }) {
   const content = msg.content;
   const type = resolveInternalMessageContentType(content);
@@ -2408,6 +2752,10 @@ function InternalMessageBubble({
             fromMe={fromMe}
             audioCtrl={audioCtrl}
             onOpenActions={onOpenActions}
+            onOpenImage={onOpenImage}
+            onOpenVideo={onOpenVideo}
+            onPressContactCard={onPressContactCard}
+            onPressContactsGroup={onPressContactsGroup}
           />
           <View
             style={[
@@ -2549,6 +2897,20 @@ export function InternalChatRoomScreen() {
   >([]);
   const [contactsVisible, setContactsVisible] = useState(false);
   const [contacts, setContacts] = useState<InternalChatContact[]>([]);
+  const [contactFormVisible, setContactFormVisible] = useState(false);
+  const [contactFormMode, setContactFormMode] = useState<'create' | 'edit'>(
+    'create'
+  );
+  const [contactFormContactId, setContactFormContactId] = useState<
+    string | null
+  >(null);
+  const [contactFormInitialValues, setContactFormInitialValues] =
+    useState<ContactFormInitialValues | null>(null);
+  const [messageContactsSheetVisible, setMessageContactsSheetVisible] =
+    useState(false);
+  const [messageContactsSheetItems, setMessageContactsSheetItems] = useState<
+    MessageContentContact[]
+  >([]);
   const [recording, setRecording] = useState(false);
   const [isMicPressActive, setIsMicPressActive] = useState(false);
   const [isRecordingLocked, setIsRecordingLocked] = useState(false);
@@ -2577,6 +2939,25 @@ export function InternalChatRoomScreen() {
     string | null
   >(null);
   const [infoActionError, setInfoActionError] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<MediaViewerState>({
+    visible: false,
+    kind: 'image',
+    src: '',
+    caption: '',
+    downloadName: '',
+    items: [],
+    activeIndex: 0,
+  });
+  const viewerImageScrollRef = useRef<ScrollView | null>(null);
+  const viewerTranslateY = useRef(new Animated.Value(0)).current;
+  const [viewerMediaWidth, setViewerMediaWidth] = useState(1);
+  const [downloadingViewerMedia, setDownloadingViewerMedia] = useState(false);
+  const viewerVideoPlayer = useVideoPlayer(
+    viewer.kind === 'video' && viewer.src ? { uri: viewer.src } : null,
+    (player) => {
+      player.loop = false;
+    }
+  );
 
   const conversationTitle = resolveConversationTitle(
     activeConversation,
@@ -2596,6 +2977,350 @@ export function InternalChatRoomScreen() {
     !!removingMemberId || !!transferringLeaderId || leavingConversation;
   const infoActionLoading = memberActionLoading || !!openingMemberDirectId;
   const initialMessagesLoading = loadingMessages && messages.length === 0;
+
+  useEffect(() => {
+    if (viewer.visible && viewer.kind === 'video') return;
+    try {
+      viewerVideoPlayer.pause();
+      viewerVideoPlayer.currentTime = 0;
+    } catch {}
+  }, [viewer.kind, viewer.visible, viewerVideoPlayer]);
+
+  const openImageViewerFromItems = useCallback(
+    (items: ViewerMediaItem[], initialIndex = 0) => {
+      if (items.length === 0) return;
+      const safeIndex = Math.max(0, Math.min(initialIndex, items.length - 1));
+      const activeItem = items[safeIndex];
+
+      viewerTranslateY.stopAnimation();
+      viewerTranslateY.setValue(0);
+
+      setViewer({
+        visible: true,
+        kind: 'image',
+        src: activeItem.src,
+        caption: activeItem.caption,
+        downloadName: activeItem.downloadName,
+        items,
+        activeIndex: safeIndex,
+      });
+      setDownloadingViewerMedia(false);
+    },
+    [viewerTranslateY]
+  );
+
+  const setActiveViewerIndex = useCallback((index: number) => {
+    setViewer((previous) => {
+      if (previous.kind !== 'image') return previous;
+      const items = previous.items;
+      if (items.length === 0) return previous;
+
+      const safeIndex = Math.max(0, Math.min(index, items.length - 1));
+      if (safeIndex === previous.activeIndex) return previous;
+
+      const activeItem = items[safeIndex];
+      return {
+        ...previous,
+        activeIndex: safeIndex,
+        src: activeItem.src,
+        caption: activeItem.caption,
+        downloadName: activeItem.downloadName,
+      };
+    });
+  }, []);
+
+  const closeMediaViewer = useCallback(() => {
+    viewerTranslateY.stopAnimation();
+    viewerTranslateY.setValue(0);
+
+    setViewer({
+      visible: false,
+      kind: 'image',
+      src: '',
+      caption: '',
+      downloadName: '',
+      items: [],
+      activeIndex: 0,
+    });
+    setDownloadingViewerMedia(false);
+  }, [viewerTranslateY]);
+
+  const resetViewerSwipeOffset = useCallback(() => {
+    Animated.timing(viewerTranslateY, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [viewerTranslateY]);
+
+  const handleViewerPanGestureEvent = useCallback(
+    (event: {
+      nativeEvent: {
+        translationX: number;
+        translationY: number;
+      };
+    }) => {
+      if (!viewer.visible) return;
+      const { translationX, translationY } = event.nativeEvent;
+      if (Math.abs(translationX) > Math.abs(translationY)) {
+        viewerTranslateY.setValue(0);
+        return;
+      }
+      viewerTranslateY.setValue(Math.max(0, translationY));
+    },
+    [viewer.visible, viewerTranslateY]
+  );
+
+  const handleViewerPanStateChange = useCallback(
+    (event: {
+      nativeEvent: {
+        state: number;
+        oldState: number;
+        translationX: number;
+        translationY: number;
+        velocityY: number;
+      };
+    }) => {
+      if (!viewer.visible) return;
+
+      const { state, oldState, translationX, translationY, velocityY } =
+        event.nativeEvent;
+
+      if (state === State.CANCELLED || state === State.FAILED) {
+        resetViewerSwipeOffset();
+        return;
+      }
+
+      if (oldState !== State.ACTIVE) return;
+
+      if (Math.abs(translationX) > Math.abs(translationY)) {
+        resetViewerSwipeOffset();
+        return;
+      }
+
+      const shouldClose =
+        translationY >= VIEWER_SWIPE_CLOSE_DISTANCE ||
+        velocityY >= VIEWER_SWIPE_CLOSE_VELOCITY;
+
+      if (shouldClose) {
+        closeMediaViewer();
+        return;
+      }
+
+      resetViewerSwipeOffset();
+    },
+    [closeMediaViewer, resetViewerSwipeOffset, viewer.visible]
+  );
+
+  const openImageViewer = useCallback(
+    (message: InternalChatMessage) => {
+      const imageUrl = message.content?.image?.url;
+      if (!imageUrl) return;
+      const imageSrc = resolveMediaUri(imageUrl);
+      if (!imageSrc) return;
+
+      openImageViewerFromItems([
+        {
+          src: imageSrc,
+          caption: message.content?.image?.caption ?? '',
+          downloadName: resolveImageDownloadName(message, imageSrc),
+        },
+      ]);
+    },
+    [openImageViewerFromItems]
+  );
+
+  const openVideoViewer = useCallback(
+    (message: InternalChatMessage) => {
+      const video = message.content?.video;
+      if (!video?.url) return;
+      const videoSrc = resolveMediaUri(video.url);
+      if (!videoSrc) return;
+
+      viewerTranslateY.stopAnimation();
+      viewerTranslateY.setValue(0);
+
+      setViewer({
+        visible: true,
+        kind: 'video',
+        src: videoSrc,
+        caption: video.caption ?? message.content?.message ?? '',
+        downloadName: resolveVideoDownloadName(video),
+        items: [
+          {
+            src: videoSrc,
+            caption: video.caption ?? message.content?.message ?? '',
+            downloadName: resolveVideoDownloadName(video),
+          },
+        ],
+        activeIndex: 0,
+      });
+      setDownloadingViewerMedia(false);
+    },
+    [viewerTranslateY]
+  );
+
+  const handleDownloadViewerMedia = useCallback(async () => {
+    const activeViewerItem = viewer.items[viewer.activeIndex] ?? null;
+    const viewerSrc = activeViewerItem?.src || viewer.src;
+    const viewerDownloadName =
+      activeViewerItem?.downloadName || viewer.downloadName;
+
+    if (!viewerSrc || downloadingViewerMedia) return;
+
+    setDownloadingViewerMedia(true);
+    try {
+      const defaultName =
+        viewer.kind === 'video'
+          ? `video-${Date.now()}.mp4`
+          : `imagem-${Date.now()}.jpg`;
+      await forceDownloadToDevice(
+        viewerSrc,
+        viewerDownloadName || defaultName,
+        viewer.kind
+      );
+    } finally {
+      setDownloadingViewerMedia(false);
+    }
+  }, [
+    downloadingViewerMedia,
+    viewer.activeIndex,
+    viewer.downloadName,
+    viewer.items,
+    viewer.kind,
+    viewer.src,
+  ]);
+
+  const canGoToPreviousViewerImage =
+    viewer.kind === 'image' && viewer.activeIndex > 0;
+  const canGoToNextViewerImage =
+    viewer.kind === 'image' && viewer.activeIndex < viewer.items.length - 1;
+
+  const goToPreviousViewerImage = useCallback(() => {
+    if (!canGoToPreviousViewerImage) return;
+    setActiveViewerIndex(viewer.activeIndex - 1);
+  }, [canGoToPreviousViewerImage, setActiveViewerIndex, viewer.activeIndex]);
+
+  const goToNextViewerImage = useCallback(() => {
+    if (!canGoToNextViewerImage) return;
+    setActiveViewerIndex(viewer.activeIndex + 1);
+  }, [canGoToNextViewerImage, setActiveViewerIndex, viewer.activeIndex]);
+
+  useEffect(() => {
+    if (
+      !viewer.visible ||
+      viewer.kind !== 'image' ||
+      viewer.items.length <= 1
+    ) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      viewerImageScrollRef.current?.scrollTo({
+        x: viewer.activeIndex * viewerMediaWidth,
+        y: 0,
+        animated: false,
+      });
+    });
+  }, [
+    viewer.activeIndex,
+    viewer.items.length,
+    viewer.kind,
+    viewer.visible,
+    viewerMediaWidth,
+  ]);
+
+  const openContactFormFromMessageContact = useCallback(
+    async (contact: MessageContentContact) => {
+      dismissKeyboard();
+
+      const fallbackPhoneDdi = readNonEmptyString(contact.phone_ddi) ?? '55';
+      const initialValues = buildContactFormInitialValues(
+        contact,
+        fallbackPhoneDdi
+      );
+
+      let lookup: Awaited<ReturnType<typeof getChatContactById>> = null;
+      const payloadContactId = readNonEmptyString(contact.contact_id);
+      if (payloadContactId) {
+        try {
+          lookup = await getChatContactById(payloadContactId);
+        } catch {}
+      }
+
+      if (!lookup) {
+        const normalizedPhone = normalizePhoneDigits(
+          contact.phone ?? contact.phone_partial
+        );
+        if (normalizedPhone.length >= 8) {
+          try {
+            lookup = await getChatContactByPhone(
+              normalizedPhone,
+              fallbackPhoneDdi
+            );
+          } catch {}
+        }
+      }
+
+      if (lookup?.contact_id) {
+        setContactFormMode('edit');
+        setContactFormContactId(lookup.contact_id);
+        setContactFormInitialValues(null);
+      } else {
+        setContactFormMode('create');
+        setContactFormContactId(null);
+        setContactFormInitialValues(initialValues);
+      }
+
+      setContactFormVisible(true);
+    },
+    []
+  );
+
+  const handlePressMessageContactCard = useCallback(
+    (_message: InternalChatMessage, contact: MessageContentContact) => {
+      void openContactFormFromMessageContact(contact);
+    },
+    [openContactFormFromMessageContact]
+  );
+
+  const handlePressMessageContactsGroup = useCallback(
+    (_message: InternalChatMessage, contactsList: MessageContentContact[]) => {
+      if (!Array.isArray(contactsList) || contactsList.length === 0) return;
+
+      if (contactsList.length === 1) {
+        void openContactFormFromMessageContact(contactsList[0]);
+        return;
+      }
+
+      dismissKeyboard();
+      setMessageContactsSheetItems(contactsList);
+      setMessageContactsSheetVisible(true);
+    },
+    [openContactFormFromMessageContact]
+  );
+
+  const handleSelectMessageGroupContact = useCallback(
+    (contact: MessageContentContact) => {
+      setMessageContactsSheetVisible(false);
+      setMessageContactsSheetItems([]);
+      void openContactFormFromMessageContact(contact);
+    },
+    [openContactFormFromMessageContact]
+  );
+
+  const handleCloseContactForm = useCallback(() => {
+    setContactFormVisible(false);
+    setContactFormContactId(null);
+    setContactFormInitialValues(null);
+  }, []);
+
+  const handleContactFormSuccess = useCallback(() => {
+    setContactFormVisible(false);
+    setContactFormContactId(null);
+    setContactFormInitialValues(null);
+  }, []);
 
   const pendingGroupActionContent = useMemo(() => {
     if (!pendingGroupAction) {
@@ -3665,8 +4390,14 @@ export function InternalChatRoomScreen() {
         return;
       }
       if (action === 'download') {
-        const url = getMediaUrl(target);
-        if (url) await Linking.openURL(resolveImageUri(url) ?? url);
+        const downloadInfo = resolveMessageDownloadInfo(target);
+        if (downloadInfo) {
+          await forceDownloadToDevice(
+            downloadInfo.url,
+            downloadInfo.name,
+            downloadInfo.kind
+          );
+        }
       }
     },
     [
@@ -3844,6 +4575,10 @@ export function InternalChatRoomScreen() {
             documentBubbleWidth={documentBubbleWidth}
             audioCtrl={audioCtrl}
             onOpenActions={setActionMessage}
+            onOpenImage={openImageViewer}
+            onOpenVideo={openVideoViewer}
+            onPressContactCard={handlePressMessageContactCard}
+            onPressContactsGroup={handlePressMessageContactsGroup}
           />
         </View>
       );
@@ -3854,6 +4589,10 @@ export function InternalChatRoomScreen() {
       documentBubbleWidth,
       isGroup,
       messages,
+      handlePressMessageContactCard,
+      handlePressMessageContactsGroup,
+      openImageViewer,
+      openVideoViewer,
       responsiveBubbleMaxWidth,
     ]
   );
@@ -4332,7 +5071,7 @@ export function InternalChatRoomScreen() {
             {[
               ['reply-outline', 'Responder', 'reply'],
               ['copy-outline', 'Copiar', 'copy'],
-              ['download-outline', 'Abrir arquivo', 'download'],
+              ['download-outline', pt.download, 'download'],
               ['create-outline', 'Editar', 'edit'],
               ['time-outline', 'Histórico', 'history'],
               ['trash-outline', 'Apagar', 'delete'],
@@ -4406,6 +5145,70 @@ export function InternalChatRoomScreen() {
           />
         </View>
       </Modal>
+
+      <BottomSheetModal
+        visible={messageContactsSheetVisible}
+        onClose={() => {
+          setMessageContactsSheetVisible(false);
+          setMessageContactsSheetItems([]);
+        }}
+        title={pt.received_contacts}
+        cardStyle={styles.contactsSheetCard}
+        avoidKeyboard={false}
+      >
+        <FlatList
+          data={messageContactsSheetItems}
+          keyExtractor={(item, index) =>
+            `${item.contact_id ?? 'received'}-${
+              item.phone ?? item.phone_partial ?? index
+            }`
+          }
+          renderItem={({ item }) => {
+            const fullName =
+              [item.name, item.last_name].filter(Boolean).join(' ').trim() ||
+              pt.contact;
+            const phone = item.phone ?? item.phone_partial ?? '';
+
+            return (
+              <Pressable
+                style={styles.memberRow}
+                onPress={() => handleSelectMessageGroupContact(item)}
+              >
+                <AppAvatar
+                  uri={resolveMediaUri(item.photo)}
+                  size={42}
+                  iconName="person"
+                />
+                <View style={styles.memberInfo}>
+                  <Text style={styles.memberName} numberOfLines={1}>
+                    {fullName}
+                  </Text>
+                  <Text style={styles.memberSub} numberOfLines={1}>
+                    {phone || item.email_partial || pt.contact}
+                  </Text>
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={18}
+                  color={colors.grey600}
+                />
+              </Pressable>
+            );
+          }}
+          ListEmptyComponent={
+            <Text style={styles.emptyContactsText}>{pt.no_contacts_found}</Text>
+          }
+        />
+      </BottomSheetModal>
+
+      <ContactFormModal
+        visible={contactFormVisible}
+        mode={contactFormMode}
+        contactId={contactFormContactId}
+        initialValues={contactFormInitialValues}
+        onClose={handleCloseContactForm}
+        onSuccess={handleContactFormSuccess}
+      />
 
       <Modal
         visible={infoVisible}
@@ -4767,6 +5570,170 @@ export function InternalChatRoomScreen() {
               </View>
             )}
           />
+        </View>
+      </Modal>
+
+      <Modal
+        visible={viewer.visible}
+        transparent
+        statusBarTranslucent
+        navigationBarTranslucent
+        animationType="fade"
+        onRequestClose={closeMediaViewer}
+      >
+        <View style={[styles.viewerOverlay, { paddingBottom: insets.bottom }]}>
+          <Pressable style={styles.viewerBackdrop} onPress={closeMediaViewer} />
+          <PanGestureHandler
+            enabled={viewer.visible}
+            activeOffsetY={[
+              -VIEWER_SWIPE_ACTIVATION_DISTANCE,
+              VIEWER_SWIPE_ACTIVATION_DISTANCE,
+            ]}
+            onGestureEvent={handleViewerPanGestureEvent}
+            onHandlerStateChange={handleViewerPanStateChange}
+          >
+            <Animated.View
+              style={[
+                styles.viewerContent,
+                { transform: [{ translateY: viewerTranslateY }] },
+              ]}
+            >
+              <View style={styles.viewerActions}>
+                {viewer.kind === 'image' && viewer.items.length > 1 ? (
+                  <View style={styles.viewerCounterBadge}>
+                    <Text style={styles.viewerCounterText}>
+                      {viewer.activeIndex + 1} / {viewer.items.length}
+                    </Text>
+                  </View>
+                ) : null}
+                <Pressable
+                  style={[
+                    styles.viewerActionBtn,
+                    downloadingViewerMedia && styles.viewerActionBtnDisabled,
+                  ]}
+                  onPress={() => void handleDownloadViewerMedia()}
+                  disabled={downloadingViewerMedia}
+                >
+                  {downloadingViewerMedia ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Ionicons
+                      name="download-outline"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                  )}
+                </Pressable>
+                <Pressable
+                  style={styles.viewerActionBtn}
+                  onPress={closeMediaViewer}
+                >
+                  <Ionicons name="close" size={20} color="#FFFFFF" />
+                </Pressable>
+              </View>
+
+              <View style={styles.viewerMediaContainer}>
+                {viewer.kind === 'video' && viewer.src ? (
+                  <VideoView
+                    key={viewer.src}
+                    player={viewerVideoPlayer}
+                    style={styles.viewerVideo}
+                    contentFit="contain"
+                    nativeControls
+                    fullscreenOptions={VIDEO_FULLSCREEN_ENABLED}
+                    allowsPictureInPicture
+                    playsInline
+                  />
+                ) : viewer.kind === 'image' && viewer.items.length > 0 ? (
+                  <>
+                    <ScrollView
+                      ref={viewerImageScrollRef}
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.viewerImagePager}
+                      scrollEventThrottle={16}
+                      onLayout={(event) => {
+                        const width = event.nativeEvent.layout.width;
+                        if (!Number.isFinite(width) || width <= 0) return;
+                        setViewerMediaWidth(width);
+                      }}
+                      onMomentumScrollEnd={(event) => {
+                        const width = event.nativeEvent.layoutMeasurement.width;
+                        if (!Number.isFinite(width) || width <= 0) return;
+                        const nextIndex = Math.round(
+                          event.nativeEvent.contentOffset.x / width
+                        );
+                        setActiveViewerIndex(nextIndex);
+                      }}
+                    >
+                      {viewer.items.map((item, index) => (
+                        <View
+                          key={`internal-viewer-image-${index}-${item.src}`}
+                          style={[
+                            styles.viewerImagePage,
+                            { width: viewerMediaWidth },
+                          ]}
+                        >
+                          <Image
+                            source={{ uri: item.src }}
+                            style={styles.viewerImage}
+                            resizeMode="contain"
+                          />
+                        </View>
+                      ))}
+                    </ScrollView>
+
+                    {viewer.items.length > 1 ? (
+                      <>
+                        <Pressable
+                          style={[
+                            styles.viewerNavButton,
+                            styles.viewerNavButtonLeft,
+                            !canGoToPreviousViewerImage &&
+                              styles.viewerNavButtonDisabled,
+                          ]}
+                          onPress={goToPreviousViewerImage}
+                          disabled={!canGoToPreviousViewerImage}
+                          accessibilityLabel="Anterior"
+                        >
+                          <Ionicons
+                            name="chevron-back"
+                            size={26}
+                            color="#FFFFFF"
+                          />
+                        </Pressable>
+
+                        <Pressable
+                          style={[
+                            styles.viewerNavButton,
+                            styles.viewerNavButtonRight,
+                            !canGoToNextViewerImage &&
+                              styles.viewerNavButtonDisabled,
+                          ]}
+                          onPress={goToNextViewerImage}
+                          disabled={!canGoToNextViewerImage}
+                          accessibilityLabel="Próxima"
+                        >
+                          <Ionicons
+                            name="chevron-forward"
+                            size={26}
+                            color="#FFFFFF"
+                          />
+                        </Pressable>
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </View>
+
+              {viewer.caption ? (
+                <Text style={styles.viewerCaption} numberOfLines={4}>
+                  {viewer.caption}
+                </Text>
+              ) : null}
+            </Animated.View>
+          </PanGestureHandler>
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -5672,6 +6639,119 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     fontWeight: '600',
     color: 'rgba(47, 43, 61, 0.72)',
+  },
+  viewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 42 : 24,
+  },
+  viewerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  viewerContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  viewerActions: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  viewerCounterBadge: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  viewerCounterText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  viewerActionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerActionBtnDisabled: {
+    opacity: 0.7,
+  },
+  viewerMediaContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerImagePager: {
+    width: '100%',
+    height: '100%',
+  },
+  viewerImagePage: {
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  viewerNavButton: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    zIndex: 3,
+  },
+  viewerNavButtonLeft: {
+    left: 8,
+  },
+  viewerNavButtonRight: {
+    right: 8,
+  },
+  viewerNavButtonDisabled: {
+    opacity: 0.35,
+  },
+  viewerVideo: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+  },
+  viewerCaption: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    color: '#FFFFFF',
+    fontSize: 14,
+    lineHeight: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  contactsSheetCard: {
+    maxHeight: '70%',
+  },
+  emptyContactsText: {
+    color: colors.grey600,
+    textAlign: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 22,
   },
   replyBar: {
     minHeight: 54,
