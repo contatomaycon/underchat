@@ -42,6 +42,7 @@ import {
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { resolveInternalChatTextTag } from '../utils/internalChatText';
+import { addSessionUpdatedListener } from '../utils/appResumeBus';
 
 type Navigation = NativeStackNavigationProp<InternalChatStackParamList>;
 
@@ -275,6 +276,14 @@ export function InternalChatListScreen() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    return addSessionUpdatedListener(() => {
+      void getPermissions().then((permissions) => {
+        setCanCreateGroup(canCreateInternalChatGroup(permissions));
+      });
+    });
   }, []);
 
   useEffect(() => {

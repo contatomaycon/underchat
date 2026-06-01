@@ -46,8 +46,9 @@ import { publishPresence } from './socket/presence';
 import { addCentrifugoConnectionListener } from './socket/centrifugo';
 import { pt } from './locales/pt';
 import type { ListChatsResult } from './types/chat';
-import { emitAppResume } from './utils/appResumeBus';
+import { emitAppResume, emitSessionUpdated } from './utils/appResumeBus';
 import { fetchAuthenticatedUser } from './api/authApi';
+import { refreshSessionWithSingleFlight } from './api/sessionRefresh';
 import {
   cleanupPushNotifications,
   disableMobilePushNotifications,
@@ -161,6 +162,7 @@ export default function App() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const attendanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attendanceOffsetMsRef = useRef(0);
+  const attendanceSnapshotAppliedAtRef = useRef(0);
   const authenticatedRef = useRef(false);
   const canViewChatTabsRef = useRef(false);
   const canViewInternalChatTabRef = useRef(false);
@@ -173,6 +175,52 @@ export default function App() {
   const reconnectTargetStatusRef = useRef<PresenceStatus>('online');
   const forcedOfflineBySocketRef = useRef(false);
   const hasSeenSocketConnectedRef = useRef(false);
+
+  const resetAuthAccessState = useCallback((): void => {
+    setAuthenticated(false);
+    setCanViewChatbotTab(false);
+    setCanViewChatTabs(false);
+    setCanViewInternalChatTab(false);
+    canUpdateOwnStatusRef.current = false;
+  }, []);
+
+  const applyAuthAccessState = useCallback(
+    (
+      permissions: string[]
+    ): {
+      hasMobileAccess: boolean;
+      hasChatAccess: boolean;
+      hasInternalAccess: boolean;
+    } => {
+      if (!hasMobileAppAccessPermission(permissions)) {
+        resetAuthAccessState();
+        return {
+          hasMobileAccess: false,
+          hasChatAccess: false,
+          hasInternalAccess: false,
+        };
+      }
+
+      const hasChatAccess = hasChatModuleAccessPermission(permissions);
+      const hasInternalAccess = hasInternalChatAccessPermission(permissions);
+
+      setAuthenticated(true);
+      setCanViewChatbotTab(
+        hasChatAccess && checkCanViewChatbotTab(permissions)
+      );
+      setCanViewChatTabs(hasChatAccess);
+      setCanViewInternalChatTab(hasInternalAccess);
+      canUpdateOwnStatusRef.current =
+        hasChatAccess && canUpdateOwnChatStatusPermission(permissions);
+
+      return {
+        hasMobileAccess: true,
+        hasChatAccess,
+        hasInternalAccess,
+      };
+    },
+    [resetAuthAccessState]
+  );
 
   const clearDisconnectOfflineTimer = (): void => {
     if (!disconnectOfflineTimerRef.current) {
@@ -376,57 +424,76 @@ export default function App() {
       const token = await getToken();
       if (!token) {
         if (!cancelled) {
-          setAuthenticated(false);
-          setCanViewChatbotTab(false);
-          setCanViewChatTabs(false);
-          setCanViewInternalChatTab(false);
+          resetAuthAccessState();
           setReady(true);
         }
         return;
       }
 
-      const permissions = await getPermissions();
-      if (!hasMobileAppAccessPermission(permissions)) {
-        await clearAuth();
-        if (!cancelled) {
-          setAuthenticated(false);
-          setCanViewChatbotTab(false);
-          setCanViewChatTabs(false);
-          setCanViewInternalChatTab(false);
-          canUpdateOwnStatusRef.current = false;
+      const refreshResult = await refreshSessionWithSingleFlight();
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!refreshResult.success) {
+        if (
+          refreshResult.reason === 'unauthorized' ||
+          refreshResult.reason === 'forbidden'
+        ) {
+          await clearAuth();
+          if (cancelled) return;
+          resetAuthAccessState();
+          setAuthError(refreshResult.message ?? pt.chat_permission_denied);
+          setReady(true);
+          return;
+        }
+
+        const cachedPermissions = await getPermissions();
+        if (cancelled) return;
+
+        const access = applyAuthAccessState(cachedPermissions);
+        if (!access.hasMobileAccess) {
+          await clearAuth();
+          if (cancelled) return;
           setAuthError(pt.chat_permission_denied);
-          setReady(true);
         }
+
+        setReady(true);
         return;
       }
 
-      if (!cancelled) {
-        const hasChatAccess = hasChatModuleAccessPermission(permissions);
-        const hasInternalAccess = hasInternalChatAccessPermission(permissions);
-        setAuthenticated(true);
-        setCanViewChatbotTab(hasChatAccess && checkCanViewChatbotTab(permissions));
-        setCanViewChatTabs(hasChatAccess);
-        setCanViewInternalChatTab(hasInternalAccess);
-        canUpdateOwnStatusRef.current =
-          hasChatAccess && canUpdateOwnChatStatusPermission(permissions);
+      emitSessionUpdated();
+
+      const access = applyAuthAccessState(refreshResult.data.permissions);
+      if (!access.hasMobileAccess) {
+        await clearAuth();
+        if (cancelled) return;
+        setAuthError(pt.chat_permission_denied);
         setReady(true);
+        return;
       }
+
+      if (access.hasChatAccess) {
+        applyAttendanceStatus(refreshResult.data.attendance_guard, null);
+        attendanceSnapshotAppliedAtRef.current = Date.now();
+      } else {
+        resetAttendanceLock();
+      }
+
+      setReady(true);
     };
 
     bootstrapSession().catch(() => {
       if (cancelled) return;
-      setAuthenticated(false);
-      setCanViewChatbotTab(false);
-      setCanViewChatTabs(false);
-      setCanViewInternalChatTab(false);
-      canUpdateOwnStatusRef.current = false;
+      resetAuthAccessState();
       setReady(true);
     });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyAuthAccessState, resetAuthAccessState]);
 
   useEffect(() => {
     authenticatedRef.current = authenticated;
@@ -445,7 +512,11 @@ export default function App() {
     }
 
     if (canViewChatTabs) {
-      void refreshAttendanceStatus();
+      const hasFreshAttendanceSnapshot =
+        Date.now() - attendanceSnapshotAppliedAtRef.current < 1000;
+      if (!hasFreshAttendanceSnapshot) {
+        void refreshAttendanceStatus();
+      }
     } else {
       resetAttendanceLock();
     }
@@ -780,49 +851,97 @@ export default function App() {
         return;
       }
 
-      emitAppResume();
-      if (canViewChatTabsRef.current) {
-        void refreshAttendanceStatus();
-      }
+      void (async () => {
+        let canUseChatSockets = canViewChatTabsRef.current;
+        let canUseInternalChatSockets = canViewInternalChatTabRef.current;
 
-      if (canViewChatTabsRef.current && Platform.OS === 'android') {
-        void isIgnoringBatteryOptimizations().then((ignoring) => {
+        const refreshResult = await refreshSessionWithSingleFlight();
+
+        if (!authenticatedRef.current) {
+          return;
+        }
+
+        if (!refreshResult.success) {
+          if (
+            refreshResult.reason === 'unauthorized' ||
+            refreshResult.reason === 'forbidden'
+          ) {
+            await clearAuth();
+            resetAuthAccessState();
+            setAuthError(refreshResult.message ?? pt.chat_permission_denied);
+            return;
+          }
+
+          emitAppResume();
+          if (canViewChatTabsRef.current) {
+            void refreshAttendanceStatus();
+          }
+        } else {
+          emitSessionUpdated();
+
+          const access = applyAuthAccessState(refreshResult.data.permissions);
+          if (!access.hasMobileAccess) {
+            await clearAuth();
+            resetAuthAccessState();
+            setAuthError(pt.chat_permission_denied);
+            return;
+          }
+
+          canUseChatSockets = access.hasChatAccess;
+          canUseInternalChatSockets = access.hasInternalAccess;
+
+          if (access.hasChatAccess) {
+            applyAttendanceStatus(refreshResult.data.attendance_guard, null);
+            attendanceSnapshotAppliedAtRef.current = Date.now();
+          } else {
+            resetAttendanceLock();
+          }
+
+          emitAppResume();
+        }
+
+        if (canUseChatSockets && Platform.OS === 'android') {
+          const ignoring = await isIgnoringBatteryOptimizations().catch(
+            () => true
+          );
           if (!ignoring) {
             setBatteryModalVisible(true);
           }
-        });
-      }
+        }
 
-      void getUser()
-        .then(async (user) => {
-          const accountId = getUserAccountId(user);
+        const user = await getUser().catch(() => null);
+        const accountId = getUserAccountId(user);
 
-          if (!accountId) return;
+        if (!accountId) return;
 
-          if (canViewChatTabsRef.current) {
-            emitCurrentUserPresenceStatus(readChatUserStatus(user));
-            reconnectTargetStatusRef.current = normalizePresenceStatus(
-              readChatUserStatus(user)
-            );
+        if (canUseChatSockets) {
+          emitCurrentUserPresenceStatus(readChatUserStatus(user));
+          reconnectTargetStatusRef.current = normalizePresenceStatus(
+            readChatUserStatus(user)
+          );
 
-            await initializeChatSocket(accountId).catch(() => {});
+          await initializeChatSocket(accountId).catch(() => {});
 
-            if (socketConnectedRef.current) {
-              await handleSocketConnected();
-            }
+          if (socketConnectedRef.current) {
+            await handleSocketConnected();
           }
+        }
 
-          if (canViewInternalChatTabRef.current) {
-            await initializeInternalChatSocket(accountId).catch(() => {});
-          }
-        })
-        .catch(() => {});
+        if (canUseInternalChatSockets) {
+          await initializeInternalChatSocket(accountId).catch(() => {});
+        }
+      })().catch(() => {});
     });
 
     return () => {
       subscription.remove();
     };
-  }, [authenticated, handleSocketConnected]);
+  }, [
+    authenticated,
+    applyAuthAccessState,
+    handleSocketConnected,
+    resetAuthAccessState,
+  ]);
 
   useEffect(() => {
     const onUnauthorized = () => {

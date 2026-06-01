@@ -42,6 +42,7 @@ import {
   enableMobilePushNotifications,
 } from '../services/pushNotifications';
 import { useChannelStatus } from '../context/ChannelStatusContext';
+import { addSessionUpdatedListener } from '../utils/appResumeBus';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb' | 'away' | 'offline';
 type PhotoPickerSource = 'camera' | 'gallery';
@@ -504,6 +505,37 @@ export function UserSidebar({
         aboutTimerRef.current = null;
       }
     };
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    return addSessionUpdatedListener(() => {
+      void (async () => {
+        const permissions = await getPermissions();
+        const hasPermission = hasChatAccessPermission(permissions);
+        const canUpdateStatus = canUpdateOwnChatStatusPermission(permissions);
+        setHasAccess(hasPermission);
+        setCanUpdateOwnStatus(canUpdateStatus);
+
+        const user = await getUser();
+        const profile = readUserProfile(user);
+        setUserId(profile.userId);
+        setName(profile.name);
+        setRole(profile.role);
+        setPhoto(profile.photo);
+        setAbout(profile.about);
+        setStatus(profile.status);
+        setNotifications(profile.notifications);
+        lastSyncedAboutRef.current = profile.about;
+        profileReadyRef.current = true;
+      })().catch(() => {
+        setHasAccess(false);
+        setCanUpdateOwnStatus(false);
+      });
+    });
   }, [visible]);
 
   useEffect(() => {

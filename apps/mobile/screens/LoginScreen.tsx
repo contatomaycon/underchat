@@ -14,14 +14,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../api/authApi';
-import {
-  setToken,
-  setUser,
-  setPermissions,
-  setSectors,
-  setChannels,
-  clearAuth,
-} from '../storage/authStorage';
+import { clearAuth, persistAuthSession } from '../storage/authStorage';
 import { hasMobileAppAccessPermission } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -88,11 +81,13 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
         return;
       }
 
-      await setToken(result.data.token);
-      await setUser(result.data.user);
-      await setPermissions(permissions);
-      await setSectors(result.data.sectors ?? []);
-      await setChannels(channels);
+      await persistAuthSession({
+        token: result.data.token,
+        user: result.data.user,
+        permissions,
+        sectors: result.data.sectors ?? [],
+        channels,
+      });
       onLoginSuccess();
       return;
     }

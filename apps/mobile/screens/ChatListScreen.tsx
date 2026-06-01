@@ -111,7 +111,10 @@ import {
   getKeyboardVerticalOffset,
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
-import { addAppResumeListener } from '../utils/appResumeBus';
+import {
+  addAppResumeListener,
+  addSessionUpdatedListener,
+} from '../utils/appResumeBus';
 import {
   parseWhatsAppPreviewTokens,
   type WhatsAppTextToken,
@@ -867,6 +870,40 @@ export function ChatListScreen({ route, navigation }: Props) {
       .finally(() => {
         setIsChannelsResolved(true);
       });
+  }, []);
+
+  useEffect(() => {
+    return addSessionUpdatedListener(() => {
+      void getUser().then((user) => {
+        const info =
+          user && typeof user === 'object'
+            ? (user as { info?: { photo?: string | null } }).info
+            : undefined;
+        const photo = info && info.photo ? String(info.photo) : null;
+        setUserPhoto(photo && photo !== 'null' ? photo : null);
+        setUserStatus(readChatUserStatus(user));
+        const userId =
+          user && typeof user === 'object' ? resolveUserId(user) : null;
+        setCurrentUserId(userId);
+        setIsCurrentUserMasterOrAdministrator(
+          isMasterOrAdministratorUser(user)
+        );
+      });
+
+      void getPermissions().then((permissions) => {
+        setCanUseUserAndSectorFilters(checkUserSectorFilters(permissions));
+        setSocketPermissions(permissions);
+        setCanPickAnyQueueChat(canPickQueueChat(permissions));
+      });
+
+      void getSectors().then(setUserSectors);
+
+      void getChannels().then((channels) => {
+        setUserChannels((prev) =>
+          areChannelsEqual(prev, channels) ? prev : channels
+        );
+      });
+    });
   }, []);
 
   const isAuthContextResolved =

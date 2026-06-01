@@ -186,7 +186,10 @@ import {
   getKeyboardVerticalOffset,
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
-import { addAppResumeListener } from '../utils/appResumeBus';
+import {
+  addAppResumeListener,
+  addSessionUpdatedListener,
+} from '../utils/appResumeBus';
 import { syncGlobalChatCounts } from '../utils/chatCountsSync';
 import { addCurrentUserPresenceStatusListener } from '../utils/currentUserPresence';
 import {
@@ -6259,6 +6262,27 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    return addSessionUpdatedListener(() => {
+      void getUser().then((user) => {
+        const userName = resolveStoredUserName(user);
+        setCurrentUserId(resolveUserId(user));
+        setCurrentUserName(userName);
+        setIsCurrentUserMasterOrAdministrator(
+          isMasterOrAdministratorUser(user)
+        );
+        setCurrentUserStatus(resolveStoredUserStatus(user));
+      });
+
+      void getPermissions().then((permissions) => {
+        setPermissionList(permissions);
+        setCanPreviewProtectedContent(canPreviewChatContent(permissions));
+      });
+
+      void getSectors().then(setUserSectors);
+    });
   }, []);
 
   useEffect(() => {

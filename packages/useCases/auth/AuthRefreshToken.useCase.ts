@@ -6,8 +6,13 @@ import { RefreshTokenResponse } from '@core/schema/auth/refrehToken/response.sch
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { AccountService } from '@core/services/account.service';
 import { UserService } from '@core/services/user.service';
+import { AuthService } from '@core/services/auth.service';
+import { PermissionService } from '@core/services/permission.service';
 import Redis from 'ioredis';
-import { createJwtSessionKey } from '@core/common/functions/createCacheKey';
+import {
+  createJwtCacheVersionKey,
+  createJwtSessionKey,
+} from '@core/common/functions/createCacheKey';
 import { AuthRefreshTokenError } from '@core/common/exceptions/AuthRefreshTokenError';
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import {
@@ -23,8 +28,20 @@ export class AuthRefreshTokenUseCase {
     private readonly accountService: AccountService,
     @inject(UserService)
     private readonly userService: UserService,
+    @inject(AuthService)
+    private readonly authService: AuthService,
+    @inject(PermissionService)
+    private readonly permissionService: PermissionService,
     @inject('Redis') private readonly redis: Redis
   ) {}
+
+  private async invalidateUserJwtCache(
+    accountId: string,
+    userId: string
+  ): Promise<void> {
+    const cacheVersionKey = createJwtCacheVersionKey(accountId, userId);
+    await this.redis.incr(cacheVersionKey);
+  }
 
   private async resolveActiveSession(
     accountId: string,
@@ -198,6 +215,29 @@ export class AuthRefreshTokenUseCase {
       );
     }
 
+    const userAuthData = await this.authService.authenticateByUserId(
+      decodeToken.user_id,
+      accountId
+    );
+
+    if (!userAuthData) {
+      throw new AuthRefreshTokenError(
+        t('invalid_token'),
+        EHTTPStatusCode.unauthorized
+      );
+    }
+
+    const permissions = await this.permissionService.viewPermissionByUserId(
+      decodeToken.user_id
+    );
+
+    if (!permissions.length) {
+      throw new AuthRefreshTokenError(
+        t('user_without_access_permissions'),
+        EHTTPStatusCode.forbidden
+      );
+    }
+
     const payload = {
       user_id: decodeToken.user_id,
       module: request.module,
@@ -215,17 +255,41 @@ export class AuthRefreshTokenUseCase {
 
     const planIsActive = await this.accountService.isPlanActive(accountId);
 
-    await this.persistPlatformSession(
-      accountId,
-      decodeToken.user_id,
-      decodeToken.session_id,
-      sessionPlatform,
-      isLegacySession
+    const [accountInfo, sectors, channels, attendanceGuard] = await Promise.all(
+      [
+        this.accountService.viewAccountInfoByAccountId(accountId),
+        this.userService.listUserSectors(accountId, decodeToken.user_id),
+        this.userService.listUserChannelsWithNames(
+          accountId,
+          decodeToken.user_id
+        ),
+        this.userService.getAttendanceGuardStatus(
+          decodeToken.user_id,
+          accountId
+        ),
+      ]
     );
+
+    await Promise.all([
+      this.invalidateUserJwtCache(accountId, decodeToken.user_id),
+      this.persistPlatformSession(
+        accountId,
+        decodeToken.user_id,
+        decodeToken.session_id,
+        sessionPlatform,
+        isLegacySession
+      ),
+    ]);
 
     return {
       token,
+      user: userAuthData,
+      permissions,
+      layout: accountInfo,
+      sectors,
+      channels,
       plan_is_active: planIsActive,
+      attendance_guard: attendanceGuard,
     };
   }
 }

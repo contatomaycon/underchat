@@ -12,6 +12,11 @@ export type UserChannel = {
   name: string;
 };
 
+export type AuthSessionStorageData = Pick<
+  AuthLoginResponse,
+  'token' | 'user' | 'permissions' | 'sectors' | 'channels'
+>;
+
 function normalizeChannels(value: unknown): UserChannel[] {
   if (!Array.isArray(value) || value.length === 0) {
     return [];
@@ -142,6 +147,18 @@ export async function setChannels(channels: UserChannel[]): Promise<void> {
     CHANNELS_KEY,
     JSON.stringify(normalizeChannels(channels))
   );
+}
+
+export async function persistAuthSession(
+  session: AuthSessionStorageData
+): Promise<void> {
+  await Promise.all([
+    setToken(session.token),
+    setUser(session.user),
+    setPermissions(session.permissions ?? []),
+    setSectors(session.sectors ?? []),
+    setChannels(session.channels ?? []),
+  ]);
 }
 
 export async function clearAuth(): Promise<void> {

@@ -52,6 +52,7 @@ import {
 import { syncGlobalChatCounts } from '../utils/chatCountsSync';
 import { dismissKeyboard, dismissKeyboardAnd } from '../utils/keyboard';
 import { addCurrentUserPresenceStatusListener } from '../utils/currentUserPresence';
+import { addSessionUpdatedListener } from '../utils/appResumeBus';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Contacts'>;
 
@@ -348,6 +349,43 @@ export function ContactListScreen({ navigation }: Props) {
         );
       })
       .catch(() => setUserChannels([]));
+  }, []);
+
+  useEffect(() => {
+    return addSessionUpdatedListener(() => {
+      void getUser()
+        .then((user) => {
+          const info =
+            user && typeof user === 'object'
+              ? (user as { info?: { photo?: string | null } }).info
+              : undefined;
+          const photo = info && info.photo ? String(info.photo) : null;
+          setUserPhoto(photo && photo !== 'null' ? photo : null);
+          setUserStatus(readChatUserStatus(user));
+          setCurrentUserId(resolveUserId(user));
+        })
+        .catch(() => {
+          setUserPhoto(null);
+          setCurrentUserId(null);
+        });
+
+      void getPermissions()
+        .then((permissions) => {
+          setHasContactAccess(
+            hasContactsModuleAccess(permissions) ||
+              hasChatAccessPermission(permissions)
+          );
+        })
+        .catch(() => setHasContactAccess(false));
+
+      void getChannels()
+        .then((channels) => {
+          setUserChannels((prev) =>
+            areChannelsEqual(prev, channels) ? prev : channels
+          );
+        })
+        .catch(() => setUserChannels([]));
+    });
   }, []);
 
   useEffect(() => {

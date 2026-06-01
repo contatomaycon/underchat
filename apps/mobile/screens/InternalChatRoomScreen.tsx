@@ -23,10 +23,7 @@ import {
   type StyleProp,
   type TextStyle,
 } from 'react-native';
-import {
-  PanGestureHandler,
-  State,
-} from 'react-native-gesture-handler';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import {
   useCallback,
   useEffect,
@@ -129,6 +126,7 @@ import {
   resolveInternalChatSenderName,
   resolveInternalChatTextTag,
 } from '../utils/internalChatText';
+import { addSessionUpdatedListener } from '../utils/appResumeBus';
 
 type Navigation = NativeStackNavigationProp<InternalChatStackParamList>;
 type ScreenRoute = RouteProp<InternalChatStackParamList, 'InternalChatRoom'>;
@@ -3549,6 +3547,16 @@ export function InternalChatRoomScreen() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    return addSessionUpdatedListener(() => {
+      void getPermissions().then((permissions) => {
+        setCanUpdateGroup(canUpdateInternalChatGroup(permissions));
+        setCanManageMembers(canManageInternalChatGroupMembers(permissions));
+        setCanTransferLeader(canTransferInternalChatGroupLeader(permissions));
+      });
+    });
   }, []);
 
   useEffect(() => {
