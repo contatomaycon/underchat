@@ -1,10 +1,13 @@
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   FlatList,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -87,12 +90,56 @@ type PendingGroupAction =
   | { type: 'remove'; member: InternalChatParticipant }
   | { type: 'transfer'; member: InternalChatParticipant }
   | { type: 'leave' };
+type InternalAttachmentActionKey =
+  | 'document'
+  | 'photo'
+  | 'video'
+  | 'audio'
+  | 'contact'
+  | 'location';
+
+type InternalAttachmentAction = {
+  key: InternalAttachmentActionKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  onPress: () => void;
+};
 
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_AUDIO_SIZE_BYTES = 16 * 1024 * 1024;
+const VOICE_LOCK_SWIPE_THRESHOLD = 70;
+const VOICE_RELEASE_LOCK_GRACE_MS = 220;
+const VOICE_CANCEL_SWIPE_THRESHOLD = 90;
+const RECORDING_WAVEFORM_MAX_BARS = 44;
+const RECORDING_WAVEFORM_MIN_BARS = 26;
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const COMPOSER_EMOJIS = [
+  '😀',
+  '😃',
+  '😄',
+  '😁',
+  '😊',
+  '😉',
+  '😍',
+  '😘',
+  '😂',
+  '🤣',
+  '😎',
+  '🤔',
+  '👍',
+  '👏',
+  '🙏',
+  '💪',
+  '🔥',
+  '❤️',
+  '✅',
+  '🚀',
+  '📌',
+  '📎',
+];
 const URL_PATTERN = /(https?:\/\/[^\s]+)/i;
 
 function formatMessageTime(date: string): string {
@@ -102,6 +149,21 @@ function formatMessageTime(date: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatAudioTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function normalizeRecordingMetering(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0.2;
+  }
+  const clamped = Math.max(-60, Math.min(0, value));
+  const normalized = (clamped + 60) / 60;
+  return Math.max(0.15, normalized);
 }
 
 function formatDateSeparator(date: string): string {
@@ -199,8 +261,32 @@ export function InternalChatRoomScreen() {
   const route = useRoute<ScreenRoute>();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<InternalChatMessage>>(null);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(recorder, 250);
+  const micPressActiveRef = useRef(false);
+  const micStartXRef = useRef<number | null>(null);
+  const micStartYRef = useRef<number | null>(null);
+  const pendingReleaseBeforeReadyRef = useRef(false);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const recordingStartTokenRef = useRef(0);
+  const cancelArmedRef = useRef(false);
+  const recordingActiveRef = useRef(false);
+  const recordingRef = useRef(false);
+  const recordingLockedRef = useRef(false);
+  const preparingRecordingRef = useRef(false);
+  const sendingVoiceRecordingRef = useRef(false);
+  const composerTextRef = useRef('');
+  const sendingRef = useRef(false);
+  const recordingPulse = useRef(new Animated.Value(1)).current;
+  const recordingHintOffset = useRef(new Animated.Value(0)).current;
+  const recordingHintOpacity = useRef(new Animated.Value(0)).current;
+  const recorderOptions = useMemo(
+    () => ({
+      ...RecordingPresets.HIGH_QUALITY,
+      isMeteringEnabled: true,
+    }),
+    []
+  );
+  const recorder = useAudioRecorder(recorderOptions);
+  const recorderState = useAudioRecorderState(recorder, 100);
 
   const {
     currentUserId,
@@ -245,6 +331,8 @@ export function InternalChatRoomScreen() {
   const [actionMessage, setActionMessage] =
     useState<InternalChatMessage | null>(null);
   const [attachmentVisible, setAttachmentVisible] = useState(false);
+  const [composerEmojiPickerVisible, setComposerEmojiPickerVisible] =
+    useState(false);
   const [infoVisible, setInfoVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [historyVisible, setHistoryVisible] = useState(false);
@@ -258,6 +346,14 @@ export function InternalChatRoomScreen() {
   const [contactsVisible, setContactsVisible] = useState(false);
   const [contacts, setContacts] = useState<InternalChatContact[]>([]);
   const [recording, setRecording] = useState(false);
+  const [isMicPressActive, setIsMicPressActive] = useState(false);
+  const [isRecordingLocked, setIsRecordingLocked] = useState(false);
+  const [isRecordingPaused, setIsRecordingPaused] = useState(false);
+  const [isPreparingRecording, setIsPreparingRecording] = useState(false);
+  const [sendingVoiceRecording, setSendingVoiceRecording] = useState(false);
+  const [isRecordingCancelArmed, setIsRecordingCancelArmed] = useState(false);
+  const [recordingWaveform, setRecordingWaveform] = useState<number[]>([]);
+  const [showRecordingHint, setShowRecordingHint] = useState(false);
   const [sending, setSending] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState(
     activeConversation.name ?? ''
@@ -336,6 +432,24 @@ export function InternalChatRoomScreen() {
     };
   }, [isGroup, pendingGroupAction]);
 
+  const recordingDurationLabel = useMemo(() => {
+    const durationSec = Math.max(0, (recorderState.durationMillis || 0) / 1000);
+    return formatAudioTime(durationSec);
+  }, [recorderState.durationMillis]);
+
+  const recordingWaveformBars = useMemo(() => {
+    if (recordingWaveform.length > 0) return recordingWaveform;
+    return new Array(RECORDING_WAVEFORM_MIN_BARS).fill(0.2);
+  }, [recordingWaveform]);
+
+  const hasComposerText = composerText.trim().length > 0;
+  const showRecordingHoldOverlay =
+    isMicPressActive &&
+    !isRecordingLocked &&
+    (isPreparingRecording || recording);
+  const showRecordingComposer =
+    recording && (isRecordingLocked || !isMicPressActive);
+
   const remoteActivity = useMemo(() => {
     return Object.values(state.remoteActivities).find(
       (activity) =>
@@ -389,6 +503,126 @@ export function InternalChatRoomScreen() {
     return () => clearTimeout(timer);
   }, [composerText, conversationId, publishActivity, recording]);
 
+  useEffect(() => {
+    composerTextRef.current = composerText;
+    sendingRef.current = sending;
+    recordingRef.current = recording;
+    recordingLockedRef.current = isRecordingLocked;
+    preparingRecordingRef.current = isPreparingRecording;
+    sendingVoiceRecordingRef.current = sendingVoiceRecording;
+  }, [
+    composerText,
+    isPreparingRecording,
+    isRecordingLocked,
+    recording,
+    sending,
+    sendingVoiceRecording,
+  ]);
+
+  useEffect(() => {
+    const useNativeDriver = Platform.OS !== 'web';
+
+    if (!showRecordingHint) {
+      recordingHintOpacity.stopAnimation();
+      recordingHintOffset.stopAnimation();
+      recordingHintOpacity.setValue(0);
+      recordingHintOffset.setValue(0);
+      return;
+    }
+
+    recordingHintOpacity.setValue(0);
+    recordingHintOffset.setValue(8);
+    Animated.parallel([
+      Animated.timing(recordingHintOpacity, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver,
+      }),
+      Animated.timing(recordingHintOffset, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver,
+      }),
+    ]).start();
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(recordingHintOffset, {
+          toValue: -5,
+          duration: 700,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver,
+        }),
+        Animated.timing(recordingHintOffset, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver,
+        }),
+      ])
+    );
+
+    loop.start();
+    return () => {
+      loop.stop();
+    };
+  }, [recordingHintOffset, recordingHintOpacity, showRecordingHint]);
+
+  useEffect(() => {
+    const useNativeDriver = Platform.OS !== 'web';
+
+    if (!recording || isRecordingPaused) {
+      recordingPulse.stopAnimation();
+      recordingPulse.setValue(1);
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(recordingPulse, {
+          toValue: 1.16,
+          duration: 560,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver,
+        }),
+        Animated.timing(recordingPulse, {
+          toValue: 1,
+          duration: 560,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver,
+        }),
+      ])
+    );
+
+    loop.start();
+    return () => {
+      loop.stop();
+    };
+  }, [isRecordingPaused, recording, recordingPulse]);
+
+  useEffect(() => {
+    if (!recording || isRecordingPaused) return;
+
+    const amplitude = normalizeRecordingMetering(recorderState.metering);
+    setRecordingWaveform((previous) => {
+      const next = [...previous, amplitude];
+      if (next.length > RECORDING_WAVEFORM_MAX_BARS) {
+        return next.slice(next.length - RECORDING_WAVEFORM_MAX_BARS);
+      }
+      return next;
+    });
+  }, [
+    isRecordingPaused,
+    recorderState.durationMillis,
+    recorderState.metering,
+    recording,
+  ]);
+
+  useEffect(() => {
+    recordingActiveRef.current =
+      recording || isRecordingPaused || recorderState.isRecording;
+  }, [isRecordingPaused, recorderState.isRecording, recording]);
+
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => {
       listRef.current?.scrollToEnd({ animated: true });
@@ -398,6 +632,7 @@ export function InternalChatRoomScreen() {
   const sendText = useCallback(async () => {
     const text = composerText.trim();
     if (!text || sending) return;
+    setComposerEmojiPickerVisible(false);
 
     if (editingMessage) {
       setSending(true);
@@ -486,8 +721,53 @@ export function InternalChatRoomScreen() {
     ]
   );
 
+  const sendImageAsset = useCallback(
+    async (asset: ImagePicker.ImagePickerAsset) => {
+      if (!asset.uri) return;
+      if (!assertFileSize(asset.fileSize, MAX_IMAGE_SIZE_BYTES)) return;
+      const name =
+        asset.fileName || getFileNameFromUri(asset.uri, `imagem-${Date.now()}.jpg`);
+      const mimeType = asset.mimeType || getMimeTypeFromName(name, 'image/jpeg');
+      await sendUpload({
+        type: INTERNAL_MESSAGE_TYPE.image,
+        field: 'images',
+        file: { uri: asset.uri, name, mimeType },
+        content: {
+          type: INTERNAL_MESSAGE_TYPE.image,
+          image: {
+            url: asset.uri,
+            mimetype: mimeType,
+            name,
+          } as never,
+        },
+      });
+    },
+    [sendUpload]
+  );
+
+  const sendVideoAsset = useCallback(
+    async (asset: ImagePicker.ImagePickerAsset) => {
+      if (!asset.uri) return;
+      if (!assertFileSize(asset.fileSize, MAX_VIDEO_SIZE_BYTES)) return;
+      const name =
+        asset.fileName || getFileNameFromUri(asset.uri, `video-${Date.now()}.mp4`);
+      const mimeType = asset.mimeType || getMimeTypeFromName(name, 'video/mp4');
+      await sendUpload({
+        type: INTERNAL_MESSAGE_TYPE.video,
+        field: 'videos',
+        file: { uri: asset.uri, name, mimeType },
+        content: {
+          type: INTERNAL_MESSAGE_TYPE.video,
+          video: { url: asset.uri, name, mimetype: mimeType },
+        },
+      });
+    },
+    [sendUpload]
+  );
+
   const pickImage = useCallback(async () => {
     setAttachmentVisible(false);
+    setComposerEmojiPickerVisible(false);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(pt.warning_title, pt.image_permission_denied);
@@ -498,27 +778,12 @@ export function InternalChatRoomScreen() {
       quality: 0.9,
     });
     if (result.canceled || !result.assets[0]?.uri) return;
-    const asset = result.assets[0];
-    if (!assertFileSize(asset.fileSize, MAX_IMAGE_SIZE_BYTES)) return;
-    const name = asset.fileName || getFileNameFromUri(asset.uri, 'imagem.jpg');
-    const mimeType = asset.mimeType || getMimeTypeFromName(name, 'image/jpeg');
-    await sendUpload({
-      type: INTERNAL_MESSAGE_TYPE.image,
-      field: 'images',
-      file: { uri: asset.uri, name, mimeType },
-      content: {
-        type: INTERNAL_MESSAGE_TYPE.image,
-        image: {
-          url: asset.uri,
-          mimetype: mimeType,
-          name,
-        } as never,
-      },
-    });
-  }, [sendUpload]);
+    await sendImageAsset(result.assets[0]);
+  }, [sendImageAsset]);
 
   const pickVideo = useCallback(async () => {
     setAttachmentVisible(false);
+    setComposerEmojiPickerVisible(false);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(pt.warning_title, pt.image_permission_denied);
@@ -529,23 +794,34 @@ export function InternalChatRoomScreen() {
       quality: 0.85,
     });
     if (result.canceled || !result.assets[0]?.uri) return;
-    const asset = result.assets[0];
-    if (!assertFileSize(asset.fileSize, MAX_VIDEO_SIZE_BYTES)) return;
-    const name = asset.fileName || getFileNameFromUri(asset.uri, 'video.mp4');
-    const mimeType = asset.mimeType || getMimeTypeFromName(name, 'video/mp4');
-    await sendUpload({
-      type: INTERNAL_MESSAGE_TYPE.video,
-      field: 'videos',
-      file: { uri: asset.uri, name, mimeType },
-      content: {
-        type: INTERNAL_MESSAGE_TYPE.video,
-        video: { url: asset.uri, name, mimetype: mimeType },
-      },
+    await sendVideoAsset(result.assets[0]);
+  }, [sendVideoAsset]);
+
+  const captureMedia = useCallback(async () => {
+    setAttachmentVisible(false);
+    setComposerEmojiPickerVisible(false);
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(pt.warning_title, pt.camera_permission_denied);
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images', 'videos'],
+      quality: 0.85,
+      videoMaxDuration: 120,
     });
-  }, [sendUpload]);
+    if (result.canceled || !result.assets[0]?.uri) return;
+    const asset = result.assets[0];
+    if (asset.type === 'video') {
+      await sendVideoAsset(asset);
+      return;
+    }
+    await sendImageAsset(asset);
+  }, [sendImageAsset, sendVideoAsset]);
 
   const pickDocument = useCallback(async () => {
     setAttachmentVisible(false);
+    setComposerEmojiPickerVisible(false);
     const result = await DocumentPicker.getDocumentAsync({
       multiple: false,
       copyToCacheDirectory: true,
@@ -568,6 +844,7 @@ export function InternalChatRoomScreen() {
 
   const pickAudioFile = useCallback(async () => {
     setAttachmentVisible(false);
+    setComposerEmojiPickerVisible(false);
     const result = await DocumentPicker.getDocumentAsync({
       type: ['audio/*'],
       multiple: false,
@@ -591,6 +868,7 @@ export function InternalChatRoomScreen() {
 
   const sendCurrentLocation = useCallback(async () => {
     setAttachmentVisible(false);
+    setComposerEmojiPickerVisible(false);
     const permission = await Location.requestForegroundPermissionsAsync();
     if (!permission.granted) {
       Alert.alert(pt.warning_title, 'Permissão de localização negada.');
@@ -610,6 +888,7 @@ export function InternalChatRoomScreen() {
 
   const openContactPicker = useCallback(async () => {
     setAttachmentVisible(false);
+    setComposerEmojiPickerVisible(false);
     setContactsVisible(true);
     const data = await listInternalChatContacts({ currentPage: 1, perPage: 50 });
     setContacts(data.results);
@@ -629,75 +908,457 @@ export function InternalChatRoomScreen() {
     [conversationId, replyTo, sendMessage]
   );
 
-  const startRecording = useCallback(async () => {
-    if (recording) return;
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(pt.warning_title, pt.microphone_permission_denied);
-      return;
-    }
+  const attachmentActions = useMemo<InternalAttachmentAction[]>(
+    () => [
+      {
+        key: 'document',
+        label: pt.documents,
+        icon: 'document-text-outline',
+        color: '#1D9BF0',
+        onPress: () => {
+          void pickDocument();
+        },
+      },
+      {
+        key: 'photo',
+        label: pt.photos,
+        icon: 'image-outline',
+        color: '#1D9BF0',
+        onPress: () => {
+          void pickImage();
+        },
+      },
+      {
+        key: 'video',
+        label: pt.videos,
+        icon: 'videocam-outline',
+        color: '#4F46E5',
+        onPress: () => {
+          void pickVideo();
+        },
+      },
+      {
+        key: 'audio',
+        label: pt.audio,
+        icon: 'headset-outline',
+        color: '#22C55E',
+        onPress: () => {
+          void pickAudioFile();
+        },
+      },
+      {
+        key: 'contact',
+        label: pt.contact,
+        icon: 'person-outline',
+        color: '#6B7280',
+        onPress: () => {
+          void openContactPicker();
+        },
+      },
+      {
+        key: 'location',
+        label: pt.location,
+        icon: 'location-outline',
+        color: '#10B981',
+        onPress: () => {
+          void sendCurrentLocation();
+        },
+      },
+    ],
+    [
+      openContactPicker,
+      pickAudioFile,
+      pickDocument,
+      pickImage,
+      pickVideo,
+      sendCurrentLocation,
+    ]
+  );
+
+  const openAttachmentPicker = useCallback(() => {
+    setComposerEmojiPickerVisible(false);
+    setAttachmentVisible(true);
+  }, []);
+
+  const selectComposerEmoji = useCallback((emoji: string) => {
+    setComposerText((current) => `${current}${emoji}`);
+  }, []);
+
+  const resetRecordingComposerState = useCallback(() => {
+    micPressActiveRef.current = false;
+    micStartXRef.current = null;
+    micStartYRef.current = null;
+    pendingReleaseBeforeReadyRef.current = false;
+    recordingStartedAtRef.current = null;
+    cancelArmedRef.current = false;
+    recordingRef.current = false;
+    recordingLockedRef.current = false;
+    preparingRecordingRef.current = false;
+    setIsMicPressActive(false);
+    setRecording(false);
+    setIsRecordingLocked(false);
+    setIsRecordingPaused(false);
+    setIsPreparingRecording(false);
+    setIsRecordingCancelArmed(false);
+    setShowRecordingHint(false);
+    setRecordingWaveform([]);
+  }, []);
+
+  const applyRecordingAudioMode = useCallback(async (enabled: boolean) => {
     try {
+      if (enabled) {
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+          interruptionMode: 'duckOthers',
+          shouldPlayInBackground: false,
+          shouldRouteThroughEarpiece: false,
+          allowsBackgroundRecording: false,
+        });
+        return;
+      }
+
       await setAudioModeAsync({
-        allowsRecording: true,
+        allowsRecording: false,
         playsInSilentMode: true,
-        interruptionMode: 'duckOthers',
         shouldPlayInBackground: false,
-        shouldRouteThroughEarpiece: false,
-        allowsBackgroundRecording: false,
       });
-      await recorder.prepareToRecordAsync(RecordingPresets.HIGH_QUALITY);
-      recorder.record();
-      setRecording(true);
-      void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.recording);
-    } catch {
-      Alert.alert(pt.error_title, pt.audio_recording_error);
-    }
-  }, [conversationId, publishActivity, recorder, recording]);
+    } catch {}
+  }, []);
 
-  const cancelRecording = useCallback(async () => {
+  const stopRecording = useCallback(async () => {
+    const durationSec = Math.max(
+      1,
+      Math.round((recorderState.durationMillis || 0) / 1000)
+    );
+
     try {
       await recorder.stop();
     } catch {}
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(
-      () => {}
-    );
-    setRecording(false);
-    void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.available);
-  }, [conversationId, publishActivity, recorder]);
 
-  const sendRecording = useCallback(async () => {
-    if (!recording) return;
-    const durationSec = Math.max(1, Math.round((recorderState.durationMillis || 0) / 1000));
-    try {
-      await recorder.stop();
-    } catch {}
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(
-      () => {}
-    );
+    await applyRecordingAudioMode(false);
+
     const uri = recorder.uri ?? recorderState.url;
-    setRecording(false);
-    void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.available);
-    if (!uri) return;
+    if (!uri) return null;
     const name = getFileNameFromUri(uri, `audio-${Date.now()}.m4a`);
     const mimeType = getMimeTypeFromName(name, 'audio/mp4');
-    await sendUpload({
-      type: INTERNAL_MESSAGE_TYPE.audio,
-      field: 'audios',
-      file: { uri, name, mimeType },
-      content: {
-        type: INTERNAL_MESSAGE_TYPE.audio,
-        audio: { url: uri, name, mimetype: mimeType, duration: durationSec, ptt: true },
-      },
-    });
+
+    return { uri, name, mimeType, durationSec };
   }, [
-    conversationId,
-    publishActivity,
+    applyRecordingAudioMode,
     recorder,
     recorderState.durationMillis,
     recorderState.url,
-    recording,
-    sendUpload,
   ]);
+
+  const sendRecording = useCallback(async () => {
+    if (sendingVoiceRecordingRef.current) return;
+    sendingVoiceRecordingRef.current = true;
+    setSendingVoiceRecording(true);
+
+    const recorded = await stopRecording();
+    resetRecordingComposerState();
+    void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.available);
+
+    try {
+      if (!recorded) return;
+      await sendUpload({
+        type: INTERNAL_MESSAGE_TYPE.audio,
+        field: 'audios',
+        file: {
+          uri: recorded.uri,
+          name: recorded.name,
+          mimeType: recorded.mimeType,
+        },
+        content: {
+          type: INTERNAL_MESSAGE_TYPE.audio,
+          audio: {
+            url: recorded.uri,
+            name: recorded.name,
+            mimetype: recorded.mimeType,
+            duration: recorded.durationSec,
+            ptt: true,
+          },
+        },
+      });
+    } finally {
+      sendingVoiceRecordingRef.current = false;
+      setSendingVoiceRecording(false);
+    }
+  }, [
+    conversationId,
+    publishActivity,
+    resetRecordingComposerState,
+    sendUpload,
+    stopRecording,
+  ]);
+
+  const lockRecording = useCallback(() => {
+    if (!recordingRef.current || recordingLockedRef.current) return;
+    recordingLockedRef.current = true;
+    setIsRecordingLocked(true);
+    setShowRecordingHint(false);
+  }, []);
+
+  const cancelRecording = useCallback(async () => {
+    recordingStartTokenRef.current += 1;
+
+    try {
+      await recorder.stop();
+    } catch {}
+
+    await applyRecordingAudioMode(false);
+    resetRecordingComposerState();
+    void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.available);
+  }, [
+    applyRecordingAudioMode,
+    conversationId,
+    publishActivity,
+    recorder,
+    resetRecordingComposerState,
+  ]);
+
+  const togglePauseRecording = useCallback(() => {
+    if (!recordingRef.current) return;
+
+    try {
+      if (isRecordingPaused) {
+        recorder.record();
+        setIsRecordingPaused(false);
+        return;
+      }
+      recorder.pause();
+      setIsRecordingPaused(true);
+    } catch {}
+  }, [isRecordingPaused, recorder]);
+
+  const startRecording = useCallback(async () => {
+    if (
+      recordingRef.current ||
+      preparingRecordingRef.current ||
+      sendingVoiceRecordingRef.current
+    ) {
+      return;
+    }
+
+    setComposerEmojiPickerVisible(false);
+    const startToken = ++recordingStartTokenRef.current;
+    preparingRecordingRef.current = true;
+    setIsPreparingRecording(true);
+
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (startToken !== recordingStartTokenRef.current) return;
+      if (!permission.granted) {
+        resetRecordingComposerState();
+        Alert.alert(pt.warning_title, pt.microphone_permission_denied);
+        return;
+      }
+
+      await applyRecordingAudioMode(true);
+      if (startToken !== recordingStartTokenRef.current) return;
+      await recorder.prepareToRecordAsync(recorderOptions);
+      if (startToken !== recordingStartTokenRef.current) return;
+      recorder.record();
+
+      recordingRef.current = true;
+      recordingLockedRef.current = false;
+      setRecording(true);
+      setIsRecordingLocked(false);
+      setIsRecordingPaused(false);
+      setShowRecordingHint(true);
+      setRecordingWaveform([]);
+      recordingStartedAtRef.current = Date.now();
+      void publishActivity(conversationId, INTERNAL_CHAT_ACTIVITY_STATE.recording);
+
+      if (pendingReleaseBeforeReadyRef.current) {
+        pendingReleaseBeforeReadyRef.current = false;
+        lockRecording();
+      }
+    } catch {
+      resetRecordingComposerState();
+      await applyRecordingAudioMode(false);
+      Alert.alert(pt.error_title, pt.audio_recording_error);
+    } finally {
+      preparingRecordingRef.current = false;
+      setIsPreparingRecording(false);
+    }
+  }, [
+    applyRecordingAudioMode,
+    conversationId,
+    lockRecording,
+    publishActivity,
+    recorder,
+    recorderOptions,
+    resetRecordingComposerState,
+  ]);
+
+  const startRecordingCbRef = useRef(startRecording);
+  const sendRecordingCbRef = useRef(sendRecording);
+  const lockRecordingCbRef = useRef(lockRecording);
+  const cancelRecordingCbRef = useRef(cancelRecording);
+
+  useEffect(() => {
+    startRecordingCbRef.current = startRecording;
+  }, [startRecording]);
+
+  useEffect(() => {
+    sendRecordingCbRef.current = sendRecording;
+  }, [sendRecording]);
+
+  useEffect(() => {
+    lockRecordingCbRef.current = lockRecording;
+  }, [lockRecording]);
+
+  useEffect(() => {
+    cancelRecordingCbRef.current = cancelRecording;
+  }, [cancelRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (!recordingActiveRef.current) return;
+      try {
+        recorder.stop();
+      } catch {}
+      void applyRecordingAudioMode(false);
+    };
+  }, [applyRecordingAudioMode, recorder]);
+
+  useEffect(() => {
+    if (!recordingActiveRef.current) return;
+    void cancelRecordingCbRef.current();
+  }, [conversationId]);
+
+  const handleMicPressGrant = useCallback((pageX: number, pageY: number) => {
+    if (composerTextRef.current.trim().length > 0) return;
+    if (sendingRef.current || sendingVoiceRecordingRef.current) return;
+    if (preparingRecordingRef.current || recordingRef.current) return;
+
+    pendingReleaseBeforeReadyRef.current = false;
+    cancelArmedRef.current = false;
+    setIsRecordingCancelArmed(false);
+    micPressActiveRef.current = true;
+    micStartXRef.current = pageX;
+    micStartYRef.current = pageY;
+    setIsMicPressActive(true);
+    void startRecordingCbRef.current();
+  }, []);
+
+  const handleMicPressMove = useCallback((pageX: number, pageY: number) => {
+    if (!recordingRef.current || recordingLockedRef.current) return;
+
+    const startX = micStartXRef.current;
+    if (startX != null) {
+      const deltaX = pageX - startX;
+      const nextCancelArmed = deltaX <= -VOICE_CANCEL_SWIPE_THRESHOLD;
+      if (nextCancelArmed !== cancelArmedRef.current) {
+        cancelArmedRef.current = nextCancelArmed;
+        setIsRecordingCancelArmed(nextCancelArmed);
+        setShowRecordingHint(!nextCancelArmed);
+      }
+    }
+
+    if (cancelArmedRef.current) return;
+
+    const startY = micStartYRef.current;
+    if (startY == null) return;
+    const deltaY = startY - pageY;
+    if (deltaY < VOICE_LOCK_SWIPE_THRESHOLD) return;
+
+    lockRecordingCbRef.current();
+  }, []);
+
+  const handleMicPressRelease = useCallback(() => {
+    const wasMicPressActive = micPressActiveRef.current;
+    const wasCancelArmed = cancelArmedRef.current;
+    micPressActiveRef.current = false;
+    micStartXRef.current = null;
+    micStartYRef.current = null;
+    cancelArmedRef.current = false;
+    setIsRecordingCancelArmed(false);
+    setIsMicPressActive(false);
+    setShowRecordingHint(false);
+
+    if (!wasMicPressActive) return;
+
+    if (wasCancelArmed) {
+      void cancelRecordingCbRef.current();
+      return;
+    }
+
+    if (!recordingRef.current) {
+      pendingReleaseBeforeReadyRef.current = true;
+      return;
+    }
+    if (recordingLockedRef.current) return;
+
+    const recordingStartedAt = recordingStartedAtRef.current;
+    const elapsedMs = recordingStartedAt
+      ? Date.now() - recordingStartedAt
+      : Number.POSITIVE_INFINITY;
+    if (elapsedMs < VOICE_RELEASE_LOCK_GRACE_MS) {
+      lockRecordingCbRef.current();
+      return;
+    }
+
+    void sendRecordingCbRef.current();
+  }, []);
+
+  const handleMicPressTerminate = useCallback(() => {
+    const wasMicPressActive = micPressActiveRef.current;
+    const wasCancelArmed = cancelArmedRef.current;
+    micPressActiveRef.current = false;
+    micStartXRef.current = null;
+    micStartYRef.current = null;
+    cancelArmedRef.current = false;
+    setIsRecordingCancelArmed(false);
+    setIsMicPressActive(false);
+    setShowRecordingHint(false);
+
+    if (!wasMicPressActive) return;
+
+    if (wasCancelArmed) {
+      void cancelRecordingCbRef.current();
+      return;
+    }
+
+    if (!recordingRef.current) {
+      pendingReleaseBeforeReadyRef.current = true;
+      return;
+    }
+    if (recordingLockedRef.current) return;
+
+    lockRecordingCbRef.current();
+  }, []);
+
+  const micPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
+        onShouldBlockNativeResponder: () => true,
+        onPanResponderGrant: (event) => {
+          handleMicPressGrant(
+            event.nativeEvent.pageX,
+            event.nativeEvent.pageY
+          );
+        },
+        onPanResponderMove: (event) => {
+          handleMicPressMove(event.nativeEvent.pageX, event.nativeEvent.pageY);
+        },
+        onPanResponderRelease: handleMicPressRelease,
+        onPanResponderTerminate: handleMicPressTerminate,
+        onPanResponderTerminationRequest: () => false,
+      }),
+    [
+      handleMicPressGrant,
+      handleMicPressMove,
+      handleMicPressRelease,
+      handleMicPressTerminate,
+    ]
+  );
 
   const loadOlder = useCallback(() => {
     if (loadingMessages || !paging || paging.current_page >= paging.total_pages) {
@@ -1173,95 +1834,367 @@ export function InternalChatRoomScreen() {
         </View>
       ) : null}
 
-      {recording ? (
-        <View style={styles.recordingBar}>
-          <Pressable onPress={cancelRecording} style={styles.recordAction}>
-            <Ionicons name="trash-outline" size={22} color={colors.error} />
-          </Pressable>
-          <View style={styles.recordingCenter}>
-            <View style={styles.recordingDot} />
-            <Text style={styles.recordingText}>
-              {Math.round((recorderState.durationMillis || 0) / 1000)}s
-            </Text>
+      <View
+        style={[
+          styles.composer,
+          showRecordingComposer && styles.composerRecording,
+          { paddingBottom: insets.bottom + 8 },
+        ]}
+      >
+        {showRecordingComposer ? (
+          <View style={styles.recordingComposerWrap}>
+            {isRecordingLocked ? (
+              <>
+                <Pressable
+                  onPress={() => {
+                    void cancelRecording();
+                  }}
+                  style={styles.recordActionBtn}
+                  accessibilityLabel={pt.delete_recording}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                </Pressable>
+                <View style={styles.recordingLockedCenter}>
+                  <View style={styles.recordingMetaRow}>
+                    <Animated.View
+                      style={[
+                        styles.recordingDot,
+                        isRecordingPaused && styles.recordingDotPaused,
+                        { transform: [{ scale: recordingPulse }] },
+                      ]}
+                    />
+                    <Text style={styles.recordingTimeText}>
+                      {recordingDurationLabel}
+                    </Text>
+                  </View>
+                  <View style={styles.recordingWaveformTrack}>
+                    {recordingWaveformBars.map((value, index) => (
+                      <View
+                        key={`internal-record-locked-${index}`}
+                        style={[
+                          styles.recordingWaveformBar,
+                          { height: `${Math.max(14, value * 100)}%` },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                </View>
+                <Pressable
+                  style={styles.recordActionBtn}
+                  onPress={togglePauseRecording}
+                  accessibilityLabel={
+                    isRecordingPaused
+                      ? pt.resume_recording
+                      : pt.pause_recording
+                  }
+                >
+                  <Ionicons
+                    name={isRecordingPaused ? 'play' : 'pause'}
+                    size={19}
+                    color={colors.primary}
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    void sendRecording();
+                  }}
+                  style={[
+                    styles.recordActionBtn,
+                    styles.recordSendBtn,
+                    sendingVoiceRecording && styles.sendBtnDisabled,
+                  ]}
+                  disabled={sendingVoiceRecording}
+                  accessibilityLabel={pt.send_recording}
+                >
+                  {sendingVoiceRecording ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Ionicons name="send" size={18} color="#FFFFFF" />
+                  )}
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <View style={styles.recordingLiveMeta}>
+                  <Animated.View
+                    style={[
+                      styles.recordingDot,
+                      { transform: [{ scale: recordingPulse }] },
+                    ]}
+                  />
+                  <Text style={styles.recordingTimeText}>
+                    {recordingDurationLabel}
+                  </Text>
+                </View>
+                <View style={styles.recordingWaveformTrack}>
+                  {recordingWaveformBars.map((value, index) => (
+                    <View
+                      key={`internal-record-live-${index}`}
+                      style={[
+                        styles.recordingWaveformBar,
+                        { height: `${Math.max(12, value * 100)}%` },
+                      ]}
+                    />
+                  ))}
+                </View>
+                <Animated.View
+                  style={[
+                    styles.recordingHintWrap,
+                    {
+                      opacity: recordingHintOpacity,
+                      transform: [{ translateY: recordingHintOffset }],
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="chevron-up-outline"
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.recordingHintText}>
+                    {pt.slide_up_to_lock}
+                  </Text>
+                </Animated.View>
+              </>
+            )}
           </View>
-          <Pressable onPress={sendRecording} style={styles.recordSend}>
-            <Ionicons name="send" size={20} color={colors.onPrimary} />
-          </Pressable>
+        ) : (
+          <>
+            {!recording && !showRecordingHoldOverlay ? (
+              <Pressable
+                style={styles.plusActionBtn}
+                onPress={openAttachmentPicker}
+                accessibilityLabel={pt.open_attachments}
+              >
+                <Ionicons name="add" size={20} color={colors.grey700} />
+              </Pressable>
+            ) : null}
+            <View style={styles.inputStack}>
+              <TextInput
+                style={styles.composerInput}
+                value={composerText}
+                onChangeText={setComposerText}
+                placeholder={pt.type_message}
+                placeholderTextColor={colors.grey500}
+                multiline
+                maxLength={65535}
+                editable={
+                  !sending &&
+                  !isPreparingRecording &&
+                  !recording &&
+                  !sendingVoiceRecording
+                }
+              />
+              {!showRecordingHoldOverlay ? (
+                <Pressable
+                  style={[
+                    styles.emojiInputBtn,
+                    composerEmojiPickerVisible && styles.emojiInputBtnActive,
+                  ]}
+                  onPress={() =>
+                    setComposerEmojiPickerVisible((current) => !current)
+                  }
+                  accessibilityLabel={pt.open_emoji_keyboard}
+                >
+                  <Ionicons
+                    name="happy-outline"
+                    size={19}
+                    color={colors.grey600}
+                  />
+                </Pressable>
+              ) : null}
+              {showRecordingHoldOverlay ? (
+                <View pointerEvents="none" style={styles.recordingHoldOverlay}>
+                  <View style={styles.recordingHoldLeft}>
+                    <Animated.View
+                      style={[
+                        styles.recordingDot,
+                        !recording && styles.recordingDotPaused,
+                        { transform: [{ scale: recordingPulse }] },
+                      ]}
+                    />
+                    <Text style={styles.recordingHoldTime}>
+                      {recordingDurationLabel}
+                    </Text>
+                  </View>
+                  <View style={styles.recordingHoldCenter}>
+                    <Text
+                      style={[
+                        styles.recordingHoldCancelText,
+                        isRecordingCancelArmed &&
+                          styles.recordingHoldCancelTextArmed,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {isRecordingCancelArmed
+                        ? pt.release_to_cancel
+                        : pt.slide_left_to_cancel}
+                    </Text>
+                    <Ionicons
+                      name="chevron-back-outline"
+                      size={18}
+                      color={
+                        isRecordingCancelArmed ? '#EF4444' : colors.grey600
+                      }
+                    />
+                  </View>
+                  <View style={styles.recordingHoldRight}>
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={15}
+                      color={colors.grey600}
+                    />
+                    <Ionicons
+                      name="chevron-up-outline"
+                      size={18}
+                      color={colors.grey600}
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </View>
+            {hasComposerText ? (
+              <Pressable
+                style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+                onPress={dismissKeyboardAnd(sendText)}
+                disabled={sending}
+              >
+                {sending ? (
+                  <ActivityIndicator color={colors.onPrimary} />
+                ) : (
+                  <Ionicons name="send" size={20} color={colors.onPrimary} />
+                )}
+              </Pressable>
+            ) : (
+              <View style={styles.composerActionsWrap}>
+                {!recording && !showRecordingHoldOverlay ? (
+                  <Pressable
+                    style={styles.composerActionBtn}
+                    onPress={() => {
+                      void captureMedia();
+                    }}
+                    accessibilityLabel={pt.open_camera}
+                  >
+                    <Ionicons
+                      name="camera-outline"
+                      size={21}
+                      color="#FFFFFF"
+                    />
+                  </Pressable>
+                ) : null}
+                <View style={styles.micGestureWrap} collapsable={false}>
+                  {showRecordingHoldOverlay && !isRecordingCancelArmed ? (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={[
+                        styles.micLockHintPill,
+                        {
+                          transform: [{ translateY: recordingHintOffset }],
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="lock-closed"
+                        size={14}
+                        color={colors.grey700}
+                      />
+                      <Ionicons
+                        name="chevron-up-outline"
+                        size={18}
+                        color={colors.grey700}
+                      />
+                    </Animated.View>
+                  ) : null}
+                  <Animated.View
+                    {...micPanResponder.panHandlers}
+                    collapsable={false}
+                    style={[
+                      styles.composerActionBtn,
+                      styles.micActionBtn,
+                      (isPreparingRecording || recording) &&
+                        styles.micActionBtnRecording,
+                      styles.micActionBtnLarge,
+                      sendingVoiceRecording && styles.sendBtnDisabled,
+                      { transform: [{ scale: recordingPulse }] },
+                    ]}
+                  >
+                    {isPreparingRecording || sendingVoiceRecording ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="mic" size={22} color="#FFFFFF" />
+                    )}
+                  </Animated.View>
+                </View>
+              </View>
+            )}
+          </>
+        )}
+      </View>
+
+      {composerEmojiPickerVisible && !recording ? (
+        <View style={styles.composerEmojiPickerWrap}>
+          <View style={styles.composerEmojiPickerCard}>
+            <View style={styles.emojiGrid}>
+              {COMPOSER_EMOJIS.map((emoji, index) => (
+                <Pressable
+                  key={`${emoji}-${index}`}
+                  style={styles.emojiBtn}
+                  onPress={() => selectComposerEmoji(emoji)}
+                >
+                  <Text style={styles.emojiText}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
         </View>
-      ) : (
-        <View style={[styles.composer, { paddingBottom: insets.bottom + 8 }]}>
-          <Pressable
-            style={styles.iconBtn}
-            onPress={() => setAttachmentVisible(true)}
-            accessibilityLabel={pt.open_attachments}
-          >
-            <Ionicons name="add" size={26} color={colors.primary} />
-          </Pressable>
-          <TextInput
-            style={styles.composerInput}
-            value={composerText}
-            onChangeText={setComposerText}
-            placeholder={pt.type_message}
-            placeholderTextColor={colors.grey500}
-            multiline
-          />
-          {composerText.trim() ? (
-            <Pressable
-              style={styles.sendBtn}
-              onPress={dismissKeyboardAnd(sendText)}
-              disabled={sending}
-            >
-              {sending ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Ionicons name="send" size={20} color={colors.onPrimary} />
-              )}
-            </Pressable>
-          ) : (
-            <Pressable
-              style={styles.iconBtn}
-              onPress={startRecording}
-              accessibilityLabel="Gravar áudio"
-            >
-              <Ionicons name="mic" size={24} color={colors.primary} />
-            </Pressable>
-          )}
-        </View>
-      )}
+      ) : null}
 
       <Modal
         visible={attachmentVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setAttachmentVisible(false)}
+        statusBarTranslucent
+        navigationBarTranslucent
       >
         <Pressable
-          style={styles.centerOverlay}
+          style={[
+            styles.cameraPickerOverlay,
+            { paddingBottom: 16 + insets.bottom },
+          ]}
           onPress={() => setAttachmentVisible(false)}
         >
-          <View style={styles.attachmentCard}>
-            {[
-              ['image-outline', 'Imagem', pickImage],
-              ['videocam-outline', 'Vídeo', pickVideo],
-              ['document-text-outline', 'Documento', pickDocument],
-              ['musical-notes-outline', 'Áudio', pickAudioFile],
-              ['location-outline', 'Localização', sendCurrentLocation],
-              ['person-circle-outline', 'Contato', openContactPicker],
-            ].map(([icon, label, handler]) => (
-              <Pressable
-                key={label as string}
-                style={styles.attachmentItem}
-                onPress={handler as () => void}
-              >
-                <Ionicons
-                  name={icon as keyof typeof Ionicons.glyphMap}
-                  size={24}
-                  color={colors.primary}
-                />
-                <Text style={styles.attachmentText}>{label as string}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <Pressable
+            style={styles.cameraPickerSheet}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <View style={styles.cameraPickerGrid}>
+              {attachmentActions.map((action) => (
+                <Pressable
+                  key={action.key}
+                  style={styles.cameraPickerGridItem}
+                  onPress={action.onPress}
+                >
+                  <View style={styles.cameraPickerGridIconCircle}>
+                    <Ionicons
+                      name={action.icon}
+                      size={28}
+                      color={action.color}
+                    />
+                  </View>
+                  <Text style={styles.cameraPickerGridLabel} numberOfLines={1}>
+                    {action.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Pressable
+              style={[styles.cameraPickerAction, styles.cameraPickerCancel]}
+              onPress={() => setAttachmentVisible(false)}
+            >
+              <Text style={styles.cameraPickerCancelText}>{pt.cancel}</Text>
+            </Pressable>
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -1696,6 +2629,7 @@ export function InternalChatRoomScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    position: 'relative',
     backgroundColor: '#ECE5DD',
   },
   header: {
@@ -1939,38 +2873,266 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   composer: {
+    position: 'relative',
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 8,
-    paddingTop: 8,
+    padding: 8,
     backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+    overflow: 'visible',
   },
-  iconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  composerRecording: {
+    alignItems: 'center',
+  },
+  plusActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EEF5FF',
+    backgroundColor: colors.grey200,
+  },
+  inputStack: {
+    flex: 1,
+    position: 'relative',
   },
   composerInput: {
     flex: 1,
+    minHeight: 40,
     maxHeight: 120,
-    minHeight: 42,
     borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 11 : 8,
-    color: colors.onSurface,
+    paddingHorizontal: 16,
+    paddingRight: 46,
+    paddingVertical: 10,
     backgroundColor: colors.inputBg,
+    color: colors.onSurface,
+    fontSize: 15,
   },
-  sendBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  emojiInputBtn: {
+    position: 'absolute',
+    right: 10,
+    top: '50%',
+    marginTop: -14,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emojiInputBtnActive: {
+    backgroundColor: 'rgba(40, 101, 183, 0.1)',
+  },
+  composerActionsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    overflow: 'visible',
+  },
+  composerActionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
+  },
+  micActionBtn: {
+    backgroundColor: '#2563EB',
+  },
+  micActionBtnRecording: {
+    backgroundColor: '#EF4444',
+  },
+  micActionBtnLarge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  micGestureWrap: {
+    position: 'relative',
+  },
+  micLockHintPill: {
+    position: 'absolute',
+    right: 0,
+    bottom: 54,
+    width: 44,
+    paddingVertical: 6,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  sendBtnDisabled: {
+    opacity: 0.5,
+  },
+  composerEmojiPickerWrap: {
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 6,
+  },
+  composerEmojiPickerCard: {
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 12 : 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(47, 43, 61, 0.16)',
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  emojiBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.grey100,
+  },
+  emojiText: {
+    fontSize: 22,
+  },
+  recordingComposerWrap: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 22,
+    backgroundColor: colors.inputBg,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recordingLiveMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  recordingLockedCenter: {
+    flex: 1,
+    minWidth: 0,
+    gap: 5,
+  },
+  recordingMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recordingTimeText: {
+    color: colors.onSurface,
+    fontSize: 13,
+    fontWeight: '600',
+    minWidth: 40,
+  },
+  recordingWaveformTrack: {
+    flex: 1,
+    minWidth: 0,
+    height: 28,
+    borderRadius: 12,
+    backgroundColor: 'rgba(40, 101, 183, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 2,
+    overflow: 'hidden',
+  },
+  recordingWaveformBar: {
+    width: 2,
+    minHeight: 4,
+    borderRadius: 2,
+    backgroundColor: colors.primary,
+  },
+  recordActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.88)',
+  },
+  recordSendBtn: {
+    backgroundColor: colors.primary,
+  },
+  recordingHintWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  recordingHintText: {
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  recordingHoldOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 20,
+    backgroundColor: colors.inputBg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+  },
+  recordingHoldLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  recordingHoldTime: {
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 46,
+  },
+  recordingHoldCenter: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  recordingHoldCancelText: {
+    color: colors.grey600,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  recordingHoldCancelTextArmed: {
+    color: '#EF4444',
+  },
+  recordingHoldRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    flexShrink: 0,
   },
   recordingBar: {
     minHeight: 66,
@@ -1999,6 +3161,10 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: colors.error,
   },
+  recordingDotPaused: {
+    opacity: 0.45,
+    backgroundColor: colors.grey500,
+  },
   recordingText: {
     color: colors.onSurface,
     fontWeight: '800',
@@ -2018,23 +3184,64 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  attachmentCard: {
-    width: '100%',
+  cameraPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  cameraPickerSheet: {
     borderRadius: 14,
     backgroundColor: colors.surface,
-    padding: 10,
+    paddingTop: 14,
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+    gap: 10,
   },
-  attachmentItem: {
-    minHeight: 48,
+  cameraPickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+  },
+  cameraPickerGridItem: {
+    width: '25%',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    marginBottom: 14,
+    paddingHorizontal: 2,
+  },
+  cameraPickerGridIconCircle: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F3F5',
+  },
+  cameraPickerGridLabel: {
+    marginTop: 7,
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  cameraPickerAction: {
+    height: 46,
+    borderRadius: 10,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 10,
+    gap: 10,
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
   },
-  attachmentText: {
+  cameraPickerCancel: {
+    justifyContent: 'center',
+    backgroundColor: 'rgba(47, 43, 61, 0.08)',
+  },
+  cameraPickerCancelText: {
     color: colors.onSurface,
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   actionCard: {
     width: '100%',
