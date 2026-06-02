@@ -44,10 +44,11 @@ import {
   normalizeDateDisplay,
 } from '../utils/date';
 import {
+  ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET,
   dismissKeyboard,
   dismissKeyboardAnd,
-  getKeyboardVerticalOffset,
-  keyboardAvoidingBehavior,
+  getModalKeyboardVerticalOffset,
+  modalKeyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { formatLocalPhone, normalizePhoneDigits } from '../utils/phoneFormat';
 import { SelectField, SelectSheet, type SelectOption } from './select';
@@ -361,8 +362,11 @@ export function ContactAdvancedFilterModal({
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoiding}
-        behavior={keyboardAvoidingBehavior}
-        keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
+        behavior={modalKeyboardAvoidingBehavior}
+        keyboardVerticalOffset={getModalKeyboardVerticalOffset(
+          8,
+          ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+        )}
       >
         <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
           <Pressable

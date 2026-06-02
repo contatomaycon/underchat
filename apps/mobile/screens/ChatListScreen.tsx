@@ -109,10 +109,11 @@ import {
 } from '../utils/chatCountsSync';
 import { formatBadgeCount } from '../utils/countFormat';
 import {
+  ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET,
   dismissKeyboard,
   dismissKeyboardAnd,
-  getKeyboardVerticalOffset,
-  keyboardAvoidingBehavior,
+  getModalKeyboardVerticalOffset,
+  modalKeyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import {
   addAppResumeListener,
@@ -2573,8 +2574,11 @@ export function ChatListScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
+          behavior={modalKeyboardAvoidingBehavior}
+          keyboardVerticalOffset={getModalKeyboardVerticalOffset(
+            insets.bottom + 8,
+            ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+          )}
         >
           <View
             style={[
@@ -2741,8 +2745,11 @@ export function ChatListScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
+          behavior={modalKeyboardAvoidingBehavior}
+          keyboardVerticalOffset={getModalKeyboardVerticalOffset(
+            insets.bottom + 8,
+            ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+          )}
         >
           <View
             style={[

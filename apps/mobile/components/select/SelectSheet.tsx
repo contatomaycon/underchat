@@ -16,8 +16,9 @@ import type { SelectOption } from './types';
 import { selectTokens } from './tokens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  getKeyboardVerticalOffset,
-  keyboardAvoidingBehavior,
+  ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET,
+  getModalKeyboardVerticalOffset,
+  modalKeyboardAvoidingBehavior,
 } from '../../utils/keyboard';
 
 export interface SelectSheetProps {
@@ -116,8 +117,11 @@ export function SelectSheet({
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoiding}
-        behavior={keyboardAvoidingBehavior}
-        keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
+        behavior={modalKeyboardAvoidingBehavior}
+        keyboardVerticalOffset={getModalKeyboardVerticalOffset(
+          8,
+          ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+        )}
       >
         <Pressable
           style={[styles.overlay, { paddingBottom: 12 + insets.bottom }]}

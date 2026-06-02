@@ -33,8 +33,8 @@ import { AppAvatar } from './AppAvatar';
 import {
   dismissKeyboard,
   dismissKeyboardAnd,
-  getKeyboardVerticalOffset,
-  keyboardAvoidingBehavior,
+  getModalKeyboardVerticalOffset,
+  modalKeyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { teardownMobileSession } from '../utils/sessionTeardown';
 import {
@@ -784,8 +784,8 @@ export function UserSidebar({
       >
         <KeyboardAvoidingView
           style={styles.keyboardAvoiding}
-          behavior={keyboardAvoidingBehavior}
-          keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
+          behavior={modalKeyboardAvoidingBehavior}
+          keyboardVerticalOffset={getModalKeyboardVerticalOffset(8)}
         >
           <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
             <Pressable

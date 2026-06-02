@@ -15,13 +15,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import {
-  keyboardAvoidingBehavior,
-  getKeyboardVerticalOffset,
+  ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET,
   dismissKeyboardAnd,
+  getModalKeyboardVerticalOffset,
+  modalKeyboardAvoidingBehavior,
 } from '../utils/keyboard';
-
-// Compensates the chat composer height so Android sheets sit on the keyboard.
-const ANDROID_BOTTOM_SHEET_KEYBOARD_VERTICAL_OFFSET = -56;
 
 export interface BottomSheetModalProps {
   /** Whether the modal is visible */
@@ -125,17 +123,15 @@ export function BottomSheetModal({
     </>
   );
 
-  const bottomSheetKeyboardAvoidingBehavior =
-    Platform.OS === 'ios' ? keyboardAvoidingBehavior : 'padding';
-  const bottomSheetKeyboardVerticalOffset =
-    Platform.OS === 'ios'
-      ? getKeyboardVerticalOffset(insets.bottom + 8)
-      : ANDROID_BOTTOM_SHEET_KEYBOARD_VERTICAL_OFFSET;
+  const bottomSheetKeyboardVerticalOffset = getModalKeyboardVerticalOffset(
+    insets.bottom + 8,
+    ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+  );
 
   const inner = avoidKeyboard ? (
     <KeyboardAvoidingView
       style={styles.keyboardAvoiding}
-      behavior={bottomSheetKeyboardAvoidingBehavior}
+      behavior={modalKeyboardAvoidingBehavior}
       keyboardVerticalOffset={bottomSheetKeyboardVerticalOffset}
     >
       <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>

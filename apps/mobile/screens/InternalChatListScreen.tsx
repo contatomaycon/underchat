@@ -37,9 +37,12 @@ import {
 import { colors } from '../theme/colors';
 import { pt } from '../locales/pt';
 import {
+  ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET,
   dismissKeyboard,
   dismissKeyboardAnd,
+  getModalKeyboardVerticalOffset,
   keyboardAvoidingBehavior,
+  modalKeyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { resolveInternalChatTextTag } from '../utils/internalChatText';
 import { addSessionUpdatedListener } from '../utils/appResumeBus';
@@ -796,7 +799,11 @@ export function InternalChatListScreen() {
         <View style={[styles.modalOverlay, { paddingBottom: insets.bottom }]}>
           <Pressable style={styles.backdrop} onPress={dismissKeyboard} />
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={modalKeyboardAvoidingBehavior}
+            keyboardVerticalOffset={getModalKeyboardVerticalOffset(
+              8,
+              ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+            )}
             style={styles.modalCard}
           >
             <View style={styles.modalHeader}>

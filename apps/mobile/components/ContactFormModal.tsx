@@ -61,10 +61,11 @@ import {
 } from '../utils/date';
 import { resolveImageUri } from '../utils/imageUri';
 import {
+  ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET,
   dismissKeyboard,
   dismissKeyboardAnd,
-  getKeyboardVerticalOffset,
-  keyboardAvoidingBehavior,
+  getModalKeyboardVerticalOffset,
+  modalKeyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import {
   formatChannelPhoneLabel,
@@ -75,8 +76,6 @@ import {
 import { getPermissions } from '../storage/authStorage';
 import { hasContactViewPhonePermission } from '../constants/chatAuthorization';
 
-// Keeps the Android contact form attached to the keyboard instead of hovering.
-const ANDROID_CONTACT_FORM_KEYBOARD_VERTICAL_OFFSET = -56;
 const CONTACT_FORM_SCROLL_MAX_HEIGHT = 560;
 const CONTACT_FORM_LOADING_MIN_HEIGHT = CONTACT_FORM_SCROLL_MAX_HEIGHT + 64;
 
@@ -193,12 +192,10 @@ export function ContactFormModal({
 
   const isEditMode = mode === 'edit';
   const canLoadContact = isEditMode && !!contactId;
-  const contactFormKeyboardAvoidingBehavior =
-    Platform.OS === 'ios' ? keyboardAvoidingBehavior : 'padding';
-  const contactFormKeyboardVerticalOffset =
-    Platform.OS === 'ios'
-      ? getKeyboardVerticalOffset(8)
-      : ANDROID_CONTACT_FORM_KEYBOARD_VERTICAL_OFFSET;
+  const contactFormKeyboardVerticalOffset = getModalKeyboardVerticalOffset(
+    8,
+    ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+  );
 
   const documentTypeOptions = useMemo<SelectOption[]>(
     () => [
@@ -934,7 +931,7 @@ export function ContactFormModal({
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoiding}
-        behavior={contactFormKeyboardAvoidingBehavior}
+        behavior={modalKeyboardAvoidingBehavior}
         keyboardVerticalOffset={contactFormKeyboardVerticalOffset}
       >
         <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
