@@ -75,6 +75,11 @@ import {
 import { getPermissions } from '../storage/authStorage';
 import { hasContactViewPhonePermission } from '../constants/chatAuthorization';
 
+// Keeps the Android contact form attached to the keyboard instead of hovering.
+const ANDROID_CONTACT_FORM_KEYBOARD_VERTICAL_OFFSET = -56;
+const CONTACT_FORM_SCROLL_MAX_HEIGHT = 560;
+const CONTACT_FORM_LOADING_MIN_HEIGHT = CONTACT_FORM_SCROLL_MAX_HEIGHT + 64;
+
 type ContactFormMode = 'create' | 'edit';
 type PickerKind =
   | 'labels'
@@ -188,6 +193,12 @@ export function ContactFormModal({
 
   const isEditMode = mode === 'edit';
   const canLoadContact = isEditMode && !!contactId;
+  const contactFormKeyboardAvoidingBehavior =
+    Platform.OS === 'ios' ? keyboardAvoidingBehavior : 'padding';
+  const contactFormKeyboardVerticalOffset =
+    Platform.OS === 'ios'
+      ? getKeyboardVerticalOffset(8)
+      : ANDROID_CONTACT_FORM_KEYBOARD_VERTICAL_OFFSET;
 
   const documentTypeOptions = useMemo<SelectOption[]>(
     () => [
@@ -923,8 +934,8 @@ export function ContactFormModal({
     >
       <KeyboardAvoidingView
         style={styles.keyboardAvoiding}
-        behavior={keyboardAvoidingBehavior}
-        keyboardVerticalOffset={getKeyboardVerticalOffset(8)}
+        behavior={contactFormKeyboardAvoidingBehavior}
+        keyboardVerticalOffset={contactFormKeyboardVerticalOffset}
       >
         <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
           <Pressable
@@ -1441,12 +1452,12 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   loadingWrap: {
-    minHeight: 200,
+    minHeight: CONTACT_FORM_LOADING_MIN_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   scroll: {
-    maxHeight: 560,
+    maxHeight: CONTACT_FORM_SCROLL_MAX_HEIGHT,
   },
   scrollContent: {
     padding: 16,
