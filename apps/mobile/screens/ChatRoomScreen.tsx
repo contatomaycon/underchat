@@ -91,6 +91,7 @@ import VideoTrimModule, {
   isValidFile,
   type Spec as VideoTrimSpec,
 } from 'react-native-video-trim';
+import { canUseVideoTrimEditor } from '../utils/videoTrimSupport';
 import {
   listMessages,
   createMessage,
@@ -11674,6 +11675,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             : null,
       });
       if (!initialDraft) return;
+
+      const canOpenVideoTrimEditor = await canUseVideoTrimEditor();
+      if (!canOpenVideoTrimEditor) {
+        await sendCapturedMediaDraft(initialDraft);
+        return;
+      }
 
       let trimResult: VideoTrimSessionResult = { kind: 'cancel' };
       startVideoEditorOpening();

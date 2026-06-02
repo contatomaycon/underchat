@@ -23,6 +23,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   if (!plugins.includes('expo-image')) {
     plugins.push('expo-image');
   }
+  const videoTrimSupportPlugin = './plugins/withVideoTrimSupportModule';
+  const hasVideoTrimSupportPlugin = plugins.some((plugin) => {
+    if (typeof plugin === 'string') {
+      return plugin === videoTrimSupportPlugin;
+    }
+    return Array.isArray(plugin) && plugin[0] === videoTrimSupportPlugin;
+  });
+  if (!hasVideoTrimSupportPlugin) {
+    plugins.push(videoTrimSupportPlugin);
+  }
 
   return {
     ...baseConfig,
