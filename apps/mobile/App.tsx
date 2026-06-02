@@ -55,9 +55,15 @@ import {
   disableMobilePushNotifications,
   enableMobilePushNotifications,
   initializePushNotifications,
+  isAnyMobilePushPreferenceEnabled,
 } from './services/pushNotifications';
-import { navigationRef, navigateToChatRoom } from './navigation/navigationRef';
+import {
+  navigationRef,
+  navigateToChatRoom,
+  navigateToInternalChatRoom,
+} from './navigation/navigationRef';
 import { getAttendanceHoursStatus } from './api/attendanceHoursApi';
+import { viewInternalChatConversation } from './api/internalChatApi';
 import type {
   AttendanceBlockedPayload,
   AttendanceGuardStatus,
@@ -104,10 +110,7 @@ function getUserId(user: unknown): string | null {
 }
 
 function isUserNotificationEnabled(user: unknown): boolean {
-  if (!user || typeof user !== 'object') return false;
-  const chatUser = (user as { chat_user?: unknown }).chat_user;
-  if (!chatUser || typeof chatUser !== 'object') return false;
-  return (chatUser as { notifications?: unknown }).notifications === true;
+  return isAnyMobilePushPreferenceEnabled(user);
 }
 
 type PresenceStatus = Extract<
@@ -153,6 +156,10 @@ export default function App() {
   const [navigationReady, setNavigationReady] = useState(false);
   const [pendingNotificationChat, setPendingNotificationChat] =
     useState<ListChatsResult | null>(null);
+  const [
+    pendingInternalChatNotificationConversationId,
+    setPendingInternalChatNotificationConversationId,
+  ] = useState<string | null>(null);
   const [attendanceGuardStatus, setAttendanceGuardStatus] =
     useState<AttendanceGuardStatus | null>(null);
   const [attendanceLocked, setAttendanceLocked] = useState(false);
@@ -599,7 +606,7 @@ export default function App() {
   }, [authenticated, handleSocketConnected]);
 
   useEffect(() => {
-    if (!authenticated || !canViewChatTabs) {
+    if (!authenticated || (!canViewChatTabs && !canViewInternalChatTab)) {
       return;
     }
 
@@ -619,7 +626,9 @@ export default function App() {
         });
       }
 
-      await forceOnlineAtSessionStart();
+      if (canViewChatTabs) {
+        await forceOnlineAtSessionStart();
+      }
 
       if (isUserNotificationEnabled(user)) {
         await enableMobilePushNotifications().catch(() => ({
@@ -635,7 +644,12 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [authenticated, canViewChatTabs, forceOnlineAtSessionStart]);
+  }, [
+    authenticated,
+    canViewChatTabs,
+    canViewInternalChatTab,
+    forceOnlineAtSessionStart,
+  ]);
 
   useEffect(() => {
     return addCurrentUserPresenceStatusListener(
@@ -798,6 +812,9 @@ export default function App() {
       onChatTap: (chat) => {
         setPendingNotificationChat(chat);
       },
+      onInternalChatTap: (conversationId) => {
+        setPendingInternalChatNotificationConversationId(conversationId);
+      },
     });
 
     return () => {
@@ -853,6 +870,50 @@ export default function App() {
       cancelled = true;
     };
   }, [authenticated, navigationReady, pendingNotificationChat]);
+
+  useEffect(() => {
+    if (
+      !authenticated ||
+      !navigationReady ||
+      !canViewInternalChatTab ||
+      !pendingInternalChatNotificationConversationId
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const openPendingInternalChatNotification = async () => {
+      const conversation = await viewInternalChatConversation(
+        pendingInternalChatNotificationConversationId
+      ).catch(() => null);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (!conversation) {
+        setPendingInternalChatNotificationConversationId(null);
+        return;
+      }
+
+      const navigated = navigateToInternalChatRoom(conversation);
+      if (navigated) {
+        setPendingInternalChatNotificationConversationId(null);
+      }
+    };
+
+    void openPendingInternalChatNotification();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authenticated,
+    canViewInternalChatTab,
+    navigationReady,
+    pendingInternalChatNotificationConversationId,
+  ]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {

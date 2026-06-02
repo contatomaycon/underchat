@@ -79,6 +79,19 @@ export class AuthRepository {
           notifications_status_queue: chatUser.notifications_status_queue,
           notifications_status_in_chat: chatUser.notifications_status_in_chat,
           notifications_status_chatbot: chatUser.notifications_status_chatbot,
+          notifications_internal_chat: chatUser.notifications_internal_chat,
+          notifications_internal_chat_direct:
+            chatUser.notifications_internal_chat_direct,
+          notifications_internal_chat_group:
+            chatUser.notifications_internal_chat_group,
+          notifications_internal_chat_sound:
+            chatUser.notifications_internal_chat_sound,
+          notifications_internal_chat_toast:
+            chatUser.notifications_internal_chat_toast,
+          notifications_internal_chat_browser:
+            chatUser.notifications_internal_chat_browser,
+          notifications_internal_chat_push:
+            chatUser.notifications_internal_chat_push,
           sort_by_chat_order: chatUser.sort_by_chat_order,
           sort_in_chat_order: chatUser.sort_in_chat_order,
           sort_by_my_chats_order: chatUser.sort_by_my_chats_order,
@@ -216,6 +229,19 @@ export class AuthRepository {
           notifications_status_queue: chatUser.notifications_status_queue,
           notifications_status_in_chat: chatUser.notifications_status_in_chat,
           notifications_status_chatbot: chatUser.notifications_status_chatbot,
+          notifications_internal_chat: chatUser.notifications_internal_chat,
+          notifications_internal_chat_direct:
+            chatUser.notifications_internal_chat_direct,
+          notifications_internal_chat_group:
+            chatUser.notifications_internal_chat_group,
+          notifications_internal_chat_sound:
+            chatUser.notifications_internal_chat_sound,
+          notifications_internal_chat_toast:
+            chatUser.notifications_internal_chat_toast,
+          notifications_internal_chat_browser:
+            chatUser.notifications_internal_chat_browser,
+          notifications_internal_chat_push:
+            chatUser.notifications_internal_chat_push,
           sort_in_chat_order: chatUser.sort_in_chat_order,
           sort_my_chats_order: chatUser.sort_my_chats_order,
           sort_queue_order: chatUser.sort_queue_order,
@@ -326,6 +352,19 @@ export class AuthRepository {
           notifications_status_queue: chatUser.notifications_status_queue,
           notifications_status_in_chat: chatUser.notifications_status_in_chat,
           notifications_status_chatbot: chatUser.notifications_status_chatbot,
+          notifications_internal_chat: chatUser.notifications_internal_chat,
+          notifications_internal_chat_direct:
+            chatUser.notifications_internal_chat_direct,
+          notifications_internal_chat_group:
+            chatUser.notifications_internal_chat_group,
+          notifications_internal_chat_sound:
+            chatUser.notifications_internal_chat_sound,
+          notifications_internal_chat_toast:
+            chatUser.notifications_internal_chat_toast,
+          notifications_internal_chat_browser:
+            chatUser.notifications_internal_chat_browser,
+          notifications_internal_chat_push:
+            chatUser.notifications_internal_chat_push,
           sort_in_chat_order: chatUser.sort_in_chat_order,
           sort_my_chats_order: chatUser.sort_my_chats_order,
           sort_queue_order: chatUser.sort_queue_order,

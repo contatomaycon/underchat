@@ -3,7 +3,13 @@ import {
   createNavigationContainerRef,
 } from '@react-navigation/native';
 import type { ListChatsResult } from '../types/chat';
-import type { ChatStackParamList, ChatTab, RootTabParamList } from './types';
+import type { InternalChatConversation } from '../types/internalChat';
+import type {
+  ChatStackParamList,
+  ChatTab,
+  InternalChatStackParamList,
+  RootTabParamList,
+} from './types';
 
 export const navigationRef = createNavigationContainerRef<RootTabParamList>();
 
@@ -138,6 +144,63 @@ export function navigateToChatRoom(chat: ListChatsResult): boolean {
         routes: [
           { name: 'ChatList', params: chatListParams },
           { name: 'ChatRoom', params: chatRoomParams },
+        ],
+      },
+    };
+  });
+
+  try {
+    navigationRef.dispatch(
+      CommonActions.reset({
+        index: targetRouteIndex,
+        routes: nextRoutes as any,
+      })
+    );
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function navigateToInternalChatRoom(
+  conversation: InternalChatConversation
+): boolean {
+  if (!navigationRef.isReady()) {
+    return false;
+  }
+
+  const rootState = navigationRef.getRootState();
+  if (!rootState || rootState.routes.length === 0) {
+    return false;
+  }
+
+  const targetRouteIndex = rootState.routes.findIndex(
+    (route) => route.name === 'InternalChat'
+  );
+
+  if (targetRouteIndex < 0) {
+    return false;
+  }
+
+  const targetRoute = rootState.routes[targetRouteIndex];
+  const listParams: InternalChatStackParamList['InternalChatList'] = undefined;
+  const roomParams: InternalChatStackParamList['InternalChatRoom'] = {
+    conversation,
+  };
+
+  const nextRoutes = rootState.routes.map((route, index) => {
+    if (index !== targetRouteIndex) {
+      return route;
+    }
+
+    return {
+      ...targetRoute,
+      state: {
+        index: 1,
+        routes: [
+          { name: 'InternalChatList', params: listParams },
+          { name: 'InternalChatRoom', params: roomParams },
         ],
       },
     };

@@ -2337,6 +2337,20 @@ export const useChatStore = defineStore('chat', {
           existingChatUser?.notifications_status_in_chat ?? true,
         notifications_status_chatbot:
           existingChatUser?.notifications_status_chatbot ?? false,
+        notifications_internal_chat:
+          existingChatUser?.notifications_internal_chat ?? true,
+        notifications_internal_chat_direct:
+          existingChatUser?.notifications_internal_chat_direct ?? true,
+        notifications_internal_chat_group:
+          existingChatUser?.notifications_internal_chat_group ?? true,
+        notifications_internal_chat_sound:
+          existingChatUser?.notifications_internal_chat_sound ?? true,
+        notifications_internal_chat_toast:
+          existingChatUser?.notifications_internal_chat_toast ?? true,
+        notifications_internal_chat_browser:
+          existingChatUser?.notifications_internal_chat_browser ?? true,
+        notifications_internal_chat_push:
+          existingChatUser?.notifications_internal_chat_push ?? true,
       };
 
       setUser({ ...this.user, chat_user: chatUserUpdate });
@@ -2366,6 +2380,20 @@ export const useChatStore = defineStore('chat', {
           this.user?.chat_user?.notifications_status_in_chat ?? true,
         notifications_status_chatbot:
           this.user?.chat_user?.notifications_status_chatbot ?? false,
+        notifications_internal_chat:
+          this.user?.chat_user?.notifications_internal_chat ?? true,
+        notifications_internal_chat_direct:
+          this.user?.chat_user?.notifications_internal_chat_direct ?? true,
+        notifications_internal_chat_group:
+          this.user?.chat_user?.notifications_internal_chat_group ?? true,
+        notifications_internal_chat_sound:
+          this.user?.chat_user?.notifications_internal_chat_sound ?? true,
+        notifications_internal_chat_toast:
+          this.user?.chat_user?.notifications_internal_chat_toast ?? true,
+        notifications_internal_chat_browser:
+          this.user?.chat_user?.notifications_internal_chat_browser ?? true,
+        notifications_internal_chat_push:
+          this.user?.chat_user?.notifications_internal_chat_push ?? true,
       };
 
       await this.updateChatsUser({

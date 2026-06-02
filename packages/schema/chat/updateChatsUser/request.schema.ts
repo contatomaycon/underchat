@@ -13,6 +13,13 @@ export const updateChatsUserRequestSchema = Type.Object({
   notifications_status_queue: Type.Optional(Type.Boolean()),
   notifications_status_in_chat: Type.Optional(Type.Boolean()),
   notifications_status_chatbot: Type.Optional(Type.Boolean()),
+  notifications_internal_chat: Type.Optional(Type.Boolean()),
+  notifications_internal_chat_direct: Type.Optional(Type.Boolean()),
+  notifications_internal_chat_group: Type.Optional(Type.Boolean()),
+  notifications_internal_chat_sound: Type.Optional(Type.Boolean()),
+  notifications_internal_chat_toast: Type.Optional(Type.Boolean()),
+  notifications_internal_chat_browser: Type.Optional(Type.Boolean()),
+  notifications_internal_chat_push: Type.Optional(Type.Boolean()),
   sort_by_chat_order: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   sort_in_chat_order: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   sort_by_my_chats_order: Type.Optional(

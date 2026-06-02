@@ -36,6 +36,9 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
         server_id: 'server-old',
         server_status_id: EServerStatus.online,
       })),
+      viewWorker: jest.fn(async () => ({
+        status: { id: EWorkerStatus.online },
+      })),
       listWorkerServers: jest.fn(async () => [{ server_id: 'server-new' }]),
       updateWorkerById: jest.fn(async () => true),
     };
@@ -96,6 +99,7 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
         remove_session: true,
         remove_volume: true,
         lifecycle_operation_id: 'operation-1',
+        previous_worker_status_id: EWorkerStatus.online,
       })
     );
   });

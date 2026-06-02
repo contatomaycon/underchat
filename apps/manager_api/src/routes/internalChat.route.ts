@@ -37,6 +37,10 @@ import { removeGroupMemberSchema } from '@core/schema/internalChat/removeGroupMe
 import { transferLeaderSchema } from '@core/schema/internalChat/transferLeader';
 import { realtimeTokenSchema } from '@core/schema/internalChat/realtimeToken';
 import { viewInternalChatLinkPreviewSchema } from '@core/schema/internalChat/viewLinkPreview';
+import {
+  updateInternalChatNotificationSettingsSchema,
+  viewInternalChatNotificationSettingsSchema,
+} from '@core/schema/internalChat/notificationSettings';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 export default function internalChatRoutes(server: FastifyInstance) {
@@ -123,6 +127,30 @@ export default function internalChatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
+      planGuard,
+      internalChatProductGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/internal-chat/notification-settings', {
+    schema: viewInternalChatNotificationSettingsSchema,
+    handler: controller.viewNotificationSettings,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatReadPermissions),
+      planGuard,
+      internalChatProductGuard,
+      planStatus,
+    ],
+  });
+
+  server.put('/internal-chat/notification-settings', {
+    schema: updateInternalChatNotificationSettingsSchema,
+    handler: controller.updateNotificationSettings,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
       internalChatProductGuard,
       planStatus,

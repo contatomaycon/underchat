@@ -1,6 +1,7 @@
 import { internalChatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
+import { emitInternalChatNotificationMessage } from '@/composables/useInternalChatNotifications';
 
 let isInitialized = false;
 let subscribedChannel: string | null = null;
@@ -19,7 +20,10 @@ const createInternalChatSocket = () => {
     );
 
     channelHandler = (payload: unknown) => {
-      internalChatStore.handleRealtimePayload(payload);
+      const message = internalChatStore.handleRealtimePayload(payload);
+      if (message) {
+        emitInternalChatNotificationMessage(message);
+      }
     };
 
     await onMessage(channel, channelHandler);

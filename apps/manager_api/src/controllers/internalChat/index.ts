@@ -23,6 +23,8 @@ import { removeGroupMember } from './methods/removeGroupMember';
 import { transferLeader } from './methods/transferLeader';
 import { realtimeToken } from './methods/realtimeToken';
 import { viewLinkPreview } from './methods/viewLinkPreview';
+import { viewNotificationSettings } from './methods/viewNotificationSettings';
+import { updateNotificationSettings } from './methods/updateNotificationSettings';
 
 @injectable()
 class InternalChatController {
@@ -50,6 +52,8 @@ class InternalChatController {
   public transferLeader = transferLeader;
   public realtimeToken = realtimeToken;
   public viewLinkPreview = viewLinkPreview;
+  public viewNotificationSettings = viewNotificationSettings;
+  public updateNotificationSettings = updateNotificationSettings;
 }
 
 export default InternalChatController;

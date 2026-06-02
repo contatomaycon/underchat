@@ -10,8 +10,11 @@ import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificat
 import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EMessageType } from '@core/common/enums/EMessageType';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import { IInternalChatMessage } from '@core/common/interfaces/internalChat/IInternalChatMessage';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 import { vapidEnvironment } from '@core/config/environments';
@@ -260,6 +263,73 @@ export class PushNotificationService {
     await Promise.all(promises);
   }
 
+  async sendNotificationForInternalChatMessage(input: {
+    message: IInternalChatMessage;
+    conversationType: EInternalChatConversationType;
+    participantUserIds: string[];
+    conversationName?: string | null;
+    conversationPhoto?: string | null;
+  }): Promise<void> {
+    const { message, conversationType } = input;
+
+    if (message.deleted || message.content?.type === EMessageType.system) {
+      return;
+    }
+
+    const senderUserId = message.user?.id;
+    const recipientUserIds = input.participantUserIds.filter(
+      (userId) => userId && userId !== senderUserId
+    );
+
+    if (recipientUserIds.length === 0) {
+      return;
+    }
+
+    const eligibleUserIds =
+      await this.usersWithNotificationsListerRepository.listInternalChatUsersWithNotifications(
+        message.account_id,
+        recipientUserIds,
+        conversationType
+      );
+
+    if (eligibleUserIds.length === 0) {
+      return;
+    }
+
+    const senderName = message.user?.name || 'Chat Interno';
+    const preview = this.getInternalChatMessagePreview(message);
+    const title =
+      conversationType === EInternalChatConversationType.group
+        ? input.conversationName?.trim() || 'Grupo interno'
+        : senderName;
+    const body =
+      conversationType === EInternalChatConversationType.group
+        ? `${senderName}: ${preview}`
+        : preview;
+
+    const payload: IPushNotificationPayload = {
+      title,
+      body,
+      icon:
+        input.conversationPhoto ||
+        message.user?.photo ||
+        '/images/svg/avatar-default.svg',
+      tag: `internal-chat-${message.conversation_id}`,
+      data: {
+        notificationType: 'internal_chat_message',
+        internalChatConversationId: message.conversation_id,
+        internalChatMessageId: message.message_id,
+        internalChatConversationType: conversationType,
+      },
+    };
+
+    const promises = eligibleUserIds.map((userId) =>
+      this.sendNotificationToUser(userId, payload).catch(() => {})
+    );
+
+    await Promise.all(promises);
+  }
+
   private async canUserReceiveNotification(
     userId: string,
     accountId: string,
@@ -317,6 +387,43 @@ export class PushNotificationService {
       status === EChatStatus.ura_schedule ||
       status === EChatStatus.ura_webhook
     );
+  }
+
+  private getInternalChatMessagePreview(message: IInternalChatMessage): string {
+    const content = message.content;
+
+    if (content.type === EMessageType.text && content.message?.trim()) {
+      return content.message.trim();
+    }
+
+    if (content.type === EMessageType.image) {
+      return '[Imagem]';
+    }
+
+    if (content.type === EMessageType.video) {
+      return '[Vídeo]';
+    }
+
+    if (content.type === EMessageType.audio) {
+      return '[Áudio]';
+    }
+
+    if (content.type === EMessageType.document) {
+      return '[Documento]';
+    }
+
+    if (content.type === EMessageType.location) {
+      return '[Localização]';
+    }
+
+    if (
+      content.type === EMessageType.contact_card ||
+      content.type === EMessageType.contacts
+    ) {
+      return '[Contato]';
+    }
+
+    return content.message?.trim() || '[Mensagem]';
   }
 
   private dedupeSubscriptionsByEndpoint<

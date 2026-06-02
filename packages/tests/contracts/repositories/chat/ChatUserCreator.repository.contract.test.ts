@@ -30,6 +30,13 @@ describe('ChatUserCreatorRepository', () => {
         notifications: true,
         notifications_status_queue: false,
         notifications_status_chatbot: false,
+        notifications_internal_chat: true,
+        notifications_internal_chat_direct: true,
+        notifications_internal_chat_group: true,
+        notifications_internal_chat_sound: true,
+        notifications_internal_chat_toast: true,
+        notifications_internal_chat_browser: true,
+        notifications_internal_chat_push: true,
       })
     );
   });

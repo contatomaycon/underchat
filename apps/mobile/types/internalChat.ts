@@ -1,7 +1,4 @@
-import type {
-  MessageContent,
-  MessageContentLinkPreview,
-} from './chat';
+import type { MessageContent, MessageContentLinkPreview } from './chat';
 import type { ContactListFilters } from './contact';
 
 export const INTERNAL_CHAT_CONVERSATION_TYPE = {
@@ -204,3 +201,17 @@ export interface InternalChatUploadFile {
   name: string;
   mimeType: string;
 }
+
+export interface InternalChatNotificationSettings {
+  chat_user_id?: string;
+  notifications_internal_chat: boolean;
+  notifications_internal_chat_direct: boolean;
+  notifications_internal_chat_group: boolean;
+  notifications_internal_chat_sound: boolean;
+  notifications_internal_chat_toast: boolean;
+  notifications_internal_chat_browser: boolean;
+  notifications_internal_chat_push: boolean;
+}
+
+export type InternalChatNotificationSettingsPayload =
+  Partial<InternalChatNotificationSettings>;

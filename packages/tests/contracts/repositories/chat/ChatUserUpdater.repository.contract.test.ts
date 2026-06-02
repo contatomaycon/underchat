@@ -60,12 +60,14 @@ describe('ChatUserUpdaterRepository', () => {
       repository.updateChatUserById(tx as never, 'user-1', {
         about: 'my profile',
         notifications_push: true,
+        notifications_internal_chat_push: false,
       } as never)
     ).resolves.toBe(true);
     expect(updateStep.set).toHaveBeenCalledWith(
       expect.objectContaining({
         about: 'my profile',
         notifications_push: true,
+        notifications_internal_chat_push: false,
       })
     );
   });

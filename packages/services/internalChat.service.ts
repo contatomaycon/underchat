@@ -24,6 +24,7 @@ import { StorageService } from '@core/services/storage.service';
 import { ConverterService } from '@core/services/converter';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ChatContactService } from '@core/services/chatContact.service';
+import { PushNotificationService } from '@core/services/pushNotification.service';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { ListConversationsQuery } from '@core/schema/internalChat/listConversations/request.schema';
 import { ListUsersQuery } from '@core/schema/internalChat/listUsers/request.schema';
@@ -116,7 +117,9 @@ export class InternalChatService {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(ChatContactService)
-    private readonly chatContactService: ChatContactService
+    private readonly chatContactService: ChatContactService,
+    @inject(PushNotificationService)
+    private readonly pushNotificationService: PushNotificationService
   ) {}
 
   private normalizePaging(
@@ -1864,6 +1867,29 @@ export class InternalChatService {
       messageId: message.message_id,
       messageDate: message.date,
     });
+
+    try {
+      const conversation = await this.getConversationOrThrow(
+        message.account_id,
+        message.conversation_id
+      );
+      const participantUserIds =
+        await this.conversationRepository.listParticipantIds(
+          message.conversation_id
+        );
+
+      await this.pushNotificationService.sendNotificationForInternalChatMessage(
+        {
+          message,
+          conversationType: payload.conversation_type,
+          participantUserIds,
+          conversationName: conversation.name,
+          conversationPhoto: conversation.photo,
+        }
+      );
+    } catch {
+      // Push delivery must never block realtime chat delivery.
+    }
 
     await this.publishMessageRealtime(message);
     await this.publishConversationSync(

@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
+import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 
 export type ChatNotificationToastPayload =
   | {
@@ -12,6 +13,11 @@ export type ChatNotificationToastPayload =
       id: string;
       type: 'status';
       chat: IChat;
+    }
+  | {
+      id: string;
+      type: 'internal-message';
+      message: ListMessagesResponse['data']['results'][number];
     };
 
 const activeNotification = ref<ChatNotificationToastPayload | null>(null);
@@ -33,6 +39,16 @@ export function useChatNotificationToast() {
     };
   }
 
+  function showInternalMessageToast(
+    message: ListMessagesResponse['data']['results'][number]
+  ) {
+    activeNotification.value = {
+      id: `internal-${message.message_id}`,
+      type: 'internal-message',
+      message,
+    };
+  }
+
   function hideToast() {
     activeNotification.value = null;
   }
@@ -41,6 +57,7 @@ export function useChatNotificationToast() {
     activeNotification,
     showMessageToast,
     showStatusToast,
+    showInternalMessageToast,
     hideToast,
   };
 }

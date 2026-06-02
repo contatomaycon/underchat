@@ -7,6 +7,7 @@ import {
   apiPost,
   apiPostForm,
   apiPostFormWithMessage,
+  apiPut,
 } from './client';
 import type {
   InternalChatActivityState,
@@ -19,6 +20,8 @@ import type {
   InternalChatCreateMessagePayload,
   InternalChatMessage,
   InternalChatMessageHistoryItem,
+  InternalChatNotificationSettings,
+  InternalChatNotificationSettingsPayload,
   InternalChatPagedResponse,
   InternalChatParticipant,
   InternalChatSearchMessageResult,
@@ -204,6 +207,23 @@ export async function viewInternalChatConversation(
   if (!conversationId.trim()) return null;
   const res = await apiGet<InternalChatConversation>(
     `/internal-chat/${conversationId}`
+  );
+  return res?.data ?? null;
+}
+
+export async function getInternalChatNotificationSettings(): Promise<InternalChatNotificationSettings | null> {
+  const res = await apiGet<InternalChatNotificationSettings>(
+    '/internal-chat/notification-settings'
+  );
+  return res?.data ?? null;
+}
+
+export async function updateInternalChatNotificationSettings(
+  payload: InternalChatNotificationSettingsPayload
+): Promise<InternalChatNotificationSettings | null> {
+  const res = await apiPut<InternalChatNotificationSettings>(
+    '/internal-chat/notification-settings',
+    payload
   );
   return res?.data ?? null;
 }

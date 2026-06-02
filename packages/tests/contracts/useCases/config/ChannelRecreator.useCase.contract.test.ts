@@ -77,7 +77,12 @@ describe('ChannelRecreatorUseCase', () => {
 
   it('marks the channel as error when recreate grpc dispatch fails', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
-    const workerService = { updateWorkerById: jest.fn(async () => true) };
+    const workerService = {
+      viewWorker: jest.fn(async () => ({
+        status: { id: EWorkerStatus.online },
+      })),
+      updateWorkerById: jest.fn(async () => true),
+    };
     const accountService = { existsAccountById: jest.fn(async () => true) };
     const configService = {
       viewChannelBalancer: jest.fn(async () => ({
@@ -122,7 +127,12 @@ describe('ChannelRecreatorUseCase', () => {
   });
 
   it('recreates channel successfully', async () => {
-    const workerService = { updateWorkerById: jest.fn(async () => true) };
+    const workerService = {
+      viewWorker: jest.fn(async () => ({
+        status: { id: EWorkerStatus.online },
+      })),
+      updateWorkerById: jest.fn(async () => true),
+    };
     const accountService = { existsAccountById: jest.fn(async () => true) };
     const configService = {
       viewChannelBalancer: jest.fn(async () => ({
@@ -155,6 +165,7 @@ describe('ChannelRecreatorUseCase', () => {
       account_id: 'acc-1',
       worker_status_id: EWorkerStatus.recreating,
       lifecycle_operation_id: expect.any(String),
+      previous_worker_status_id: EWorkerStatus.online,
     };
     expect(workerService.updateWorkerById).toHaveBeenCalledWith(
       'acc-1',

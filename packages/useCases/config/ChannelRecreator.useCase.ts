@@ -128,6 +128,10 @@ export class ChannelRecreatorUseCase {
 
     await this.validate(t, viewWorkerBalancer.account_id);
 
+    const viewWorker = await this.workerService.viewWorker(
+      viewWorkerBalancer.account_id,
+      channelId
+    );
     const lifecycleOperationId = uuidv7();
     const inputRecreate: IWorkerPayload = {
       action: EWorkerAction.recreate,
@@ -136,6 +140,9 @@ export class ChannelRecreatorUseCase {
       account_id: viewWorkerBalancer.account_id,
       worker_status_id: EWorkerStatus.recreating,
       lifecycle_operation_id: lifecycleOperationId,
+      previous_worker_status_id: viewWorker?.status?.id as
+        | EWorkerStatus
+        | undefined,
     };
 
     const inputUpdate: IUpdateWorker = {

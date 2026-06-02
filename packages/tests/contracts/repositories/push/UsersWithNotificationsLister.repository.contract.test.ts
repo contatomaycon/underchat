@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
 import {
   canReceivePushForChatStatus,
   isChatbotNotificationStatus,
@@ -137,5 +138,37 @@ describe('UsersWithNotificationsListerRepository', () => {
     await repository.listUsersWithNotifications('account-1', EChatStatus.ura);
 
     expect(where).toHaveBeenCalledTimes(3);
+  });
+
+  it('skips internal chat query when there are no participants', async () => {
+    const { db } = createSelectDbMock([]);
+    const repository = new UsersWithNotificationsListerRepository(db as never);
+
+    await expect(
+      repository.listInternalChatUsersWithNotifications(
+        'account-1',
+        [],
+        EInternalChatConversationType.group
+      )
+    ).resolves.toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('returns internal chat notification user ids from active participants', async () => {
+    const { db, execute, where } = createSelectDbMock([
+      { user_id: 'user-1' },
+      { user_id: 'user-2' },
+    ]);
+    const repository = new UsersWithNotificationsListerRepository(db as never);
+
+    await expect(
+      repository.listInternalChatUsersWithNotifications(
+        'account-1',
+        ['user-1', 'user-2', 'sender-1'],
+        EInternalChatConversationType.direct
+      )
+    ).resolves.toEqual(['user-1', 'user-2']);
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

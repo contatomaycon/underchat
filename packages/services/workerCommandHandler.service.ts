@@ -80,6 +80,11 @@ interface ResolvedWorkerProxyConfig {
   password?: string | null;
 }
 
+interface RecreateConnectionReconciliation {
+  workerStatusId: EWorkerStatus;
+  connectionState?: IBaileysConnectionState;
+}
+
 class WorkerCreateAttemptError extends Error {
   constructor(
     message: string,
@@ -2226,16 +2231,17 @@ export class WorkerCommandHandlerService {
     );
 
     if (readyContainerId) {
-      const inputUpdate: IUpdateWorker = {
-        worker_id: data.worker_id,
-        worker_status_id: EWorkerStatus.disponible,
-        worker_type_id: workerType,
-        container_id: readyContainerId,
-        ...(data.lifecycle_operation_id
-          ? { lifecycle_operation_id: null }
-          : {}),
-        ...(shouldRemoveSession ? { number: null, connection_date: null } : {}),
-      };
+      const reconciliation = await this.reconcileRecreatedWorkerConnection(
+        data,
+        workerType
+      );
+      const inputUpdate = this.buildRecreateFinalWorkerUpdate(
+        data,
+        workerType,
+        readyContainerId,
+        shouldRemoveSession,
+        reconciliation
+      );
 
       const updated = await this.updateWorkerWithLifecycleGuard(
         data.account_id,
@@ -2262,7 +2268,7 @@ export class WorkerCommandHandlerService {
         return {} as PublishResult;
       }
 
-      return this.publishWorkerDisponible(data);
+      return this.publishWorkerRecreateFinalState(data, reconciliation);
     }
 
     if (
@@ -2417,14 +2423,17 @@ export class WorkerCommandHandlerService {
       }
     }
 
-    const inputUpdate: IUpdateWorker = {
-      worker_id: data.worker_id,
-      worker_status_id: EWorkerStatus.disponible,
-      worker_type_id: workerType,
-      container_id: containerId,
-      ...(data.lifecycle_operation_id ? { lifecycle_operation_id: null } : {}),
-      ...(shouldRemoveSession ? { number: null, connection_date: null } : {}),
-    };
+    const reconciliation = await this.reconcileRecreatedWorkerConnection(
+      data,
+      workerType
+    );
+    const inputUpdate = this.buildRecreateFinalWorkerUpdate(
+      data,
+      workerType,
+      containerId,
+      shouldRemoveSession,
+      reconciliation
+    );
 
     const updated = await this.updateWorkerWithLifecycleGuardAndLegacyRetry(
       data.account_id,
@@ -2443,7 +2452,7 @@ export class WorkerCommandHandlerService {
       return {} as PublishResult;
     }
 
-    return this.publishWorkerDisponible(data);
+    return this.publishWorkerRecreateFinalState(data, reconciliation);
   }
 
   private async publishWorkerDisponible(
@@ -2468,6 +2477,188 @@ export class WorkerCommandHandlerService {
         channelsConfigCentrifugo(),
         channelConfigPayload
       ),
+    ]);
+    return result;
+  }
+
+  private shouldReconcileRecreatedWorkerConnection(
+    data: IWorkerPayload
+  ): boolean {
+    return (
+      data.remove_session !== true &&
+      data.previous_worker_status_id === EWorkerStatus.online
+    );
+  }
+
+  private isConnectedConnectionState(
+    state: IBaileysConnectionState | undefined
+  ): boolean {
+    return (
+      state?.worker_status_id === EWorkerStatus.online ||
+      state?.status === EBaileysConnectionStatus.connected ||
+      state?.code === ECodeMessage.connectionEstablished
+    );
+  }
+
+  private async reconcileRecreatedWorkerConnection(
+    data: IWorkerPayload,
+    workerType: EWorkerType
+  ): Promise<RecreateConnectionReconciliation> {
+    if (!this.shouldReconcileRecreatedWorkerConnection(data)) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_connection_reconcile_skipped',
+        decision: 'reconcile_recreated_worker_connection',
+        outcome: 'skipped',
+        reason:
+          data.remove_session === true
+            ? 'session_removed'
+            : 'previous_status_not_online',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        previous_worker_status_id: data.previous_worker_status_id,
+      });
+
+      return { workerStatusId: EWorkerStatus.disponible };
+    }
+
+    const payload: StatusConnectionWorkerRequest = {
+      worker_id: data.worker_id,
+      status: EWorkerStatus.online,
+      type: EBaileysConnectionType.qrcode,
+    };
+
+    try {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_connection_reconcile_start',
+        decision: 'reconcile_recreated_worker_connection',
+        outcome: 'started',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+      });
+
+      const response =
+        await this.workerBaileysGrpcClientService.requestConnection(
+          data.worker_id,
+          payload,
+          workerType
+        );
+      const current = await this.workerService.viewWorkerForMonitor(
+        data.worker_id
+      );
+      const connected =
+        this.isConnectedConnectionState(response) ||
+        current?.worker_status_id === EWorkerStatus.online;
+
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_connection_reconcile_success',
+        decision: 'reconcile_recreated_worker_connection',
+        outcome: connected ? 'connected' : 'not_connected',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+        status: response?.status,
+        code: response?.code,
+        worker_status_id: response?.worker_status_id,
+        current_worker_status_id: current?.worker_status_id,
+        has_phone: Boolean(response?.phone),
+        has_qr: Boolean(response?.qrcode),
+        has_pairing_code: Boolean(response?.pairing_code),
+      });
+
+      if (!connected) {
+        return { workerStatusId: EWorkerStatus.disponible };
+      }
+
+      return {
+        workerStatusId: EWorkerStatus.online,
+        connectionState: {
+          code: response?.code ?? ECodeMessage.connectionEstablished,
+          status:
+            response?.status === EBaileysConnectionStatus.connected
+              ? response.status
+              : EBaileysConnectionStatus.connected,
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          phone: response?.phone,
+          worker_status_id: EWorkerStatus.online,
+        },
+      };
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_connection_reconcile_error',
+        decision: 'reconcile_recreated_worker_connection',
+        outcome: 'error',
+        reason: 'request_connection_failed',
+        level: 'warn',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+        error: getErrorMessage(err),
+      });
+
+      return { workerStatusId: EWorkerStatus.disponible };
+    }
+  }
+
+  private buildRecreateFinalWorkerUpdate(
+    data: IWorkerPayload,
+    workerType: EWorkerType,
+    containerId: string,
+    shouldRemoveSession: boolean,
+    reconciliation: RecreateConnectionReconciliation
+  ): IUpdateWorker {
+    const inputUpdate: IUpdateWorker = {
+      worker_id: data.worker_id,
+      worker_status_id: reconciliation.workerStatusId,
+      worker_type_id: workerType,
+      container_id: containerId,
+      ...(data.lifecycle_operation_id ? { lifecycle_operation_id: null } : {}),
+    };
+
+    if (shouldRemoveSession) {
+      inputUpdate.number = null;
+      inputUpdate.connection_date = null;
+      return inputUpdate;
+    }
+
+    if (
+      reconciliation.workerStatusId === EWorkerStatus.online &&
+      reconciliation.connectionState?.phone
+    ) {
+      inputUpdate.number = reconciliation.connectionState.phone;
+      inputUpdate.connection_date = currentTime();
+    }
+
+    return inputUpdate;
+  }
+
+  private async publishWorkerRecreateFinalState(
+    data: IWorkerPayload,
+    reconciliation: RecreateConnectionReconciliation
+  ): Promise<PublishResult> {
+    if (reconciliation.workerStatusId !== EWorkerStatus.online) {
+      return this.publishWorkerDisponible(data);
+    }
+
+    const state: IBaileysConnectionState = {
+      code:
+        reconciliation.connectionState?.code ??
+        ECodeMessage.connectionEstablished,
+      status: EBaileysConnectionStatus.connected,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      phone: reconciliation.connectionState?.phone,
+      worker_status_id: EWorkerStatus.online,
+    };
+
+    const [result] = await Promise.all([
+      this.centrifugoPublish(state),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), state),
     ]);
     return result;
   }

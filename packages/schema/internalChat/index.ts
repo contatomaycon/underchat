@@ -12,6 +12,7 @@ export * from './listMessages';
 export * from './listUsers';
 export * from './markRead';
 export * from './messageHistory';
+export * from './notificationSettings';
 export * from './openDirect';
 export * from './reactMessage';
 export * from './realtimeToken';

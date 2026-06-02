@@ -20,6 +20,13 @@ export const chatsUserResponseSchema = Type.Object({
   notifications_status_queue: Type.Boolean(),
   notifications_status_in_chat: Type.Boolean(),
   notifications_status_chatbot: Type.Boolean(),
+  notifications_internal_chat: Type.Boolean(),
+  notifications_internal_chat_direct: Type.Boolean(),
+  notifications_internal_chat_group: Type.Boolean(),
+  notifications_internal_chat_sound: Type.Boolean(),
+  notifications_internal_chat_toast: Type.Boolean(),
+  notifications_internal_chat_browser: Type.Boolean(),
+  notifications_internal_chat_push: Type.Boolean(),
 });
 
 export const userResponseSchema = Type.Object({

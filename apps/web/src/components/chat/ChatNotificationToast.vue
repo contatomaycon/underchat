@@ -3,9 +3,11 @@ import { ref, computed, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useInternalChatStore } from '@/@webcore/stores/internalChat';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
+import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import type { ChatNotificationToastPayload } from '@/composables/useChatNotificationToast';
 
@@ -22,12 +24,17 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const chatStore = useChatStore();
+const internalChatStore = useInternalChatStore();
 const { t } = useI18n();
 const timer = ref<ReturnType<typeof setTimeout> | null>(null);
 
 const shouldShow = computed(() => props.visible);
 
 const notificationChatId = computed(() => {
+  if (props.notification.type === 'internal-message') {
+    return props.notification.message.conversation_id;
+  }
+
   if (props.notification.type === 'message') {
     return props.notification.message.chat_id;
   }
@@ -36,6 +43,10 @@ const notificationChatId = computed(() => {
 });
 
 const notificationChat = computed(() => {
+  if (props.notification.type === 'internal-message') {
+    return null;
+  }
+
   if (props.notification.type === 'status') {
     return props.notification.chat;
   }
@@ -51,12 +62,38 @@ const notificationChat = computed(() => {
 });
 
 const senderName = computed(() => {
+  if (props.notification.type === 'internal-message') {
+    const { message } = props.notification;
+    const conversation = internalChatStore.conversations.find(
+      (item) => item.conversation_id === message.conversation_id
+    );
+
+    if (conversation?.type === EInternalChatConversationType.group) {
+      return conversation.name || t('internal_chat_default_conversation');
+    }
+
+    return message.user?.name || t('internal_chat_default_conversation');
+  }
+
   return (
     notificationChat.value?.name || notificationChat.value?.contact?.name || ''
   );
 });
 
 const senderIcon = computed(() => {
+  if (props.notification.type === 'internal-message') {
+    const { message } = props.notification;
+    const conversation = internalChatStore.conversations.find(
+      (item) => item.conversation_id === message.conversation_id
+    );
+
+    return (
+      conversation?.photo ||
+      message.user?.photo ||
+      '/images/svg/avatar-default.svg'
+    );
+  }
+
   return (
     notificationChat.value?.photo ||
     notificationChat.value?.contact?.photo ||
@@ -96,6 +133,12 @@ function getMessagePreview(message: IChatMessage): string {
 }
 
 const messagePreview = computed(() => {
+  if (props.notification.type === 'internal-message') {
+    return getMessagePreview(
+      props.notification.message as unknown as IChatMessage
+    );
+  }
+
   if (props.notification.type === 'status') {
     if (props.notification.chat.status === EChatStatus.in_chat) {
       return t('chat_notification_status_in_chat');
@@ -114,6 +157,16 @@ const messagePreview = computed(() => {
 function handleClick() {
   emit('click');
   emit('close');
+
+  if (props.notification.type === 'internal-message') {
+    const conversationId = props.notification.message.conversation_id;
+    void internalChatStore.openConversation(conversationId);
+    router.push({
+      name: 'internal-chat',
+      query: { conversation_id: conversationId },
+    });
+    return;
+  }
 
   if (chatStore.setActiveChat) {
     chatStore.setActiveChat(notificationChatId.value);

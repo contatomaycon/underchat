@@ -167,6 +167,41 @@ function parseChatSnapshot(value: unknown): ListChatsResult | null {
   };
 }
 
+function parseInternalChatConversationId(data: unknown): string | null {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  const notificationType = readString(data.notificationType);
+  const conversationId =
+    readString(data.internalChatConversationId) ??
+    readString(data.internal_chat_conversation_id);
+
+  if (!conversationId) {
+    return null;
+  }
+
+  if (notificationType && notificationType !== 'internal_chat_message') {
+    return null;
+  }
+
+  return conversationId;
+}
+
+export function isAnyMobilePushPreferenceEnabled(user: unknown): boolean {
+  if (!isRecord(user)) return false;
+  const chatUser = isRecord(user.chat_user) ? user.chat_user : null;
+  if (!chatUser) return false;
+
+  const customerChatEnabled =
+    chatUser.notifications === true && chatUser.notifications_push !== false;
+  const internalChatEnabled =
+    chatUser.notifications_internal_chat === true &&
+    chatUser.notifications_internal_chat_push !== false;
+
+  return customerChatEnabled || internalChatEnabled;
+}
+
 async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
 
@@ -280,6 +315,7 @@ async function deletePushSubscriptionDirect(payload: {
 
 export async function initializePushNotifications(options: {
   onChatTap: (chat: ListChatsResult) => void;
+  onInternalChatTap?: (conversationId: string) => void;
 }): Promise<void> {
   if (!initialized) {
     Notifications.setNotificationHandler({
@@ -307,6 +343,12 @@ export async function initializePushNotifications(options: {
       );
       if (chat) {
         options.onChatTap(chat);
+        return;
+      }
+
+      const internalChatConversationId = parseInternalChatConversationId(data);
+      if (internalChatConversationId) {
+        options.onInternalChatTap?.(internalChatConversationId);
       }
     }
   );
@@ -320,6 +362,12 @@ export async function initializePushNotifications(options: {
     );
     if (chat) {
       options.onChatTap(chat);
+      return;
+    }
+
+    const internalChatConversationId = parseInternalChatConversationId(data);
+    if (internalChatConversationId) {
+      options.onInternalChatTap?.(internalChatConversationId);
     }
   }
 }

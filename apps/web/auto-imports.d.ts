@@ -56,6 +56,7 @@ declare global {
   const eagerComputed: typeof import('@vueuse/core').eagerComputed
   const effectScope: typeof import('vue').effectScope
   const emailValidator: typeof import('./src/@webcore/utils/validators').emailValidator
+  const emitInternalChatNotificationMessage: typeof import('./src/composables/useInternalChatNotifications').emitInternalChatNotificationMessage
   const extendRef: typeof import('@vueuse/core').extendRef
   const formatDate: typeof import('./src/@webcore/utils/formatters').formatDate
   const formatDateLong: typeof import('./src/@webcore/utils/formatters').formatDateLong
@@ -279,6 +280,7 @@ declare global {
   const useIdle: typeof import('@vueuse/core').useIdle
   const useImage: typeof import('@vueuse/core').useImage
   const useInfiniteScroll: typeof import('@vueuse/core').useInfiniteScroll
+  const useInternalChatNotifications: typeof import('./src/composables/useInternalChatNotifications').useInternalChatNotifications
   const useInternalChatSocket: typeof import('./src/composables/useInternalChatSocket').useInternalChatSocket
   const useIntersectionObserver: typeof import('@vueuse/core').useIntersectionObserver
   const useInterval: typeof import('@vueuse/core').useInterval
@@ -479,6 +481,7 @@ declare module 'vue' {
     readonly eagerComputed: UnwrapRef<typeof import('@vueuse/core')['eagerComputed']>
     readonly effectScope: UnwrapRef<typeof import('vue')['effectScope']>
     readonly emailValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['emailValidator']>
+    readonly emitInternalChatNotificationMessage: UnwrapRef<typeof import('./src/composables/useInternalChatNotifications')['emitInternalChatNotificationMessage']>
     readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
     readonly formatDate: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDate']>
     readonly formatDateLong: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateLong']>
@@ -691,6 +694,7 @@ declare module 'vue' {
     readonly useIdle: UnwrapRef<typeof import('@vueuse/core')['useIdle']>
     readonly useImage: UnwrapRef<typeof import('@vueuse/core')['useImage']>
     readonly useInfiniteScroll: UnwrapRef<typeof import('@vueuse/core')['useInfiniteScroll']>
+    readonly useInternalChatNotifications: UnwrapRef<typeof import('./src/composables/useInternalChatNotifications')['useInternalChatNotifications']>
     readonly useInternalChatSocket: UnwrapRef<typeof import('./src/composables/useInternalChatSocket')['useInternalChatSocket']>
     readonly useIntersectionObserver: UnwrapRef<typeof import('@vueuse/core')['useIntersectionObserver']>
     readonly useInterval: UnwrapRef<typeof import('@vueuse/core')['useInterval']>

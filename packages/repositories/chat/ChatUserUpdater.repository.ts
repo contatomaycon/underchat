@@ -64,6 +64,41 @@ export class ChatUserUpdaterRepository {
         input.notifications_status_chatbot;
     }
 
+    if (input.notifications_internal_chat !== undefined) {
+      inputUpdate.notifications_internal_chat =
+        input.notifications_internal_chat;
+    }
+
+    if (input.notifications_internal_chat_direct !== undefined) {
+      inputUpdate.notifications_internal_chat_direct =
+        input.notifications_internal_chat_direct;
+    }
+
+    if (input.notifications_internal_chat_group !== undefined) {
+      inputUpdate.notifications_internal_chat_group =
+        input.notifications_internal_chat_group;
+    }
+
+    if (input.notifications_internal_chat_sound !== undefined) {
+      inputUpdate.notifications_internal_chat_sound =
+        input.notifications_internal_chat_sound;
+    }
+
+    if (input.notifications_internal_chat_toast !== undefined) {
+      inputUpdate.notifications_internal_chat_toast =
+        input.notifications_internal_chat_toast;
+    }
+
+    if (input.notifications_internal_chat_browser !== undefined) {
+      inputUpdate.notifications_internal_chat_browser =
+        input.notifications_internal_chat_browser;
+    }
+
+    if (input.notifications_internal_chat_push !== undefined) {
+      inputUpdate.notifications_internal_chat_push =
+        input.notifications_internal_chat_push;
+    }
+
     if (input.sort_by_chat_order !== undefined) {
       inputUpdate.sort_by_chat_order = input.sort_by_chat_order;
     }

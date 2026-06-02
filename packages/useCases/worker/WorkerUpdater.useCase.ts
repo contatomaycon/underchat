@@ -184,13 +184,14 @@ export class WorkerUpdaterUseCase {
 
     let currentServerId: string | undefined;
     let currentServerStatusId: string | undefined;
+    let previousWorkerStatusId: EWorkerStatus | undefined;
     let shouldRecreateOnServerChange = false;
 
     if (shouldRecreateOnTypeChange || input.server_id) {
-      const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
-        accountId,
-        input.worker_id
-      );
+      const [viewWorkerBalancer, viewWorker] = await Promise.all([
+        this.workerService.viewWorkerBalancer(accountId, input.worker_id),
+        this.workerService.viewWorker(accountId, input.worker_id),
+      ]);
 
       if (!viewWorkerBalancer?.server_id) {
         throw new Error(t('worker_not_found'));
@@ -198,6 +199,9 @@ export class WorkerUpdaterUseCase {
 
       currentServerId = viewWorkerBalancer.server_id;
       currentServerStatusId = viewWorkerBalancer.server_status_id;
+      previousWorkerStatusId = viewWorker?.status?.id as
+        | EWorkerStatus
+        | undefined;
 
       if (input.server_id) {
         shouldRecreateOnServerChange = await this.validateServerEligibility(
@@ -287,8 +291,12 @@ export class WorkerUpdaterUseCase {
               remove_session: true,
               remove_volume: true,
               lifecycle_operation_id: lifecycleOperationId,
+              previous_worker_status_id: previousWorkerStatusId,
             }
-          : { lifecycle_operation_id: lifecycleOperationId }
+          : {
+              lifecycle_operation_id: lifecycleOperationId,
+              previous_worker_status_id: previousWorkerStatusId,
+            }
       );
     }
 

@@ -40,6 +40,7 @@ import { teardownMobileSession } from '../utils/sessionTeardown';
 import {
   disableMobilePushNotifications,
   enableMobilePushNotifications,
+  isAnyMobilePushPreferenceEnabled,
 } from '../services/pushNotifications';
 import { useChannelStatus } from '../context/ChannelStatusContext';
 import { addSessionUpdatedListener } from '../utils/appResumeBus';
@@ -619,7 +620,10 @@ export function UserSidebar({
 
         if (!profileUpdated) {
           setNotifications(previous);
-          await disableMobilePushNotifications().catch(() => false);
+          const userAfterFailure = await getUser().catch(() => null);
+          if (!isAnyMobilePushPreferenceEnabled(userAfterFailure)) {
+            await disableMobilePushNotifications().catch(() => false);
+          }
           setNotificationSaving(false);
           return;
         }
@@ -635,9 +639,12 @@ export function UserSidebar({
         return;
       }
 
-      const pushDisabled = await disableMobilePushNotifications();
-      if (!pushDisabled) {
-        Alert.alert(pt.warning_title, pt.notification_disable_error);
+      const userAfterUpdate = await getUser().catch(() => null);
+      if (!isAnyMobilePushPreferenceEnabled(userAfterUpdate)) {
+        const pushDisabled = await disableMobilePushNotifications();
+        if (!pushDisabled) {
+          Alert.alert(pt.warning_title, pt.notification_disable_error);
+        }
       }
 
       setNotificationSaving(false);

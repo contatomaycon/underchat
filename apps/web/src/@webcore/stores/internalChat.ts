@@ -4,8 +4,9 @@ import { AxiosError, type AxiosRequestConfig } from 'axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { EColor } from '@core/common/enums/EColor';
 import { ISnackbar } from '@core/common/interfaces/ISnackbar';
+import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { getI18n } from '@/plugins/i18n';
-import { getUser } from '@/@webcore/localStorage/user';
+import { getUser, setUser } from '@/@webcore/localStorage/user';
 import type { AuthUserResponse } from '@core/schema/auth/login/response.schema';
 import type { ListConversationsQuery } from '@core/schema/internalChat/listConversations/request.schema';
 import type { ListConversationsResponse } from '@core/schema/internalChat/listConversations/response.schema';
@@ -21,6 +22,11 @@ import type { CreateMessageBody } from '@core/schema/internalChat/createMessage/
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
 import type { ViewInternalChatLinkPreviewBody } from '@core/schema/internalChat/viewLinkPreview/request.schema';
 import type { ViewInternalChatLinkPreviewResponse } from '@core/schema/internalChat/viewLinkPreview/response.schema';
+import type { InternalChatNotificationSettingsRequest } from '@core/schema/internalChat/notificationSettings/request.schema';
+import type {
+  InternalChatNotificationSettingsData,
+  InternalChatNotificationSettingsResponse,
+} from '@core/schema/internalChat/notificationSettings/response.schema';
 import { EInternalChatActivityState } from '@core/common/enums/internalChat/EInternalChatActivityState';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
@@ -150,6 +156,106 @@ export const useInternalChatStore = defineStore('internalChat', {
 
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+
+    patchChatUser(input: Partial<NonNullable<AuthUserResponse['chat_user']>>) {
+      if (!this.user) return;
+
+      const existingChatUser = this.user.chat_user ?? undefined;
+      const chatUser = {
+        chat_user_id:
+          input.chat_user_id ?? existingChatUser?.chat_user_id ?? '',
+        about: input.about ?? existingChatUser?.about ?? null,
+        status:
+          input.status ?? existingChatUser?.status ?? EChatUserStatus.offline,
+        notifications:
+          input.notifications ?? existingChatUser?.notifications ?? true,
+        notifications_sound:
+          input.notifications_sound ??
+          existingChatUser?.notifications_sound ??
+          true,
+        notifications_toast:
+          input.notifications_toast ??
+          existingChatUser?.notifications_toast ??
+          true,
+        notifications_browser:
+          input.notifications_browser ??
+          existingChatUser?.notifications_browser ??
+          true,
+        notifications_push:
+          input.notifications_push ??
+          existingChatUser?.notifications_push ??
+          true,
+        notifications_status_update:
+          input.notifications_status_update ??
+          existingChatUser?.notifications_status_update ??
+          true,
+        notifications_status_queue:
+          input.notifications_status_queue ??
+          existingChatUser?.notifications_status_queue ??
+          false,
+        notifications_status_in_chat:
+          input.notifications_status_in_chat ??
+          existingChatUser?.notifications_status_in_chat ??
+          true,
+        notifications_status_chatbot:
+          input.notifications_status_chatbot ??
+          existingChatUser?.notifications_status_chatbot ??
+          false,
+        notifications_internal_chat:
+          input.notifications_internal_chat ??
+          existingChatUser?.notifications_internal_chat ??
+          true,
+        notifications_internal_chat_direct:
+          input.notifications_internal_chat_direct ??
+          existingChatUser?.notifications_internal_chat_direct ??
+          true,
+        notifications_internal_chat_group:
+          input.notifications_internal_chat_group ??
+          existingChatUser?.notifications_internal_chat_group ??
+          true,
+        notifications_internal_chat_sound:
+          input.notifications_internal_chat_sound ??
+          existingChatUser?.notifications_internal_chat_sound ??
+          true,
+        notifications_internal_chat_toast:
+          input.notifications_internal_chat_toast ??
+          existingChatUser?.notifications_internal_chat_toast ??
+          true,
+        notifications_internal_chat_browser:
+          input.notifications_internal_chat_browser ??
+          existingChatUser?.notifications_internal_chat_browser ??
+          true,
+        notifications_internal_chat_push:
+          input.notifications_internal_chat_push ??
+          existingChatUser?.notifications_internal_chat_push ??
+          true,
+        sort_by_chat_order:
+          input.sort_by_chat_order ?? existingChatUser?.sort_by_chat_order,
+        sort_in_chat_order:
+          input.sort_in_chat_order ?? existingChatUser?.sort_in_chat_order,
+        sort_by_my_chats_order:
+          input.sort_by_my_chats_order ??
+          existingChatUser?.sort_by_my_chats_order,
+        sort_my_chats_order:
+          input.sort_my_chats_order ?? existingChatUser?.sort_my_chats_order,
+        sort_by_queue_order:
+          input.sort_by_queue_order ?? existingChatUser?.sort_by_queue_order,
+        sort_queue_order:
+          input.sort_queue_order ?? existingChatUser?.sort_queue_order,
+        sort_by_chatbot_order:
+          input.sort_by_chatbot_order ??
+          existingChatUser?.sort_by_chatbot_order,
+        sort_chatbot_order:
+          input.sort_chatbot_order ?? existingChatUser?.sort_chatbot_order,
+      } as NonNullable<AuthUserResponse['chat_user']>;
+
+      this.user = {
+        ...this.user,
+        chat_user: chatUser,
+      };
+
+      setUser(this.user);
     },
 
     resolveErrorMessage(error: unknown, fallback?: string): string {
@@ -520,6 +626,67 @@ export const useInternalChatStore = defineStore('internalChat', {
         { current_page: 1, per_page: this.conversationsPaging.per_page },
         false
       );
+    },
+
+    async viewNotificationSettings(): Promise<InternalChatNotificationSettingsData | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<InternalChatNotificationSettingsResponse['data']>
+        >('/internal-chat/notification-settings');
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          return null;
+        }
+
+        this.patchChatUser(data.data);
+        return data.data;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('internal_chat_notification_load_error')
+          ),
+          EColor.error
+        );
+        return null;
+      }
+    },
+
+    async updateNotificationSettings(
+      input: InternalChatNotificationSettingsRequest
+    ): Promise<InternalChatNotificationSettingsData | null> {
+      try {
+        const response = await axios.put<
+          IApiResponse<InternalChatNotificationSettingsResponse['data']>
+        >('/internal-chat/notification-settings', input);
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          this.showSnackbar(
+            data?.message ||
+              this.i18n.global.t('internal_chat_notification_save_error'),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.patchChatUser(data.data);
+        this.showSnackbar(
+          this.i18n.global.t('internal_chat_notification_save_success'),
+          EColor.success
+        );
+        return data.data;
+      } catch (error) {
+        this.showSnackbar(
+          this.resolveErrorMessage(
+            error,
+            this.i18n.global.t('internal_chat_notification_save_error')
+          ),
+          EColor.error
+        );
+        return null;
+      }
     },
 
     async openDirect(
@@ -1261,19 +1428,19 @@ export const useInternalChatStore = defineStore('internalChat', {
       }
     },
 
-    handleRealtimePayload(payload: unknown) {
-      if (!payload || typeof payload !== 'object') return;
+    handleRealtimePayload(payload: unknown): InternalMessage | null {
+      if (!payload || typeof payload !== 'object') return null;
       const data = payload as Record<string, unknown>;
 
       if (data.type === 'internal_chat_conversation_sync') {
         const isMessageSync = data.reason === 'message';
 
         if (isMessageSync) {
-          return;
+          return null;
         }
 
         this.scheduleRefreshConversations();
-        return;
+        return null;
       }
 
       if (
@@ -1290,7 +1457,7 @@ export const useInternalChatStore = defineStore('internalChat', {
             typeof data.user_photo === 'string' ? data.user_photo : null,
           state: data.state as EInternalChatActivityState,
         });
-        return;
+        return null;
       }
 
       if (
@@ -1298,7 +1465,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         typeof data.conversation_id !== 'string' ||
         typeof data.account_id !== 'string'
       ) {
-        return;
+        return null;
       }
 
       const message = data as unknown as InternalMessage;
@@ -1343,6 +1510,8 @@ export const useInternalChatStore = defineStore('internalChat', {
           normalizeMessagePreview(message);
         this.activeConversation.is_closed_for_me = false;
       }
+
+      return message;
     },
   },
 });

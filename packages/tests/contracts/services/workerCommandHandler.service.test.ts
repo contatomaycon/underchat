@@ -1,5 +1,7 @@
 import 'reflect-metadata';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -109,6 +111,15 @@ const buildContainerHealthResult = (
   ...overrides,
 });
 
+const buildConnectedState = () => ({
+  status: EBaileysConnectionStatus.connected,
+  code: ECodeMessage.connectionEstablished,
+  worker_id: 'worker-1',
+  account_id: 'account-1',
+  phone: '+556192037138',
+  worker_status_id: EWorkerStatus.online,
+});
+
 function buildHandler(
   overrides: {
     cleanupError?: unknown;
@@ -187,7 +198,7 @@ function buildHandler(
     >(async () => buildContainerHealthResult()),
   };
   const workerBaileysGrpcClientService = {
-    requestConnection: jest.fn(async () => undefined),
+    requestConnection: jest.fn(async () => buildConnectedState()),
     waitForReady: jest.fn(async () => 'worker-1:50053'),
     requestConnectionQrCode: jest.fn(async () => ({
       status: 'connecting',
@@ -283,8 +294,8 @@ describe('WorkerCommandHandlerService connection', () => {
     const deps = buildHandler();
     let resolveConnection!: () => void;
     deps.workerBaileysGrpcClientService.requestConnection.mockReturnValueOnce(
-      new Promise<undefined>((resolve) => {
-        resolveConnection = () => resolve(undefined);
+      new Promise<ReturnType<typeof buildConnectedState>>((resolve) => {
+        resolveConnection = () => resolve(buildConnectedState());
       })
     );
 
@@ -323,7 +334,7 @@ describe('WorkerCommandHandlerService connection', () => {
     const deps = buildHandler();
     deps.workerBaileysGrpcClientService.requestConnection
       .mockRejectedValueOnce(new Error('worker not ready'))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce(buildConnectedState());
     deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
       buildContainerHealthResult({
         healthy: true,
@@ -841,6 +852,49 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_id: 'worker-1',
         worker_status_id: EWorkerStatus.disponible,
         container_id: 'container-1',
+      })
+    );
+  });
+
+  it('keeps a previously online worker online after recreate when the worker reconnects', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      previous_worker_status_id: EWorkerStatus.online,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      }),
+      EWorkerType.wwebjs
+    );
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        container_id: 'container-1',
+        number: '+556192037138',
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      expect.stringContaining('account-1'),
+      expect.objectContaining({
+        status: EBaileysConnectionStatus.connected,
+        code: ECodeMessage.connectionEstablished,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_status_id: EWorkerStatus.online,
       })
     );
   });

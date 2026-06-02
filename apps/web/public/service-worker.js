@@ -28,6 +28,7 @@ self.addEventListener('notificationclick', (event) => {
 
   const data = event.notification.data || {};
   const chatId = data.chatId;
+  const internalChatConversationId = data.internalChatConversationId;
 
   event.waitUntil(
     self.clients
@@ -35,14 +36,23 @@ self.addEventListener('notificationclick', (event) => {
       .then((clientList) => {
         if (clientList.length > 0) {
           const client = clientList[0];
-          if (chatId) {
+          if (internalChatConversationId) {
+            client.postMessage({
+              type: 'navigateToInternalChat',
+              conversationId: internalChatConversationId,
+            });
+          } else if (chatId) {
             client.postMessage({ type: 'navigateToChat', chatId });
           }
           return client.focus().catch(() => {});
         }
 
         if (self.clients.openWindow) {
-          const url = chatId ? `/chat?chat_id=${chatId}` : '/';
+          const url = internalChatConversationId
+            ? `/internal-chat?conversation_id=${internalChatConversationId}`
+            : chatId
+              ? `/chat?chat_id=${chatId}`
+              : '/';
           return self.clients.openWindow(url);
         }
       })

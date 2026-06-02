@@ -3,7 +3,8 @@ import { user, chatUser } from '@core/models';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
 
 export type ChatNotificationPreferences = {
   notifications?: boolean | null;
@@ -12,6 +13,13 @@ export type ChatNotificationPreferences = {
   notifications_status_queue?: boolean | null;
   notifications_status_in_chat?: boolean | null;
   notifications_status_chatbot?: boolean | null;
+};
+
+export type InternalChatNotificationPreferences = {
+  notifications_internal_chat?: boolean | null;
+  notifications_internal_chat_push?: boolean | null;
+  notifications_internal_chat_direct?: boolean | null;
+  notifications_internal_chat_group?: boolean | null;
 };
 
 export function isChatbotNotificationStatus(status?: EChatStatus): boolean {
@@ -118,6 +126,41 @@ export class UsersWithNotificationsListerRepository {
     if (!result?.length) {
       return [];
     }
+
+    return result.map((row) => row.user_id);
+  };
+
+  listInternalChatUsersWithNotifications = async (
+    accountId: string,
+    participantUserIds: string[],
+    conversationType: EInternalChatConversationType
+  ): Promise<string[]> => {
+    if (participantUserIds.length === 0) {
+      return [];
+    }
+
+    const typeToggle =
+      conversationType === EInternalChatConversationType.group
+        ? chatUser.notifications_internal_chat_group
+        : chatUser.notifications_internal_chat_direct;
+
+    const result = await this.dbRo
+      .select({
+        user_id: user.user_id,
+      })
+      .from(user)
+      .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
+      .where(
+        and(
+          eq(user.account_id, accountId),
+          inArray(user.user_id, participantUserIds),
+          eq(chatUser.notifications_internal_chat, true),
+          eq(chatUser.notifications_internal_chat_push, true),
+          eq(typeToggle, true),
+          isNull(user.deleted_at)
+        )
+      )
+      .execute();
 
     return result.map((row) => row.user_id);
   };

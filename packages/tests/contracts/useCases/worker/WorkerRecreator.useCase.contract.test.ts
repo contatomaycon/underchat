@@ -67,7 +67,11 @@ describe('WorkerRecreatorUseCase', () => {
       })
     );
 
-    await expect(sut.execute(t, 'account-1', 'worker-1')).resolves.toBe(true);
+    await expect(
+      sut.execute(t, 'account-1', 'worker-1', {
+        previous_worker_status_id: EWorkerStatus.online,
+      })
+    ).resolves.toBe(true);
 
     expect(centrifugoService.publishSub).toHaveBeenCalledWith(
       workerCentrifugoQueue('account-1'),
@@ -81,6 +85,7 @@ describe('WorkerRecreatorUseCase', () => {
       expect.objectContaining({
         action: EWorkerAction.recreate,
         worker_id: 'worker-1',
+        previous_worker_status_id: EWorkerStatus.online,
       })
     );
 

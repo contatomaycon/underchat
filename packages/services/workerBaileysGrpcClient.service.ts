@@ -128,7 +128,7 @@ export class WorkerBaileysGrpcClientService {
       phone_connection?: string;
       remove_session?: boolean;
     }
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     const client = new WorkerConnectionClient(
       address,
       credentials.createInsecure()
@@ -148,12 +148,15 @@ export class WorkerBaileysGrpcClientService {
       remove_session: protoPayload.remove_session === true,
     });
 
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
       (client as any).RequestConnection(
         protoPayload,
         metadata,
         { deadline },
-        (err: ServiceError | null) => {
+        (
+          err: ServiceError | null,
+          response?: IWorkerConnectionStateProto
+        ): void => {
           client.close();
           if (err) {
             recordConnectionLifecycle({
@@ -170,6 +173,7 @@ export class WorkerBaileysGrpcClientService {
             reject(err);
             return;
           }
+          const state = protoToConnectionState(response ?? {});
           recordConnectionLifecycle({
             stage: 'connection.balancer.worker_connection_grpc.request_success',
             decision: 'grpc_request_connection',
@@ -177,8 +181,14 @@ export class WorkerBaileysGrpcClientService {
             grpc_method: 'RequestConnection',
             grpc_address: address,
             deadline_ms: GRPC_DEADLINE_MS,
+            status: state.status,
+            code: state.code,
+            qrcode: state.qrcode,
+            pairing_code: state.pairing_code,
+            has_qr: Boolean(state.qrcode),
+            has_pairing_code: Boolean(state.pairing_code),
           });
-          resolve();
+          resolve(state);
         }
       );
     });
@@ -418,7 +428,7 @@ export class WorkerBaileysGrpcClientService {
     workerId: string,
     payload: StatusConnectionWorkerRequest,
     workerType?: EWorkerType
-  ): Promise<void> {
+  ): Promise<IBaileysConnectionState> {
     const protoPayload = this.buildConnectionProtoPayload(payload);
 
     const contextData = buildConnectionLifecycleContext({
@@ -430,8 +440,8 @@ export class WorkerBaileysGrpcClientService {
       connection_action: 'request_connection',
     });
 
-    await runWithConnectionLifecycleContext(contextData, async () => {
-      await this.callWithFallback(workerId, workerType, (address) =>
+    return runWithConnectionLifecycleContext(contextData, async () => {
+      return this.callWithFallback(workerId, workerType, (address) =>
         this.requestConnectionByAddress(address, protoPayload)
       );
     });

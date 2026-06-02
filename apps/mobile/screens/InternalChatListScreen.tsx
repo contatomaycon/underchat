@@ -21,15 +21,27 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { AppAvatar } from '../components/AppAvatar';
+import { BottomSheetModal } from '../components/BottomSheetModal';
 import { useInternalChat } from '../context/InternalChatContext';
-import { getPermissions } from '../storage/authStorage';
+import { getPermissions, getUser, patchUser } from '../storage/authStorage';
 import { canCreateInternalChatGroup } from '../constants/chatAuthorization';
 import type { InternalChatStackParamList } from '../navigation/types';
 import type {
   InternalChatConversation,
+  InternalChatNotificationSettings,
+  InternalChatNotificationSettingsPayload,
   InternalChatTab,
   InternalChatUser,
 } from '../types/internalChat';
+import {
+  getInternalChatNotificationSettings,
+  updateInternalChatNotificationSettings,
+} from '../api/internalChatApi';
+import {
+  disableMobilePushNotifications,
+  enableMobilePushNotifications,
+  isAnyMobilePushPreferenceEnabled,
+} from '../services/pushNotifications';
 import {
   INTERNAL_CHAT_CONVERSATION_TYPE,
   INTERNAL_CHAT_TAB,
@@ -112,6 +124,252 @@ function resolveAssetName(asset: ImagePicker.ImagePickerAsset): string {
   if (asset.fileName && asset.fileName.trim()) return asset.fileName;
   const extension = asset.mimeType?.split('/')[1] || 'jpg';
   return `grupo-${Date.now()}.${extension}`;
+}
+
+const DEFAULT_INTERNAL_CHAT_NOTIFICATION_SETTINGS: InternalChatNotificationSettings =
+  {
+    notifications_internal_chat: true,
+    notifications_internal_chat_direct: true,
+    notifications_internal_chat_group: true,
+    notifications_internal_chat_sound: true,
+    notifications_internal_chat_toast: true,
+    notifications_internal_chat_browser: true,
+    notifications_internal_chat_push: true,
+  };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readBooleanDefaultTrue(value: unknown): boolean {
+  return value !== false;
+}
+
+function readInternalChatNotificationSettingsFromUser(
+  user: unknown
+): InternalChatNotificationSettings {
+  const chatUser =
+    isRecord(user) && isRecord(user.chat_user) ? user.chat_user : {};
+
+  return {
+    chat_user_id:
+      typeof chatUser.chat_user_id === 'string'
+        ? chatUser.chat_user_id
+        : undefined,
+    notifications_internal_chat: readBooleanDefaultTrue(
+      chatUser.notifications_internal_chat
+    ),
+    notifications_internal_chat_direct: readBooleanDefaultTrue(
+      chatUser.notifications_internal_chat_direct
+    ),
+    notifications_internal_chat_group: readBooleanDefaultTrue(
+      chatUser.notifications_internal_chat_group
+    ),
+    notifications_internal_chat_sound: readBooleanDefaultTrue(
+      chatUser.notifications_internal_chat_sound
+    ),
+    notifications_internal_chat_toast: readBooleanDefaultTrue(
+      chatUser.notifications_internal_chat_toast
+    ),
+    notifications_internal_chat_browser: readBooleanDefaultTrue(
+      chatUser.notifications_internal_chat_browser
+    ),
+    notifications_internal_chat_push: readBooleanDefaultTrue(
+      chatUser.notifications_internal_chat_push
+    ),
+  };
+}
+
+function shouldUseInternalChatPush(
+  settings: InternalChatNotificationSettingsPayload
+): boolean {
+  return (
+    settings.notifications_internal_chat !== false &&
+    settings.notifications_internal_chat_push !== false
+  );
+}
+
+type InternalChatNotificationSettingKey = Exclude<
+  keyof InternalChatNotificationSettings,
+  'chat_user_id'
+>;
+
+function InternalChatNotificationSettingsSheet({
+  visible,
+  settings,
+  loading,
+  saving,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  settings: InternalChatNotificationSettings;
+  loading: boolean;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (settings: InternalChatNotificationSettingsPayload) => void;
+}) {
+  const [draft, setDraft] = useState<InternalChatNotificationSettings>(
+    DEFAULT_INTERNAL_CHAT_NOTIFICATION_SETTINGS
+  );
+
+  useEffect(() => {
+    if (visible) {
+      setDraft(settings);
+    }
+  }, [settings, visible]);
+
+  const updateDraft = useCallback(
+    (key: InternalChatNotificationSettingKey, value: boolean) => {
+      setDraft((current) => ({
+        ...current,
+        [key]: value,
+      }));
+    },
+    []
+  );
+
+  const renderOption = (
+    key: InternalChatNotificationSettingKey,
+    title: string,
+    description: string,
+    icon: keyof typeof Ionicons.glyphMap,
+    disabled = false
+  ) => {
+    const enabled = draft[key] !== false;
+    return (
+      <Pressable
+        key={key}
+        style={[styles.notificationOption, disabled && styles.optionDisabled]}
+        onPress={() => {
+          if (!disabled && !saving && !loading) {
+            updateDraft(key, !enabled);
+          }
+        }}
+        disabled={disabled || saving || loading}
+      >
+        <View style={styles.notificationOptionIcon}>
+          <Ionicons name={icon} size={20} color={colors.primary} />
+        </View>
+        <View style={styles.notificationOptionText}>
+          <Text style={styles.notificationOptionTitle}>{title}</Text>
+          <Text style={styles.notificationOptionDescription}>
+            {description}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.notificationSwitch,
+            enabled && styles.notificationSwitchOn,
+          ]}
+        >
+          <View
+            style={[
+              styles.notificationSwitchThumb,
+              enabled && styles.notificationSwitchThumbOn,
+            ]}
+          />
+        </View>
+      </Pressable>
+    );
+  };
+
+  const childOptionsDisabled =
+    saving || loading || draft.notifications_internal_chat === false;
+
+  return (
+    <BottomSheetModal
+      visible={visible}
+      onClose={onClose}
+      title="Notificações"
+      footer={
+        <>
+          <Pressable
+            style={styles.sheetCancelBtn}
+            onPress={onClose}
+            disabled={saving}
+          >
+            <Text style={styles.sheetCancelText}>{pt.cancel}</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.sheetSaveBtn, saving && styles.primaryBtnDisabled]}
+            onPress={() => onSave(draft)}
+            disabled={saving || loading}
+          >
+            {saving ? (
+              <ActivityIndicator color={colors.onPrimary} />
+            ) : (
+              <Text style={styles.sheetSaveText}>{pt.save}</Text>
+            )}
+          </Pressable>
+        </>
+      }
+    >
+      {loading ? (
+        <View style={styles.notificationLoading}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.notificationLoadingText}>
+            Carregando configurações...
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.notificationContent}>
+          {renderOption(
+            'notifications_internal_chat',
+            'Habilitar notificações',
+            'Controla todos os avisos do Chat Interno.',
+            'notifications-outline'
+          )}
+
+          <Text style={styles.notificationSectionTitle}>Conversas</Text>
+          {renderOption(
+            'notifications_internal_chat_direct',
+            'Mensagens diretas',
+            'Receber avisos de conversas individuais.',
+            'chatbubble-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_internal_chat_group',
+            'Grupos',
+            'Receber avisos de mensagens em grupos.',
+            'people-outline',
+            childOptionsDisabled
+          )}
+
+          <Text style={styles.notificationSectionTitle}>Entrega</Text>
+          {renderOption(
+            'notifications_internal_chat_sound',
+            'Som',
+            'Tocar alerta sonoro quando disponível.',
+            'volume-high-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_internal_chat_toast',
+            'Alerta na tela',
+            'Mostrar aviso enquanto o app estiver aberto.',
+            'albums-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_internal_chat_browser',
+            'Navegador',
+            'Usado na versão web quando a aba está em segundo plano.',
+            'globe-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_internal_chat_push',
+            'Push em segundo plano',
+            'Receber notificação quando o app estiver fechado.',
+            'phone-portrait-outline',
+            childOptionsDisabled
+          )}
+        </View>
+      )}
+    </BottomSheetModal>
+  );
 }
 
 function useSkeletonOpacity() {
@@ -257,6 +515,16 @@ export function InternalChatListScreen() {
     name: string;
     mimeType: string;
   } | null>(null);
+  const [notificationSheetVisible, setNotificationSheetVisible] =
+    useState(false);
+  const [notificationSettings, setNotificationSettings] =
+    useState<InternalChatNotificationSettings>(
+      DEFAULT_INTERNAL_CHAT_NOTIFICATION_SETTINGS
+    );
+  const [notificationSettingsLoading, setNotificationSettingsLoading] =
+    useState(false);
+  const [notificationSettingsSaving, setNotificationSettingsSaving] =
+    useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [openingConversationId, setOpeningConversationId] = useState<
     string | null
@@ -276,6 +544,13 @@ export function InternalChatListScreen() {
         setCanCreateGroup(canCreateInternalChatGroup(permissions));
       }
     });
+    void getUser().then((user) => {
+      if (!cancelled) {
+        setNotificationSettings(
+          readInternalChatNotificationSettingsFromUser(user)
+        );
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -285,6 +560,11 @@ export function InternalChatListScreen() {
     return addSessionUpdatedListener(() => {
       void getPermissions().then((permissions) => {
         setCanCreateGroup(canCreateInternalChatGroup(permissions));
+      });
+      void getUser().then((user) => {
+        setNotificationSettings(
+          readInternalChatNotificationSettingsFromUser(user)
+        );
       });
     });
   }, []);
@@ -484,6 +764,78 @@ export function InternalChatListScreen() {
     setGroupPhoto(null);
   }, [creatingGroup]);
 
+  const openNotificationSheet = useCallback(() => {
+    setNotificationSheetVisible(true);
+    setNotificationSettingsLoading(true);
+
+    void getInternalChatNotificationSettings()
+      .then((settings) => {
+        if (settings) {
+          setNotificationSettings(settings);
+          void patchUser({ chat_user: settings });
+        }
+      })
+      .catch(() => {
+        Alert.alert(pt.error_title, 'Não foi possível carregar notificações.');
+      })
+      .finally(() => {
+        setNotificationSettingsLoading(false);
+      });
+  }, []);
+
+  const closeNotificationSheet = useCallback(() => {
+    if (notificationSettingsSaving) return;
+    setNotificationSheetVisible(false);
+  }, [notificationSettingsSaving]);
+
+  const saveNotificationSettings = useCallback(
+    async (nextSettings: InternalChatNotificationSettingsPayload) => {
+      if (notificationSettingsSaving) return;
+
+      setNotificationSettingsSaving(true);
+
+      try {
+        if (shouldUseInternalChatPush(nextSettings)) {
+          const result = await enableMobilePushNotifications();
+
+          if (!result.ok) {
+            Alert.alert(
+              pt.warning_title,
+              result.reason === 'permission_denied'
+                ? pt.notification_permission_denied
+                : pt.notification_enable_error
+            );
+            return;
+          }
+        }
+
+        const updated =
+          await updateInternalChatNotificationSettings(nextSettings);
+
+        if (!updated) {
+          Alert.alert(
+            pt.error_title,
+            'Não foi possível salvar as notificações.'
+          );
+          return;
+        }
+
+        setNotificationSettings(updated);
+        await patchUser({ chat_user: updated });
+
+        const userAfterUpdate = await getUser().catch(() => null);
+        if (!isAnyMobilePushPreferenceEnabled(userAfterUpdate)) {
+          await disableMobilePushNotifications().catch(() => false);
+        }
+
+        setNotificationSheetVisible(false);
+      } finally {
+        setNotificationSettingsSaving(false);
+      }
+    },
+    [notificationSettingsSaving]
+  );
+
   const submitCreateGroup = useCallback(async () => {
     const normalizedName = groupName.trim();
     if (!normalizedName) {
@@ -674,6 +1026,21 @@ export function InternalChatListScreen() {
                 : optionTitle}
             </Text>
           </View>
+          <Pressable
+            style={styles.headerAction}
+            onPress={openNotificationSheet}
+            accessibilityLabel="Configurar notificações"
+          >
+            <Ionicons
+              name={
+                notificationSettings.notifications_internal_chat !== false
+                  ? 'notifications-outline'
+                  : 'notifications-off-outline'
+              }
+              size={20}
+              color={colors.primary}
+            />
+          </Pressable>
           {canCreateGroup ? (
             <Pressable
               style={styles.headerAction}
@@ -789,6 +1156,15 @@ export function InternalChatListScreen() {
           </View>
         </View>
       </Modal>
+
+      <InternalChatNotificationSettingsSheet
+        visible={notificationSheetVisible}
+        settings={notificationSettings}
+        loading={notificationSettingsLoading}
+        saving={notificationSettingsSaving}
+        onClose={closeNotificationSheet}
+        onSave={saveNotificationSettings}
+      />
 
       <Modal
         visible={groupModalVisible}
@@ -1286,6 +1662,109 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   primaryText: {
+    color: colors.onPrimary,
+    fontWeight: '800',
+  },
+  notificationContent: {
+    gap: 10,
+  },
+  notificationLoading: {
+    minHeight: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  notificationLoadingText: {
+    color: colors.grey600,
+    fontSize: 13,
+  },
+  notificationSectionTitle: {
+    marginTop: 8,
+    color: colors.grey600,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  notificationOption: {
+    minHeight: 68,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey200,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surface,
+  },
+  optionDisabled: {
+    opacity: 0.55,
+  },
+  notificationOptionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EAF2FF',
+  },
+  notificationOptionText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  notificationOptionTitle: {
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  notificationOptionDescription: {
+    marginTop: 3,
+    color: colors.grey600,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  notificationSwitch: {
+    width: 42,
+    height: 24,
+    borderRadius: 12,
+    padding: 2,
+    backgroundColor: colors.grey300,
+    justifyContent: 'center',
+  },
+  notificationSwitchOn: {
+    backgroundColor: colors.primary,
+  },
+  notificationSwitchThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  notificationSwitchThumbOn: {
+    transform: [{ translateX: 18 }],
+  },
+  sheetCancelBtn: {
+    minHeight: 42,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.grey100,
+  },
+  sheetCancelText: {
+    color: colors.grey700,
+    fontWeight: '800',
+  },
+  sheetSaveBtn: {
+    minHeight: 42,
+    minWidth: 104,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  sheetSaveText: {
     color: colors.onPrimary,
     fontWeight: '800',
   },

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { status as GrpcStatus } from '@grpc/grpc-js';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerUpdaterUseCase } from './WorkerUpdater.useCase';
 
@@ -56,6 +57,9 @@ function buildUseCase(
       web_domain: '10.0.2.21',
       web_port: 3003,
       web_protocol: 'http',
+    })),
+    viewWorker: jest.fn(async () => ({
+      status: { id: EWorkerStatus.online },
     })),
     listWorkerServers: jest.fn(async () => [
       {
@@ -140,6 +144,7 @@ describe('WorkerUpdaterUseCase', () => {
         account_id: 'account-1',
         remove_session: true,
         remove_volume: true,
+        lifecycle_operation_id: 'uuid-v7',
       })
     );
     expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
@@ -157,9 +162,11 @@ describe('WorkerUpdaterUseCase', () => {
       {
         remove_session: true,
         remove_volume: true,
+        lifecycle_operation_id: 'uuid-v7',
+        previous_worker_status_id: EWorkerStatus.online,
       }
     );
-    expect(deps.callOrder).toEqual(['cleanup', 'update', 'recreate']);
+    expect(deps.callOrder).toEqual(['update', 'cleanup', 'recreate']);
   });
 
   it('aborts without updating when an accessible previous server fails cleanup', async () => {
@@ -177,9 +184,9 @@ describe('WorkerUpdaterUseCase', () => {
       })
     ).rejects.toThrow('worker_removal_failed');
 
-    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalled();
     expect(deps.workerRecreatorUseCase.execute).not.toHaveBeenCalled();
-    expect(deps.callOrder).toEqual(['cleanup']);
+    expect(deps.callOrder).toEqual(['update', 'cleanup']);
   });
 
   it('continues the server change when the previous server is marked offline', async () => {
@@ -216,7 +223,7 @@ describe('WorkerUpdaterUseCase', () => {
 
       expect(deps.workerService.updateWorkerById).toHaveBeenCalled();
       expect(deps.workerRecreatorUseCase.execute).toHaveBeenCalled();
-      expect(deps.callOrder).toEqual(['cleanup', 'update', 'recreate']);
+      expect(deps.callOrder).toEqual(['update', 'cleanup', 'recreate']);
     }
   );
 
@@ -286,8 +293,16 @@ describe('WorkerUpdaterUseCase', () => {
       t,
       'account-1',
       'worker-1',
-      undefined
+      {
+        lifecycle_operation_id: 'uuid-v7',
+        previous_worker_status_id: EWorkerStatus.online,
+      }
     );
-    expect(deps.callOrder).toEqual(['disconnect', 'update', 'recreate']);
+    expect(deps.callOrder).toEqual([
+      'update',
+      'disconnect',
+      'update',
+      'recreate',
+    ]);
   });
 });

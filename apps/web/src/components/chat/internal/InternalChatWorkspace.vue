@@ -12,17 +12,18 @@ import {
 import { storeToRefs } from 'pinia';
 import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import axios from '@webcore/axios';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
-import { useInternalChatSocket } from '@/composables/useInternalChatSocket';
 import { formatDateToMonthShort } from '@/@webcore/utils/formatters';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import InternalChatSearchSidebarContent from '@/components/chat/internal/InternalChatSearchSidebarContent.vue';
+import InternalChatNotificationSettingsDialog from '@/components/chat/internal/InternalChatNotificationSettingsDialog.vue';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
@@ -44,6 +45,8 @@ import type { ListMessagesResponse } from '@core/schema/internalChat/listMessage
 import type { ListGroupMembersResponse } from '@core/schema/internalChat/listGroupMembers/response.schema';
 import type { MessageHistoryResponse } from '@core/schema/internalChat/messageHistory/response.schema';
 import type { ViewInternalChatLinkPreviewResponse } from '@core/schema/internalChat/viewLinkPreview/response.schema';
+import type { InternalChatNotificationSettingsRequest } from '@core/schema/internalChat/notificationSettings/request.schema';
+import type { InternalChatNotificationSettingsData } from '@core/schema/internalChat/notificationSettings/response.schema';
 import type {
   ISelectedAudioPreview,
   ISelectedContactPreview,
@@ -154,8 +157,8 @@ const props = withDefaults(
 );
 
 const internalChatStore = useInternalChatStore();
-const internalChatSocket = useInternalChatSocket();
 const { t, getLocaleMessage } = useI18n();
+const route = useRoute();
 
 const {
   user,
@@ -254,6 +257,12 @@ const groupPhotoInputRef = ref<HTMLInputElement | null>(null);
 const groupInfoPhotoInputRef = ref<HTMLInputElement | null>(null);
 
 const isGroupDialogOpen = ref(false);
+const isNotificationSettingsDialogOpen = ref(false);
+const notificationSettings = ref<InternalChatNotificationSettingsData | null>(
+  null
+);
+const loadingNotificationSettings = ref(false);
+const savingNotificationSettings = ref(false);
 const groupName = ref('');
 const groupMemberUserIds = ref<string[]>([]);
 const groupPhotoFile = ref<File | null>(null);
@@ -454,6 +463,9 @@ const sidebarTabs = computed<InternalSidebarTabInfo[]>(() => [
 ]);
 
 const isUsersTab = computed(() => activeSidebarTab.value === 'users');
+const isInternalNotificationEnabled = computed(
+  () => user.value?.chat_user?.notifications_internal_chat !== false
+);
 
 const activeSidebarTabInfo = computed(() => {
   return (
@@ -3308,6 +3320,57 @@ const closeCreateGroupDialog = () => {
   resetCreateGroupForm();
 };
 
+const loadNotificationSettings = async () => {
+  loadingNotificationSettings.value = true;
+  try {
+    const settings = await internalChatStore.viewNotificationSettings();
+    if (settings) {
+      notificationSettings.value = settings;
+    }
+  } finally {
+    loadingNotificationSettings.value = false;
+  }
+};
+
+const openNotificationSettingsDialog = async () => {
+  isNotificationSettingsDialogOpen.value = true;
+
+  if (!notificationSettings.value) {
+    await loadNotificationSettings();
+  }
+};
+
+const saveNotificationSettings = async (
+  input: InternalChatNotificationSettingsRequest
+) => {
+  savingNotificationSettings.value = true;
+  try {
+    const settings = await internalChatStore.updateNotificationSettings(input);
+    if (!settings) return;
+
+    notificationSettings.value = settings;
+    isNotificationSettingsDialogOpen.value = false;
+  } finally {
+    savingNotificationSettings.value = false;
+  }
+};
+
+const readConversationIdFromRoute = (): string | null => {
+  const value = route.query.conversation_id;
+  const conversationId = Array.isArray(value) ? value[0] : value;
+
+  return typeof conversationId === 'string' && conversationId.trim()
+    ? conversationId.trim()
+    : null;
+};
+
+const openConversationFromRouteQuery = async () => {
+  const conversationId = readConversationIdFromRoute();
+  if (!conversationId) return;
+
+  await openConversation(conversationId);
+};
+
 const resetGroupCandidateUsers = () => {
   groupCandidateUsers.value = [];
   groupCandidatePaging.value = makeLocalPaging();
@@ -5598,10 +5661,17 @@ watch(
   { deep: true, immediate: true }
 );
 
+watch(
+  () => route.query.conversation_id,
+  async () => {
+    await openConversationFromRouteQuery();
+  }
+);
+
 onMounted(async () => {
   webGLSupported.value = isWebGLSupported();
   await loadSidebar(false);
-  await internalChatSocket.initializeSocket();
+  await openConversationFromRouteQuery();
   await updateMessageScrollbar();
   if (activeConversation.value) {
     await scrollMessagesToBottom();
@@ -5658,7 +5728,6 @@ onBeforeUnmount(async () => {
   clearGroupPhoto();
   document.removeEventListener('click', onReactionOutsideClick);
 
-  await internalChatSocket.cleanup();
 });
 </script>
 
@@ -5672,16 +5741,36 @@ onBeforeUnmount(async () => {
             <span>{{ t('internal_chat_title') }}</span>
           </div>
 
-          <VBtn
-            v-if="props.showBackToChat"
-            color="success"
-            variant="tonal"
-            class="internal-chat-back-btn"
-            @click="emit('switch-whatsapp-mode')"
-          >
-            <VIcon size="18" class="me-1">tabler-brand-whatsapp</VIcon>
-            {{ t('internal_chat_back_to_chat') }}
-          </VBtn>
+          <div class="internal-chat-mode-actions">
+            <IconBtn
+              :color="isInternalNotificationEnabled ? 'primary' : 'default'"
+              class="internal-chat-notification-btn"
+              :aria-label="t('internal_chat_notification_title')"
+              @click="openNotificationSettingsDialog"
+            >
+              <VIcon size="20">
+                {{
+                  isInternalNotificationEnabled
+                    ? 'tabler-bell'
+                    : 'tabler-bell-off'
+                }}
+              </VIcon>
+              <VTooltip activator="parent" location="bottom">
+                {{ t('internal_chat_notification_title') }}
+              </VTooltip>
+            </IconBtn>
+
+            <VBtn
+              v-if="props.showBackToChat"
+              color="success"
+              variant="tonal"
+              class="internal-chat-back-btn"
+              @click="emit('switch-whatsapp-mode')"
+            >
+              <VIcon size="18" class="me-1">tabler-brand-whatsapp</VIcon>
+              {{ t('internal_chat_back_to_chat') }}
+            </VBtn>
+          </div>
         </div>
 
         <div class="internal-chat-search-row">
@@ -8784,6 +8873,14 @@ onBeforeUnmount(async () => {
       :initial-index="mediaViewerInitialIndex"
       @download="downloadMediaViewerItem"
     />
+
+    <InternalChatNotificationSettingsDialog
+      v-model="isNotificationSettingsDialogOpen"
+      :settings="notificationSettings"
+      :loading="loadingNotificationSettings"
+      :saving="savingNotificationSettings"
+      @save="saveNotificationSettings"
+    />
   </div>
 </template>
 
@@ -8829,6 +8926,18 @@ onBeforeUnmount(async () => {
   white-space: nowrap;
 }
 
+.internal-chat-mode-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.internal-chat-notification-btn {
+  flex: 0 0 auto;
+}
+
 .internal-chat-back-btn {
   flex: 0 0 auto;
   min-width: 0;
@@ -8842,6 +8951,7 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-current-avatar,
+.internal-chat-notification-btn,
 .internal-chat-create-group-btn {
   flex: 0 0 auto;
 }
@@ -11053,6 +11163,10 @@ onBeforeUnmount(async () => {
   .internal-chat-mode-banner {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .internal-chat-mode-actions {
+    justify-content: flex-end;
   }
 
   .internal-chat-back-btn {

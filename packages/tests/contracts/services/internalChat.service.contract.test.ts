@@ -117,16 +117,27 @@ const makeService = (options?: {
   listMessages?: IInternalChatMessage[];
   searchMessages?: IInternalChatMessage[];
   isParticipant?: boolean;
+  saveCreated?: boolean;
+  pushReject?: boolean;
+  participantUserIds?: string[];
 }) => {
   const storedMessage = options?.message ?? makeMessage();
   const listMessages = options?.listMessages ?? [storedMessage];
   const searchMessages = options?.searchMessages ?? listMessages;
+  const conversation = makeGroupConversation();
 
   const conversationRepository = {
     isUserParticipant: jest
       .fn()
       .mockResolvedValue(options?.isParticipant ?? true),
-    getConversationById: jest.fn().mockResolvedValue(makeGroupConversation()),
+    getConversationById: jest.fn().mockResolvedValue(conversation),
+    updateConversationLastMessage: jest.fn().mockResolvedValue(undefined),
+    applyUnreadOnNewMessage: jest.fn().mockResolvedValue(undefined),
+    listParticipantIds: jest
+      .fn()
+      .mockResolvedValue(
+        options?.participantUserIds ?? [authorUserId, memberUserId]
+      ),
   };
 
   const userRepository = {
@@ -138,6 +149,9 @@ const makeService = (options?: {
   };
 
   const messageRepository = {
+    saveMessage: jest.fn().mockResolvedValue({
+      created: options?.saveCreated ?? true,
+    }),
     getMessageById: jest.fn().mockResolvedValue(clone(storedMessage)),
     updateMessage: jest.fn().mockResolvedValue(true),
     listMessages: jest.fn().mockResolvedValue({
@@ -174,6 +188,18 @@ const makeService = (options?: {
     generateWaveformWithFfmpeg: jest.fn(),
   };
 
+  const chatContactService = {};
+
+  const pushNotificationService = {
+    sendNotificationForInternalChatMessage: jest
+      .fn()
+      .mockImplementation(async () => {
+        if (options?.pushReject) {
+          throw new Error('push_down');
+        }
+      }),
+  };
+
   const service = new InternalChatService(
     conversationRepository as never,
     userRepository as never,
@@ -183,7 +209,8 @@ const makeService = (options?: {
     storageService as never,
     converterService as never,
     centrifugoService as never,
-    {} as never
+    chatContactService as never,
+    pushNotificationService as never
   );
 
   return {
@@ -196,6 +223,7 @@ const makeService = (options?: {
     storageService,
     converterService,
     centrifugoService,
+    pushNotificationService,
   };
 };
 
@@ -532,6 +560,109 @@ describe('InternalChatService', () => {
       perPage: 100,
       search: 'needle',
     });
+  });
+
+  it('notifies active participants when a queued user message is persisted', async () => {
+    const participantUserIds = [authorUserId, memberUserId, 'member-2'];
+    const {
+      service,
+      messageRepository,
+      conversationRepository,
+      pushNotificationService,
+      centrifugoService,
+    } = makeService({
+      participantUserIds,
+    });
+    const message = makeMessage({
+      content: {
+        type: EMessageType.text,
+        message: 'hello group',
+      },
+    });
+
+    await expect(
+      service.dispatchEnqueuedMessage({
+        message,
+        conversation_type: EInternalChatConversationType.group,
+        sender_user_id: authorUserId,
+      })
+    ).resolves.toBeUndefined();
+
+    expect(messageRepository.saveMessage).toHaveBeenCalledWith(message);
+    expect(
+      conversationRepository.updateConversationLastMessage
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId,
+        lastMessageId: messageId,
+        lastMessagePreview: 'hello group',
+      })
+    );
+    expect(conversationRepository.applyUnreadOnNewMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId,
+        senderUserId: authorUserId,
+        messageId,
+      })
+    );
+    expect(
+      pushNotificationService.sendNotificationForInternalChatMessage
+    ).toHaveBeenCalledWith({
+      message,
+      conversationType: EInternalChatConversationType.group,
+      participantUserIds,
+      conversationName: 'Group',
+      conversationPhoto: null,
+    });
+    expect(centrifugoService.publishSub).toHaveBeenCalled();
+  });
+
+  it('does not notify or publish duplicate queued messages', async () => {
+    const {
+      service,
+      conversationRepository,
+      pushNotificationService,
+      centrifugoService,
+    } = makeService({
+      saveCreated: false,
+    });
+
+    await expect(
+      service.dispatchEnqueuedMessage({
+        message: makeMessage(),
+        conversation_type: EInternalChatConversationType.group,
+        sender_user_id: authorUserId,
+      })
+    ).resolves.toBeUndefined();
+
+    expect(
+      conversationRepository.updateConversationLastMessage
+    ).not.toHaveBeenCalled();
+    expect(
+      pushNotificationService.sendNotificationForInternalChatMessage
+    ).not.toHaveBeenCalled();
+    expect(centrifugoService.publishSub).not.toHaveBeenCalled();
+  });
+
+  it('keeps realtime delivery when internal push fails', async () => {
+    const { service, pushNotificationService, centrifugoService } = makeService(
+      {
+        pushReject: true,
+      }
+    );
+
+    await expect(
+      service.dispatchEnqueuedMessage({
+        message: makeMessage(),
+        conversation_type: EInternalChatConversationType.group,
+        sender_user_id: authorUserId,
+      })
+    ).resolves.toBeUndefined();
+
+    expect(
+      pushNotificationService.sendNotificationForInternalChatMessage
+    ).toHaveBeenCalled();
+    expect(centrifugoService.publishSub).toHaveBeenCalled();
   });
 
   it('converts internal ptt audio and dispatches canonical metadata', async () => {

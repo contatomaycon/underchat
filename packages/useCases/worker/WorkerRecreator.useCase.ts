@@ -139,6 +139,7 @@ export class WorkerRecreatorUseCase {
       remove_session?: boolean;
       remove_volume?: boolean;
       lifecycle_operation_id?: string;
+      previous_worker_status_id?: EWorkerStatus;
     }
   ): Promise<boolean> {
     await this.validate(t, accountId);
@@ -160,9 +161,9 @@ export class WorkerRecreatorUseCase {
       account_id: viewWorkerBalancer.account_id,
       worker_status_id: EWorkerStatus.recreating,
       lifecycle_operation_id: lifecycleOperationId,
-      previous_worker_status_id: viewWorker?.status?.id as
-        | EWorkerStatus
-        | undefined,
+      previous_worker_status_id:
+        options?.previous_worker_status_id ??
+        (viewWorker?.status?.id as EWorkerStatus | undefined),
       ...(options?.remove_session === true ? { remove_session: true } : {}),
       ...(options?.remove_volume === true ? { remove_volume: true } : {}),
     };
