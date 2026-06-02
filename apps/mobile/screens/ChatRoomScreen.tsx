@@ -13473,7 +13473,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   );
 
   const chatDocumentBubbleWidth = useMemo(() => {
-    const minWidth = Math.min(CHAT_DOCUMENT_BUBBLE_MIN_WIDTH, chatBubbleMaxWidth);
+    const minWidth = Math.min(
+      CHAT_DOCUMENT_BUBBLE_MIN_WIDTH,
+      chatBubbleMaxWidth
+    );
     const maxWidth = Math.min(
       chatBubbleMaxWidth,
       Math.floor(
@@ -13577,7 +13580,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             audioWaveformWidth={0}
             bubbleMaxWidth={chatBubbleMaxWidth}
             documentBubbleWidth={chatDocumentBubbleWidth}
-            disableTemplateButtons={!canComposeInChat || sending}
+            disableTemplateButtons={false}
             obfuscateContent={shouldObfuscateContent}
             openedMessageSwipeableRef={openedMessageSwipeableRef}
             onOpenActions={openMessageActionsForListRow}
@@ -13596,6 +13599,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const messageId = message.message_id;
       const quotedTargetId = quotedTargetIdByMessageId[messageId] ?? null;
       const capabilities = messageListCapabilityById[messageId];
+      const disableTemplateButtonsForMessage =
+        message.content?.type === EMessageType.text &&
+        !!message.content.template &&
+        (!canComposeInChat || sending);
 
       return (
         <MemoizedChatMessageListRow
@@ -13617,7 +13624,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           audioWaveformWidth={audioWaveformWidths[messageId] ?? 0}
           bubbleMaxWidth={chatBubbleMaxWidth}
           documentBubbleWidth={chatDocumentBubbleWidth}
-          disableTemplateButtons={!canComposeInChat || sending}
+          disableTemplateButtons={disableTemplateButtonsForMessage}
           obfuscateContent={shouldObfuscateContent}
           openedMessageSwipeableRef={openedMessageSwipeableRef}
           onOpenActions={openMessageActionsForListRow}
