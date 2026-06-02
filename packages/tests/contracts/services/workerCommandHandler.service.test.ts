@@ -126,6 +126,10 @@ function buildHandler(
     updateWorkerById: jest.fn<Promise<boolean>, [string, unknown]>(
       async () => true
     ),
+    updateWorkerByIdIfLifecycleMatches: jest.fn<
+      Promise<boolean>,
+      [string, unknown, unknown]
+    >(async () => true),
     deleteWorkerById: jest.fn(async () => true),
     existsWorkerById: jest.fn(async () => true),
     removeContainerWorker: jest.fn(async () => true),
@@ -143,7 +147,19 @@ function buildHandler(
       connection_date: null,
     })),
     updateWorkerPhoneStatusConnectionDate: jest.fn(async () => true),
-    viewWorkerForMonitor: jest.fn(async () => null),
+    viewWorkerForMonitor: jest.fn<Promise<any>, [string]>(async () => ({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      server_id: 'server-1',
+      worker_status_id: EWorkerStatus.disponible,
+      worker_type_id: EWorkerType.wwebjs,
+      created_at: null,
+      updated_at: null,
+      deleted_at: null,
+      container_id: 'container-1',
+      lifecycle_operation_id: null,
+      last_connection_check_at: null,
+    })),
     existsContainerWorkerById: jest.fn(async () => true),
     inspectContainerWorkerById: jest.fn<
       Promise<WorkerContainerInspection>,
@@ -198,6 +214,15 @@ function buildHandler(
     viewTypingSimulation: jest.fn(async () => ({ enabled: true, speed: 50 })),
     refreshTypingSimulationCache: jest.fn(async () => undefined),
   };
+  const workerLifecycleLockService = {
+    withLock: jest.fn(
+      async (
+        _workerId: string,
+        _operation: string,
+        callback: () => Promise<unknown>
+      ) => callback()
+    ),
+  };
 
   const handler = new WorkerCommandHandlerService(
     workerService as never,
@@ -210,7 +235,8 @@ function buildHandler(
     workerConfigViewerRepository as never,
     passwordEncryptorService as never,
     s3BackupUploadService as never,
-    workerConfigService as never
+    workerConfigService as never,
+    workerLifecycleLockService as never
   );
 
   return {
@@ -220,6 +246,7 @@ function buildHandler(
     containerHealthService,
     kafkaBaileysQueueService,
     workerBaileysGrpcClientService,
+    workerLifecycleLockService,
   };
 }
 
@@ -755,6 +782,10 @@ describe('WorkerCommandHandlerService connection', () => {
 
   it('marks recreated workers available only after stable health and gRPC readiness', async () => {
     const deps = buildHandler();
+    deps.workerService.inspectContainerWorkerById.mockResolvedValueOnce({
+      exists: false,
+      container_name: 'worker-1',
+    });
 
     await deps.handler.handle({
       action: EWorkerAction.recreate,
@@ -790,6 +821,57 @@ describe('WorkerCommandHandlerService connection', () => {
         availableUpdateIndex
       ]
     );
+  });
+
+  it('reuses an already ready container during recreate', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+    });
+
+    expect(deps.workerService.removeContainerWorker).not.toHaveBeenCalled();
+    expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.disponible,
+        container_id: 'container-1',
+      })
+    );
+  });
+
+  it('skips stale recreate operations before removing or creating containers', async () => {
+    const deps = buildHandler();
+    deps.workerService.viewWorkerForMonitor.mockResolvedValueOnce({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      server_id: 'server-1',
+      worker_status_id: EWorkerStatus.recreating,
+      worker_type_id: EWorkerType.whatsmeow,
+      created_at: null,
+      updated_at: null,
+      deleted_at: null,
+      container_id: 'container-new',
+      lifecycle_operation_id: 'operation-new',
+      last_connection_check_at: null,
+    });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      lifecycle_operation_id: 'operation-old',
+    });
+
+    expect(deps.workerService.removeContainerWorker).not.toHaveBeenCalled();
+    expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
+    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
   });
 
   it('does not request a QR code in background after recreating a worker', async () => {
@@ -840,9 +922,46 @@ describe('WorkerCommandHandlerService cleanup', () => {
       'worker-1',
       true
     );
+    expect(deps.workerLifecycleLockService.withLock).toHaveBeenCalledWith(
+      'worker-1',
+      'cleanup_worker',
+      expect.any(Function)
+    );
     expect(deps.kafkaBaileysQueueService.delete).not.toHaveBeenCalled();
     expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
     expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
+  });
+
+  it('skips stale cleanup operations before touching local container artifacts', async () => {
+    const deps = buildHandler();
+    deps.workerService.viewWorkerForMonitor.mockResolvedValueOnce({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      server_id: 'server-2',
+      worker_status_id: EWorkerStatus.recreating,
+      worker_type_id: EWorkerType.whatsmeow,
+      created_at: null,
+      updated_at: null,
+      deleted_at: null,
+      container_id: 'container-new',
+      lifecycle_operation_id: 'operation-new',
+      last_connection_check_at: null,
+    });
+
+    await deps.handler.handle({
+      action: EWorkerAction.cleanup,
+      worker_id: 'worker-1',
+      server_id: 'server-old',
+      account_id: 'account-1',
+      remove_session: true,
+      remove_volume: true,
+      lifecycle_operation_id: 'operation-old',
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).not.toHaveBeenCalled();
+    expect(deps.workerService.cleanupContainerWorker).not.toHaveBeenCalled();
   });
 
   it('propagates cleanup failures from an accessible worker server', async () => {

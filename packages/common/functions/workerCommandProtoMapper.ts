@@ -42,6 +42,9 @@ export function protoToWorkerPayload(
   if (proto.remove_volume === true) {
     payload.remove_volume = true;
   }
+  if (proto.lifecycle_operation_id) {
+    payload.lifecycle_operation_id = proto.lifecycle_operation_id;
+  }
 
   return payload;
 }
@@ -72,6 +75,9 @@ export function workerPayloadToProto(
   }
   if (payload.remove_volume === true) {
     proto.remove_volume = true;
+  }
+  if (payload.lifecycle_operation_id) {
+    proto.lifecycle_operation_id = payload.lifecycle_operation_id;
   }
   return proto;
 }

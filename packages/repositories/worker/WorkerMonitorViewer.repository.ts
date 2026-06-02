@@ -24,6 +24,7 @@ export class WorkerMonitorViewerRepository {
         updated_at: worker.updated_at,
         deleted_at: worker.deleted_at,
         container_id: worker.container_id,
+        lifecycle_operation_id: worker.lifecycle_operation_id,
         last_connection_check_at: worker.last_connection_check_at,
       })
       .from(worker)
@@ -55,6 +56,7 @@ export class WorkerMonitorViewerRepository {
         updated_at: worker.updated_at,
         deleted_at: worker.deleted_at,
         container_id: worker.container_id,
+        lifecycle_operation_id: worker.lifecycle_operation_id,
         last_connection_check_at: worker.last_connection_check_at,
       })
       .from(worker)

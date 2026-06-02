@@ -32,6 +32,7 @@ export const worker = pgTable(
     name: varchar({ length: 50 }).notNull(),
     number: varchar({ length: 20 }),
     container_id: varchar({ length: 100 }),
+    lifecycle_operation_id: uuid(),
     connection_date: timestamp({
       mode: 'string',
       withTimezone: true,
@@ -54,6 +55,7 @@ export const worker = pgTable(
     index('worker_worker_status_id_idx').on(table.worker_status_id),
     index('worker_worker_type_id_idx').on(table.worker_type_id),
     index('worker_server_id_idx').on(table.server_id),
+    index('worker_lifecycle_operation_id_idx').on(table.lifecycle_operation_id),
     index('worker_account_id_idx').on(table.account_id),
     index('worker_deleted_at_idx').on(table.deleted_at),
     index('worker_account_id_deleted_at_idx').on(

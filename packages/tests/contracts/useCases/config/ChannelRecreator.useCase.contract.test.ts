@@ -1,5 +1,9 @@
 import 'reflect-metadata';
 
+jest.mock('uuid', () => ({
+  v7: jest.fn(() => 'operation-1'),
+}));
+
 jest.mock('@core/services/worker.service', () => ({
   WorkerService: class {},
 }));
@@ -150,11 +154,16 @@ describe('ChannelRecreatorUseCase', () => {
       server_id: 'srv-1',
       account_id: 'acc-1',
       worker_status_id: EWorkerStatus.recreating,
+      lifecycle_operation_id: expect.any(String),
     };
-    expect(workerService.updateWorkerById).toHaveBeenCalledWith('acc-1', {
-      worker_id: 'worker-1',
-      worker_status_id: EWorkerStatus.recreating,
-    });
+    expect(workerService.updateWorkerById).toHaveBeenCalledWith(
+      'acc-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.recreating,
+        lifecycle_operation_id: expect.any(String),
+      })
+    );
     expect(centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#acc-1',
       expectedPayload

@@ -5,6 +5,10 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
+jest.mock('uuid', () => ({
+  v7: jest.fn(() => 'operation-1'),
+}));
+
 jest.mock('@core/services/worker.service', () => ({
   WorkerService: class WorkerService {},
 }));

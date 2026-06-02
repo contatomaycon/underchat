@@ -9,7 +9,10 @@ import { WorkerTotalViewerRepository } from '@core/repositories/worker/WorkerTot
 import { WorkerListerRepository } from '@core/repositories/worker/WorkerLister.repository';
 import { ListWorkerRequest } from '@core/schema/worker/listWorker/request.schema';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
-import { WorkerUpdaterRepository } from '@core/repositories/worker/WorkerUpdater.repository';
+import {
+  WorkerLifecycleUpdateGuard,
+  WorkerUpdaterRepository,
+} from '@core/repositories/worker/WorkerUpdater.repository';
 import { WorkerViewerRepository } from '@core/repositories/worker/WorkerViewer.repository';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 import { WorkerNameAndContainerIdViewerRepository } from '@core/repositories/worker/WorkerNameAndContainerIdViewer.repository';
@@ -764,6 +767,18 @@ export class WorkerService {
     input: IUpdateWorker
   ): Promise<boolean> => {
     return this.workerUpdaterRepository.updateWorkerById(accountId, input);
+  };
+
+  updateWorkerByIdIfLifecycleMatches = async (
+    accountId: string,
+    input: IUpdateWorker,
+    guard: WorkerLifecycleUpdateGuard
+  ): Promise<boolean> => {
+    return this.workerUpdaterRepository.updateWorkerByIdIfLifecycleMatches(
+      accountId,
+      input,
+      guard
+    );
   };
 
   viewWorker = async (

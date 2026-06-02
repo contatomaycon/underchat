@@ -15,6 +15,7 @@ import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class WorkerRecreatorUseCase {
@@ -134,7 +135,11 @@ export class WorkerRecreatorUseCase {
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string,
-    options?: { remove_session?: boolean; remove_volume?: boolean }
+    options?: {
+      remove_session?: boolean;
+      remove_volume?: boolean;
+      lifecycle_operation_id?: string;
+    }
   ): Promise<boolean> {
     await this.validate(t, accountId);
 
@@ -147,12 +152,14 @@ export class WorkerRecreatorUseCase {
       throw new Error(t('worker_balancer_not_available'));
     }
 
+    const lifecycleOperationId = options?.lifecycle_operation_id ?? uuidv7();
     const inputRecreate: IWorkerPayload = {
       action: EWorkerAction.recreate,
       worker_id: workerId,
       server_id: viewWorkerBalancer.server_id,
       account_id: viewWorkerBalancer.account_id,
       worker_status_id: EWorkerStatus.recreating,
+      lifecycle_operation_id: lifecycleOperationId,
       previous_worker_status_id: viewWorker?.status?.id as
         | EWorkerStatus
         | undefined,
@@ -167,6 +174,7 @@ export class WorkerRecreatorUseCase {
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.recreating,
+      lifecycle_operation_id: lifecycleOperationId,
       ...(options?.remove_session === true
         ? { number: null, connection_date: null }
         : {}),

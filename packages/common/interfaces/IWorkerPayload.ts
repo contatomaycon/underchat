@@ -13,4 +13,5 @@ export interface IWorkerPayload {
   previous_worker_status_id?: EWorkerStatus;
   remove_session?: boolean;
   remove_volume?: boolean;
+  lifecycle_operation_id?: string;
 }

@@ -11,5 +11,6 @@ export interface IWorkerMonitor {
   updated_at: string | null;
   deleted_at: string | null;
   container_id: string | null;
+  lifecycle_operation_id: string | null;
   last_connection_check_at: string | null;
 }

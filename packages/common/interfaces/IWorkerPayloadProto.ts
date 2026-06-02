@@ -9,4 +9,5 @@ export interface IWorkerPayloadProto {
   previous_worker_status_id?: string;
   remove_session?: boolean;
   remove_volume?: boolean;
+  lifecycle_operation_id?: string;
 }

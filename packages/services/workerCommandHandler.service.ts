@@ -58,6 +58,7 @@ import {
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
+import { WorkerLifecycleLockService } from '@core/services/workerLifecycleLock.service';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -68,6 +69,7 @@ interface ResolvedWorkerDataForContainer {
   workerTypeName?: string;
   workerStatusId?: EWorkerStatus;
   containerId?: string | null;
+  lifecycleOperationId?: string | null;
 }
 
 interface ResolvedWorkerProxyConfig {
@@ -97,7 +99,6 @@ export class WorkerCommandHandlerService {
   private readonly retryIntervalMs = 30 * 1000;
   private readonly connectionRequestRetryIntervalMs = 15_000;
   private readonly connectionRequestMinAttempts = 10;
-  private readonly workerLifecycleLocks = new Map<string, Promise<void>>();
   private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
   private connectionRequestAttempts = new Map<string, number>();
   private connectionRequestPayloads = new Map<
@@ -133,7 +134,9 @@ export class WorkerCommandHandlerService {
     @inject(S3BackupUploadService)
     private readonly s3BackupUploadService: S3BackupUploadService,
     @inject(WorkerConfigService)
-    private readonly workerConfigService: WorkerConfigService
+    private readonly workerConfigService: WorkerConfigService,
+    @inject(WorkerLifecycleLockService)
+    private readonly workerLifecycleLockService: WorkerLifecycleLockService
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -170,19 +173,29 @@ export class WorkerCommandHandlerService {
     }
 
     if (data.action === EWorkerAction.delete) {
-      try {
-        await this.kafkaBaileysQueueService.delete(data.worker_id);
-      } catch (err) {
-        if (!this.isTopicOrPartitionMissing(err)) {
-          throw err;
+      await this.runWithWorkerLifecycleLock(
+        data.worker_id,
+        'delete_worker',
+        async () => {
+          try {
+            await this.kafkaBaileysQueueService.delete(data.worker_id);
+          } catch (err) {
+            if (!this.isTopicOrPartitionMissing(err)) {
+              throw err;
+            }
+          }
+          await this.deleteWorker(data);
         }
-      }
-      await this.deleteWorker(data);
+      );
       return;
     }
 
     if (data.action === EWorkerAction.cleanup) {
-      await this.cleanupWorker(data);
+      await this.runWithWorkerLifecycleLock(
+        data.worker_id,
+        'cleanup_worker',
+        () => this.cleanupWorker(data)
+      );
       return;
     }
 
@@ -205,47 +218,11 @@ export class WorkerCommandHandlerService {
     operation: string,
     callback: () => Promise<T>
   ): Promise<T> {
-    const previous =
-      this.workerLifecycleLocks.get(workerId) ?? Promise.resolve();
-    let releaseLock: () => void = () => undefined;
-    const current = new Promise<void>((resolve) => {
-      releaseLock = resolve;
-    });
-    const next = previous.catch(() => undefined).then(() => current);
-    this.workerLifecycleLocks.set(workerId, next);
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.command_handler.worker_lifecycle_lock_wait',
-      decision: operation,
-      outcome: 'waiting',
-      worker_id: workerId,
-    });
-
-    await previous.catch(() => undefined);
-
-    recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.worker_lifecycle_lock_acquired',
-      decision: operation,
-      outcome: 'acquired',
-      worker_id: workerId,
-    });
-
-    try {
-      return await callback();
-    } finally {
-      releaseLock();
-      if (this.workerLifecycleLocks.get(workerId) === next) {
-        this.workerLifecycleLocks.delete(workerId);
-      }
-      recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.worker_lifecycle_lock_released',
-        decision: operation,
-        outcome: 'released',
-        worker_id: workerId,
-      });
-    }
+    return this.workerLifecycleLockService.withLock(
+      workerId,
+      operation,
+      callback
+    );
   }
 
   async handleChangeConnectionStatus(
@@ -310,56 +287,64 @@ export class WorkerCommandHandlerService {
     }
 
     this.stopConnectionRequestRetry(payload.worker_id);
-    try {
-      const workerType = await this.resolveWorkerTypeForConnection(
-        input.worker_id,
-        accountId
-      );
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.command_handler.worker_request_start',
-        decision: 'request_worker_connection',
-        outcome: 'started',
-        worker_type: workerType,
-        status: payload.status,
-        connection_type: payload.type,
-      });
-      await this.workerBaileysGrpcClientService.requestConnection(
-        input.worker_id,
-        payload,
-        workerType
-      );
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.command_handler.worker_request_success',
-        decision: 'request_worker_connection',
-        outcome: 'success',
-        worker_type: workerType,
-        status: payload.status,
-        connection_type: payload.type,
-      });
-    } catch (err) {
-      if (!this.isTopicOrPartitionMissing(err)) {
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.command_handler.worker_request_error',
-          decision: 'request_worker_connection',
-          outcome: 'error',
-          reason: 'worker_request_failed',
-          level: 'error',
-          status: payload.status,
-          connection_type: payload.type,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        throw err;
+    await this.runWithWorkerLifecycleLock(
+      payload.worker_id,
+      'change_status_worker_request',
+      async () => {
+        try {
+          const workerType = await this.resolveWorkerTypeForConnection(
+            input.worker_id,
+            accountId
+          );
+          recordConnectionLifecycle({
+            stage: 'connection.balancer.command_handler.worker_request_start',
+            decision: 'request_worker_connection',
+            outcome: 'started',
+            worker_type: workerType,
+            status: payload.status,
+            connection_type: payload.type,
+          });
+          await this.workerBaileysGrpcClientService.requestConnection(
+            input.worker_id,
+            payload,
+            workerType
+          );
+          recordConnectionLifecycle({
+            stage: 'connection.balancer.command_handler.worker_request_success',
+            decision: 'request_worker_connection',
+            outcome: 'success',
+            worker_type: workerType,
+            status: payload.status,
+            connection_type: payload.type,
+          });
+        } catch (err) {
+          if (this.isTopicOrPartitionMissing(err)) {
+            recordConnectionLifecycle({
+              stage: 'connection.balancer.command_handler.worker_request_skip',
+              decision: 'request_worker_connection',
+              outcome: 'skipped',
+              reason: 'topic_or_partition_missing',
+              level: 'warn',
+              status: payload.status,
+              connection_type: payload.type,
+            });
+            return;
+          }
+
+          recordConnectionLifecycle({
+            stage: 'connection.balancer.command_handler.worker_request_error',
+            decision: 'request_worker_connection',
+            outcome: 'error',
+            reason: 'worker_request_failed',
+            level: 'error',
+            status: payload.status,
+            connection_type: payload.type,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
       }
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.command_handler.worker_request_skip',
-        decision: 'request_worker_connection',
-        outcome: 'skipped',
-        reason: 'topic_or_partition_missing',
-        level: 'warn',
-        status: payload.status,
-        connection_type: payload.type,
-      });
-    }
+    );
   }
 
   async handleRequestConnectionQrCode(
@@ -848,7 +833,11 @@ export class WorkerCommandHandlerService {
   ): void {
     this.stopConnectionRequestRetry(payload.worker_id);
 
-    void this.runOnlineConnectionWorkflow(payload, accountId).catch((err) => {
+    void this.runWithWorkerLifecycleLock(
+      payload.worker_id,
+      'change_status_online',
+      () => this.runOnlineConnectionWorkflow(payload, accountId)
+    ).catch((err) => {
       console.error('Worker online connection workflow failed:', {
         workerId: payload.worker_id,
         accountId,
@@ -988,9 +977,38 @@ export class WorkerCommandHandlerService {
       worker_type_name: workerData.workerTypeName,
       worker_status_id: workerData.workerStatusId,
       container_id: workerData.containerId,
+      lifecycle_operation_id: workerData.lifecycleOperationId,
     });
 
     await this.ensureQrContainerReady(workerId, workerData);
+
+    if (workerData.lifecycleOperationId) {
+      const current = await this.isLifecycleOperationCurrent(
+        {
+          action: EWorkerAction.create,
+          worker_id: workerId,
+          server_id: workerData.serverId,
+          account_id: workerData.accountIdResolved,
+          worker_type_id: workerData.workerTypeId,
+          lifecycle_operation_id: workerData.lifecycleOperationId,
+        },
+        'request_qrcode_before_worker_request'
+      );
+
+      if (!current) {
+        throw new Error('Worker lifecycle changed before QR request');
+      }
+    } else if (
+      !(await this.isWorkerSnapshotCurrent(
+        workerId,
+        workerData.accountIdResolved,
+        workerData.serverId,
+        workerData.workerTypeId,
+        'request_qrcode_before_worker_request'
+      ))
+    ) {
+      throw new Error('Worker snapshot changed before QR request');
+    }
 
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_worker_request_start',
@@ -1577,7 +1595,12 @@ export class WorkerCommandHandlerService {
         workerId
       );
       if (fromView) {
-        return fromView;
+        const fromMonitor = await this.resolveWorkerDataFromMonitor(workerId);
+        return {
+          ...fromView,
+          containerId: fromMonitor?.containerId,
+          lifecycleOperationId: fromMonitor?.lifecycleOperationId,
+        };
       }
     }
 
@@ -1621,7 +1644,179 @@ export class WorkerCommandHandlerService {
       workerTypeId: monitorView.worker_type_id as EWorkerType,
       workerStatusId: monitorView.worker_status_id as EWorkerStatus,
       containerId: monitorView.container_id,
+      lifecycleOperationId: monitorView.lifecycle_operation_id,
     };
+  }
+
+  private recordLegacyLifecycleOperation(
+    workerId: string,
+    operation: string
+  ): void {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.lifecycle_operation_legacy',
+      decision: operation,
+      outcome: 'legacy',
+      reason: 'missing_lifecycle_operation_id',
+      level: 'warn',
+      worker_id: workerId,
+    });
+  }
+
+  private async isLifecycleOperationCurrent(
+    data: IWorkerPayload,
+    operation: string,
+    options: { allowServerMismatch?: boolean } = {}
+  ): Promise<boolean> {
+    if (!data.lifecycle_operation_id) {
+      this.recordLegacyLifecycleOperation(data.worker_id, operation);
+      return true;
+    }
+
+    const current = await this.workerService.viewWorkerForMonitor(
+      data.worker_id
+    );
+    const currentOperationId = current?.lifecycle_operation_id ?? null;
+    const operationMatches = currentOperationId === data.lifecycle_operation_id;
+    const accountMatches = current?.account_id === data.account_id;
+    const serverMatches =
+      options.allowServerMismatch === true ||
+      !data.server_id ||
+      current?.server_id === data.server_id;
+
+    const isCurrent = Boolean(
+      current && operationMatches && accountMatches && serverMatches
+    );
+
+    if (!isCurrent) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.lifecycle_operation_stale',
+        decision: operation,
+        outcome: 'stale',
+        reason: 'stale_lifecycle_operation',
+        level: 'warn',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        server_id: data.server_id,
+        lifecycle_operation_id: data.lifecycle_operation_id,
+        current_lifecycle_operation_id: currentOperationId,
+        current_server_id: current?.server_id,
+        current_worker_type_id: current?.worker_type_id,
+      });
+      return false;
+    }
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.lifecycle_operation_current',
+      decision: operation,
+      outcome: 'current',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      server_id: data.server_id,
+      lifecycle_operation_id: data.lifecycle_operation_id,
+      current_worker_type_id: current?.worker_type_id,
+    });
+
+    return true;
+  }
+
+  private async isWorkerSnapshotCurrent(
+    workerId: string,
+    accountId: string,
+    serverId: string,
+    workerTypeId: EWorkerType,
+    operation: string
+  ): Promise<boolean> {
+    const current = await this.workerService.viewWorkerForMonitor(workerId);
+    const isCurrent = Boolean(
+      current &&
+      current.account_id === accountId &&
+      current.server_id === serverId &&
+      current.worker_type_id === workerTypeId
+    );
+
+    if (!isCurrent) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.worker_snapshot_stale',
+        decision: operation,
+        outcome: 'stale',
+        reason: 'worker_snapshot_changed',
+        level: 'warn',
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: serverId,
+        worker_type: workerTypeId,
+        current_server_id: current?.server_id,
+        current_worker_type_id: current?.worker_type_id,
+        current_lifecycle_operation_id: current?.lifecycle_operation_id,
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  private async updateWorkerWithLifecycleGuard(
+    accountId: string,
+    input: IUpdateWorker,
+    data: IWorkerPayload,
+    operation: string,
+    workerTypeId?: EWorkerType
+  ): Promise<boolean> {
+    if (data.lifecycle_operation_id) {
+      return this.workerService.updateWorkerByIdIfLifecycleMatches(
+        accountId,
+        input,
+        {
+          lifecycle_operation_id: data.lifecycle_operation_id,
+          server_id: data.server_id,
+          ...(workerTypeId ? { worker_type_id: workerTypeId } : {}),
+        }
+      );
+    }
+
+    const current = await this.isWorkerSnapshotCurrent(
+      data.worker_id,
+      accountId,
+      data.server_id,
+      workerTypeId ?? data.worker_type_id ?? ('' as EWorkerType),
+      operation
+    );
+
+    if (!current) {
+      return false;
+    }
+
+    return this.workerService.updateWorkerById(accountId, input);
+  }
+
+  private async updateWorkerWithLifecycleGuardAndLegacyRetry(
+    accountId: string,
+    input: IUpdateWorker,
+    data: IWorkerPayload,
+    operation: string,
+    workerTypeId?: EWorkerType
+  ): Promise<boolean> {
+    if (data.lifecycle_operation_id) {
+      return this.updateWorkerWithLifecycleGuard(
+        accountId,
+        input,
+        data,
+        operation,
+        workerTypeId
+      );
+    }
+
+    return this.retryOperation(
+      async () =>
+        this.updateWorkerWithLifecycleGuard(
+          accountId,
+          input,
+          data,
+          operation,
+          workerTypeId
+        ),
+      (r) => !r
+    );
   }
 
   private async createWorkerWithPayload(
@@ -1636,6 +1831,9 @@ export class WorkerCommandHandlerService {
       server_id: workerData.serverId,
       account_id: workerData.accountIdResolved,
       worker_type_id: workerData.workerTypeId,
+      ...(workerData.lifecycleOperationId
+        ? { lifecycle_operation_id: workerData.lifecycleOperationId }
+        : {}),
     };
 
     await this.createWorker(createPayload, connectionRequest, healthOptions);
@@ -1929,14 +2127,41 @@ export class WorkerCommandHandlerService {
     workerId: string,
     accountId: string,
     action?: EWorkerAction,
-    serverId?: string
+    serverId?: string,
+    lifecycleOperationId?: string
   ): Promise<PublishResult> {
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.error,
+      ...(lifecycleOperationId ? { lifecycle_operation_id: null } : {}),
     };
 
-    await this.workerService.updateWorkerById(accountId, inputUpdate);
+    const updated = lifecycleOperationId
+      ? await this.workerService.updateWorkerByIdIfLifecycleMatches(
+          accountId,
+          inputUpdate,
+          {
+            lifecycle_operation_id: lifecycleOperationId,
+            ...(serverId ? { server_id: serverId } : {}),
+          }
+        )
+      : await this.workerService.updateWorkerById(accountId, inputUpdate);
+
+    if (!updated && lifecycleOperationId) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.error_status_update_skipped',
+        decision: 'update_worker_error_status',
+        outcome: 'skipped',
+        reason: 'stale_lifecycle_operation',
+        level: 'warn',
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: serverId,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
+      return {} as PublishResult;
+    }
 
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,
@@ -1972,6 +2197,10 @@ export class WorkerCommandHandlerService {
   }
 
   private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
+    if (!(await this.isLifecycleOperationCurrent(data, 'recreate_worker'))) {
+      return {} as PublishResult;
+    }
+
     const viewWorkerType = await this.workerService.viewWorkerType(
       data.account_id,
       data.worker_id
@@ -1982,7 +2211,8 @@ export class WorkerCommandHandlerService {
         data.worker_id,
         data.account_id,
         data.action,
-        data.server_id
+        data.server_id,
+        data.lifecycle_operation_id
       );
       throw new Error('Worker not found');
     }
@@ -1990,6 +2220,59 @@ export class WorkerCommandHandlerService {
     const workerType = viewWorkerType.worker_type_id as EWorkerType;
     const shouldRemoveSession = data.remove_session === true;
     const shouldRemoveVolume = data.remove_volume === true;
+    const readyContainerId = await this.tryReuseReadyContainerForRecreate(
+      data,
+      workerType
+    );
+
+    if (readyContainerId) {
+      const inputUpdate: IUpdateWorker = {
+        worker_id: data.worker_id,
+        worker_status_id: EWorkerStatus.disponible,
+        worker_type_id: workerType,
+        container_id: readyContainerId,
+        ...(data.lifecycle_operation_id
+          ? { lifecycle_operation_id: null }
+          : {}),
+        ...(shouldRemoveSession ? { number: null, connection_date: null } : {}),
+      };
+
+      const updated = await this.updateWorkerWithLifecycleGuard(
+        data.account_id,
+        inputUpdate,
+        data,
+        'recreate_worker_reuse_ready_container',
+        workerType
+      );
+
+      if (!updated) {
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.recreate_reuse_update_skipped',
+          decision: 'recreate_worker',
+          outcome: 'skipped',
+          reason: 'stale_lifecycle_operation',
+          level: 'warn',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          server_id: data.server_id,
+          lifecycle_operation_id: data.lifecycle_operation_id,
+          container_id: readyContainerId,
+        });
+        return {} as PublishResult;
+      }
+
+      return this.publishWorkerDisponible(data);
+    }
+
+    if (
+      !(await this.isLifecycleOperationCurrent(
+        data,
+        'recreate_worker_before_remove'
+      ))
+    ) {
+      return {} as PublishResult;
+    }
 
     if (shouldRemoveSession) {
       const disconnectPayload: StatusConnectionWorkerRequest = {
@@ -2030,7 +2313,8 @@ export class WorkerCommandHandlerService {
         data.worker_id,
         data.account_id,
         data.action,
-        data.server_id
+        data.server_id,
+        data.lifecycle_operation_id
       );
       throw new Error('Worker removal failed');
     }
@@ -2050,6 +2334,15 @@ export class WorkerCommandHandlerService {
       data.worker_id,
       data.server_id
     );
+
+    if (
+      !(await this.isLifecycleOperationCurrent(
+        data,
+        'recreate_worker_before_create'
+      ))
+    ) {
+      return {} as PublishResult;
+    }
 
     const containerId = await this.retryOperation(
       async () =>
@@ -2074,7 +2367,8 @@ export class WorkerCommandHandlerService {
         data.worker_id,
         data.account_id,
         data.action,
-        data.server_id
+        data.server_id,
+        data.lifecycle_operation_id
       );
       throw new Error('Worker creation failed');
     }
@@ -2093,7 +2387,8 @@ export class WorkerCommandHandlerService {
         data.worker_id,
         data.account_id,
         data.action,
-        data.server_id
+        data.server_id,
+        data.lifecycle_operation_id
       );
       throw new Error('Worker service is not healthy');
     }
@@ -2115,7 +2410,8 @@ export class WorkerCommandHandlerService {
           data.worker_id,
           data.account_id,
           data.action,
-          data.server_id
+          data.server_id,
+          data.lifecycle_operation_id
         );
         throw err;
       }
@@ -2126,13 +2422,16 @@ export class WorkerCommandHandlerService {
       worker_status_id: EWorkerStatus.disponible,
       worker_type_id: workerType,
       container_id: containerId,
+      ...(data.lifecycle_operation_id ? { lifecycle_operation_id: null } : {}),
       ...(shouldRemoveSession ? { number: null, connection_date: null } : {}),
     };
 
-    const updated = await this.retryOperation(
-      async () =>
-        this.workerService.updateWorkerById(data.account_id, inputUpdate),
-      (r) => !r
+    const updated = await this.updateWorkerWithLifecycleGuardAndLegacyRetry(
+      data.account_id,
+      inputUpdate,
+      data,
+      'recreate_worker',
+      workerType
     );
 
     if (!updated) {
@@ -2141,8 +2440,15 @@ export class WorkerCommandHandlerService {
         accountId: data.account_id,
         action: data.action,
       });
+      return {} as PublishResult;
     }
 
+    return this.publishWorkerDisponible(data);
+  }
+
+  private async publishWorkerDisponible(
+    data: IWorkerPayload
+  ): Promise<PublishResult> {
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,
       status: EBaileysConnectionStatus.info,
@@ -2166,8 +2472,127 @@ export class WorkerCommandHandlerService {
     return result;
   }
 
+  private async tryReuseReadyContainerForRecreate(
+    data: IWorkerPayload,
+    workerType: EWorkerType
+  ): Promise<string | null> {
+    const inspection = await this.workerService.inspectContainerWorkerById(
+      data.worker_id
+    );
+
+    if (!inspection.exists || inspection.running !== true) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_reuse_container_skip',
+        decision: 'recreate_worker',
+        outcome: 'skipped',
+        reason: inspection.exists
+          ? 'container_not_running'
+          : 'container_missing',
+        worker_id: data.worker_id,
+        worker_type: workerType,
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+      return null;
+    }
+
+    const workerData: ResolvedWorkerDataForContainer = {
+      accountIdResolved: data.account_id,
+      serverId: data.server_id,
+      workerTypeId: workerType,
+      lifecycleOperationId: data.lifecycle_operation_id,
+    };
+    const compatibilityIssue = this.qrContainerCompatibilityIssue(
+      data.worker_id,
+      workerData,
+      inspection
+    );
+
+    if (compatibilityIssue) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_reuse_container_skip',
+        decision: 'recreate_worker',
+        outcome: 'skipped',
+        reason: compatibilityIssue,
+        recreate_reason: compatibilityIssue,
+        worker_id: data.worker_id,
+        worker_type: workerType,
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+      return null;
+    }
+
+    const containerId = inspection.container_id ?? data.worker_id;
+    const healthy = await this.isExistingContainerHealthy(containerId, {
+      maxAttempts: 3,
+      delayMs: 1000,
+      requiredConsecutiveSuccesses: 1,
+    });
+
+    if (!healthy) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_reuse_container_skip',
+        decision: 'recreate_worker',
+        outcome: 'skipped',
+        reason: 'container_unhealthy',
+        recreate_reason: 'container_unhealthy',
+        worker_id: data.worker_id,
+        worker_type: workerType,
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+      return null;
+    }
+
+    try {
+      await this.waitForWorkerGrpcReady(
+        data.worker_id,
+        workerType,
+        undefined,
+        'recreate'
+      );
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_reuse_container_skip',
+        decision: 'recreate_worker',
+        outcome: 'skipped',
+        reason: 'container_grpc_not_ready',
+        recreate_reason: 'container_grpc_not_ready',
+        level: 'warn',
+        worker_id: data.worker_id,
+        worker_type: workerType,
+        error: getErrorMessage(err),
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+      return null;
+    }
+
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.recreate_reuse_container_success',
+      decision: 'recreate_worker',
+      outcome: 'success',
+      reason: 'ready_container_reused',
+      worker_id: data.worker_id,
+      worker_type: workerType,
+      ...this.lifecycleFieldsFromInspection(inspection),
+    });
+
+    return containerId;
+  }
+
   private async cleanupWorker(data: IWorkerPayload): Promise<void> {
     this.stopConnectionRequestRetry(data.worker_id);
+
+    if (
+      !(await this.isLifecycleOperationCurrent(data, 'cleanup_worker', {
+        allowServerMismatch: true,
+      }))
+    ) {
+      return;
+    }
 
     if (data.remove_session === true) {
       const disconnectPayload: StatusConnectionWorkerRequest = {
@@ -2200,7 +2625,10 @@ export class WorkerCommandHandlerService {
 
     const cleaned = await this.retryOperation(
       async () =>
-        this.workerService.cleanupContainerWorker(data.worker_id, true),
+        this.workerService.cleanupContainerWorker(
+          data.worker_id,
+          data.remove_volume !== false
+        ),
       (r) => !r
     );
 
@@ -2346,11 +2774,33 @@ export class WorkerCommandHandlerService {
     healthOptions: ContainerHealthCheckOptions = {}
   ): Promise<PublishResult> {
     if (!data?.worker_type_id) {
-      await this.updateWorkerErrorStatus(data.worker_id, data.account_id);
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id,
+        data.lifecycle_operation_id
+      );
       throw new Error('Worker type ID is required');
     }
 
     const workerType = data.worker_type_id;
+    if (!(await this.isLifecycleOperationCurrent(data, 'create_worker'))) {
+      return {} as PublishResult;
+    }
+    if (
+      !data.lifecycle_operation_id &&
+      !(await this.isWorkerSnapshotCurrent(
+        data.worker_id,
+        data.account_id,
+        data.server_id,
+        workerType,
+        'create_worker'
+      ))
+    ) {
+      throw new Error('Worker lifecycle changed before create');
+    }
+
     const createMaxAttempts = 2;
     const resolvedHealthOptions =
       this.buildNewContainerHealthOptions(healthOptions);
@@ -2360,10 +2810,17 @@ export class WorkerCommandHandlerService {
       worker_status_id: EWorkerStatus.creating,
     };
 
-    await this.workerService.updateWorkerById(
+    const creatingUpdated = await this.updateWorkerWithLifecycleGuard(
       data.account_id,
-      inputUpdateCreating
+      inputUpdateCreating,
+      data,
+      'create_worker_mark_creating',
+      workerType
     );
+
+    if (!creatingUpdated) {
+      return {} as PublishResult;
+    }
 
     const dataPublishCreating: IBaileysConnectionState = {
       code: ECodeMessage.info,
@@ -2419,6 +2876,22 @@ export class WorkerCommandHandlerService {
             ? err.reason
             : 'create_attempt_failed';
 
+        if (this.isStaleCreateAttemptReason(reason)) {
+          recordConnectionLifecycle({
+            stage:
+              'connection.balancer.command_handler.create_attempt_stale_noop',
+            decision: 'create_worker',
+            outcome: 'skipped',
+            reason,
+            level: 'warn',
+            worker_type: workerType,
+            create_attempt: createAttempt,
+            create_max_attempts: createMaxAttempts,
+            error: getErrorMessage(err),
+          });
+          return {} as PublishResult;
+        }
+
         if (createAttempt < createMaxAttempts) {
           await this.prepareCreateWorkerRetry(
             data,
@@ -2458,7 +2931,8 @@ export class WorkerCommandHandlerService {
           data.worker_id,
           data.account_id,
           data.action,
-          data.server_id
+          data.server_id,
+          data.lifecycle_operation_id
         );
         throw err;
       }
@@ -2469,7 +2943,8 @@ export class WorkerCommandHandlerService {
         data.worker_id,
         data.account_id,
         data.action,
-        data.server_id
+        data.server_id,
+        data.lifecycle_operation_id
       );
       throw lastError instanceof Error
         ? lastError
@@ -2480,12 +2955,15 @@ export class WorkerCommandHandlerService {
       worker_id: data.worker_id,
       worker_status_id: EWorkerStatus.disponible,
       container_id: containerId,
+      ...(data.lifecycle_operation_id ? { lifecycle_operation_id: null } : {}),
     };
 
-    const updated = await this.retryOperation(
-      async () =>
-        this.workerService.updateWorkerById(data.account_id, inputUpdate),
-      (r) => !r
+    const updated = await this.updateWorkerWithLifecycleGuardAndLegacyRetry(
+      data.account_id,
+      inputUpdate,
+      data,
+      'create_worker',
+      workerType
     );
 
     if (!updated) {
@@ -2561,6 +3039,31 @@ export class WorkerCommandHandlerService {
       create_attempt: createAttempt,
       create_max_attempts: createMaxAttempts,
     });
+
+    if (
+      !(await this.isLifecycleOperationCurrent(data, 'create_worker_attempt'))
+    ) {
+      throw new WorkerCreateAttemptError(
+        'Worker lifecycle operation is stale',
+        'stale_lifecycle_operation'
+      );
+    }
+
+    if (
+      !data.lifecycle_operation_id &&
+      !(await this.isWorkerSnapshotCurrent(
+        data.worker_id,
+        data.account_id,
+        data.server_id,
+        workerType,
+        'create_worker_attempt'
+      ))
+    ) {
+      throw new WorkerCreateAttemptError(
+        'Worker snapshot changed',
+        'worker_snapshot_changed'
+      );
+    }
 
     const containerId = await this.retryOperation(
       async () =>
@@ -2708,6 +3211,13 @@ export class WorkerCommandHandlerService {
     }
 
     return 'create_health_failed';
+  }
+
+  private isStaleCreateAttemptReason(reason: string): boolean {
+    return (
+      reason === 'stale_lifecycle_operation' ||
+      reason === 'worker_snapshot_changed'
+    );
   }
 
   private async prepareCreateWorkerRetry(

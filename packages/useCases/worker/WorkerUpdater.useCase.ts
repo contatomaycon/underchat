@@ -16,6 +16,7 @@ import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
 import { status as GrpcStatus } from '@grpc/grpc-js';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { getErrorMessage } from '@core/common/functions/toError';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class WorkerUpdaterUseCase {
@@ -130,7 +131,8 @@ export class WorkerUpdaterUseCase {
     accountId: string,
     workerId: string,
     currentServerId: string,
-    currentServerStatusId?: string
+    currentServerStatusId?: string,
+    lifecycleOperationId?: string
   ): Promise<void> {
     if (currentServerStatusId === EServerStatus.offline) {
       return;
@@ -143,6 +145,9 @@ export class WorkerUpdaterUseCase {
       account_id: accountId,
       remove_session: true,
       remove_volume: true,
+      ...(lifecycleOperationId
+        ? { lifecycle_operation_id: lifecycleOperationId }
+        : {}),
     };
 
     try {
@@ -203,21 +208,22 @@ export class WorkerUpdaterUseCase {
       }
     }
 
-    if (shouldRecreateOnServerChange && currentServerId) {
-      await this.cleanupPreviousWorkerServer(
-        t,
-        accountId,
-        input.worker_id,
-        currentServerId,
-        currentServerStatusId
-      );
-    }
+    const shouldRecreateWorker =
+      shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
+    const lifecycleOperationId = shouldRecreateWorker ? uuidv7() : undefined;
 
     if (
       shouldRecreateOnTypeChange &&
       currentServerId &&
-      !shouldRecreateOnServerChange
+      !shouldRecreateOnServerChange &&
+      lifecycleOperationId
     ) {
+      await this.workerService.updateWorkerById(accountId, {
+        worker_id: input.worker_id,
+        worker_status_id: EWorkerStatus.recreating,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
+
       await this.disconnectCurrentWorker(
         accountId,
         input.worker_id,
@@ -229,6 +235,11 @@ export class WorkerUpdaterUseCase {
       worker_id: input.worker_id,
       name: input.name,
     };
+
+    if (shouldRecreateWorker && lifecycleOperationId) {
+      inputUpdate.worker_status_id = EWorkerStatus.recreating;
+      inputUpdate.lifecycle_operation_id = lifecycleOperationId;
+    }
 
     if (input.worker_type) {
       inputUpdate.worker_type_id = input.worker_type as EWorkerType;
@@ -251,8 +262,20 @@ export class WorkerUpdaterUseCase {
       input.worker_id
     );
 
-    const shouldRecreateWorker =
-      shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
+    if (
+      shouldRecreateOnServerChange &&
+      currentServerId &&
+      lifecycleOperationId
+    ) {
+      await this.cleanupPreviousWorkerServer(
+        t,
+        accountId,
+        input.worker_id,
+        currentServerId,
+        currentServerStatusId,
+        lifecycleOperationId
+      );
+    }
 
     if (shouldRecreateWorker) {
       await this.workerRecreatorUseCase.execute(
@@ -260,8 +283,12 @@ export class WorkerUpdaterUseCase {
         accountId,
         input.worker_id,
         shouldRecreateOnServerChange
-          ? { remove_session: true, remove_volume: true }
-          : undefined
+          ? {
+              remove_session: true,
+              remove_volume: true,
+              lifecycle_operation_id: lifecycleOperationId,
+            }
+          : { lifecycle_operation_id: lifecycleOperationId }
       );
     }
 

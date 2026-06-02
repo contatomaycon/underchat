@@ -16,6 +16,7 @@ import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
 export class ChannelRecreatorUseCase {
@@ -127,17 +128,20 @@ export class ChannelRecreatorUseCase {
 
     await this.validate(t, viewWorkerBalancer.account_id);
 
+    const lifecycleOperationId = uuidv7();
     const inputRecreate: IWorkerPayload = {
       action: EWorkerAction.recreate,
       worker_id: channelId,
       server_id: viewWorkerBalancer.server_id,
       account_id: viewWorkerBalancer.account_id,
       worker_status_id: EWorkerStatus.recreating,
+      lifecycle_operation_id: lifecycleOperationId,
     };
 
     const inputUpdate: IUpdateWorker = {
       worker_id: channelId,
       worker_status_id: EWorkerStatus.recreating,
+      lifecycle_operation_id: lifecycleOperationId,
     };
 
     await this.workerService.updateWorkerById(

@@ -9,6 +9,7 @@ export interface IUpdateWorker {
   name?: string;
   number?: string | null;
   container_id?: string | null;
+  lifecycle_operation_id?: string | null;
   connection_date?: string | null;
   deleted_at?: string;
 }
