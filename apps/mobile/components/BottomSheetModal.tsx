@@ -122,7 +122,9 @@ export function BottomSheetModal({
     </>
   );
 
-  const inner = avoidKeyboard ? (
+  const shouldUseKeyboardAvoidingView = avoidKeyboard && Platform.OS === 'ios';
+
+  const inner = shouldUseKeyboardAvoidingView ? (
     <KeyboardAvoidingView
       style={styles.keyboardAvoiding}
       behavior={keyboardAvoidingBehavior}
@@ -134,9 +136,12 @@ export function BottomSheetModal({
       {extraContent}
     </KeyboardAvoidingView>
   ) : (
-    <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
-      {overlayContent}
-    </View>
+    <>
+      <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
+        {overlayContent}
+      </View>
+      {extraContent}
+    </>
   );
 
   return (

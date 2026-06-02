@@ -12713,11 +12713,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     );
   }, []);
 
-  const handleOpenAnnotationModal = useCallback(() => {
-    setCameraPickerVisible(false);
-    setAnnotationInput('');
-    setAnnotationModalVisible(true);
-  }, []);
+  const handleOpenAnnotationModal = useCallback(async () => {
+    await withAttachmentSheetDismissed(async () => {
+      setAnnotationInput('');
+      setAnnotationModalVisible(true);
+    });
+  }, [withAttachmentSheetDismissed]);
 
   const handleSendAnnotation = useCallback(async () => {
     const message = annotationInput.trim();
@@ -12822,7 +12823,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         label: pt.annotation,
         icon: 'reader-outline',
         color: '#E11D48',
-        onPress: handleOpenAnnotationModal,
+        onPress: () => {
+          void handleOpenAnnotationModal();
+        },
       },
     ],
     [
