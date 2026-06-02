@@ -50,6 +50,7 @@ function isRefreshSessionData(value: unknown): value is RefreshSessionData {
     isStringArray(value.sectors) &&
     Array.isArray(value.channels) &&
     typeof value.plan_is_active === 'boolean' &&
+    isStringArray(value.plan_products) &&
     isRecord(value.attendance_guard)
   );
 }
@@ -135,6 +136,7 @@ async function refreshSession(): Promise<RefreshSessionResult> {
       permissions: payload.data.permissions,
       sectors: payload.data.sectors,
       channels: payload.data.channels,
+      plan_products: payload.data.plan_products,
     });
 
     return { success: true, data: payload.data };

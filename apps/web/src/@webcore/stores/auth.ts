@@ -20,6 +20,8 @@ import {
   setUser,
   initializePlanStatus,
   persistPlanStatus,
+  initializePlanProducts,
+  setPlanProducts,
 } from '../localStorage/user';
 import { useChatStore } from './chat';
 import { updateAbilityPermissions } from '@/plugins/0.casl/ability';
@@ -43,6 +45,7 @@ export const useAuthStore = defineStore('auth', {
     permissions: [] as EPermissionsRoles[],
     layout: null as AccountInfoResponse | null,
     planIsActive: initializePlanStatus(),
+    planProducts: initializePlanProducts(),
   }),
   actions: {
     syncChatUserSession(): void {
@@ -60,6 +63,10 @@ export const useAuthStore = defineStore('auth', {
     updatePlanStatus(isActive: boolean) {
       this.planIsActive = isActive;
       persistPlanStatus(isActive);
+    },
+    updatePlanProducts(planProducts: string[]) {
+      this.planProducts = planProducts;
+      setPlanProducts(planProducts);
     },
     async initializeAttendanceGuard(
       attendanceGuard: UserAttendanceGuardStatus | null | undefined
@@ -129,6 +136,7 @@ export const useAuthStore = defineStore('auth', {
         this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
         this.layout = data.data.layout;
         this.planIsActive = data.data.plan_is_active ?? false;
+        this.planProducts = data.data.plan_products ?? [];
 
         setUser(this.user);
         setToken(this.token);
@@ -137,6 +145,7 @@ export const useAuthStore = defineStore('auth', {
         setSectors(data.data.sectors ?? []);
         setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
+        setPlanProducts(this.planProducts);
         updateAbilityPermissions(this.permissions);
         this.syncChatUserSession();
         await this.initializeAttendanceGuard(data.data.attendance_guard);
@@ -187,6 +196,7 @@ export const useAuthStore = defineStore('auth', {
         this.permissions = (data.data.permissions ?? []) as EPermissionsRoles[];
         this.layout = data.data.layout;
         this.planIsActive = data.data.plan_is_active ?? false;
+        this.planProducts = data.data.plan_products ?? [];
 
         setUser(this.user);
         setToken(this.token);
@@ -195,6 +205,7 @@ export const useAuthStore = defineStore('auth', {
         setSectors(data.data.sectors ?? []);
         setChannels(data.data.channels ?? []);
         persistPlanStatus(this.planIsActive);
+        setPlanProducts(this.planProducts);
         updateAbilityPermissions(this.permissions);
         this.syncChatUserSession();
         await this.initializeAttendanceGuard(data.data.attendance_guard);
@@ -218,6 +229,7 @@ export const useAuthStore = defineStore('auth', {
       this.permissions = (data.permissions ?? []) as EPermissionsRoles[];
       this.layout = data.layout;
       this.planIsActive = data.plan_is_active ?? false;
+      this.planProducts = data.plan_products ?? [];
 
       setUser(this.user);
       setToken(this.token);
@@ -226,6 +238,7 @@ export const useAuthStore = defineStore('auth', {
       setSectors(data.sectors ?? []);
       setChannels(data.channels ?? []);
       persistPlanStatus(this.planIsActive);
+      setPlanProducts(this.planProducts);
       updateAbilityPermissions(this.permissions);
       this.syncChatUserSession();
     },

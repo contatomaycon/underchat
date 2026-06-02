@@ -38,6 +38,7 @@ function buildUseCase(
       account_info_id: 'info-1',
       name: 'Account',
     })),
+    listActivePlanProductIds: jest.fn(async () => ['internal-chat-product']),
   };
 
   const userService = {
@@ -134,6 +135,7 @@ describe('AuthRefreshTokenUseCase', () => {
     expect(result.sectors).toEqual(['sector-1']);
     expect(result.channels).toEqual([{ id: 'worker-1', name: 'Canal 1' }]);
     expect(result.plan_is_active).toBe(true);
+    expect(result.plan_products).toEqual(['internal-chat-product']);
     expect(result.attendance_guard.is_blocked_now).toBe(false);
     expect(deps.redis.incr).toHaveBeenCalledTimes(1);
     expect(deps.redis.set).toHaveBeenCalledTimes(1);

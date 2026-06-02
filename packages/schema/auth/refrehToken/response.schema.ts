@@ -14,6 +14,7 @@ export const refreshTokenResponseSchema = Type.Object({
   sectors: Type.Array(Type.String()),
   channels: Type.Array(userChannelResponseSchema),
   plan_is_active: Type.Boolean(),
+  plan_products: Type.Array(Type.String()),
   attendance_guard: userAttendanceGuardStatusSchema,
 });
 

@@ -7,6 +7,8 @@ import axios, {
 import {
   getToken,
   setToken,
+  setPermissions,
+  setPlanProducts,
   persistPlanStatus,
   removeUserData,
 } from './localStorage/user';
@@ -17,6 +19,8 @@ import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { RefreshTokenResponse } from '@core/schema/auth/refrehToken/response.schema';
 import { normalizeBaseUrl } from './utils/helpers';
 import { UserAttendanceHoursBlockedData } from '@core/schema/user/attendanceHours/shared.schema';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { updateAbilityPermissions } from '@/plugins/0.casl/ability';
 
 const createAxiosInstance = () => {
   const baseUrl = normalizeBaseUrl(import.meta.env.VITE_BACKEND_URL);
@@ -81,9 +85,15 @@ const refreshSession = async (): Promise<string | null> => {
     const { useAuthStore } = await import('@webcore/stores/auth');
     const authStore = useAuthStore();
     authStore.token = refreshedToken;
+    authStore.permissions = (data.data.permissions ??
+      []) as EPermissionsRoles[];
     authStore.updatePlanStatus(data.data.plan_is_active ?? false);
+    authStore.updatePlanProducts(data.data.plan_products ?? []);
     setToken(refreshedToken);
+    setPermissions(authStore.permissions);
     persistPlanStatus(data.data.plan_is_active ?? false);
+    setPlanProducts(data.data.plan_products ?? []);
+    updateAbilityPermissions(authStore.permissions);
 
     return refreshedToken;
   } catch {

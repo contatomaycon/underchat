@@ -17,7 +17,11 @@ const configStore = useLayoutConfigStore();
 const authStore = useAuthStore();
 
 const computedNavItems = computed(() => {
-  return filterNavItemsByPlan(navItems, authStore.planIsActive);
+  return filterNavItemsByPlan(
+    navItems,
+    authStore.planIsActive,
+    authStore.planProducts
+  );
 });
 </script>
 

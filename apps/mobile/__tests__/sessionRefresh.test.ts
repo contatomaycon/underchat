@@ -25,6 +25,7 @@ function buildSessionPayload(overrides: Record<string, unknown> = {}) {
     sectors: ['sector-1'],
     channels: [{ id: 'worker-1', name: 'Canal 1' }],
     plan_is_active: true,
+    plan_products: ['867d1856-74f6-4e5d-a932-88c723af499d'],
     attendance_guard: {
       is_blocked_now: false,
       server_now: '2026-01-01T00:00:00.000Z',
@@ -92,6 +93,10 @@ describe('mobile sessionRefresh', () => {
     expect(mockStorage.setItem).toHaveBeenCalledWith(
       '@underchat_channels',
       JSON.stringify([{ id: 'worker-1', name: 'Canal 1' }])
+    );
+    expect(mockStorage.setItem).toHaveBeenCalledWith(
+      '@underchat_plan_products',
+      JSON.stringify(['867d1856-74f6-4e5d-a932-88c723af499d'])
     );
   });
 

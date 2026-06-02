@@ -206,10 +206,11 @@ export class UserSessionLoginUseCase {
       }
     );
 
-    const [accountInfo, sectors, channels] = await Promise.all([
+    const [accountInfo, sectors, channels, planProducts] = await Promise.all([
       this.accountService.viewAccountInfoByAccountId(userAccountId),
       this.userService.listUserSectors(userAccountId, targetUserId),
       this.userService.listUserChannelsWithNames(userAccountId, targetUserId),
+      this.accountService.listActivePlanProductIds(userAccountId),
     ]);
 
     const planIsActive = await this.accountService.isPlanActive(userAccountId);
@@ -239,6 +240,7 @@ export class UserSessionLoginUseCase {
       sectors,
       channels,
       plan_is_active: planIsActive,
+      plan_products: planProducts,
       attendance_guard: attendanceGuard,
     };
   }

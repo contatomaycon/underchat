@@ -15,6 +15,7 @@ export interface AuthLoginResponse {
   sectors: string[];
   channels: Array<{ id: string; name: string }>;
   plan_is_active: boolean;
+  plan_products: string[];
   attendance_guard: AttendanceGuardStatus;
 }
 

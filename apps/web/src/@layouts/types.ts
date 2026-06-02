@@ -8,6 +8,7 @@ import type {
   NavbarType,
 } from '@layouts/enums';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 export interface LayoutConfig {
   app: {
@@ -51,7 +52,12 @@ export interface AclProperties {
   permissions: EPermissionsRoles[];
 }
 
-export interface NavSectionTitle extends Partial<AclProperties> {
+export interface PlanProductProperties {
+  requiredPlanProducts: EPlanProduct[];
+}
+
+export interface NavSectionTitle
+  extends Partial<AclProperties>, Partial<PlanProductProperties> {
   heading: string;
 }
 
@@ -83,7 +89,8 @@ export interface NavLinkProps {
   rel?: ATagRelAttrValues;
 }
 
-export interface NavLink extends NavLinkProps, Partial<AclProperties> {
+export interface NavLink
+  extends NavLinkProps, Partial<AclProperties>, Partial<PlanProductProperties> {
   title: string;
   icon?: unknown;
   badgeContent?: string;
@@ -93,7 +100,8 @@ export interface NavLink extends NavLinkProps, Partial<AclProperties> {
 }
 
 // 👉 Vertical nav group
-export interface NavGroup extends Partial<AclProperties> {
+export interface NavGroup
+  extends Partial<AclProperties>, Partial<PlanProductProperties> {
   title: string;
   icon?: unknown;
   badgeContent?: string;

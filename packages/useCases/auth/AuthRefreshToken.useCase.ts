@@ -255,8 +255,8 @@ export class AuthRefreshTokenUseCase {
 
     const planIsActive = await this.accountService.isPlanActive(accountId);
 
-    const [accountInfo, sectors, channels, attendanceGuard] = await Promise.all(
-      [
+    const [accountInfo, sectors, channels, attendanceGuard, planProducts] =
+      await Promise.all([
         this.accountService.viewAccountInfoByAccountId(accountId),
         this.userService.listUserSectors(accountId, decodeToken.user_id),
         this.userService.listUserChannelsWithNames(
@@ -267,8 +267,8 @@ export class AuthRefreshTokenUseCase {
           decodeToken.user_id,
           accountId
         ),
-      ]
-    );
+        this.accountService.listActivePlanProductIds(accountId),
+      ]);
 
     await Promise.all([
       this.invalidateUserJwtCache(accountId, decodeToken.user_id),
@@ -289,6 +289,7 @@ export class AuthRefreshTokenUseCase {
       sectors,
       channels,
       plan_is_active: planIsActive,
+      plan_products: planProducts,
       attendance_guard: attendanceGuard,
     };
   }

@@ -60,6 +60,7 @@
   "role_not_available_additional": "Seu plano não suporta mais grupos de acesso, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
   "chatbot_not_available": "Seu plano não tem suporte a chatbots, por favor, entre em contato com o administrador do sistema para mais informações.",
   "chatbot_not_available_additional": "Seu plano não suporta mais chatbots, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
+  "internal_chat_not_available": "Seu plano não tem suporte ao chat interno. Faça upgrade do plano ou compre um adicional para usar esta funcionalidade.",
   "contact_not_available": "Seu plano não tem suporte a contatos, por favor, entre em contato com o administrador do sistema para mais informações.",
   "contact_not_available_additional": "Seu plano não suporta mais contatos, contrate um adicional ou entre em contato com o administrador do sistema para mais informações.",
   "mass_sending_not_available": "Seu plano não tem suporte a envio em massa, por favor, entre em contato com o administrador do sistema para mais informações.",

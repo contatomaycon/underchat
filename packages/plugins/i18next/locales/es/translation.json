@@ -78,6 +78,7 @@
   "role_not_available_additional": "Su plan no admite más roles, contrate un adicional o comuníquese con el administrador del sistema para obtener más información.",
   "chatbot_not_available": "Su plan no admite chatbots, comuníquese con el administrador del sistema para obtener más información.",
   "chatbot_not_available_additional": "Su plan no admite más chatbots, contrate un adicional o comuníquese con el administrador del sistema para obtener más información.",
+  "internal_chat_not_available": "Su plan no admite chat interno. Actualice su plan o compre un complemento para usar esta funcionalidad.",
   "contact_not_available": "Su plan no admite contactos, comuníquese con el administrador del sistema para obtener más información.",
   "contact_not_available_additional": "Su plan no admite más contactos, contrate un adicional o comuníquese con el administrador del sistema para obtener más información.",
   "mass_sending_not_available": "Su plan no admite envío en masa, comuníquese con el administrador del sistema para obtener más información.",

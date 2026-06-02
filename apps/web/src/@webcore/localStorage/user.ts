@@ -7,6 +7,7 @@ import { IUserChannel } from '@core/common/interfaces/ITokenJwtData';
 import { normalizeUserChannels } from '@core/common/functions/extractUserChannelIds';
 
 const PLAN_STATUS_KEY = 'plan_is_active';
+const PLAN_PRODUCTS_KEY = 'plan_products';
 
 export const setSectors = (sectors: string[]): void => {
   localStorage.setItem('sectors', JSON.stringify(sectors));
@@ -97,6 +98,30 @@ export const persistPlanStatus = (isActive: boolean): void => {
   setPlanStatusToStorage(isActive);
 };
 
+export const setPlanProducts = (planProducts: string[]): void => {
+  localStorage.setItem(PLAN_PRODUCTS_KEY, JSON.stringify(planProducts));
+};
+
+export const getPlanProducts = (): string[] => {
+  const planProducts = localStorage.getItem(PLAN_PRODUCTS_KEY);
+  if (!planProducts) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(planProducts) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+export const initializePlanProducts = (): string[] => {
+  return getPlanProducts();
+};
+
 export const removeUserData = (): boolean => {
   localStorage.removeItem('token');
   localStorage.removeItem('permissions');
@@ -105,6 +130,7 @@ export const removeUserData = (): boolean => {
   localStorage.removeItem('sectors');
   localStorage.removeItem('channels');
   localStorage.removeItem(PLAN_STATUS_KEY);
+  localStorage.removeItem(PLAN_PRODUCTS_KEY);
 
   return !getToken() && !getUser() && getPermissions().length === 0;
 };

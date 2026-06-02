@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import InternalChatController from '@/controllers/internalChat';
 import { planGuard } from '@/plugins/planGuard';
+import { planProductGuard } from '@/plugins/planProductGuard';
 import { planStatus } from '@/plugins/planStatus';
 import {
   contactViewPhonePermissions,
@@ -36,9 +37,11 @@ import { removeGroupMemberSchema } from '@core/schema/internalChat/removeGroupMe
 import { transferLeaderSchema } from '@core/schema/internalChat/transferLeader';
 import { realtimeTokenSchema } from '@core/schema/internalChat/realtimeToken';
 import { viewInternalChatLinkPreviewSchema } from '@core/schema/internalChat/viewLinkPreview';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 export default function internalChatRoutes(server: FastifyInstance) {
   const controller = container.resolve(InternalChatController);
+  const internalChatProductGuard = planProductGuard(EPlanProduct.internal_chat);
 
   server.get('/internal-chat/conversations', {
     schema: listConversationsSchema,
@@ -47,6 +50,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -58,6 +62,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -69,6 +74,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -82,6 +88,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, contactViewPhonePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -93,6 +100,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -104,6 +112,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -115,6 +124,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -126,6 +136,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -141,6 +152,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
           internalChatGroupCreatePermissions
         ),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -156,6 +168,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
           internalChatGroupUpdatePermissions
         ),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -167,6 +180,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -182,6 +196,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
           internalChatGroupMembersPermissions
         ),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -197,6 +212,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
           internalChatGroupMembersPermissions
         ),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -212,6 +228,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
           internalChatGroupTransferLeaderPermissions
         ),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -223,6 +240,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -234,6 +252,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -245,6 +264,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -256,6 +276,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -267,6 +288,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -278,6 +300,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -289,6 +312,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -300,6 +324,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -311,6 +336,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });
@@ -322,6 +348,7 @@ export default function internalChatRoutes(server: FastifyInstance) {
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatWritePermissions),
       planGuard,
+      internalChatProductGuard,
       planStatus,
     ],
   });

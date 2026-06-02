@@ -45,7 +45,6 @@ const emit = defineEmits<{
     id: ListChatsResult['chat_id'],
     options?: OpenChatOptions
   ): void;
-  (e: 'open-internal-chat'): void;
   (e: 'showUserProfile'): void;
   (e: 'close'): void;
   (e: 'update:search', value: string): void;
@@ -368,7 +367,9 @@ const isChatForCurrentUser = (
 
 const filteredInChat = computed(() => {
   if (activeFilter.value === 'in_chat') {
-    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listInChat);
+    const visibleChats = removeRealtimeHiddenChatsFromList(
+      chatStore.listInChat
+    );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
     }
@@ -379,7 +380,9 @@ const filteredInChat = computed(() => {
     );
   }
   if (activeFilter.value === 'all' && !hasActiveFilters.value) {
-    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listInChat);
+    const visibleChats = removeRealtimeHiddenChatsFromList(
+      chatStore.listInChat
+    );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
     }
@@ -508,7 +511,9 @@ const filteredChatbot = computed(() => {
     return removeRealtimeHiddenChatsFromList(chatStore.listChatbot);
   }
   if (activeFilter.value === 'chatbot') {
-    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listChatbot);
+    const visibleChats = removeRealtimeHiddenChatsFromList(
+      chatStore.listChatbot
+    );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
     }
@@ -3543,19 +3548,6 @@ defineExpose({
 
   <div class="chat-filter-options px-3 py-3">
     <div class="d-flex gap-2 flex-wrap">
-      <div class="chat-filter-item flex-grow-1">
-        <VBtn
-          color="error"
-          variant="flat"
-          class="chat-filter-btn chat-filter-btn-internal w-100"
-          @click="emit('open-internal-chat')"
-        >
-          <VIcon size="20">tabler-users-group</VIcon>
-          <VTooltip activator="parent" location="bottom">
-            Chat Interno
-          </VTooltip>
-        </VBtn>
-      </div>
       <div class="chat-filter-item flex-grow-1">
         <VBtn
           :variant="activeFilter === 'new' ? 'flat' : 'text'"

@@ -15,7 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../api/authApi';
 import { clearAuth, persistAuthSession } from '../storage/authStorage';
-import { hasMobileAppAccessPermission } from '../constants/chatAuthorization';
+import { hasMobileAppAccess } from '../constants/chatAuthorization';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import {
@@ -74,8 +74,9 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
     if (result.success) {
       const permissions = result.data.permissions ?? [];
       const channels = result.data.channels ?? [];
+      const planProducts = result.data.plan_products ?? [];
 
-      if (!hasMobileAppAccessPermission(permissions)) {
+      if (!hasMobileAppAccess(permissions, planProducts)) {
         await clearAuth();
         setError(pt.chat_permission_denied);
         return;
@@ -87,6 +88,7 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
         permissions,
         sectors: result.data.sectors ?? [],
         channels,
+        plan_products: planProducts,
       });
       onLoginSuccess();
       return;

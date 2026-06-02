@@ -8,6 +8,7 @@ export const setupGuards = (router: Router) => {
     const isLogged = isLoggedIn();
     const authStore = useAuthStore();
     const planActive = authStore.planIsActive;
+    const planProducts = authStore.planProducts;
     const allowedPlanRoutes = new Set([
       'root',
       'index',
@@ -39,6 +40,21 @@ export const setupGuards = (router: Router) => {
 
     if (!planActive && to.matched.length && !isPlanRouteAllowed) {
       return { name: 'plan-expired' };
+    }
+
+    const requiredPlanProducts = to.matched.flatMap((route) =>
+      Array.isArray(route.meta.requiredPlanProducts)
+        ? route.meta.requiredPlanProducts
+        : []
+    );
+
+    if (
+      requiredPlanProducts.length > 0 &&
+      !requiredPlanProducts.every((productId) =>
+        planProducts.includes(productId)
+      )
+    ) {
+      return { name: 'not-authorized' };
     }
 
     if (!canNavigate(to) && to.matched.length) {

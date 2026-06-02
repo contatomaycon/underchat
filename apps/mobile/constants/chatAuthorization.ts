@@ -3,6 +3,8 @@ import type { UserChannel } from '../storage/authStorage';
 
 const MASTER_PERMISSION_ROLE_ID = '019a930d-c6f5-75af-82a5-8c20f9d0e6e2';
 const ADMINISTRATOR_PERMISSION_ROLE_ID = '019a930d-c6f5-75af-82a5-899cb84b6089';
+export const INTERNAL_CHAT_PLAN_PRODUCT_ID =
+  '867d1856-74f6-4e5d-a932-88c723af499d';
 
 export const CHAT_ACCESS_PERMISSIONS = [
   'full_access',
@@ -333,10 +335,34 @@ export function hasInternalChatAccessPermission(
   return hasAnyPermission(permissions, INTERNAL_CHAT_ACCESS_PERMISSIONS);
 }
 
+export function hasInternalChatPlanProduct(planProducts: string[]): boolean {
+  return planProducts.includes(INTERNAL_CHAT_PLAN_PRODUCT_ID);
+}
+
+export function hasInternalChatPlanAccess(
+  permissions: string[],
+  planProducts: string[]
+): boolean {
+  return (
+    hasInternalChatAccessPermission(permissions) &&
+    hasInternalChatPlanProduct(planProducts)
+  );
+}
+
 export function hasMobileAppAccessPermission(permissions: string[]): boolean {
   return (
     hasChatModuleAccessPermission(permissions) ||
     hasInternalChatAccessPermission(permissions)
+  );
+}
+
+export function hasMobileAppAccess(
+  permissions: string[],
+  planProducts: string[]
+): boolean {
+  return (
+    hasChatModuleAccessPermission(permissions) ||
+    hasInternalChatPlanAccess(permissions, planProducts)
   );
 }
 

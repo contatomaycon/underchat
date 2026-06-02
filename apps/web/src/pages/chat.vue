@@ -19,7 +19,6 @@ import ChatQuickMessagePreview from '@/components/chat/ChatQuickMessagePreview.v
 import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
 import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
 import ChatAttendanceHistorySidebarContent from '@/components/chat/ChatAttendanceHistorySidebarContent.vue';
-import InternalChatWorkspace from '@/components/chat/internal/InternalChatWorkspace.vue';
 import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
@@ -36,7 +35,6 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatbotPermissions } from '@core/common/enums/EPermissions/chatbot';
-import { EInternalChatPermissions } from '@core/common/enums/EPermissions/internalChat';
 import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { EPermissionRole } from '@core/common/enums/EPermissionRole';
 import { getPermissions, getSectors } from '@/@webcore/localStorage/user';
@@ -111,8 +109,6 @@ definePage({
       EChatPermissions.view_chatbot_messages,
       EChatbotPermissions.chatbot_group,
       EChatbotPermissions.chatbot_access,
-      EInternalChatPermissions.internal_chat_group,
-      EInternalChatPermissions.internal_chat_access,
     ],
   },
 });
@@ -135,8 +131,6 @@ const perPage = ref(10);
 const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
-type ChatMode = 'whatsapp' | 'internal';
-const chatMode = ref<ChatMode>('whatsapp');
 const msg = ref('');
 const messageDraftByChatId = ref<Record<string, string>>({});
 const quickMessageTemplates = ref<
@@ -186,17 +180,6 @@ const isViewPhoneDecrypted = ref(false);
 const isLoadingViewEmail = ref(false);
 const isLoadingViewPhone = ref(false);
 
-const switchToInternalMode = () => {
-  chatMode.value = 'internal';
-  isUserProfileSidebarOpen.value = false;
-  isSearchSidebarOpen.value = false;
-  isAttendanceHistorySidebarOpen.value = false;
-  isActiveChatUserProfileSidebarOpen.value = false;
-};
-
-const switchToWhatsappMode = () => {
-  chatMode.value = 'whatsapp';
-};
 const headerPhoneDecrypted = ref<string | null>(null);
 const isHeaderPhoneDecrypted = ref(false);
 const isHeaderPhoneLoading = ref(false);
@@ -6003,7 +5986,6 @@ onBeforeUnmount(() => {
 <template>
   <VLayout class="chat-app-layout" style="z-index: 0">
     <VNavigationDrawer
-      v-if="chatMode === 'whatsapp'"
       v-model="isUserProfileSidebarOpen"
       data-allow-mismatch
       temporary
@@ -6021,7 +6003,6 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
-      v-if="chatMode === 'whatsapp'"
       v-model="isActiveChatUserProfileSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -6038,7 +6019,6 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
-      v-if="chatMode === 'whatsapp'"
       v-model="isSearchSidebarOpen"
       data-allow-mismatch
       width="374"
@@ -6052,7 +6032,6 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
-      v-if="chatMode === 'whatsapp'"
       v-model="isAttendanceHistorySidebarOpen"
       data-allow-mismatch
       width="374"
@@ -6069,7 +6048,6 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VNavigationDrawer
-      v-if="chatMode === 'whatsapp'"
       v-model="isLeftSidebarOpen"
       data-allow-mismatch
       absolute
@@ -6085,19 +6063,13 @@ onBeforeUnmount(() => {
         v-model:is-drawer-open="isLeftSidebarOpen"
         v-model:search="q"
         @open-chat="openChat"
-        @open-internal-chat="switchToInternalMode"
         @show-user-profile="isUserProfileSidebarOpen = true"
         @close="isLeftSidebarOpen = false"
       />
     </VNavigationDrawer>
 
     <VMain class="chat-content-container">
-      <InternalChatWorkspace
-        v-if="chatMode === 'internal'"
-        @switch-whatsapp-mode="switchToWhatsappMode"
-      />
-
-      <template v-else>
+      <template>
         <div v-if="chatStore.activeChat" class="d-flex flex-column h-100">
           <div
             class="active-chat-header d-flex align-center text-medium-emphasis bg-surface"

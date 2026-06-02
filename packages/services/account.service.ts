@@ -2,6 +2,7 @@ import { injectable, inject } from 'tsyringe';
 import { AccountInfoViewerRepository } from '@core/repositories/account/AccountInfoViewer.repository';
 import { AccountInfoResponse } from '@core/schema/auth/login/response.schema';
 import { AccountQuantityProductViewerRepository } from '@core/repositories/account/AccountQuantityProductViewer.repository';
+import { AccountPlanProductIdsListerRepository } from '@core/repositories/account/AccountPlanProductIdsLister.repository';
 import { AccountViewerExistsRepository } from '@core/repositories/account/AccountViewerExists.repository';
 import { AccountNameViewerRepository } from '@core/repositories/account/AccountNameViewer.repository';
 import { IViewAccountName } from '@core/common/interfaces/IViewAccountName';
@@ -45,6 +46,8 @@ export class AccountService {
     private readonly accountInfoViewerRepository: AccountInfoViewerRepository,
     @inject(AccountQuantityProductViewerRepository)
     private readonly accountQuantityProductViewerRepository: AccountQuantityProductViewerRepository,
+    @inject(AccountPlanProductIdsListerRepository)
+    private readonly accountPlanProductIdsListerRepository: AccountPlanProductIdsListerRepository,
     @inject(AccountViewerExistsRepository)
     private readonly accountViewerExistsRepository: AccountViewerExistsRepository,
     @inject(AccountNameViewerRepository)
@@ -109,6 +112,12 @@ export class AccountService {
     return this.accountQuantityProductViewerRepository.viewAccountQuantityProduct(
       accountId,
       planProductId
+    );
+  };
+
+  listActivePlanProductIds = async (accountId: string): Promise<string[]> => {
+    return this.accountPlanProductIdsListerRepository.listActivePlanProductIds(
+      accountId
     );
   };
 

@@ -8,6 +8,7 @@ import { LoginScreen } from './screens/LoginScreen';
 import {
   getToken,
   getPermissions,
+  getPlanProducts,
   getUser,
   getSectors,
   getChannels,
@@ -19,8 +20,8 @@ import {
   canViewChatbotTab as checkCanViewChatbotTab,
   canViewChat,
   hasChatModuleAccessPermission,
-  hasInternalChatAccessPermission,
-  hasMobileAppAccessPermission,
+  hasInternalChatPlanAccess,
+  hasMobileAppAccess,
   canUpdateOwnChatStatusPermission,
 } from './constants/chatAuthorization';
 import { ChatFilterProvider } from './context/ChatFilterContext';
@@ -186,13 +187,14 @@ export default function App() {
 
   const applyAuthAccessState = useCallback(
     (
-      permissions: string[]
+      permissions: string[],
+      planProducts: string[]
     ): {
       hasMobileAccess: boolean;
       hasChatAccess: boolean;
       hasInternalAccess: boolean;
     } => {
-      if (!hasMobileAppAccessPermission(permissions)) {
+      if (!hasMobileAppAccess(permissions, planProducts)) {
         resetAuthAccessState();
         return {
           hasMobileAccess: false,
@@ -202,7 +204,10 @@ export default function App() {
       }
 
       const hasChatAccess = hasChatModuleAccessPermission(permissions);
-      const hasInternalAccess = hasInternalChatAccessPermission(permissions);
+      const hasInternalAccess = hasInternalChatPlanAccess(
+        permissions,
+        planProducts
+      );
 
       setAuthenticated(true);
       setCanViewChatbotTab(
@@ -449,10 +454,16 @@ export default function App() {
           return;
         }
 
-        const cachedPermissions = await getPermissions();
+        const [cachedPermissions, cachedPlanProducts] = await Promise.all([
+          getPermissions(),
+          getPlanProducts(),
+        ]);
         if (cancelled) return;
 
-        const access = applyAuthAccessState(cachedPermissions);
+        const access = applyAuthAccessState(
+          cachedPermissions,
+          cachedPlanProducts
+        );
         if (!access.hasMobileAccess) {
           await clearAuth();
           if (cancelled) return;
@@ -465,7 +476,10 @@ export default function App() {
 
       emitSessionUpdated();
 
-      const access = applyAuthAccessState(refreshResult.data.permissions);
+      const access = applyAuthAccessState(
+        refreshResult.data.permissions,
+        refreshResult.data.plan_products ?? []
+      );
       if (!access.hasMobileAccess) {
         await clearAuth();
         if (cancelled) return;
@@ -543,11 +557,11 @@ export default function App() {
       return;
     }
 
-    getPermissions()
-      .then(async (permissions) => {
+    Promise.all([getPermissions(), getPlanProducts()])
+      .then(async ([permissions, planProducts]) => {
         if (cancelled) return;
 
-        if (!hasMobileAppAccessPermission(permissions)) {
+        if (!hasMobileAppAccess(permissions, planProducts)) {
           await clearAuth();
           if (cancelled) return;
           setAuthenticated(false);
@@ -560,7 +574,10 @@ export default function App() {
         }
 
         const hasChatAccess = hasChatModuleAccessPermission(permissions);
-        const hasInternalAccess = hasInternalChatAccessPermission(permissions);
+        const hasInternalAccess = hasInternalChatPlanAccess(
+          permissions,
+          planProducts
+        );
 
         setCanViewChatbotTab(
           hasChatAccess && checkCanViewChatbotTab(permissions)
@@ -879,7 +896,10 @@ export default function App() {
         } else {
           emitSessionUpdated();
 
-          const access = applyAuthAccessState(refreshResult.data.permissions);
+          const access = applyAuthAccessState(
+            refreshResult.data.permissions,
+            refreshResult.data.plan_products ?? []
+          );
           if (!access.hasMobileAccess) {
             await clearAuth();
             resetAuthAccessState();

@@ -207,13 +207,14 @@ export class AuthLoginUseCase {
       }
     );
 
-    const [accountInfo, sectors, channels] = await Promise.all([
+    const [accountInfo, sectors, channels, planProducts] = await Promise.all([
       this.accountService.viewAccountInfoByAccountId(result.account_id),
       this.userService.listUserSectors(result.account_id, result.user_id),
       this.userService.listUserChannelsWithNames(
         result.account_id,
         result.user_id
       ),
+      this.accountService.listActivePlanProductIds(result.account_id),
     ]);
 
     const planIsActive = await this.accountService.isPlanActive(
@@ -245,6 +246,7 @@ export class AuthLoginUseCase {
       sectors,
       channels,
       plan_is_active: planIsActive,
+      plan_products: planProducts,
       attendance_guard: attendanceGuard,
     };
   }

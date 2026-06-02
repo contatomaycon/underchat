@@ -6,6 +6,7 @@ const USER_KEY = '@underchat_user';
 const PERMISSIONS_KEY = '@underchat_permissions';
 const SECTORS_KEY = '@underchat_sectors';
 const CHANNELS_KEY = '@underchat_channels';
+const PLAN_PRODUCTS_KEY = '@underchat_plan_products';
 
 export type UserChannel = {
   id: string;
@@ -14,7 +15,7 @@ export type UserChannel = {
 
 export type AuthSessionStorageData = Pick<
   AuthLoginResponse,
-  'token' | 'user' | 'permissions' | 'sectors' | 'channels'
+  'token' | 'user' | 'permissions' | 'sectors' | 'channels' | 'plan_products'
 >;
 
 function normalizeChannels(value: unknown): UserChannel[] {
@@ -117,6 +118,21 @@ export async function setPermissions(permissions: string[]): Promise<void> {
   await AsyncStorage.setItem(PERMISSIONS_KEY, JSON.stringify(permissions));
 }
 
+export async function getPlanProducts(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(PLAN_PRODUCTS_KEY);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function setPlanProducts(planProducts: string[]): Promise<void> {
+  await AsyncStorage.setItem(PLAN_PRODUCTS_KEY, JSON.stringify(planProducts));
+}
+
 export async function getSectors(): Promise<string[]> {
   const raw = await AsyncStorage.getItem(SECTORS_KEY);
   if (!raw) return [];
@@ -158,6 +174,7 @@ export async function persistAuthSession(
     setPermissions(session.permissions ?? []),
     setSectors(session.sectors ?? []),
     setChannels(session.channels ?? []),
+    setPlanProducts(session.plan_products ?? []),
   ]);
 }
 
@@ -168,5 +185,6 @@ export async function clearAuth(): Promise<void> {
     AsyncStorage.removeItem(PERMISSIONS_KEY),
     AsyncStorage.removeItem(SECTORS_KEY),
     AsyncStorage.removeItem(CHANNELS_KEY),
+    AsyncStorage.removeItem(PLAN_PRODUCTS_KEY),
   ]);
 }

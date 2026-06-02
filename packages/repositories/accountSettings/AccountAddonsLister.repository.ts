@@ -28,6 +28,9 @@ export class AccountAddonsListerRepository {
     accountId: string,
     planProductId: string
   ): Promise<number> => {
+    if (planProductId === EPlanProduct.internal_chat) {
+      return 1;
+    }
     if (planProductId === EPlanProduct.worker) {
       return this.workerTotalViewerRepository.totalWorkerByAccountId(accountId);
     }
@@ -137,23 +140,44 @@ export class AccountAddonsListerRepository {
       }
 
       const planProductId = crossSell.pca.ppt.plan_product_id;
-      const addonQuantity = crossSell.pca.quantity || 0;
-      const planQuantity = planQuantityByProduct.has(planProductId)
+      const isBooleanProduct = planProductId === EPlanProduct.internal_chat;
+      const addonQuantityRaw = crossSell.pca.quantity || 0;
+      const addonQuantity = isBooleanProduct
+        ? addonQuantityRaw > 0
+          ? 1
+          : 0
+        : addonQuantityRaw;
+      const planQuantityRaw = planQuantityByProduct.has(planProductId)
         ? planQuantityByProduct.get(planProductId) || 0
         : await this.getPlanQuantityForProduct(accountId, planProductId);
       if (!planQuantityByProduct.has(planProductId)) {
-        planQuantityByProduct.set(planProductId, planQuantity);
+        planQuantityByProduct.set(planProductId, planQuantityRaw);
       }
+      const planQuantity = isBooleanProduct
+        ? planQuantityRaw > 0
+          ? 1
+          : 0
+        : planQuantityRaw;
 
-      const quantityUsed = quantityUsedByProduct.has(planProductId)
+      const quantityUsedRaw = quantityUsedByProduct.has(planProductId)
         ? quantityUsedByProduct.get(planProductId) || 0
         : await this.getQuantityUsed(accountId, planProductId);
       if (!quantityUsedByProduct.has(planProductId)) {
-        quantityUsedByProduct.set(planProductId, quantityUsed);
+        quantityUsedByProduct.set(planProductId, quantityUsedRaw);
       }
-
-      const totalAddonQuantity = addonTotalByProduct.get(planProductId) || 0;
-      const quantityTotal = planQuantity + totalAddonQuantity;
+      const totalAddonQuantityRaw = addonTotalByProduct.get(planProductId) || 0;
+      const totalAddonQuantity = isBooleanProduct
+        ? totalAddonQuantityRaw > 0
+          ? 1
+          : 0
+        : totalAddonQuantityRaw;
+      const quantityTotal = isBooleanProduct
+        ? planQuantity > 0 || totalAddonQuantity > 0
+          ? 1
+          : 0
+        : planQuantity + totalAddonQuantity;
+      const quantityUsed =
+        isBooleanProduct && quantityTotal > 0 ? 1 : quantityUsedRaw;
 
       const source = planQuantity > 0 ? ('plan' as const) : ('addon' as const);
 

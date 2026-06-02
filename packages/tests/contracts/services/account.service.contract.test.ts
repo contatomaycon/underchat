@@ -108,6 +108,9 @@ describe('AccountService', () => {
     const accountQuantityProductViewerRepository = {
       viewAccountQuantityProduct: jest.fn(async () => 5),
     };
+    const accountPlanProductIdsListerRepository = {
+      listActivePlanProductIds: jest.fn(async () => ['prod-1']),
+    };
     const accountViewerExistsRepository = {
       existsAccountById: jest.fn(async () => true),
     };
@@ -187,6 +190,7 @@ describe('AccountService', () => {
     const service = new AccountService(
       accountInfoViewerRepository as never,
       accountQuantityProductViewerRepository as never,
+      accountPlanProductIdsListerRepository as never,
       accountViewerExistsRepository as never,
       accountNameViewerRepository as never,
       accountListerRepository as never,
@@ -213,6 +217,7 @@ describe('AccountService', () => {
       service,
       accountInfoViewerRepository,
       accountQuantityProductViewerRepository,
+      accountPlanProductIdsListerRepository,
       accountViewerExistsRepository,
       accountNameViewerRepository,
       accountListerRepository,
@@ -241,6 +246,7 @@ describe('AccountService', () => {
       service,
       accountInfoViewerRepository,
       accountQuantityProductViewerRepository,
+      accountPlanProductIdsListerRepository,
       accountViewerExistsRepository,
       accountNameViewerRepository,
       accountListerRepository,
@@ -270,6 +276,9 @@ describe('AccountService', () => {
     await expect(
       service.viewAccountQuantityProduct('acc-1', 'prod-1')
     ).resolves.toBe(5);
+    await expect(service.listActivePlanProductIds('acc-1')).resolves.toEqual([
+      'prod-1',
+    ]);
     await expect(service.existsAccountById('acc-1')).resolves.toBe(true);
     await expect(service.viewAccountName('acc-1')).resolves.toEqual({
       name: 'Account 1',
@@ -337,6 +346,9 @@ describe('AccountService', () => {
     expect(
       accountQuantityProductViewerRepository.viewAccountQuantityProduct
     ).toHaveBeenCalledWith('acc-1', 'prod-1');
+    expect(
+      accountPlanProductIdsListerRepository.listActivePlanProductIds
+    ).toHaveBeenCalledWith('acc-1');
     expect(
       accountViewerExistsRepository.existsAccountById
     ).toHaveBeenCalledWith('acc-1');

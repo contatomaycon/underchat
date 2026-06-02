@@ -144,6 +144,15 @@ const emit = defineEmits<{
   (e: 'switch-whatsapp-mode'): void;
 }>();
 
+const props = withDefaults(
+  defineProps<{
+    showBackToChat?: boolean;
+  }>(),
+  {
+    showBackToChat: false,
+  }
+);
+
 const internalChatStore = useInternalChatStore();
 const internalChatSocket = useInternalChatSocket();
 const { t, getLocaleMessage } = useI18n();
@@ -5664,6 +5673,7 @@ onBeforeUnmount(async () => {
           </div>
 
           <VBtn
+            v-if="props.showBackToChat"
             color="success"
             variant="tonal"
             class="internal-chat-back-btn"

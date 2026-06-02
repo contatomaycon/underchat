@@ -23,6 +23,7 @@ import { EReleasePermissions } from '@core/common/enums/EPermissions/release';
 import { EIntegrationPermissions } from '@core/common/enums/EPermissions/integration';
 import { ERandomMessagePermissions } from '@core/common/enums/EPermissions/randomMessage';
 import { EHolidayPermissions } from '@core/common/enums/EPermissions/holiday';
+import { EPlanProduct } from '@core/common/enums/EPlanProduct';
 
 export default [
   {
@@ -43,6 +44,16 @@ export default [
       EChatPermissions.view_chatbot_messages,
       EChatbotPermissions.chatbot_group,
       EChatbotPermissions.chatbot_access,
+    ],
+  },
+  {
+    title: 'internal_chat_title',
+    icon: { icon: 'tabler-users-group' },
+    to: { name: 'internal-chat' as keyof RouteNamedMap },
+    requiredPlanProducts: [EPlanProduct.internal_chat],
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
       EInternalChatPermissions.internal_chat_group,
       EInternalChatPermissions.internal_chat_access,
     ],

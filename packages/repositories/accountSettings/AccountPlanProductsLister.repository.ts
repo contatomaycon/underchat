@@ -40,6 +40,9 @@ export class AccountPlanProductsListerRepository {
     accountId: string,
     planProductId: string
   ): Promise<number> => {
+    if (planProductId === EPlanProduct.internal_chat) {
+      return 1;
+    }
     if (planProductId === EPlanProduct.worker) {
       return this.workerTotalViewerRepository.totalWorkerByAccountId(accountId);
     }
@@ -224,18 +227,35 @@ export class AccountPlanProductsListerRepository {
     const results: ListAccountPlanProductsResponse[] = [];
 
     for (const [planProductId, product] of productsMap) {
-      const quantityTotal = product.quantity_plan + product.quantity_addon;
-      const quantityUsed = await this.getQuantityUsed(accountId, planProductId);
-      const source =
-        product.quantity_plan > 0 ? ('plan' as const) : ('addon' as const);
+      const isBooleanProduct = planProductId === EPlanProduct.internal_chat;
+      const quantityPlan = isBooleanProduct
+        ? product.quantity_plan > 0
+          ? 1
+          : 0
+        : product.quantity_plan;
+      const quantityAddon = isBooleanProduct
+        ? product.quantity_addon > 0
+          ? 1
+          : 0
+        : product.quantity_addon;
+      const quantityTotal = isBooleanProduct
+        ? quantityPlan > 0 || quantityAddon > 0
+          ? 1
+          : 0
+        : quantityPlan + quantityAddon;
+      const quantityUsed =
+        isBooleanProduct && quantityTotal > 0
+          ? 1
+          : await this.getQuantityUsed(accountId, planProductId);
+      const source = quantityPlan > 0 ? ('plan' as const) : ('addon' as const);
 
       results.push({
         plan_product_id: planProductId,
         name: product.name,
         quantity_total: quantityTotal,
         quantity_used: quantityUsed,
-        quantity_plan: product.quantity_plan,
-        quantity_addon: product.quantity_addon,
+        quantity_plan: quantityPlan,
+        quantity_addon: quantityAddon,
         source,
       });
     }

@@ -78,6 +78,7 @@
   "role_not_available_additional": "Your plan does not support additional roles, please contact the system administrator for more information.",
   "chatbot_not_available": "Your plan does not support chatbots, please contact the system administrator for more information.",
   "chatbot_not_available_additional": "Your plan does not support additional chatbots, please contact the system administrator for more information.",
+  "internal_chat_not_available": "Your plan does not support internal chat. Upgrade your plan or purchase an add-on to use this feature.",
   "contact_not_available": "Your plan does not support contacts, please contact the system administrator for more information.",
   "contact_not_available_additional": "Your plan does not support additional contacts, please contact the system administrator for more information.",
   "mass_sending_not_available": "Your plan does not support mass sending, please contact the system administrator for more information.",

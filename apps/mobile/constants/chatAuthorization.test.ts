@@ -8,7 +8,11 @@ import {
   canPreviewChatContent,
   canViewChat,
   hasInternalChatAccessPermission,
+  hasInternalChatPlanAccess,
+  hasInternalChatPlanProduct,
+  hasMobileAppAccess,
   hasMobileAppAccessPermission,
+  INTERNAL_CHAT_PLAN_PRODUCT_ID,
   canCreateInternalChatGroup,
   canManageInternalChatGroupMembers,
   canDisableSendMessageOnTransfer,
@@ -61,6 +65,21 @@ describe('chatAuthorization', () => {
     expect(hasMobileAppAccessPermission(['internal_chat_access'])).toBe(true);
     expect(hasMobileAppAccessPermission(['chat_access'])).toBe(true);
     expect(hasMobileAppAccessPermission(['pick_queue_chat'])).toBe(false);
+  });
+
+  it('requires internal chat product for internal-chat-only mobile access', () => {
+    expect(hasInternalChatPlanProduct([INTERNAL_CHAT_PLAN_PRODUCT_ID])).toBe(
+      true
+    );
+    expect(hasInternalChatPlanAccess(['internal_chat_access'], [])).toBe(false);
+    expect(
+      hasInternalChatPlanAccess(
+        ['internal_chat_access'],
+        [INTERNAL_CHAT_PLAN_PRODUCT_ID]
+      )
+    ).toBe(true);
+    expect(hasMobileAppAccess(['internal_chat_access'], [])).toBe(false);
+    expect(hasMobileAppAccess(['chat_access'], [])).toBe(true);
   });
 
   it('detects internal group management permissions', () => {
