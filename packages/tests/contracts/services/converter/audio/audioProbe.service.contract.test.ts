@@ -27,7 +27,7 @@ describe('AudioProbeService', () => {
       'ffprobe',
       expect.arrayContaining([
         '-show_entries',
-        'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate,bit_rate',
+        'format=duration,format_name,start_time,bit_rate:stream=codec_type,codec_name,channels,sample_rate,bit_rate,start_time,duration',
         '/tmp/a.mp3',
       ])
     );

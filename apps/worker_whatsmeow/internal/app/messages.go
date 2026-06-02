@@ -424,10 +424,8 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 	if err != nil {
 		return nil, fmt.Errorf("download media %s: %w", contentKey, err)
 	}
-	if mimeType := stringValue(media["mimetype"]); mimeType != "" {
-		contentType = mimeType
-	}
-	if name := stringValue(media["name"]); name != "" {
+	httpContentType := contentType
+	if name := firstNonEmpty(stringValue(media["name"]), stringValue(media["filename"]), stringValue(media["fileName"])); name != "" {
 		fileName = name
 	}
 	upload, err := client.Upload(ctx, body, mediaType)
@@ -440,10 +438,11 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 
 	switch contentKey {
 	case "image":
+		mimetype := outgoingMediaMimetype(contentKey, media, httpContentType, false)
 		return &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
 			URL:               proto.String(upload.URL),
 			DirectPath:        proto.String(upload.DirectPath),
-			Mimetype:          proto.String(firstNonEmpty(contentType, "image/jpeg")),
+			Mimetype:          proto.String(mimetype),
 			Caption:           proto.String(caption),
 			MediaKey:          upload.MediaKey,
 			FileEncSHA256:     upload.FileEncSHA256,
@@ -454,10 +453,11 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 			ViewOnce:          proto.Bool(viewOnce),
 		}}, nil
 	case "video":
+		mimetype := outgoingMediaMimetype(contentKey, media, httpContentType, false)
 		video := &waE2E.VideoMessage{
 			URL:               proto.String(upload.URL),
 			DirectPath:        proto.String(upload.DirectPath),
-			Mimetype:          proto.String(firstNonEmpty(contentType, "video/mp4")),
+			Mimetype:          proto.String(mimetype),
 			Caption:           proto.String(caption),
 			MediaKey:          upload.MediaKey,
 			FileEncSHA256:     upload.FileEncSHA256,
@@ -475,19 +475,11 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 		ptt := outgoingAudioPTT(media, viewOnce)
 		duration := uint32Value(firstNonEmptyAny(media["duration"], media["seconds"]))
 		waveform := outgoingAudioWaveform(media, ptt)
-		log.Printf(
-			"whatsmeow audio message build worker_id=%s ptt=%t view_once=%t mimetype=%s duration=%d has_waveform=%t",
-			m.cfg.WorkerID,
-			ptt,
-			viewOnce,
-			firstNonEmpty(contentType, "audio/ogg; codecs=opus"),
-			duration,
-			len(waveform) > 0,
-		)
+		mimetype := outgoingMediaMimetype(contentKey, media, httpContentType, ptt)
 		return &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
 			URL:               proto.String(upload.URL),
 			DirectPath:        proto.String(upload.DirectPath),
-			Mimetype:          proto.String(firstNonEmpty(contentType, "audio/ogg; codecs=opus")),
+			Mimetype:          proto.String(mimetype),
 			MediaKey:          upload.MediaKey,
 			FileEncSHA256:     upload.FileEncSHA256,
 			FileSHA256:        upload.FileSHA256,
@@ -500,10 +492,11 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 			ViewOnce:          proto.Bool(viewOnce),
 		}}, nil
 	case "document":
+		mimetype := outgoingMediaMimetype(contentKey, media, httpContentType, false)
 		return &waE2E.Message{DocumentMessage: &waE2E.DocumentMessage{
 			URL:               proto.String(upload.URL),
 			DirectPath:        proto.String(upload.DirectPath),
-			Mimetype:          proto.String(firstNonEmpty(contentType, "application/octet-stream")),
+			Mimetype:          proto.String(mimetype),
 			Title:             proto.String(firstNonEmpty(stringValue(media["title"]), fileName)),
 			FileName:          proto.String(fileName),
 			Caption:           proto.String(caption),
@@ -515,10 +508,11 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 			ContextInfo:       contextInfo,
 		}}, nil
 	case "sticker":
+		mimetype := outgoingMediaMimetype(contentKey, media, httpContentType, false)
 		return &waE2E.Message{StickerMessage: &waE2E.StickerMessage{
 			URL:               proto.String(upload.URL),
 			DirectPath:        proto.String(upload.DirectPath),
-			Mimetype:          proto.String(firstNonEmpty(contentType, "image/webp")),
+			Mimetype:          proto.String(mimetype),
 			MediaKey:          upload.MediaKey,
 			FileEncSHA256:     upload.FileEncSHA256,
 			FileSHA256:        upload.FileSHA256,
@@ -529,6 +523,50 @@ func (m *WhatsAppManager) buildMediaMessage(ctx context.Context, client *whatsme
 		}}, nil
 	default:
 		return nil, UnsupportedFeatureError{Feature: contentKey}
+	}
+}
+
+func outgoingMediaMimetype(contentKey string, media map[string]any, httpContentType string, ptt bool) string {
+	switch contentKey {
+	case "video":
+		return "video/mp4"
+	case "audio":
+		if ptt {
+			return "audio/ogg; codecs=opus"
+		}
+		return "audio/mpeg"
+	}
+
+	if mimetype := usableOutgoingMimetype(stringValue(media["mimetype"])); mimetype != "" {
+		return mimetype
+	}
+	if mimetype := usableOutgoingMimetype(httpContentType); mimetype != "" {
+		return mimetype
+	}
+
+	switch contentKey {
+	case "image":
+		return "image/jpeg"
+	case "document":
+		return "application/octet-stream"
+	case "sticker":
+		return "image/webp"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func usableOutgoingMimetype(value string) string {
+	mimetype := strings.TrimSpace(value)
+	if mimetype == "" {
+		return ""
+	}
+	base := strings.ToLower(strings.TrimSpace(strings.Split(mimetype, ";")[0]))
+	switch base {
+	case "application/octet-stream", "binary/octet-stream":
+		return ""
+	default:
+		return mimetype
 	}
 }
 

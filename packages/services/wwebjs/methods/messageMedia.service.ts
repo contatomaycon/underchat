@@ -97,16 +97,6 @@ async function mediaFromDownloadedInput(
       normalizeFilesize(downloaded.contentLength) ??
       downloaded.buffer.byteLength;
 
-    console.info('[WwebjsMediaDebug]', {
-      event: 'media_downloaded_for_message_media',
-      filename,
-      mimetype,
-      filesize,
-      downloaded_size: downloaded.buffer.byteLength,
-      content_type_header: downloaded.contentType ?? null,
-      content_length_header: downloaded.contentLength ?? null,
-    });
-
     return new MessageMedia(
       mimetype,
       downloaded.buffer.toString('base64'),

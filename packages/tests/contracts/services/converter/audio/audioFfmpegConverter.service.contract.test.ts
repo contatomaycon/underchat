@@ -32,6 +32,9 @@ const mockFfmpeg = jest.fn((inputPath: string) => {
     audioChannels: jest.fn(function (this: any) {
       return this;
     }),
+    audioFilters: jest.fn(function (this: any) {
+      return this;
+    }),
     outputOptions: jest.fn(function (this: any) {
       return this;
     }),
@@ -105,11 +108,18 @@ describe('AudioFfmpegConverter', () => {
     format: {
       duration: '12.2',
       format_name: 'mp3',
+      start_time: '0.000000',
+      bit_rate: '128000',
     },
     streams: [
       {
         codec_type: 'audio',
         codec_name: 'mp3',
+        channels: 2,
+        sample_rate: '44100',
+        start_time: '0.000000',
+        duration: '12.2',
+        bit_rate: '128000',
       },
     ],
   };
@@ -118,6 +128,8 @@ describe('AudioFfmpegConverter', () => {
     format: {
       duration: '9.2',
       format_name: 'ogg',
+      start_time: '0.000000',
+      bit_rate: '32000',
     },
     streams: [
       {
@@ -125,6 +137,9 @@ describe('AudioFfmpegConverter', () => {
         codec_name: 'opus',
         channels: 1,
         sample_rate: '48000',
+        start_time: '0.000000',
+        duration: '9.2',
+        bit_rate: '32000',
       },
     ],
   };
@@ -180,6 +195,18 @@ describe('AudioFfmpegConverter', () => {
       mimetype: 'audio/mpeg',
       extension: 'mp3',
       duration: 12,
+      probe: {
+        format_name: 'mp3',
+        format_duration: '12.2',
+        format_start_time: '0.000000',
+        format_bit_rate: '128000',
+        codec_name: 'mp3',
+        channels: 2,
+        sample_rate: 44100,
+        stream_duration: '12.2',
+        stream_start_time: '0.000000',
+        stream_bit_rate: '128000',
+      },
     });
 
     expect(mockWriteFile).toHaveBeenCalledTimes(1);
@@ -192,6 +219,15 @@ describe('AudioFfmpegConverter', () => {
     expect(ffmpegCommands[0].audioFrequency).toHaveBeenCalledWith(44100);
     expect(ffmpegCommands[0].audioChannels).toHaveBeenCalledWith(2);
     expect(ffmpegCommands[0].audioBitrate).toHaveBeenCalledWith('128k');
+    expect(ffmpegCommands[0].audioFilters).toHaveBeenCalledWith(
+      'aresample=async=1:first_pts=0'
+    );
+    expect(ffmpegCommands[0].outputOptions).toHaveBeenCalledWith([
+      '-map',
+      '0:a:0',
+      '-map_metadata',
+      '-1',
+    ]);
     expect(audioProbeService.probeMetadata).toHaveBeenCalledTimes(1);
     expect(audioProbeService.extractDuration).toHaveBeenCalledWith(mp3Metadata);
 
@@ -214,6 +250,18 @@ describe('AudioFfmpegConverter', () => {
       mimetype: 'audio/ogg; codecs=opus',
       extension: 'ogg',
       duration: 9,
+      probe: {
+        format_name: 'ogg',
+        format_duration: '9.2',
+        format_start_time: '0.000000',
+        format_bit_rate: '32000',
+        codec_name: 'opus',
+        channels: 1,
+        sample_rate: 48000,
+        stream_duration: '9.2',
+        stream_start_time: '0.000000',
+        stream_bit_rate: '32000',
+      },
     });
 
     expect(ffmpegCommands[0].audioCodec).toHaveBeenCalledWith('libopus');
@@ -221,13 +269,32 @@ describe('AudioFfmpegConverter', () => {
     expect(ffmpegCommands[0].audioFrequency).toHaveBeenCalledWith(48000);
     expect(ffmpegCommands[0].audioChannels).toHaveBeenCalledWith(1);
     expect(ffmpegCommands[0].audioBitrate).toHaveBeenCalledWith('32k');
+    expect(ffmpegCommands[0].audioFilters).toHaveBeenCalledWith(
+      'aresample=async=1:first_pts=0'
+    );
     expect(ffmpegCommands[0].outputOptions).toHaveBeenCalledWith([
+      '-map',
+      '0:a:0',
       '-application',
       'voip',
       '-frame_duration',
       '20',
+      '-vbr',
+      'on',
+      '-compression_level',
+      '10',
+      '-packet_loss',
+      '0',
+      '-map_metadata',
+      '-1',
+      '-fflags',
+      '+genpts',
       '-avoid_negative_ts',
       'make_zero',
+      '-muxdelay',
+      '0',
+      '-muxpreload',
+      '0',
     ]);
     expect(audioProbeService.probeMetadata).toHaveBeenCalledTimes(1);
     expect(audioProbeService.extractDuration).toHaveBeenCalledWith(pttMetadata);

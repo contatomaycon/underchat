@@ -10,6 +10,8 @@ import { IAudioFormatConfig } from '@core/common/interfaces/IAudioFormatConfig';
 import { AudioProbeService } from './audioProbe.service';
 import { FileUtils } from './fileUtils.service';
 
+type AudioProbeSummary = NonNullable<IConvertAudioResult['probe']>;
+
 @injectable()
 export class AudioFfmpegConverter {
   constructor(
@@ -42,7 +44,10 @@ export class AudioFfmpegConverter {
       await this.validateInputFile(inputPath, currentFormat);
 
       await this.runConversion(inputPath, outputPath, ptt);
-      const duration = await this.validateOutputFile(outputPath, ptt);
+      const { duration, probe } = await this.validateOutputFile(
+        outputPath,
+        ptt
+      );
       const outputBuffer = await readFile(outputPath);
 
       return {
@@ -50,6 +55,7 @@ export class AudioFfmpegConverter {
         mimetype: config.mimetype,
         extension: config.extension,
         duration,
+        probe,
       };
     } catch (error) {
       const errorMessage =
@@ -147,13 +153,30 @@ export class AudioFfmpegConverter {
       .audioFrequency(48000)
       .audioChannels(1)
       .audioBitrate('32k')
+      .audioFilters('aresample=async=1:first_pts=0')
       .outputOptions([
+        '-map',
+        '0:a:0',
         '-application',
         'voip',
         '-frame_duration',
         '20',
+        '-vbr',
+        'on',
+        '-compression_level',
+        '10',
+        '-packet_loss',
+        '0',
+        '-map_metadata',
+        '-1',
+        '-fflags',
+        '+genpts',
         '-avoid_negative_ts',
         'make_zero',
+        '-muxdelay',
+        '0',
+        '-muxpreload',
+        '0',
       ]);
   }
 
@@ -165,7 +188,9 @@ export class AudioFfmpegConverter {
       .format('mp3')
       .audioFrequency(44100)
       .audioChannels(2)
-      .audioBitrate('128k');
+      .audioBitrate('128k')
+      .audioFilters('aresample=async=1:first_pts=0')
+      .outputOptions(['-map', '0:a:0', '-map_metadata', '-1']);
   }
 
   private async validateInputFile(
@@ -194,12 +219,13 @@ export class AudioFfmpegConverter {
   private async validateOutputFile(
     outputPath: string,
     ptt: boolean
-  ): Promise<number | undefined> {
+  ): Promise<{ duration?: number; probe: AudioProbeSummary }> {
     const metadata = await this.audioProbeService.probeMetadata(outputPath);
     const duration = this.audioProbeService.extractDuration(metadata);
     const audioStream = Array.isArray(metadata?.streams)
       ? metadata.streams.find((stream: any) => stream?.codec_type === 'audio')
       : null;
+    const probe = this.summarizeProbe(metadata, audioStream);
 
     if (!audioStream) {
       throw new Error('Arquivo de áudio convertido sem trilha de áudio.');
@@ -207,11 +233,11 @@ export class AudioFfmpegConverter {
 
     if (ptt) {
       this.validatePttOutput(metadata, audioStream);
-      return duration;
+      return { duration, probe };
     }
 
     this.validateRegularOutput(metadata, audioStream);
-    return duration;
+    return { duration, probe };
   }
 
   private validatePttOutput(metadata: any, audioStream: any): void {
@@ -221,12 +247,14 @@ export class AudioFfmpegConverter {
     const codecName = String(audioStream?.codec_name ?? '').toLowerCase();
     const channels = Number(audioStream?.channels);
     const sampleRate = Number(audioStream?.sample_rate);
+    const startTime = Number(audioStream?.start_time ?? 0);
 
     if (
       !formatName.includes('ogg') ||
       codecName !== 'opus' ||
       channels !== 1 ||
-      sampleRate !== 48000
+      sampleRate !== 48000 ||
+      (Number.isFinite(startTime) && startTime < -0.05)
     ) {
       throw new Error(
         'Arquivo de áudio convertido fora do perfil de voz WhatsApp.'
@@ -243,5 +271,28 @@ export class AudioFfmpegConverter {
     if (!formatName.includes('mp3') || codecName !== 'mp3') {
       throw new Error('Arquivo de áudio convertido fora do perfil MP3.');
     }
+  }
+
+  private summarizeProbe(metadata: any, audioStream: any): AudioProbeSummary {
+    const toNullableString = (value: unknown): string | null =>
+      typeof value === 'string' && value.trim() ? value : null;
+    const toNullableNumber = (value: unknown): number | null => {
+      const parsed =
+        typeof value === 'number' ? value : Number.parseFloat(String(value));
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    return {
+      format_name: toNullableString(metadata?.format?.format_name),
+      format_duration: toNullableString(metadata?.format?.duration),
+      format_start_time: toNullableString(metadata?.format?.start_time),
+      format_bit_rate: toNullableString(metadata?.format?.bit_rate),
+      codec_name: toNullableString(audioStream?.codec_name),
+      channels: toNullableNumber(audioStream?.channels),
+      sample_rate: toNullableNumber(audioStream?.sample_rate),
+      stream_duration: toNullableString(audioStream?.duration),
+      stream_start_time: toNullableString(audioStream?.start_time),
+      stream_bit_rate: toNullableString(audioStream?.bit_rate),
+    };
   }
 }

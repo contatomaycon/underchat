@@ -557,10 +557,18 @@ export class ScheduleMessageConsume {
     try {
       result = await this.baileysMessageMediaService.sendVideo(
         jid,
-        { url: video.url },
+        {
+          url: video.url,
+          mimetype: video.mimetype ?? undefined,
+          filename: video.name ?? undefined,
+          filesize: video.size ?? undefined,
+        },
         {
           caption: video.caption ?? data.message.content?.message ?? undefined,
           seconds: data.message.content?.video?.duration ?? undefined,
+          mimetype: video.mimetype ?? undefined,
+          fileName: video.name ?? undefined,
+          filesize: video.size ?? undefined,
         }
       );
 
@@ -608,11 +616,18 @@ export class ScheduleMessageConsume {
 
       result = await this.baileysMessageMediaService.sendAudio(
         jid,
-        { url: audio.url },
+        {
+          url: audio.url,
+          mimetype: audio.mimetype ?? undefined,
+          filename: audio.name ?? undefined,
+          filesize: audio.size ?? undefined,
+        },
         {
           ptt: isPtt,
           seconds: audio.duration ?? undefined,
           mimetype: audio.mimetype ?? undefined,
+          fileName: audio.name ?? undefined,
+          filesize: audio.size ?? undefined,
           viewOnce: isViewOnce,
         }
       );

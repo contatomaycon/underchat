@@ -256,6 +256,70 @@ func TestOutgoingAudioPTTDefaultsLikeBaileys(t *testing.T) {
 	}
 }
 
+func TestOutgoingMediaMimetypeCanonicalizesAudioAndVideo(t *testing.T) {
+	tests := []struct {
+		name            string
+		contentKey      string
+		media           map[string]any
+		httpContentType string
+		ptt             bool
+		want            string
+	}{
+		{
+			name:            "ptt audio ignores legacy mobile mime",
+			contentKey:      "audio",
+			media:           map[string]any{"mimetype": "audio/mp4"},
+			httpContentType: "application/octet-stream",
+			ptt:             true,
+			want:            "audio/ogg; codecs=opus",
+		},
+		{
+			name:            "regular audio is mp3",
+			contentKey:      "audio",
+			media:           map[string]any{"mimetype": "audio/ogg"},
+			httpContentType: "audio/ogg",
+			ptt:             false,
+			want:            "audio/mpeg",
+		},
+		{
+			name:            "video ignores quicktime and generic http",
+			contentKey:      "video",
+			media:           map[string]any{"mimetype": "video/quicktime"},
+			httpContentType: "application/octet-stream",
+			want:            "video/mp4",
+		},
+		{
+			name:            "document preserves useful declared mime",
+			contentKey:      "document",
+			media:           map[string]any{"mimetype": "application/pdf"},
+			httpContentType: "application/octet-stream",
+			want:            "application/pdf",
+		},
+		{
+			name:            "document falls back when only generic mime exists",
+			contentKey:      "document",
+			media:           map[string]any{},
+			httpContentType: "application/octet-stream",
+			want:            "application/octet-stream",
+		},
+		{
+			name:            "image uses useful http mime",
+			contentKey:      "image",
+			media:           map[string]any{},
+			httpContentType: "image/png",
+			want:            "image/png",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := outgoingMediaMimetype(tt.contentKey, tt.media, tt.httpContentType, tt.ptt); got != tt.want {
+				t.Fatalf("unexpected mimetype: got %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQuotedAudioDefaultsToPTT(t *testing.T) {
 	quoted := quotedMessageForContext(map[string]any{
 		"type": MessageTypeAudio,

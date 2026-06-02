@@ -23,6 +23,9 @@ jest.mock('fluent-ffmpeg', () => {
     chain = {
       videoCodec: jest.fn(() => chain),
       audioCodec: jest.fn(() => chain),
+      audioFrequency: jest.fn(() => chain),
+      audioChannels: jest.fn(() => chain),
+      audioBitrate: jest.fn(() => chain),
       format: jest.fn(() => chain),
       outputOptions: jest.fn(() => chain),
       output: jest.fn(() => chain),
@@ -60,7 +63,12 @@ describe('VideoFfmpegConverter', () => {
   it('converts video and enriches response with probe metadata', async () => {
     const service = new VideoFfmpegConverter({
       probeMetadata: jest.fn(async () => ({
-        format: { duration: '7', format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
+        format: {
+          duration: '7',
+          format_name: 'mov,mp4,m4a,3gp,3g2,mj2',
+          start_time: '0.000000',
+          bit_rate: '600000',
+        },
         streams: [
           {
             codec_type: 'video',
@@ -68,8 +76,19 @@ describe('VideoFfmpegConverter', () => {
             width: 1280,
             height: 720,
             pix_fmt: 'yuv420p',
+            start_time: '0.000000',
+            duration: '7.000000',
+            bit_rate: '470000',
           },
-          { codec_type: 'audio', codec_name: 'aac' },
+          {
+            codec_type: 'audio',
+            codec_name: 'aac',
+            channels: 2,
+            sample_rate: '44100',
+            start_time: '0.000000',
+            duration: '7.000000',
+            bit_rate: '128000',
+          },
         ],
       })),
       extractDuration: jest.fn(() => 7),
@@ -85,15 +104,55 @@ describe('VideoFfmpegConverter', () => {
       duration: 7,
       width: 1280,
       height: 720,
+      probe: {
+        format_name: 'mov,mp4,m4a,3gp,3g2,mj2',
+        format_duration: '7',
+        format_start_time: '0.000000',
+        format_bit_rate: '600000',
+        video_codec_name: 'h264',
+        video_width: 1280,
+        video_height: 720,
+        video_pix_fmt: 'yuv420p',
+        video_duration: '7.000000',
+        video_start_time: '0.000000',
+        video_bit_rate: '470000',
+        audio_codec_name: 'aac',
+        audio_channels: 2,
+        audio_sample_rate: 44100,
+        audio_duration: '7.000000',
+        audio_start_time: '0.000000',
+        audio_bit_rate: '128000',
+      },
     });
     expect(writeFileMock).toHaveBeenCalled();
     expect(readFileMock).toHaveBeenCalled();
+    expect(ffmpegChains[0].audioCodec).toHaveBeenCalledWith('aac');
+    expect(ffmpegChains[0].audioFrequency).toHaveBeenCalledWith(44100);
+    expect(ffmpegChains[0].audioChannels).toHaveBeenCalledWith(2);
+    expect(ffmpegChains[0].audioBitrate).toHaveBeenCalledWith('128k');
     expect(ffmpegChains[0].outputOptions).toHaveBeenCalledWith([
-      '-preset fast',
-      '-crf 23',
-      '-movflags +faststart',
-      '-pix_fmt yuv420p',
-      '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:0?',
+      '-preset',
+      'fast',
+      '-crf',
+      '23',
+      '-movflags',
+      '+faststart',
+      '-pix_fmt',
+      'yuv420p',
+      '-vf',
+      'scale=trunc(iw/2)*2:trunc(ih/2)*2,setpts=PTS-STARTPTS',
+      '-af',
+      'aresample=async=1:first_pts=0',
+      '-map_metadata',
+      '-1',
+      '-fflags',
+      '+genpts',
+      '-avoid_negative_ts',
+      'make_zero',
     ]);
     expect(safeUnlinkMock).toHaveBeenCalledTimes(2);
   });

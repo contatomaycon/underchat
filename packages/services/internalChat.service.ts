@@ -387,26 +387,10 @@ export class InternalChatService {
     | null
   > {
     const originalBuffer = await video.toBuffer();
-    console.info('[MediaConversionDebug]', {
-      event: 'internal_chat_video_upload_received',
-      filename: video.filename,
-      input_mimetype: video.mimetype ?? null,
-      input_size: originalBuffer.byteLength,
-    });
     const converted = await this.converterService.convertVideo(
       originalBuffer,
       video.mimetype ?? null
     );
-    console.info('[MediaConversionDebug]', {
-      event: 'internal_chat_video_upload_converted',
-      filename: video.filename,
-      output_mimetype: converted.mimetype,
-      output_extension: converted.extension,
-      output_size: converted.buffer.byteLength,
-      duration: converted.duration ?? null,
-      width: converted.width ?? null,
-      height: converted.height ?? null,
-    });
     const filename = video.filename.replace(/\.[^.]+$/, '') || 'video';
     const newFilename = `${filename}.${converted.extension}`;
     const uploaded = await this.storageService.uploadVideoFromBuffer(
@@ -442,27 +426,11 @@ export class InternalChatService {
     | null
   > {
     const originalBuffer = await audio.toBuffer();
-    console.info('[MediaConversionDebug]', {
-      event: 'internal_chat_audio_upload_received',
-      filename: audio.filename,
-      input_mimetype: audio.mimetype ?? null,
-      input_size: originalBuffer.byteLength,
-      ptt: isPtt,
-    });
     const converted = await this.converterService.convertAudio(
       originalBuffer,
       audio.mimetype ?? null,
       isPtt
     );
-    console.info('[MediaConversionDebug]', {
-      event: 'internal_chat_audio_upload_converted',
-      filename: audio.filename,
-      output_mimetype: converted.mimetype,
-      output_extension: converted.extension,
-      output_size: converted.buffer.byteLength,
-      duration: converted.duration ?? null,
-      ptt: isPtt,
-    });
     const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
     const newFilename = `${filename}.${converted.extension}`;
 

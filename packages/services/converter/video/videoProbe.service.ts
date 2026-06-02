@@ -11,7 +11,7 @@ export class VideoProbeService {
       '-v',
       'error',
       '-show_entries',
-      'format=duration,format_name:stream=codec_type,codec_name,width,height,pix_fmt,channels,sample_rate',
+      'format=duration,format_name,start_time,bit_rate:stream=codec_type,codec_name,width,height,pix_fmt,channels,sample_rate,start_time,duration,bit_rate',
       '-of',
       'json',
       filePath,

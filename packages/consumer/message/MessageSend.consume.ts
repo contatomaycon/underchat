@@ -265,11 +265,7 @@ export class MessageSendConsume {
       incrementCounter(
         'message_send_idempotency_duplicate_skipped',
         1,
-        this.baseMetricAttributes(
-          envelope,
-          'idempotency_duplicate_skipped',
-          1
-        )
+        this.baseMetricAttributes(envelope, 'idempotency_duplicate_skipped', 1)
       );
       return 'duplicate';
     }
@@ -329,11 +325,7 @@ export class MessageSendConsume {
       incrementCounter(
         'message_send_final_failed',
         1,
-        this.baseMetricAttributes(
-          envelope,
-          'final_failed_marked',
-          attempt
-        )
+        this.baseMetricAttributes(envelope, 'final_failed_marked', attempt)
       );
     } catch (error) {
       this.logPipelineEvent(
@@ -748,11 +740,7 @@ export class MessageSendConsume {
           incrementCounter(
             'message_send_delivery_unconfirmed',
             1,
-            this.baseMetricAttributes(
-              envelope,
-              'delivery_unconfirmed',
-              attempt
-            )
+            this.baseMetricAttributes(envelope, 'delivery_unconfirmed', attempt)
           );
 
           await this.routeFailedMessage(
@@ -818,11 +806,7 @@ export class MessageSendConsume {
           incrementCounter(
             'message_send_retry',
             1,
-            this.baseMetricAttributes(
-              envelope,
-              'retrying',
-              attempt
-            )
+            this.baseMetricAttributes(envelope, 'retrying', attempt)
           );
           await this.delay(this.calculateRetryDelayMs(attempt));
         }
@@ -1903,10 +1887,16 @@ export class MessageSendConsume {
 
     const result = await this.baileysMessageMediaService.sendDocument(
       jid,
-      { url: document.url },
+      {
+        url: document.url,
+        mimetype: document.mimetype ?? undefined,
+        filename: document.name ?? undefined,
+        filesize: document.size ?? undefined,
+      },
       {
         mimetype: document.mimetype ?? 'application/octet-stream',
         fileName: document.name ?? undefined,
+        filesize: document.size ?? undefined,
         caption: data.content?.message ?? undefined,
         contextInfo: this.buildOutgoingContextInfo(data),
       },
@@ -1934,10 +1924,18 @@ export class MessageSendConsume {
 
     const result = await this.baileysMessageMediaService.sendVideo(
       jid,
-      { url: video.url },
+      {
+        url: video.url,
+        mimetype: video.mimetype ?? undefined,
+        filename: video.name ?? undefined,
+        filesize: video.size ?? undefined,
+      },
       {
         caption: video.caption ?? data.content?.message ?? undefined,
         seconds: data.content?.video?.duration ?? undefined,
+        mimetype: video.mimetype ?? undefined,
+        fileName: video.name ?? undefined,
+        filesize: video.size ?? undefined,
         contextInfo: this.buildOutgoingContextInfo(data),
       },
       quotedMessage ? { quoted: quotedMessage } : undefined
@@ -1975,11 +1973,18 @@ export class MessageSendConsume {
 
     const result = await this.baileysMessageMediaService.sendAudio(
       jid,
-      { url: audio.url },
+      {
+        url: audio.url,
+        mimetype: audio.mimetype ?? undefined,
+        filename: audio.name ?? undefined,
+        filesize: audio.size ?? undefined,
+      },
       {
         ptt: isPtt,
         seconds: audio.duration ?? undefined,
         mimetype: audio.mimetype ?? undefined,
+        fileName: audio.name ?? undefined,
+        filesize: audio.size ?? undefined,
         viewOnce: isViewOnce,
         waveform,
         contextInfo: this.buildOutgoingContextInfo(data),

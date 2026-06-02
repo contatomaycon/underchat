@@ -7,6 +7,16 @@ jest.mock('@core/services/baileys/methods/helpers.service', () => ({
 import { BaileysMessageMediaService } from '@core/services/baileys/methods/messageMedia.service';
 
 describe('BaileysMessageMediaService', () => {
+  let consoleInfoSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    consoleInfoSpy = jest.spyOn(console, 'info').mockImplementation();
+  });
+
+  afterEach(() => {
+    consoleInfoSpy.mockRestore();
+  });
+
   const makeService = () => {
     const baileysHelpersService = {
       send: jest.fn(async () => ({ key: { id: 'msg-1' } })),
@@ -61,12 +71,15 @@ describe('BaileysMessageMediaService', () => {
 
     await service.sendVideo(
       'jid-1',
-      { url: 'https://cdn/video.mp4' },
+      { url: 'https://cdn/video.mp4', mimetype: 'video/quicktime' },
       {
         caption: 'video',
         gifPlayback: 1 as never,
         ptv: 0 as never,
         seconds: 42,
+        mimetype: 'video/quicktime',
+        fileName: 'mobile.mov',
+        filesize: 1234,
         contextInfo: { participant: 'p1' } as never,
       }
     );
@@ -74,7 +87,12 @@ describe('BaileysMessageMediaService', () => {
     expect(baileysHelpersService.send).toHaveBeenCalledWith(
       'jid-1',
       {
-        video: { url: 'https://cdn/video.mp4' },
+        video: {
+          url: 'https://cdn/video.mp4',
+          mimetype: 'video/mp4',
+          filename: 'mobile.mov',
+          filesize: 1234,
+        },
         caption: 'video',
         gifPlayback: true,
         jpegThumbnail: undefined,
@@ -83,6 +101,7 @@ describe('BaileysMessageMediaService', () => {
         height: undefined,
         viewOnce: undefined,
         seconds: 42,
+        mimetype: 'video/mp4',
         contextInfo: { participant: 'p1' },
       },
       undefined
@@ -100,6 +119,8 @@ describe('BaileysMessageMediaService', () => {
         ptt: false,
         seconds: 10,
         mimetype: 'audio/mpeg',
+        fileName: 'audio.mp3',
+        filesize: 500,
         waveform,
         viewOnce: true,
         contextInfo: { participant: 'x' } as never,
@@ -113,7 +134,7 @@ describe('BaileysMessageMediaService', () => {
         audio: Buffer.from('audio'),
         ptt: true,
         seconds: 10,
-        mimetype: 'audio/mpeg',
+        mimetype: 'audio/ogg; codecs=opus',
         waveform,
         viewOnce: true,
         contextInfo: { participant: 'x' },
@@ -128,11 +149,13 @@ describe('BaileysMessageMediaService', () => {
 
     await service.sendAudio(
       'jid-audio2',
-      { url: 'https://cdn/audio.ogg' },
+      { url: 'https://cdn/audio.ogg', mimetype: 'audio/ogg' },
       {
         ptt: false,
         seconds: 15,
         mimetype: 'audio/ogg',
+        fileName: 'legacy.ogg',
+        filesize: 987,
         waveform,
         contextInfo: { participant: 'y' } as never,
       }
@@ -141,10 +164,15 @@ describe('BaileysMessageMediaService', () => {
     expect(baileysHelpersService.send).toHaveBeenCalledWith(
       'jid-audio2',
       {
-        audio: { url: 'https://cdn/audio.ogg' },
+        audio: {
+          url: 'https://cdn/audio.ogg',
+          mimetype: 'audio/mpeg',
+          filename: 'legacy.ogg',
+          filesize: 987,
+        },
         ptt: false,
         seconds: 15,
-        mimetype: 'audio/ogg',
+        mimetype: 'audio/mpeg',
         waveform,
         contextInfo: { participant: 'y' },
       },
@@ -172,6 +200,7 @@ describe('BaileysMessageMediaService', () => {
       {
         mimetype: 'application/pdf',
         fileName: 'invoice.pdf',
+        filesize: 3456,
         caption: 'doc',
         contextInfo: { stanzaId: 'doc' } as never,
       },
@@ -209,7 +238,12 @@ describe('BaileysMessageMediaService', () => {
       2,
       'jid-doc',
       {
-        document: { url: 'https://cdn/file.pdf' },
+        document: {
+          url: 'https://cdn/file.pdf',
+          mimetype: 'application/pdf',
+          filename: 'invoice.pdf',
+          filesize: 3456,
+        },
         mimetype: 'application/pdf',
         fileName: 'invoice.pdf',
         caption: 'doc',
