@@ -51,7 +51,8 @@ export class VideoFormatValidator {
   }
 
   private validateFormat(probeData: any): boolean {
-    const videoStream = probeData.streams?.find(
+    const streams = Array.isArray(probeData.streams) ? probeData.streams : [];
+    const videoStream = streams.find(
       (stream: any) => stream.codec_type === 'video'
     );
 
@@ -59,10 +60,34 @@ export class VideoFormatValidator {
       return false;
     }
 
-    const codecName = videoStream.codec_name;
+    const codecName = String(videoStream.codec_name ?? '').toLowerCase();
     const isH264 = codecName === 'h264' || codecName === 'avc1';
-    const formatName = probeData.format?.format_name;
+    const formatName = String(
+      probeData.format?.format_name ?? ''
+    ).toLowerCase();
+    const width = Number(videoStream.width);
+    const height = Number(videoStream.height);
+    const pixFmt = String(videoStream.pix_fmt ?? '').toLowerCase();
+    const hasValidDimensions =
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width > 0 &&
+      height > 0 &&
+      width % 2 === 0 &&
+      height % 2 === 0;
+    const hasCompatiblePixelFormat = pixFmt === 'yuv420p';
+    const hasCompatibleAudio = streams
+      .filter((stream: any) => stream.codec_type === 'audio')
+      .every(
+        (stream: any) => String(stream.codec_name ?? '').toLowerCase() === 'aac'
+      );
 
-    return isH264 && formatName?.includes('mp4');
+    return (
+      isH264 &&
+      formatName.includes('mp4') &&
+      hasValidDimensions &&
+      hasCompatiblePixelFormat &&
+      hasCompatibleAudio
+    );
   }
 }

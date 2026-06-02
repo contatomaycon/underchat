@@ -36,11 +36,12 @@ export class VideoFfmpegConverter {
     try {
       await writeFile(inputPath, inputBuffer);
       await this.runConversion(inputPath, outputPath);
-      const outputBuffer = await readFile(outputPath);
 
       const probeData = await this.videoProbeService.probeMetadata(outputPath);
+      this.validateOutputFile(probeData);
       const duration = this.videoProbeService.extractDuration(probeData);
       const dimensions = this.videoProbeService.extractDimensions(probeData);
+      const outputBuffer = await readFile(outputPath);
 
       return {
         buffer: outputBuffer,
@@ -70,11 +71,56 @@ export class VideoFfmpegConverter {
           '-crf 23',
           '-movflags +faststart',
           '-pix_fmt yuv420p',
+          '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2',
         ])
         .output(outputPath)
         .on('end', () => resolve())
         .on('error', (err) => reject(err))
         .run();
     });
+  }
+
+  private validateOutputFile(probeData: any): void {
+    const streams = Array.isArray(probeData?.streams) ? probeData.streams : [];
+    const videoStream = streams.find(
+      (stream: any) => stream?.codec_type === 'video'
+    );
+
+    if (!videoStream) {
+      throw new Error('Arquivo de vídeo convertido sem trilha de vídeo.');
+    }
+
+    const formatName = String(
+      probeData?.format?.format_name ?? ''
+    ).toLowerCase();
+    const videoCodec = String(videoStream?.codec_name ?? '').toLowerCase();
+    const width = Number(videoStream?.width);
+    const height = Number(videoStream?.height);
+    const pixFmt = String(videoStream?.pix_fmt ?? '').toLowerCase();
+    const hasValidDimensions =
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      width > 0 &&
+      height > 0 &&
+      width % 2 === 0 &&
+      height % 2 === 0;
+    const hasCompatibleAudio = streams
+      .filter((stream: any) => stream?.codec_type === 'audio')
+      .every(
+        (stream: any) =>
+          String(stream?.codec_name ?? '').toLowerCase() === 'aac'
+      );
+
+    if (
+      !formatName.includes('mp4') ||
+      (videoCodec !== 'h264' && videoCodec !== 'avc1') ||
+      pixFmt !== 'yuv420p' ||
+      !hasValidDimensions ||
+      !hasCompatibleAudio
+    ) {
+      throw new Error(
+        'Arquivo de vídeo convertido fora do perfil WhatsApp MP4/H.264/AAC.'
+      );
+    }
   }
 }

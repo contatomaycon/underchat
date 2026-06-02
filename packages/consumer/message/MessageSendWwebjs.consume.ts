@@ -1736,9 +1736,22 @@ export class MessageSendWwebjsConsume {
     if (currentType !== EMessageType.document || !data.content?.document?.url)
       return false;
     await this.applyDelayIfNeeded(currentType, lastType);
+    console.info('[WwebjsMediaDebug]', {
+      event: 'document_send_prepare',
+      message_id: data.message_id,
+      chat_id: data.chat_id,
+      filename: data.content.document.name ?? null,
+      mimetype: data.content.document.mimetype ?? null,
+      size: data.content.document.size ?? null,
+    });
     const result = await this.wwebjsMessageMediaService.sendDocument(
       jid,
-      { url: data.content.document.url },
+      {
+        url: data.content.document.url,
+        mimetype: data.content.document.mimetype ?? undefined,
+        filename: data.content.document.name ?? undefined,
+        filesize: data.content.document.size ?? undefined,
+      },
       {
         mimetype: data.content.document.mimetype ?? 'application/octet-stream',
         fileName: data.content.document.name ?? undefined,
@@ -1767,13 +1780,31 @@ export class MessageSendWwebjsConsume {
       data.content.audio.ptt && data.content.audio.waveform
         ? convertWaveformBase64ToUint8Array(data.content.audio.waveform)
         : undefined;
+    console.info('[WwebjsMediaDebug]', {
+      event: 'audio_send_prepare',
+      message_id: data.message_id,
+      chat_id: data.chat_id,
+      filename: data.content.audio.name ?? null,
+      mimetype: data.content.audio.mimetype ?? null,
+      size: data.content.audio.size ?? null,
+      duration: data.content.audio.duration ?? null,
+      ptt: data.content.audio.ptt ?? true,
+      has_waveform: Boolean(waveform),
+    });
     const result = await this.wwebjsMessageMediaService.sendAudio(
       jid,
-      { url: data.content.audio.url },
+      {
+        url: data.content.audio.url,
+        mimetype: data.content.audio.mimetype ?? undefined,
+        filename: data.content.audio.name ?? undefined,
+        filesize: data.content.audio.size ?? undefined,
+      },
       {
         ptt: data.content.audio.ptt ?? true,
         seconds: data.content.audio.duration ?? undefined,
         mimetype: data.content.audio.mimetype ?? undefined,
+        fileName: data.content.audio.name ?? undefined,
+        filesize: data.content.audio.size ?? undefined,
         viewOnce:
           data.message_key?.is_view_once ??
           data.content.audio.view_once ??
@@ -1803,13 +1834,32 @@ export class MessageSendWwebjsConsume {
     )
       return false;
     await this.applyDelayIfNeeded(currentType, lastType);
+    console.info('[WwebjsMediaDebug]', {
+      event: 'video_send_prepare',
+      message_id: data.message_id,
+      chat_id: data.chat_id,
+      filename: data.content.video.name ?? null,
+      mimetype: data.content.video.mimetype ?? null,
+      size: data.content.video.size ?? null,
+      duration: data.content.video.duration ?? null,
+      width: data.content.video.width ?? null,
+      height: data.content.video.height ?? null,
+    });
     const result = await this.wwebjsMessageMediaService.sendVideo(
       jid,
-      { url: data.content.video.url },
+      {
+        url: data.content.video.url,
+        mimetype: data.content.video.mimetype ?? undefined,
+        filename: data.content.video.name ?? undefined,
+        filesize: data.content.video.size ?? undefined,
+      },
       {
         caption:
           data.content.video.caption ?? data.content?.message ?? undefined,
         seconds: data.content.video.duration ?? undefined,
+        mimetype: data.content.video.mimetype ?? undefined,
+        fileName: data.content.video.name ?? undefined,
+        filesize: data.content.video.size ?? undefined,
         extra: forwardExtra,
       },
       this.getQuotedKey(data)

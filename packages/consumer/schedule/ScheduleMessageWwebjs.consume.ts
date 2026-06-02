@@ -557,10 +557,18 @@ export class ScheduleMessageWwebjsConsume {
     try {
       result = await this.wwebjsMessageMediaService.sendVideo(
         jid,
-        { url: video.url },
+        {
+          url: video.url,
+          mimetype: video.mimetype ?? undefined,
+          filename: video.name ?? undefined,
+          filesize: video.size ?? undefined,
+        },
         {
           caption: video.caption ?? data.message.content?.message ?? undefined,
           seconds: data.message.content?.video?.duration ?? undefined,
+          mimetype: video.mimetype ?? undefined,
+          fileName: video.name ?? undefined,
+          filesize: video.size ?? undefined,
         }
       );
 
@@ -602,11 +610,18 @@ export class ScheduleMessageWwebjsConsume {
     try {
       result = await this.wwebjsMessageMediaService.sendAudio(
         jid,
-        { url: audio.url },
+        {
+          url: audio.url,
+          mimetype: audio.mimetype ?? undefined,
+          filename: audio.name ?? undefined,
+          filesize: audio.size ?? undefined,
+        },
         {
           ptt: audio.ptt ?? false,
           seconds: audio.duration ?? undefined,
           mimetype: audio.mimetype ?? undefined,
+          fileName: audio.name ?? undefined,
+          filesize: audio.size ?? undefined,
           viewOnce:
             data.message.message_key?.is_view_once ?? audio.view_once ?? false,
         }

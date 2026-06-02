@@ -57,6 +57,40 @@ describe('ConverterService', () => {
     );
   });
 
+  it('convertAudio converts mobile audio/mp4 ptt to canonical opus result', async () => {
+    const detectFromBuffer = jest.fn<string, unknown[]>().mockReturnValue('');
+    const getExtensionFromMimetype = jest.fn<string, unknown[]>(() => 'mp4');
+    const convert = jest.fn(async () => ({
+      buffer: Buffer.from('converted-opus'),
+      mimetype: 'audio/ogg; codecs=opus',
+      extension: 'ogg',
+      duration: 6,
+    }));
+
+    const service = new ConverterService(
+      { detectFromBuffer, getExtensionFromMimetype } as never,
+      { convert } as never,
+      { generate: jest.fn(async () => 'wf') } as never,
+      {
+        detectFromBuffer: jest.fn(),
+        getExtensionFromMimetype: jest.fn(),
+      } as never,
+      { checkAndReturnIfValid: jest.fn() } as never,
+      { convert: jest.fn() } as never
+    );
+
+    await expect(
+      service.convertAudio(Buffer.from('mobile-audio'), 'audio/mp4', true)
+    ).resolves.toEqual({
+      buffer: Buffer.from('converted-opus'),
+      mimetype: 'audio/ogg; codecs=opus',
+      extension: 'ogg',
+      duration: 6,
+    });
+
+    expect(convert).toHaveBeenCalledWith(expect.any(Buffer), 'mp4', true);
+  });
+
   it('delegates waveform generation', async () => {
     const generate = jest.fn(async () => 'base64-wave');
     const service = new ConverterService(

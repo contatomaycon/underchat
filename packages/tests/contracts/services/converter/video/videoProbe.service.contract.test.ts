@@ -2,7 +2,7 @@ import 'reflect-metadata';
 
 const execAsyncMock = jest.fn();
 
-jest.mock('node:child_process', () => ({ exec: jest.fn() }));
+jest.mock('node:child_process', () => ({ execFile: jest.fn() }));
 jest.mock('node:util', () => ({
   promisify: jest.fn(() => execAsyncMock),
 }));
@@ -24,9 +24,12 @@ describe('VideoProbeService', () => {
       format: { duration: '12.3' },
     });
     expect(execAsyncMock).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'format=duration:stream=codec_type,codec_name,width,height'
-      )
+      'ffprobe',
+      expect.arrayContaining([
+        '-show_entries',
+        'format=duration,format_name:stream=codec_type,codec_name,width,height,pix_fmt,channels,sample_rate',
+        '/tmp/a.mp4',
+      ])
     );
   });
 

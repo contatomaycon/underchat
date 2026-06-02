@@ -21,8 +21,15 @@ describe('AudioFormatValidator', () => {
 
   it('returns conversion result for valid opus metadata', async () => {
     const probeMetadata = jest.fn(async () => ({
-      streams: [{ codec_name: 'opus' }],
-      format: { duration: '9.5' },
+      streams: [
+        {
+          codec_type: 'audio',
+          codec_name: 'opus',
+          channels: 1,
+          sample_rate: '48000',
+        },
+      ],
+      format: { duration: '9.5', format_name: 'ogg' },
     }));
     const extractDuration = jest.fn(() => 10);
 

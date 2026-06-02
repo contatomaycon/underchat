@@ -2,7 +2,7 @@ import 'reflect-metadata';
 
 const execAsyncMock = jest.fn();
 
-jest.mock('node:child_process', () => ({ exec: jest.fn() }));
+jest.mock('node:child_process', () => ({ execFile: jest.fn() }));
 jest.mock('node:util', () => ({
   promisify: jest.fn(() => execAsyncMock),
 }));
@@ -24,12 +24,12 @@ describe('AudioProbeService', () => {
       format: { duration: '12.3' },
     });
     expect(execAsyncMock).toHaveBeenCalledWith(
-      expect.stringContaining('ffprobe')
-    );
-    expect(execAsyncMock).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate,bit_rate'
-      )
+      'ffprobe',
+      expect.arrayContaining([
+        '-show_entries',
+        'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate,bit_rate',
+        '/tmp/a.mp3',
+      ])
     );
   });
 

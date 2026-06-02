@@ -1,24 +1,21 @@
 import { injectable } from 'tsyringe';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 @injectable()
 export class AudioProbeService {
   async probeMetadata(filePath: string): Promise<any> {
-    const probeCommand = [
-      'ffprobe',
+    const { stdout } = await execFileAsync('ffprobe', [
       '-v',
       'error',
       '-show_entries',
       'format=duration,format_name:stream=codec_type,codec_name,channels,sample_rate,bit_rate',
       '-of',
       'json',
-      `"${filePath}"`,
-    ].join(' ');
-
-    const { stdout } = await execAsync(probeCommand);
+      filePath,
+    ]);
     return JSON.parse(stdout);
   }
 
@@ -38,18 +35,15 @@ export class AudioProbeService {
 
   async probeDuration(filePath: string): Promise<number | undefined> {
     try {
-      const probeCommand = [
-        'ffprobe',
+      const { stdout } = await execFileAsync('ffprobe', [
         '-v',
         'error',
         '-show_entries',
         'format=duration',
         '-of',
         'default=noprint_wrappers=1:nokey=1',
-        `"${filePath}"`,
-      ].join(' ');
-
-      const { stdout } = await execAsync(probeCommand);
+        filePath,
+      ]);
       const durationStr = stdout.trim();
       if (durationStr) {
         const parsedDuration = Number.parseFloat(durationStr);

@@ -1,13 +1,35 @@
 import 'reflect-metadata';
 
 const mockFromUrl = jest.fn(async (url: string) => ({ __mediaUrl: url }));
+const mockDownloadMediaBuffer = jest.fn(async () => ({
+  buffer: Buffer.from('downloaded-media'),
+  contentType: 'application/octet-stream',
+  contentLength: 16,
+}));
 const mockWithMediaUrlFromInput = jest.fn(
   async (
     input: unknown,
-    resolver: (url: string) => Promise<unknown> | unknown
+    resolver: (
+      url: string,
+      metadata: Record<string, unknown>
+    ) => Promise<unknown> | unknown
   ): Promise<unknown> => {
+    if (typeof input === 'object' && input !== null && 'url' in input) {
+      const media = input as {
+        url: string;
+        mimetype?: string;
+        filename?: string;
+        filesize?: number;
+      };
+      return resolver(media.url, {
+        mimetype: media.mimetype ?? null,
+        filename: media.filename ?? null,
+        filesize: media.filesize ?? null,
+      });
+    }
+
     const url = `https://cdn.example/${String(input)}`;
-    return resolver(url);
+    return resolver(url, {});
   }
 );
 const mockResolveQuotedMessageId = jest.fn<
@@ -23,14 +45,34 @@ const mockMessageToWaLike = jest.fn((input: unknown) => ({
 jest.mock('@wwebjs/whatsapp-web.js', () => ({
   __esModule: true,
   default: {
-    MessageMedia: {
-      fromUrl: mockFromUrl,
+    MessageMedia: class MessageMedia {
+      static fromUrl = mockFromUrl;
+      mimetype: string;
+      data: string;
+      filename?: string | null;
+      filesize?: number | null;
+
+      constructor(
+        mimetype: string,
+        data: string,
+        filename?: string | null,
+        filesize?: number | null
+      ) {
+        this.mimetype = mimetype;
+        this.data = data;
+        this.filename = filename;
+        this.filesize = filesize;
+      }
     },
   },
 }));
 
 jest.mock('@core/common/functions/getMediaUrlFromInput', () => ({
   withMediaUrlFromInput: mockWithMediaUrlFromInput,
+}));
+
+jest.mock('@core/common/functions/downloadMediaBuffer', () => ({
+  downloadMediaBuffer: mockDownloadMediaBuffer,
 }));
 
 jest.mock('@core/services/wwebjs/methods/helpers.service', () => ({
@@ -91,6 +133,7 @@ describe('WwebjsMessageMediaService', () => {
       expect.any(Function)
     );
     expect(mockFromUrl).toHaveBeenCalledWith('https://cdn.example/image.png');
+    expect(mockDownloadMediaBuffer).not.toHaveBeenCalled();
     expect(mockResolveQuotedMessageId).toHaveBeenCalledWith(
       client,
       '55110000@c.us',
@@ -115,15 +158,36 @@ describe('WwebjsMessageMediaService', () => {
     await expect(
       service.sendVideo(
         '55112222@c.us',
-        'video.mp4' as never,
-        { caption: 'video', seconds: 12, extra: { campaign: 'x' } },
+        {
+          url: 'https://cdn.example/video.mp4',
+          mimetype: 'video/mp4',
+          filename: 'video.mp4',
+          filesize: 777,
+        } as never,
+        {
+          caption: 'video',
+          seconds: 12,
+          mimetype: 'video/mp4',
+          fileName: 'video.mp4',
+          filesize: 777,
+          extra: { campaign: 'x' },
+        },
         { key: { id: 'ignored' } as never }
       )
     ).resolves.toEqual({ key: { id: 'wa-message-1' } });
 
+    expect(mockFromUrl).not.toHaveBeenCalled();
+    expect(mockDownloadMediaBuffer).toHaveBeenCalledWith(
+      'https://cdn.example/video.mp4'
+    );
     expect(helpers.sendMessage).toHaveBeenCalledWith(
       '55112222@c.us',
-      { __mediaUrl: 'https://cdn.example/video.mp4' },
+      expect.objectContaining({
+        mimetype: 'video/mp4',
+        data: Buffer.from('downloaded-media').toString('base64'),
+        filename: 'video.mp4',
+        filesize: 777,
+      }),
       {
         caption: 'video',
         extra: { campaign: 'x' },
@@ -140,17 +204,37 @@ describe('WwebjsMessageMediaService', () => {
     await expect(
       service.sendAudio(
         '55113333@c.us',
-        'audio.ogg' as never,
-        { ptt: false, viewOnce: true, extra: { trace: 'a1' } },
+        {
+          url: 'https://cdn.example/audio.ogg',
+          mimetype: 'audio/ogg; codecs=opus',
+          filename: 'voice.ogg',
+          filesize: 321,
+        } as never,
+        {
+          ptt: true,
+          mimetype: 'audio/ogg; codecs=opus',
+          fileName: 'voice.ogg',
+          filesize: 321,
+          viewOnce: true,
+          extra: { trace: 'a1' },
+        },
         { key: { id: 'quoted-a1' } as never }
       )
     ).resolves.toEqual({ key: { id: 'wa-message-1' } });
 
+    expect(mockFromUrl).not.toHaveBeenCalled();
+    expect(mockDownloadMediaBuffer).toHaveBeenCalledWith(
+      'https://cdn.example/audio.ogg'
+    );
     expect(helpers.sendMessage).toHaveBeenCalledWith(
       '55113333@c.us',
-      { __mediaUrl: 'https://cdn.example/audio.ogg' },
+      expect.objectContaining({
+        mimetype: 'audio/ogg; codecs=opus',
+        filename: 'voice.ogg',
+        filesize: 321,
+      }),
       {
-        sendAudioAsVoice: false,
+        sendAudioAsVoice: true,
         isViewOnce: true,
         extra: { trace: 'a1' },
         quotedMessageId: 'quoted-audio',
@@ -162,7 +246,11 @@ describe('WwebjsMessageMediaService', () => {
 
     expect(helpers.sendMessage).toHaveBeenLastCalledWith(
       '55113333@c.us',
-      { __mediaUrl: 'https://cdn.example/audio-default.ogg' },
+      expect.objectContaining({
+        mimetype: 'audio/ogg; codecs=opus',
+        filename: 'audio-default.ogg',
+        filesize: 16,
+      }),
       {
         sendAudioAsVoice: true,
         isViewOnce: undefined,
@@ -218,7 +306,11 @@ describe('WwebjsMessageMediaService', () => {
 
     expect(helpers.sendMessage).toHaveBeenCalledWith(
       '55115555@c.us',
-      { __mediaUrl: 'https://cdn.example/invoice.pdf' },
+      expect.objectContaining({
+        mimetype: 'application/pdf',
+        filename: 'invoice.pdf',
+        filesize: 16,
+      }),
       {
         sendMediaAsDocument: true,
         caption: 'fatura',
@@ -251,6 +343,9 @@ describe('WwebjsMessageMediaService', () => {
       })
     ).resolves.toEqual({ key: { id: 'mapped-id' } });
 
+    expect(helpers.sendMessage.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ mimetype: 'video/mp4' })
+    );
     expect(mockMessageToWaLike).toHaveBeenCalledTimes(4);
   });
 });

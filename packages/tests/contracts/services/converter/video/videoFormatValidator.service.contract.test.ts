@@ -21,7 +21,16 @@ describe('VideoFormatValidator', () => {
 
   it('returns conversion result for valid h264/mp4 metadata', async () => {
     const probeMetadata = jest.fn(async () => ({
-      streams: [{ codec_type: 'video', codec_name: 'h264' }],
+      streams: [
+        {
+          codec_type: 'video',
+          codec_name: 'h264',
+          width: 1920,
+          height: 1080,
+          pix_fmt: 'yuv420p',
+        },
+        { codec_type: 'audio', codec_name: 'aac' },
+      ],
       format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
     }));
 
@@ -43,6 +52,30 @@ describe('VideoFormatValidator', () => {
     });
     expect(writeFileMock).toHaveBeenCalled();
     expect(safeUnlinkMock).toHaveBeenCalled();
+  });
+
+  it('returns null for mp4 with incompatible audio codec', async () => {
+    const service = new VideoFormatValidator({
+      probeMetadata: jest.fn(async () => ({
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'h264',
+            width: 1280,
+            height: 720,
+            pix_fmt: 'yuv420p',
+          },
+          { codec_type: 'audio', codec_name: 'mp3' },
+        ],
+        format: { format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
+      })),
+      extractDuration: jest.fn(() => 7),
+      extractDimensions: jest.fn(() => ({ width: 1280, height: 720 })),
+    } as never);
+
+    await expect(
+      service.checkAndReturnIfValid(Buffer.from('x'))
+    ).resolves.toBeNull();
   });
 
   it('returns null for invalid format and for failures', async () => {

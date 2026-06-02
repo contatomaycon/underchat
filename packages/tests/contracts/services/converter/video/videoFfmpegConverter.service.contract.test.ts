@@ -5,6 +5,7 @@ const readFileMock = jest.fn();
 const safeUnlinkMock = jest.fn(async () => undefined);
 
 const ffmpegState = { shouldError: false };
+const ffmpegChains: any[] = [];
 
 jest.mock('node:fs/promises', () => ({
   writeFile: (...args: unknown[]) => writeFileMock(...args),
@@ -38,6 +39,7 @@ jest.mock('fluent-ffmpeg', () => {
       }),
     };
 
+    ffmpegChains.push(chain);
     return chain;
   });
 });
@@ -50,13 +52,26 @@ describe('VideoFfmpegConverter', () => {
     writeFileMock.mockReset();
     readFileMock.mockReset();
     safeUnlinkMock.mockClear();
+    ffmpegChains.length = 0;
     writeFileMock.mockResolvedValue(undefined);
     readFileMock.mockResolvedValue(Buffer.from('out-video'));
   });
 
   it('converts video and enriches response with probe metadata', async () => {
     const service = new VideoFfmpegConverter({
-      probeMetadata: jest.fn(async () => ({ format: { duration: '7' } })),
+      probeMetadata: jest.fn(async () => ({
+        format: { duration: '7', format_name: 'mov,mp4,m4a,3gp,3g2,mj2' },
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'h264',
+            width: 1280,
+            height: 720,
+            pix_fmt: 'yuv420p',
+          },
+          { codec_type: 'audio', codec_name: 'aac' },
+        ],
+      })),
       extractDuration: jest.fn(() => 7),
       extractDimensions: jest.fn(() => ({ width: 1280, height: 720 })),
     } as never);
@@ -73,6 +88,38 @@ describe('VideoFfmpegConverter', () => {
     });
     expect(writeFileMock).toHaveBeenCalled();
     expect(readFileMock).toHaveBeenCalled();
+    expect(ffmpegChains[0].outputOptions).toHaveBeenCalledWith([
+      '-preset fast',
+      '-crf 23',
+      '-movflags +faststart',
+      '-pix_fmt yuv420p',
+      '-vf scale=trunc(iw/2)*2:trunc(ih/2)*2',
+    ]);
+    expect(safeUnlinkMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects converted video outside WhatsApp profile', async () => {
+    const service = new VideoFfmpegConverter({
+      probeMetadata: jest.fn(async () => ({
+        format: { duration: '7', format_name: 'webm' },
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'vp9',
+            width: 1280,
+            height: 720,
+            pix_fmt: 'yuv420p',
+          },
+        ],
+      })),
+      extractDuration: jest.fn(),
+      extractDimensions: jest.fn(),
+    } as never);
+
+    await expect(service.convert(Buffer.from('video'), 'webm')).rejects.toThrow(
+      'perfil WhatsApp MP4/H.264/AAC'
+    );
+    expect(readFileMock).not.toHaveBeenCalled();
     expect(safeUnlinkMock).toHaveBeenCalledTimes(2);
   });
 

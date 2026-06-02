@@ -830,11 +830,27 @@ export class ChatMessageService {
     const uploadPromises = videos.map(async (video) => {
       const originalBuffer = await video.toBuffer();
       const originalMimetype = video.mimetype || null;
+      console.info('[MediaConversionDebug]', {
+        event: 'chat_video_upload_received',
+        filename: video.filename,
+        input_mimetype: originalMimetype,
+        input_size: originalBuffer.byteLength,
+      });
 
       const converted = await this.converterService.convertVideo(
         originalBuffer,
         originalMimetype
       );
+      console.info('[MediaConversionDebug]', {
+        event: 'chat_video_upload_converted',
+        filename: video.filename,
+        output_mimetype: converted.mimetype,
+        output_extension: converted.extension,
+        output_size: converted.buffer.byteLength,
+        duration: converted.duration ?? null,
+        width: converted.width ?? null,
+        height: converted.height ?? null,
+      });
 
       const filename = video.filename.replace(/\.[^.]+$/, '') || 'video';
       const newFilename = `${filename}.${converted.extension}`;
@@ -887,12 +903,28 @@ export class ChatMessageService {
       try {
         const originalBuffer = await audio.toBuffer();
         const originalMimetype = audio.mimetype || null;
+        console.info('[MediaConversionDebug]', {
+          event: 'chat_audio_upload_received',
+          filename: audio.filename,
+          input_mimetype: originalMimetype,
+          input_size: originalBuffer.byteLength,
+          ptt: isPtt,
+        });
 
         const converted = await this.converterService.convertAudio(
           originalBuffer,
           originalMimetype,
           isPtt
         );
+        console.info('[MediaConversionDebug]', {
+          event: 'chat_audio_upload_converted',
+          filename: audio.filename,
+          output_mimetype: converted.mimetype,
+          output_extension: converted.extension,
+          output_size: converted.buffer.byteLength,
+          duration: converted.duration ?? null,
+          ptt: isPtt,
+        });
 
         const filename = audio.filename.replace(/\.[^.]+$/, '') || 'audio';
         const newFilename = `${filename}.${converted.extension}`;

@@ -1,4 +1,7 @@
-import type { IMediaInput } from '@core/common/interfaces/IMediaInput';
+import type {
+  IMediaInput,
+  IMediaMetadataInput,
+} from '@core/common/interfaces/IMediaInput';
 
 export function getMediaUrlFromInput(input: IMediaInput): string {
   if (typeof input === 'object' && input !== null && 'url' in input) {
@@ -8,10 +11,26 @@ export function getMediaUrlFromInput(input: IMediaInput): string {
   throw new Error('Unsupported media input: only url-based input is supported');
 }
 
+export function getMediaMetadataFromInput(
+  input: IMediaInput
+): IMediaMetadataInput {
+  if (typeof input !== 'object' || input === null) {
+    return {};
+  }
+
+  const metadata = input as IMediaMetadataInput;
+
+  return {
+    mimetype: typeof metadata.mimetype === 'string' ? metadata.mimetype : null,
+    filename: typeof metadata.filename === 'string' ? metadata.filename : null,
+    filesize: typeof metadata.filesize === 'number' ? metadata.filesize : null,
+  };
+}
+
 export async function withMediaUrlFromInput<T>(
   input: IMediaInput,
-  fromUrl: (url: string) => Promise<T>
+  fromUrl: (url: string, metadata: IMediaMetadataInput) => Promise<T>
 ): Promise<T> {
   const url = getMediaUrlFromInput(input);
-  return fromUrl(url);
+  return fromUrl(url, getMediaMetadataFromInput(input));
 }

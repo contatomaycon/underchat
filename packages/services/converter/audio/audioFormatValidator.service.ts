@@ -30,7 +30,11 @@ export class AudioFormatValidator {
 
       const probeData = await this.audioProbeService.probeMetadata(tempPath);
       const duration = this.audioProbeService.extractDuration(probeData);
-      const isValid = this.validateFormat(probeData);
+      const isValid = this.validateFormat(
+        probeData,
+        targetMimetype,
+        targetFormat
+      );
 
       if (isValid) {
         await FileUtils.safeUnlink(tempPath);
@@ -49,12 +53,36 @@ export class AudioFormatValidator {
     return null;
   }
 
-  private validateFormat(probeData: any): boolean {
-    const stream = probeData.streams?.[0];
-    const codecName = stream?.codec_name;
+  private validateFormat(
+    probeData: any,
+    targetMimetype: string,
+    targetFormat: string
+  ): boolean {
+    const stream = Array.isArray(probeData.streams)
+      ? (probeData.streams.find((item: any) => item?.codec_type === 'audio') ??
+        probeData.streams[0])
+      : null;
+    const codecName = String(stream?.codec_name ?? '').toLowerCase();
+    const formatName = String(
+      probeData?.format?.format_name ?? ''
+    ).toLowerCase();
+    const channels = Number(stream?.channels);
+    const sampleRate = Number(stream?.sample_rate);
+    const normalizedTarget = `${targetMimetype} ${targetFormat}`.toLowerCase();
 
-    const isOpus = codecName === 'opus';
+    if (normalizedTarget.includes('ogg') || normalizedTarget.includes('opus')) {
+      return (
+        formatName.includes('ogg') &&
+        codecName === 'opus' &&
+        channels === 1 &&
+        sampleRate === 48000
+      );
+    }
 
-    return isOpus;
+    if (normalizedTarget.includes('mp3') || normalizedTarget.includes('mpeg')) {
+      return formatName.includes('mp3') && codecName === 'mp3';
+    }
+
+    return false;
   }
 }
