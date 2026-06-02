@@ -28,6 +28,7 @@ import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import {
   useCallback,
   useEffect,
+  memo,
   useMemo,
   useRef,
   useState,
@@ -140,6 +141,13 @@ type PendingGroupAction =
   | { type: 'transfer'; member: InternalChatParticipant }
   | { type: 'leave' };
 type DownloadKind = 'image' | 'video' | 'document';
+type InternalMessageWithSeparator =
+  | { type: 'message'; message: InternalChatMessage }
+  | {
+      type: 'separator';
+      separatorDate: string;
+      separatorLabel: string;
+    };
 type ViewerMediaItem = {
   src: string;
   caption: string;
@@ -1034,11 +1042,27 @@ const DEFAULT_INTERNAL_AUDIO_STATE: InternalAudioState = {
   isBuffering: false,
 };
 
+function areInternalAudioStatesEqual(
+  left: InternalAudioState,
+  right: InternalAudioState
+): boolean {
+  return (
+    left.isPlaying === right.isPlaying &&
+    left.isLoading === right.isLoading &&
+    left.isBuffering === right.isBuffering &&
+    left.rate === right.rate &&
+    Math.abs(left.position - right.position) < 0.05 &&
+    Math.abs(left.duration - right.duration) < 0.05
+  );
+}
+
 function useInternalChatAudio() {
   const [state, setState] = useState<Record<string, InternalAudioState>>({});
   const [waveformWidths, setWaveformWidths] = useState<Record<string, number>>(
     {}
   );
+  const stateRef = useRef(state);
+  const waveformWidthsRef = useRef(waveformWidths);
   const soundRefs = useRef<Record<string, AudioPlayer | null>>({});
   const listenerRefs = useRef<Record<string, { remove?: () => void } | null>>(
     {}
@@ -1049,16 +1073,31 @@ function useInternalChatAudio() {
   const pendingAutoPlayRateRef = useRef<Record<string, number>>({});
   const finishedPlaybackRef = useRef<Record<string, boolean>>({});
 
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    waveformWidthsRef.current = waveformWidths;
+  }, [waveformWidths]);
+
   const updateState = useCallback(
     (messageId: string, patch: Partial<InternalAudioState>) => {
-      setState((prev) => ({
-        ...prev,
-        [messageId]: {
+      setState((prev) => {
+        const current = {
           ...DEFAULT_INTERNAL_AUDIO_STATE,
           ...prev[messageId],
+        };
+        const next = {
+          ...current,
           ...patch,
-        },
-      }));
+        };
+        if (areInternalAudioStatesEqual(current, next)) return prev;
+        return {
+          ...prev,
+          [messageId]: next,
+        };
+      });
     },
     []
   );
@@ -1162,27 +1201,20 @@ function useInternalChatAudio() {
               return;
             }
 
-            setState((prev) => {
-              const cur = prev[messageId];
-              const nextRate =
-                cur?.rate ??
-                status.playbackRate ??
-                pendingAutoPlayRateRef.current[messageId] ??
-                1;
-              return {
-                ...prev,
-                [messageId]: {
-                  ...DEFAULT_INTERNAL_AUDIO_STATE,
-                  ...cur,
-                  isPlaying: status.playing,
-                  position: statusPosition,
-                  duration:
-                    statusDuration > 0 ? statusDuration : (cur?.duration ?? 0),
-                  rate: nextRate,
-                  isLoading: !status.isLoaded,
-                  isBuffering: status.isBuffering,
-                },
-              };
+            const cur = stateRef.current[messageId];
+            const nextRate =
+              cur?.rate ??
+              status.playbackRate ??
+              pendingAutoPlayRateRef.current[messageId] ??
+              1;
+            updateState(messageId, {
+              isPlaying: status.playing,
+              position: statusPosition,
+              duration:
+                statusDuration > 0 ? statusDuration : (cur?.duration ?? 0),
+              rate: nextRate,
+              isLoading: !status.isLoaded,
+              isBuffering: status.isBuffering,
             });
 
             if (
@@ -1215,7 +1247,7 @@ function useInternalChatAudio() {
       const runPlaybackToggle = async () => {
         const player = getOrCreateSound(messageId, url);
         if (!player) return;
-        const cur = state[messageId] ?? DEFAULT_INTERNAL_AUDIO_STATE;
+        const cur = stateRef.current[messageId] ?? DEFAULT_INTERNAL_AUDIO_STATE;
 
         if (cur.isPlaying) {
           pendingAutoPlayRef.current[messageId] = false;
@@ -1283,7 +1315,7 @@ function useInternalChatAudio() {
 
       void runPlaybackToggle();
     },
-    [getOrCreateSound, state, updateState]
+    [getOrCreateSound, updateState]
   );
 
   const seek = useCallback(
@@ -1293,7 +1325,7 @@ function useInternalChatAudio() {
       finishedPlaybackRef.current[messageId] = false;
       pendingAutoPlayRef.current[messageId] = false;
 
-      const cur = state[messageId];
+      const cur = stateRef.current[messageId];
       const durationSec =
         (cur?.duration && cur.duration > 0 ? cur.duration : player.duration) ||
         0;
@@ -1303,12 +1335,12 @@ function useInternalChatAudio() {
         updateState(messageId, { position: positionSec });
       });
     },
-    [getOrCreateSound, state, updateState]
+    [getOrCreateSound, updateState]
   );
 
   const toggleSpeed = useCallback(
     (messageId: string) => {
-      const cur = state[messageId];
+      const cur = stateRef.current[messageId];
       const currentRate = cur?.rate ?? 1;
       const nextRate = currentRate === 1 ? 1.5 : currentRate === 1.5 ? 2 : 1;
       pendingAutoPlayRateRef.current[messageId] = nextRate;
@@ -1320,7 +1352,7 @@ function useInternalChatAudio() {
         } catch {}
       }
     },
-    [state, updateState]
+    [updateState]
   );
 
   const getWaveform = useCallback(
@@ -1348,22 +1380,16 @@ function useInternalChatAudio() {
     []
   );
 
-  const getState = useCallback(
-    (messageId: string): InternalAudioState => {
-      return state[messageId] ?? DEFAULT_INTERNAL_AUDIO_STATE;
-    },
-    [state]
-  );
+  const getState = useCallback((messageId: string): InternalAudioState => {
+    return stateRef.current[messageId] ?? DEFAULT_INTERNAL_AUDIO_STATE;
+  }, []);
 
-  const getSpeedLabel = useCallback(
-    (messageId: string): string => {
-      const rate = state[messageId]?.rate ?? 1;
-      if (rate === 1.5) return '1.5x';
-      if (rate === 2) return '2x';
-      return '1x';
-    },
-    [state]
-  );
+  const getSpeedLabel = useCallback((messageId: string): string => {
+    const rate = stateRef.current[messageId]?.rate ?? 1;
+    if (rate === 1.5) return '1.5x';
+    if (rate === 2) return '2x';
+    return '1x';
+  }, []);
 
   const setWaveformWidth = useCallback((messageId: string, width: number) => {
     const nextWidth = Math.max(0, Math.round(width));
@@ -1373,12 +1399,9 @@ function useInternalChatAudio() {
     });
   }, []);
 
-  const getWaveformWidth = useCallback(
-    (messageId: string): number => {
-      return waveformWidths[messageId] ?? 0;
-    },
-    [waveformWidths]
-  );
+  const getWaveformWidth = useCallback((messageId: string): number => {
+    return waveformWidthsRef.current[messageId] ?? 0;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1386,19 +1409,38 @@ function useInternalChatAudio() {
     };
   }, [disposeAllPlayers]);
 
+  const actions = useMemo(
+    () => ({
+      getState,
+      getSpeedLabel,
+      playPause,
+      seek,
+      toggleSpeed,
+      getWaveform,
+      setWaveformWidth,
+      getWaveformWidth,
+    }),
+    [
+      getState,
+      getSpeedLabel,
+      playPause,
+      seek,
+      toggleSpeed,
+      getWaveform,
+      setWaveformWidth,
+      getWaveformWidth,
+    ]
+  );
+
   return {
-    getState,
-    getSpeedLabel,
-    playPause,
-    seek,
-    toggleSpeed,
-    getWaveform,
-    setWaveformWidth,
-    getWaveformWidth,
+    actions,
+    states: state,
+    waveformWidths,
   };
 }
 
-type InternalAudioCtrl = ReturnType<typeof useInternalChatAudio>;
+type InternalChatAudioController = ReturnType<typeof useInternalChatAudio>;
+type InternalAudioCtrl = InternalChatAudioController['actions'];
 
 function InternalVideoMessagePreview({
   sourceUri,
@@ -1875,6 +1917,8 @@ function InternalMessageContent({
   msg,
   fromMe,
   audioCtrl,
+  audioState: audioStateProp,
+  audioWaveformWidth,
   onOpenActions,
   onOpenImage,
   onOpenVideo,
@@ -1884,6 +1928,8 @@ function InternalMessageContent({
   msg: InternalChatMessage;
   fromMe: boolean;
   audioCtrl: InternalAudioCtrl;
+  audioState?: InternalAudioState;
+  audioWaveformWidth?: number;
   onOpenActions: (message: InternalChatMessage) => void;
   onOpenImage: (message: InternalChatMessage) => void;
   onOpenVideo: (message: InternalChatMessage) => void;
@@ -2028,7 +2074,7 @@ function InternalMessageContent({
     const url = resolveMediaUri(content.audio.url) ?? content.audio.url;
     const cap = readNonEmptyString(content.message);
     const fallbackDuration = content.audio.duration ?? 0;
-    const audioState = audioCtrl.getState(messageId);
+    const audioState = audioStateProp ?? audioCtrl.getState(messageId);
     const waveform = audioCtrl.getWaveform(
       messageId,
       content.audio.waveform ?? undefined
@@ -2041,7 +2087,10 @@ function InternalMessageContent({
       durationSec > 0
         ? Math.max(0, Math.min(100, (currentTime / durationSec) * 100))
         : 0;
-    const waveformWidth = audioCtrl.getWaveformWidth(messageId);
+    const speedLabel =
+      audioState.rate === 1.5 ? '1.5x' : audioState.rate === 2 ? '2x' : '1x';
+    const waveformWidth =
+      audioWaveformWidth ?? audioCtrl.getWaveformWidth(messageId);
     const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
 
     return renderWithContextCards(
@@ -2064,7 +2113,7 @@ function InternalMessageContent({
                 fromMe && styles.audioSpeedBtnTextRight,
               ]}
             >
-              {audioCtrl.getSpeedLabel(messageId)}
+              {speedLabel}
             </Text>
           </Pressable>
           <View style={styles.audioPlayAndTimeWrap}>
@@ -2506,6 +2555,8 @@ function InternalMessageBubble({
   documentBubbleWidth,
   highlighted,
   audioCtrl,
+  audioState,
+  audioWaveformWidth,
   onOpenActions,
   onOpenImage,
   onOpenVideo,
@@ -2519,6 +2570,8 @@ function InternalMessageBubble({
   documentBubbleWidth: number;
   highlighted?: boolean;
   audioCtrl: InternalAudioCtrl;
+  audioState?: InternalAudioState;
+  audioWaveformWidth?: number;
   onOpenActions: (message: InternalChatMessage) => void;
   onOpenImage: (message: InternalChatMessage) => void;
   onOpenVideo: (message: InternalChatMessage) => void;
@@ -2622,6 +2675,8 @@ function InternalMessageBubble({
             msg={msg}
             fromMe={fromMe}
             audioCtrl={audioCtrl}
+            audioState={audioState}
+            audioWaveformWidth={audioWaveformWidth}
             onOpenActions={onOpenActions}
             onOpenImage={onOpenImage}
             onOpenVideo={onOpenVideo}
@@ -2677,13 +2732,130 @@ function InternalMessageBubble({
   );
 }
 
+function InternalDateSeparator({ label }: { label: string }) {
+  return (
+    <View style={styles.dateSeparator}>
+      <Text style={styles.dateSeparatorText}>{label}</Text>
+    </View>
+  );
+}
+
+const MemoizedInternalDateSeparator = memo(InternalDateSeparator);
+MemoizedInternalDateSeparator.displayName = 'MemoizedInternalDateSeparator';
+
+type InternalMessageListRowProps = {
+  item: InternalMessageWithSeparator;
+  fromMe: boolean;
+  showAvatar: boolean;
+  bubbleMaxWidth: number;
+  documentBubbleWidth: number;
+  highlighted: boolean;
+  audioCtrl: InternalAudioCtrl;
+  audioState: InternalAudioState;
+  audioWaveformWidth: number;
+  onOpenActions: (message: InternalChatMessage) => void;
+  onOpenImage: (message: InternalChatMessage) => void;
+  onOpenVideo: (message: InternalChatMessage) => void;
+  onPressContactCard: (
+    message: InternalChatMessage,
+    contact: MessageContentContact
+  ) => void;
+  onPressContactsGroup: (
+    message: InternalChatMessage,
+    contacts: MessageContentContact[]
+  ) => void;
+};
+
+function InternalMessageListRow({
+  item,
+  fromMe,
+  showAvatar,
+  bubbleMaxWidth,
+  documentBubbleWidth,
+  highlighted,
+  audioCtrl,
+  audioState,
+  audioWaveformWidth,
+  onOpenActions,
+  onOpenImage,
+  onOpenVideo,
+  onPressContactCard,
+  onPressContactsGroup,
+}: InternalMessageListRowProps) {
+  if (item.type === 'separator') {
+    return <MemoizedInternalDateSeparator label={item.separatorLabel} />;
+  }
+
+  return (
+    <InternalMessageBubble
+      msg={item.message}
+      fromMe={fromMe}
+      showAvatar={showAvatar}
+      bubbleMaxWidth={bubbleMaxWidth}
+      documentBubbleWidth={documentBubbleWidth}
+      highlighted={highlighted}
+      audioCtrl={audioCtrl}
+      audioState={audioState}
+      audioWaveformWidth={audioWaveformWidth}
+      onOpenActions={onOpenActions}
+      onOpenImage={onOpenImage}
+      onOpenVideo={onOpenVideo}
+      onPressContactCard={onPressContactCard}
+      onPressContactsGroup={onPressContactsGroup}
+    />
+  );
+}
+
+function areInternalMessageListRowsEqual(
+  previous: InternalMessageListRowProps,
+  next: InternalMessageListRowProps
+): boolean {
+  if (previous.item.type !== next.item.type) return false;
+  if (previous.item.type === 'separator' && next.item.type === 'separator') {
+    return (
+      previous.item.separatorDate === next.item.separatorDate &&
+      previous.item.separatorLabel === next.item.separatorLabel
+    );
+  }
+
+  if (previous.item.type !== 'message' || next.item.type !== 'message') {
+    return false;
+  }
+
+  return (
+    previous.item.message === next.item.message &&
+    previous.fromMe === next.fromMe &&
+    previous.showAvatar === next.showAvatar &&
+    previous.bubbleMaxWidth === next.bubbleMaxWidth &&
+    previous.documentBubbleWidth === next.documentBubbleWidth &&
+    previous.highlighted === next.highlighted &&
+    previous.audioCtrl === next.audioCtrl &&
+    areInternalAudioStatesEqual(previous.audioState, next.audioState) &&
+    previous.audioWaveformWidth === next.audioWaveformWidth &&
+    previous.onOpenActions === next.onOpenActions &&
+    previous.onOpenImage === next.onOpenImage &&
+    previous.onOpenVideo === next.onOpenVideo &&
+    previous.onPressContactCard === next.onPressContactCard &&
+    previous.onPressContactsGroup === next.onPressContactsGroup
+  );
+}
+
+const MemoizedInternalMessageListRow = memo(
+  InternalMessageListRow,
+  areInternalMessageListRowsEqual
+);
+MemoizedInternalMessageListRow.displayName = 'MemoizedInternalMessageListRow';
+
 export function InternalChatRoomScreen() {
   const navigation = useNavigation<Navigation>();
   const route = useRoute<ScreenRoute>();
   const insets = useSafeAreaInsets();
   const { width: viewportWidth } = useWindowDimensions();
-  const audioCtrl = useInternalChatAudio();
-  const listRef = useRef<FlatList<InternalChatMessage>>(null);
+  const internalAudio = useInternalChatAudio();
+  const audioCtrl = internalAudio.actions;
+  const audioStates = internalAudio.states;
+  const audioWaveformWidths = internalAudio.waveformWidths;
+  const listRef = useRef<FlatList<InternalMessageWithSeparator>>(null);
   const pendingScrollToBottomRef = useRef(true);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
@@ -2761,6 +2933,24 @@ export function InternalChatRoomScreen() {
     () => new Set(messages.map((message) => message.message_id)),
     [messages]
   );
+  const messagesWithSeparators = useMemo((): InternalMessageWithSeparator[] => {
+    const list: InternalMessageWithSeparator[] = [];
+    let lastDate: string | null = null;
+
+    for (const message of messages) {
+      if (!lastDate || !isSameDay(message.date, lastDate)) {
+        list.push({
+          type: 'separator',
+          separatorDate: message.date,
+          separatorLabel: formatDateSeparator(message.date),
+        });
+        lastDate = message.date;
+      }
+      list.push({ type: 'message', message });
+    }
+
+    return list;
+  }, [messages]);
 
   const [composerText, setComposerText] = useState('');
   const [composerInputHeight, setComposerInputHeight] = useState(
@@ -3616,8 +3806,9 @@ export function InternalChatRoomScreen() {
 
   const scrollToMessageById = useCallback(
     (targetMessageId: string): boolean => {
-      const targetIndex = messages.findIndex(
-        (message) => message.message_id === targetMessageId
+      const targetIndex = messagesWithSeparators.findIndex(
+        (item) =>
+          item.type === 'message' && item.message.message_id === targetMessageId
       );
       if (targetIndex < 0) return false;
 
@@ -3644,7 +3835,7 @@ export function InternalChatRoomScreen() {
 
       return true;
     },
-    [messages]
+    [messagesWithSeparators]
   );
 
   const handleScrollToIndexFailed = useCallback(
@@ -4851,52 +5042,77 @@ export function InternalChatRoomScreen() {
     [infoActionLoading, navigation, openDirect]
   );
 
-  const renderMessage: ListRenderItem<InternalChatMessage> = useCallback(
-    ({ item, index }) => {
-      const own = !!currentUserId && item.user?.id === currentUserId;
-      const previous = messages[index - 1];
-      const showDate = !previous || !isSameDay(previous.date, item.date);
+  const internalMessageKeyExtractor = useCallback(
+    (item: InternalMessageWithSeparator) =>
+      item.type === 'separator'
+        ? `separator-${conversationId}-${item.separatorDate}`
+        : item.message.message_id,
+    [conversationId]
+  );
 
-      return (
-        <View>
-          {showDate ? (
-            <View style={styles.dateSeparator}>
-              <Text style={styles.dateSeparatorText}>
-                {formatDateSeparator(item.date)}
-              </Text>
-            </View>
-          ) : null}
-          <InternalMessageBubble
-            msg={item}
+  const renderMessage: ListRenderItem<InternalMessageWithSeparator> =
+    useCallback(
+      ({ item }) => {
+        if (item.type === 'separator') {
+          return (
+            <MemoizedInternalMessageListRow
+              item={item}
+              fromMe={false}
+              showAvatar={false}
+              bubbleMaxWidth={responsiveBubbleMaxWidth}
+              documentBubbleWidth={documentBubbleWidth}
+              highlighted={false}
+              audioCtrl={audioCtrl}
+              audioState={DEFAULT_INTERNAL_AUDIO_STATE}
+              audioWaveformWidth={0}
+              onOpenActions={setActionMessage}
+              onOpenImage={openImageViewer}
+              onOpenVideo={openVideoViewer}
+              onPressContactCard={handlePressMessageContactCard}
+              onPressContactsGroup={handlePressMessageContactsGroup}
+            />
+          );
+        }
+
+        const message = item.message;
+        const own = !!currentUserId && message.user?.id === currentUserId;
+
+        return (
+          <MemoizedInternalMessageListRow
+            item={item}
             fromMe={own}
             showAvatar={!own && isGroup}
             bubbleMaxWidth={responsiveBubbleMaxWidth}
             documentBubbleWidth={documentBubbleWidth}
-            highlighted={highlightedMessageId === item.message_id}
+            highlighted={highlightedMessageId === message.message_id}
             audioCtrl={audioCtrl}
+            audioState={
+              audioStates[message.message_id] ?? DEFAULT_INTERNAL_AUDIO_STATE
+            }
+            audioWaveformWidth={audioWaveformWidths[message.message_id] ?? 0}
             onOpenActions={setActionMessage}
             onOpenImage={openImageViewer}
             onOpenVideo={openVideoViewer}
             onPressContactCard={handlePressMessageContactCard}
             onPressContactsGroup={handlePressMessageContactsGroup}
           />
-        </View>
-      );
-    },
-    [
-      audioCtrl,
-      currentUserId,
-      documentBubbleWidth,
-      isGroup,
-      messages,
-      handlePressMessageContactCard,
-      handlePressMessageContactsGroup,
-      highlightedMessageId,
-      openImageViewer,
-      openVideoViewer,
-      responsiveBubbleMaxWidth,
-    ]
-  );
+        );
+      },
+      [
+        audioCtrl,
+        audioStates,
+        audioWaveformWidths,
+        currentUserId,
+        documentBubbleWidth,
+        handlePressMessageContactCard,
+        handlePressMessageContactsGroup,
+        highlightedMessageId,
+        isGroup,
+        openImageViewer,
+        openVideoViewer,
+        responsiveBubbleMaxWidth,
+      ]
+    );
 
   return (
     <KeyboardAvoidingView
@@ -4947,8 +5163,8 @@ export function InternalChatRoomScreen() {
         <View style={styles.messagesListWrap}>
           <FlatList
             ref={listRef}
-            data={messages}
-            keyExtractor={(item) => item.message_id}
+            data={messagesWithSeparators}
+            keyExtractor={internalMessageKeyExtractor}
             renderItem={renderMessage}
             style={styles.messagesList}
             contentContainerStyle={styles.messagesContent}
@@ -4956,6 +5172,11 @@ export function InternalChatRoomScreen() {
             scrollEventThrottle={16}
             onContentSizeChange={handleMessagesContentSizeChange}
             onScrollToIndexFailed={handleScrollToIndexFailed}
+            initialNumToRender={14}
+            maxToRenderPerBatch={8}
+            updateCellsBatchingPeriod={50}
+            windowSize={7}
+            removeClippedSubviews={Platform.OS === 'android'}
           />
           {loadingOlderMessages ? (
             <View pointerEvents="none" style={styles.loadingOlderTopWrap}>

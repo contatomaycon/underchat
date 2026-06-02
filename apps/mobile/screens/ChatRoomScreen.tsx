@@ -1,4 +1,5 @@
 import {
+  memo,
   useState,
   useEffect,
   useCallback,
@@ -3463,11 +3464,24 @@ const DEFAULT_AUDIO_STATE: AudioState = {
   isBuffering: false,
 };
 
+function areAudioStatesEqual(left: AudioState, right: AudioState): boolean {
+  return (
+    left.isPlaying === right.isPlaying &&
+    left.isLoading === right.isLoading &&
+    left.isBuffering === right.isBuffering &&
+    left.rate === right.rate &&
+    Math.abs(left.position - right.position) < 0.05 &&
+    Math.abs(left.duration - right.duration) < 0.05
+  );
+}
+
 function useChatAudio() {
   const [state, setState] = useState<Record<string, AudioState>>({});
   const [waveformWidths, setWaveformWidths] = useState<Record<string, number>>(
     {}
   );
+  const stateRef = useRef(state);
+  const waveformWidthsRef = useRef(waveformWidths);
   const soundRefs = useRef<Record<string, AudioPlayer | null>>({});
   const listenerRefs = useRef<Record<string, { remove?: () => void } | null>>(
     {}
@@ -3478,12 +3492,31 @@ function useChatAudio() {
   const pendingAutoPlayRateRef = useRef<Record<string, number>>({});
   const finishedPlaybackRef = useRef<Record<string, boolean>>({});
 
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    waveformWidthsRef.current = waveformWidths;
+  }, [waveformWidths]);
+
   const updateState = useCallback(
     (messageId: string, patch: Partial<AudioState>) => {
-      setState((prev) => ({
-        ...prev,
-        [messageId]: { ...DEFAULT_AUDIO_STATE, ...prev[messageId], ...patch },
-      }));
+      setState((prev) => {
+        const current = {
+          ...DEFAULT_AUDIO_STATE,
+          ...prev[messageId],
+        };
+        const next = {
+          ...current,
+          ...patch,
+        };
+        if (areAudioStatesEqual(current, next)) return prev;
+        return {
+          ...prev,
+          [messageId]: next,
+        };
+      });
     },
     []
   );
@@ -3592,27 +3625,20 @@ function useChatAudio() {
               return;
             }
 
-            setState((prev) => {
-              const cur = prev[messageId];
-              const nextRate =
-                cur?.rate ??
-                status.playbackRate ??
-                pendingAutoPlayRateRef.current[messageId] ??
-                1;
-              return {
-                ...prev,
-                [messageId]: {
-                  ...DEFAULT_AUDIO_STATE,
-                  ...cur,
-                  isPlaying: status.playing,
-                  position: statusPosition,
-                  duration:
-                    statusDuration > 0 ? statusDuration : (cur?.duration ?? 0),
-                  rate: nextRate,
-                  isLoading: !status.isLoaded,
-                  isBuffering: status.isBuffering,
-                },
-              };
+            const cur = stateRef.current[messageId];
+            const nextRate =
+              cur?.rate ??
+              status.playbackRate ??
+              pendingAutoPlayRateRef.current[messageId] ??
+              1;
+            updateState(messageId, {
+              isPlaying: status.playing,
+              position: statusPosition,
+              duration:
+                statusDuration > 0 ? statusDuration : (cur?.duration ?? 0),
+              rate: nextRate,
+              isLoading: !status.isLoaded,
+              isBuffering: status.isBuffering,
             });
 
             if (
@@ -3645,7 +3671,7 @@ function useChatAudio() {
       const runPlaybackToggle = async () => {
         const player = getOrCreateSound(messageId, url);
         if (!player) return;
-        const cur = state[messageId] ?? DEFAULT_AUDIO_STATE;
+        const cur = stateRef.current[messageId] ?? DEFAULT_AUDIO_STATE;
 
         if (cur.isPlaying) {
           pendingAutoPlayRef.current[messageId] = false;
@@ -3716,7 +3742,7 @@ function useChatAudio() {
 
       void runPlaybackToggle();
     },
-    [getOrCreateSound, state, updateState]
+    [getOrCreateSound, updateState]
   );
 
   const seek = useCallback(
@@ -3726,7 +3752,7 @@ function useChatAudio() {
       finishedPlaybackRef.current[messageId] = false;
       pendingAutoPlayRef.current[messageId] = false;
 
-      const cur = state[messageId];
+      const cur = stateRef.current[messageId];
       const durationSec =
         (cur?.duration && cur.duration > 0 ? cur.duration : player.duration) ||
         0;
@@ -3736,12 +3762,12 @@ function useChatAudio() {
         updateState(messageId, { position: positionSec });
       });
     },
-    [getOrCreateSound, state, updateState]
+    [getOrCreateSound, updateState]
   );
 
   const toggleSpeed = useCallback(
     (messageId: string) => {
-      const cur = state[messageId];
+      const cur = stateRef.current[messageId];
       const currentRate = cur?.rate ?? 1;
       const nextRate = currentRate === 1 ? 1.5 : currentRate === 1.5 ? 2 : 1;
       pendingAutoPlayRateRef.current[messageId] = nextRate;
@@ -3753,7 +3779,7 @@ function useChatAudio() {
         } catch {}
       }
     },
-    [state, updateState]
+    [updateState]
   );
 
   const getWaveform = useCallback(
@@ -3781,22 +3807,16 @@ function useChatAudio() {
     []
   );
 
-  const getState = useCallback(
-    (messageId: string): AudioState => {
-      return state[messageId] ?? DEFAULT_AUDIO_STATE;
-    },
-    [state]
-  );
+  const getState = useCallback((messageId: string): AudioState => {
+    return stateRef.current[messageId] ?? DEFAULT_AUDIO_STATE;
+  }, []);
 
-  const getSpeedLabel = useCallback(
-    (messageId: string): string => {
-      const rate = state[messageId]?.rate ?? 1;
-      if (rate === 1.5) return '1.5x';
-      if (rate === 2) return '2x';
-      return '1x';
-    },
-    [state]
-  );
+  const getSpeedLabel = useCallback((messageId: string): string => {
+    const rate = stateRef.current[messageId]?.rate ?? 1;
+    if (rate === 1.5) return '1.5x';
+    if (rate === 2) return '2x';
+    return '1x';
+  }, []);
 
   const setWaveformWidth = useCallback((messageId: string, w: number) => {
     const nextWidth = Math.max(0, Math.round(w));
@@ -3805,12 +3825,9 @@ function useChatAudio() {
       return { ...prev, [messageId]: nextWidth };
     });
   }, []);
-  const getWaveformWidth = useCallback(
-    (messageId: string): number => {
-      return waveformWidths[messageId] ?? 0;
-    },
-    [waveformWidths]
-  );
+  const getWaveformWidth = useCallback((messageId: string): number => {
+    return waveformWidthsRef.current[messageId] ?? 0;
+  }, []);
 
   const releaseAll = useCallback(() => {
     disposeAllPlayers();
@@ -3824,18 +3841,40 @@ function useChatAudio() {
     };
   }, [disposeAllPlayers]);
 
+  const actions = useMemo(
+    () => ({
+      getState,
+      getSpeedLabel,
+      playPause,
+      seek,
+      toggleSpeed,
+      getWaveform,
+      setWaveformWidth,
+      getWaveformWidth,
+      releaseAll,
+    }),
+    [
+      getState,
+      getSpeedLabel,
+      playPause,
+      seek,
+      toggleSpeed,
+      getWaveform,
+      setWaveformWidth,
+      getWaveformWidth,
+      releaseAll,
+    ]
+  );
+
   return {
-    getState,
-    getSpeedLabel,
-    playPause,
-    seek,
-    toggleSpeed,
-    getWaveform,
-    setWaveformWidth,
-    getWaveformWidth,
-    releaseAll,
+    actions,
+    states: state,
+    waveformWidths,
   };
 }
+
+type ChatAudioController = ReturnType<typeof useChatAudio>;
+type AudioCtrl = ChatAudioController['actions'];
 
 function DateSeparator({ label }: { label: string }) {
   return (
@@ -3848,6 +3887,9 @@ function DateSeparator({ label }: { label: string }) {
     </View>
   );
 }
+
+const MemoizedDateSeparator = memo(DateSeparator);
+MemoizedDateSeparator.displayName = 'MemoizedDateSeparator';
 
 function AttendanceHistorySkeleton({ rows }: { rows: number }) {
   return (
@@ -3870,8 +3912,6 @@ function AttendanceHistorySkeleton({ rows }: { rows: number }) {
     </View>
   );
 }
-
-type AudioCtrl = ReturnType<typeof useChatAudio>;
 
 function VideoMessagePreview({
   sourceUri,
@@ -4424,6 +4464,8 @@ function BubbleContent({
   chatInfo,
   resolvedContactDisplay,
   audioCtrl,
+  audioState: audioStateProp,
+  audioWaveformWidth,
   onOpenImage,
   onOpenVideo,
   onOpenActions,
@@ -4441,6 +4483,8 @@ function BubbleContent({
   chatInfo: ListChatsResult;
   resolvedContactDisplay?: ContactCardDisplayData;
   audioCtrl: AudioCtrl | null;
+  audioState?: AudioState;
+  audioWaveformWidth?: number;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
   onOpenActions?: (message: ListMessageResult) => void;
@@ -4717,7 +4761,7 @@ function BubbleContent({
         </View>
       );
     }
-    const audioState = audioCtrl.getState(messageId);
+    const audioState = audioStateProp ?? audioCtrl.getState(messageId);
     const waveform = audioCtrl.getWaveform(
       messageId,
       content.audio.waveform ?? undefined
@@ -4731,7 +4775,10 @@ function BubbleContent({
         ? Math.max(0, Math.min(100, (currentTime / durationSec) * 100))
         : 0;
     const currentTimeStr = formatAudioTime(currentTime);
-    const waveformWidth = audioCtrl.getWaveformWidth(messageId);
+    const speedLabel =
+      audioState.rate === 1.5 ? '1.5x' : audioState.rate === 2 ? '2x' : '1x';
+    const waveformWidth =
+      audioWaveformWidth ?? audioCtrl.getWaveformWidth(messageId);
     const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
 
     return renderWithContextCards(
@@ -4754,7 +4801,7 @@ function BubbleContent({
                 fromMe && styles.audioSpeedBtnTextRight,
               ]}
             >
-              {audioCtrl.getSpeedLabel(messageId)}
+              {speedLabel}
             </Text>
           </Pressable>
           <View style={styles.audioPlayAndTimeWrap}>
@@ -5198,6 +5245,10 @@ function MessageBubble({
   onPressQuoted,
   resolvedContactDisplay,
   audioCtrl,
+  audioState,
+  audioWaveformWidth,
+  bubbleMaxWidth,
+  documentBubbleWidth,
   onOpenImage,
   onOpenVideo,
   onPressContactCard,
@@ -5218,6 +5269,10 @@ function MessageBubble({
   onPressQuoted?: (() => void) | null;
   resolvedContactDisplay?: ContactCardDisplayData;
   audioCtrl: AudioCtrl | null;
+  audioState?: AudioState;
+  audioWaveformWidth?: number;
+  bubbleMaxWidth: number;
+  documentBubbleWidth: number;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
   onPressContactCard?: (
@@ -5238,7 +5293,6 @@ function MessageBubble({
   forceCollapsedLongText?: boolean;
   obfuscateContent?: boolean;
 }) {
-  const { width: viewportWidth } = useWindowDimensions();
   const content = msg.content;
   const timeStr = formatMessageTime(msg.date);
   const latestText = getLatestMessageText(msg).trim();
@@ -5303,31 +5357,13 @@ function MessageBubble({
       readNonEmptyString(content.message) ||
       content.template);
   const feedbackIcon = resolveMessageFeedbackIcon(msg, fromMe);
-  const responsiveBubbleMaxWidth = Math.max(
-    0,
-    Math.floor(
-      Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
-        CHAT_BUBBLE_MAX_WIDTH_RATIO
-    )
-  );
   const bubbleResponsiveWidth = {
-    maxWidth: responsiveBubbleMaxWidth,
+    maxWidth: bubbleMaxWidth,
     minWidth: 0,
   };
   const documentBubbleMinWidth = Math.min(
     CHAT_DOCUMENT_BUBBLE_MIN_WIDTH,
-    responsiveBubbleMaxWidth
-  );
-  const documentBubbleMaxWidth = Math.min(
-    responsiveBubbleMaxWidth,
-    Math.floor(
-      Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
-        CHAT_DOCUMENT_BUBBLE_MAX_WIDTH_RATIO
-    )
-  );
-  const documentBubbleWidth = Math.max(
-    documentBubbleMinWidth,
-    documentBubbleMaxWidth
+    bubbleMaxWidth
   );
   const documentBubbleResponsiveWidth = {
     minWidth: documentBubbleMinWidth,
@@ -5481,6 +5517,8 @@ function MessageBubble({
           chatInfo={chatInfo}
           resolvedContactDisplay={resolvedContactDisplay}
           audioCtrl={audioCtrl}
+          audioState={audioState}
+          audioWaveformWidth={audioWaveformWidth}
           onOpenImage={onOpenImage}
           onOpenVideo={onOpenVideo}
           onPressContactCard={onPressContactCard}
@@ -5557,12 +5595,255 @@ function MessageBubble({
   );
 }
 
+type ChatMessageListRowProps = {
+  item: MessageWithSeparator;
+  chatInfo: ListChatsResult;
+  currentUserName: string | null;
+  highlighted: boolean;
+  canInteract: boolean;
+  canSwipeReply: boolean;
+  quotedTargetId: string | null;
+  canGoToQuoted: boolean;
+  imageGallery: GalleryImageGroup | null;
+  resolvedContactDisplay?: ContactCardDisplayData;
+  audioCtrl: AudioCtrl | null;
+  audioState: AudioState;
+  audioWaveformWidth: number;
+  bubbleMaxWidth: number;
+  documentBubbleWidth: number;
+  disableTemplateButtons: boolean;
+  obfuscateContent: boolean;
+  openedMessageSwipeableRef: { current: Swipeable | null };
+  onOpenActions: (message: ListMessageResult) => void;
+  onPressQuotedMessage: (messageId: string) => void;
+  onReplyFromMessage: (message: ListMessageResult) => void;
+  onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
+  onOpenVideo: (msg: ListMessageResult) => void;
+  onPressContactCard: (
+    message: ListMessageResult,
+    contact: MessageContentContact
+  ) => void;
+  onPressContactsGroup: (
+    message: ListMessageResult,
+    contacts: MessageContentContact[]
+  ) => void;
+  onTemplateButtonPress: (
+    button: MessageTemplateButton,
+    message: ListMessageResult
+  ) => void;
+};
+
+function ChatMessageListRow({
+  item,
+  chatInfo,
+  currentUserName,
+  highlighted,
+  canInteract,
+  canSwipeReply,
+  quotedTargetId,
+  canGoToQuoted,
+  imageGallery,
+  resolvedContactDisplay,
+  audioCtrl,
+  audioState,
+  audioWaveformWidth,
+  bubbleMaxWidth,
+  documentBubbleWidth,
+  disableTemplateButtons,
+  obfuscateContent,
+  openedMessageSwipeableRef,
+  onOpenActions,
+  onPressQuotedMessage,
+  onReplyFromMessage,
+  onOpenImage,
+  onOpenVideo,
+  onPressContactCard,
+  onPressContactsGroup,
+  onTemplateButtonPress,
+}: ChatMessageListRowProps) {
+  const handlePressQuoted = useCallback(() => {
+    if (!quotedTargetId) return;
+    onPressQuotedMessage(quotedTargetId);
+  }, [onPressQuotedMessage, quotedTargetId]);
+
+  const renderSwipeReplyAction = useCallback(
+    (
+      progress: Animated.AnimatedInterpolation<number>,
+      dragX: Animated.AnimatedInterpolation<number>
+    ) => {
+      const translateX = dragX.interpolate({
+        inputRange: [0, MESSAGE_SWIPE_REPLY_ACTION_WIDTH],
+        outputRange: [-MESSAGE_SWIPE_REPLY_ACTION_WIDTH, 0],
+        extrapolate: 'clamp',
+      });
+      const opacity = progress.interpolate({
+        inputRange: [0, 0.35, 1],
+        outputRange: [0.1, 0.65, 1],
+        extrapolate: 'clamp',
+      });
+
+      return (
+        <Animated.View
+          style={[
+            styles.messageSwipeRightAction,
+            {
+              width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
+              opacity,
+              transform: [{ translateX }],
+            },
+          ]}
+        >
+          <View style={styles.messageSwipeRightActionInner}>
+            <Ionicons
+              name="arrow-undo-outline"
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={styles.messageSwipeRightActionText}>{pt.reply}</Text>
+          </View>
+        </Animated.View>
+      );
+    },
+    []
+  );
+
+  if (item.type === 'separator') {
+    return <MemoizedDateSeparator label={item.separatorLabel} />;
+  }
+
+  const message = item.message;
+  const bubble = (
+    <MessageBubble
+      msg={message}
+      fromMe={message.type_user !== ETypeUserChat.client}
+      chatInfo={chatInfo}
+      imageGallery={imageGallery}
+      currentUserName={currentUserName}
+      highlighted={highlighted}
+      canInteract={canInteract}
+      onOpenActions={onOpenActions}
+      onPressQuoted={canGoToQuoted && quotedTargetId ? handlePressQuoted : null}
+      resolvedContactDisplay={resolvedContactDisplay}
+      audioCtrl={audioCtrl}
+      audioState={audioState}
+      audioWaveformWidth={audioWaveformWidth}
+      bubbleMaxWidth={bubbleMaxWidth}
+      documentBubbleWidth={documentBubbleWidth}
+      onOpenImage={onOpenImage}
+      onOpenVideo={onOpenVideo}
+      onPressContactCard={onPressContactCard}
+      onPressContactsGroup={onPressContactsGroup}
+      onTemplateButtonPress={onTemplateButtonPress}
+      disableTemplateButtons={disableTemplateButtons}
+      obfuscateContent={obfuscateContent}
+    />
+  );
+
+  if (!canSwipeReply) {
+    return bubble;
+  }
+
+  let rowSwipeable: Swipeable | null = null;
+
+  return (
+    <Swipeable
+      ref={(instance) => {
+        rowSwipeable = instance;
+      }}
+      friction={MESSAGE_SWIPE_FRICTION}
+      leftThreshold={MESSAGE_SWIPE_REPLY_THRESHOLD}
+      overshootLeft={false}
+      dragOffsetFromLeftEdge={MESSAGE_SWIPE_DRAG_OFFSET}
+      containerStyle={styles.messageSwipeContainer}
+      onSwipeableWillOpen={(direction) => {
+        if (direction !== 'left') return;
+        if (
+          openedMessageSwipeableRef.current &&
+          openedMessageSwipeableRef.current !== rowSwipeable
+        ) {
+          openedMessageSwipeableRef.current.close();
+        }
+      }}
+      onSwipeableOpen={(direction) => {
+        if (direction !== 'left') return;
+        openedMessageSwipeableRef.current = rowSwipeable;
+        rowSwipeable?.close();
+        onReplyFromMessage(message);
+      }}
+      onSwipeableClose={(direction) => {
+        if (
+          direction === 'left' &&
+          openedMessageSwipeableRef.current === rowSwipeable
+        ) {
+          openedMessageSwipeableRef.current = null;
+        }
+      }}
+      renderLeftActions={renderSwipeReplyAction}
+    >
+      {bubble}
+    </Swipeable>
+  );
+}
+
+function areChatMessageListRowsEqual(
+  previous: ChatMessageListRowProps,
+  next: ChatMessageListRowProps
+) {
+  if (previous.item.type !== next.item.type) return false;
+  if (previous.item.type === 'separator' && next.item.type === 'separator') {
+    return (
+      previous.item.separatorDate === next.item.separatorDate &&
+      previous.item.separatorLabel === next.item.separatorLabel
+    );
+  }
+
+  if (previous.item.type !== 'message' || next.item.type !== 'message') {
+    return false;
+  }
+
+  return (
+    previous.item.message === next.item.message &&
+    previous.chatInfo === next.chatInfo &&
+    previous.currentUserName === next.currentUserName &&
+    previous.highlighted === next.highlighted &&
+    previous.canInteract === next.canInteract &&
+    previous.canSwipeReply === next.canSwipeReply &&
+    previous.quotedTargetId === next.quotedTargetId &&
+    previous.canGoToQuoted === next.canGoToQuoted &&
+    previous.imageGallery === next.imageGallery &&
+    previous.resolvedContactDisplay === next.resolvedContactDisplay &&
+    previous.audioCtrl === next.audioCtrl &&
+    areAudioStatesEqual(previous.audioState, next.audioState) &&
+    previous.audioWaveformWidth === next.audioWaveformWidth &&
+    previous.bubbleMaxWidth === next.bubbleMaxWidth &&
+    previous.documentBubbleWidth === next.documentBubbleWidth &&
+    previous.disableTemplateButtons === next.disableTemplateButtons &&
+    previous.obfuscateContent === next.obfuscateContent &&
+    previous.openedMessageSwipeableRef === next.openedMessageSwipeableRef &&
+    previous.onOpenActions === next.onOpenActions &&
+    previous.onPressQuotedMessage === next.onPressQuotedMessage &&
+    previous.onReplyFromMessage === next.onReplyFromMessage &&
+    previous.onOpenImage === next.onOpenImage &&
+    previous.onOpenVideo === next.onOpenVideo &&
+    previous.onPressContactCard === next.onPressContactCard &&
+    previous.onPressContactsGroup === next.onPressContactsGroup &&
+    previous.onTemplateButtonPress === next.onTemplateButtonPress
+  );
+}
+
+const MemoizedChatMessageListRow = memo(
+  ChatMessageListRow,
+  areChatMessageListRowsEqual
+);
+MemoizedChatMessageListRow.displayName = 'MemoizedChatMessageListRow';
+
 export function ChatRoomScreen({ route, navigation }: Props) {
   const { chat, mode = 'default' } = route.params;
   const isHistoryReadonly = mode === 'history_readonly';
   const { setChatCounts, clearAdvancedFilters } = useChatFilter();
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
+  const { width: viewportWidth } = useWindowDimensions();
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
   const openedMessageSwipeableRef = useRef<Swipeable | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -5989,7 +6270,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       currentUserName
     );
   }, [chatInfo, currentUserName, replyMessageTarget]);
-  const audioCtrl = useChatAudio();
+  const chatAudio = useChatAudio();
+  const audioCtrl = chatAudio.actions;
+  const audioStates = chatAudio.states;
+  const audioWaveformWidths = chatAudio.waveformWidths;
   useEffect(() => {
     void ensureIosPlaybackAudioMode();
   }, []);
@@ -13176,6 +13460,206 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     }
   }, [input]);
 
+  const chatBubbleMaxWidth = useMemo(
+    () =>
+      Math.max(
+        0,
+        Math.floor(
+          Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
+            CHAT_BUBBLE_MAX_WIDTH_RATIO
+        )
+      ),
+    [viewportWidth]
+  );
+
+  const chatDocumentBubbleWidth = useMemo(() => {
+    const minWidth = Math.min(CHAT_DOCUMENT_BUBBLE_MIN_WIDTH, chatBubbleMaxWidth);
+    const maxWidth = Math.min(
+      chatBubbleMaxWidth,
+      Math.floor(
+        Math.max(0, viewportWidth - CHAT_LIST_HORIZONTAL_PADDING * 2) *
+          CHAT_DOCUMENT_BUBBLE_MAX_WIDTH_RATIO
+      )
+    );
+
+    return Math.max(minWidth, maxWidth);
+  }, [chatBubbleMaxWidth, viewportWidth]);
+
+  const quotedTargetIdByMessageId = useMemo(() => {
+    const lookup: Record<string, string | null> = {};
+    for (const message of messages) {
+      lookup[message.message_id] = resolveQuotedTargetMessageId(
+        message,
+        messages
+      );
+    }
+    return lookup;
+  }, [messages]);
+
+  const imageGalleryByMessageId = useMemo(() => {
+    const lookup: Record<string, GalleryImageGroup | null> = {};
+    for (const [messageId, membership] of Object.entries(
+      imageGalleryLookup.membershipByMessageId
+    )) {
+      lookup[messageId] =
+        imageGalleryLookup.groupsById[membership.groupId] ?? null;
+    }
+    return lookup;
+  }, [imageGalleryLookup.groupsById, imageGalleryLookup.membershipByMessageId]);
+
+  const messageListCapabilityById = useMemo(() => {
+    const lookup: Record<
+      string,
+      {
+        canOpenActions: boolean;
+        canSwipeReply: boolean;
+      }
+    > = {};
+    for (const message of messages) {
+      lookup[message.message_id] = {
+        canOpenActions: canOpenActionsForMessage(message),
+        canSwipeReply:
+          canComposeInChat &&
+          !isHistoryReadonly &&
+          !shouldObfuscateContent &&
+          canInteractWithMessage(message),
+      };
+    }
+    return lookup;
+  }, [
+    canComposeInChat,
+    canOpenActionsForMessage,
+    isHistoryReadonly,
+    messages,
+    shouldObfuscateContent,
+  ]);
+
+  const openMessageActionsForListRow = useCallback(
+    (message: ListMessageResult) => {
+      closeOpenedMessageSwipeable();
+      setMessageActionTarget(cloneMessageForOverlay(message));
+      setMessageOverlayAnchor({
+        showReactions: canInteractWithMessage(message),
+      });
+      setReactionPickerVisible(false);
+    },
+    [closeOpenedMessageSwipeable]
+  );
+
+  const chatMessageKeyExtractor = useCallback(
+    (item: MessageWithSeparator) =>
+      item.type === 'separator'
+        ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
+        : `message-${chatInfo.chat_id}-${item.message.message_id}${
+            blurRecoveryMessageId === item.message.message_id
+              ? `-br${blurRecoveryCountRef.current}`
+              : ''
+          }`,
+    [blurRecoveryMessageId, chatInfo.chat_id]
+  );
+
+  const renderChatMessageItem = useCallback(
+    ({ item }: { item: MessageWithSeparator }) => {
+      if (item.type === 'separator') {
+        return (
+          <MemoizedChatMessageListRow
+            item={item}
+            chatInfo={chatInfo}
+            currentUserName={currentUserName}
+            highlighted={false}
+            canInteract={false}
+            canSwipeReply={false}
+            quotedTargetId={null}
+            canGoToQuoted={false}
+            imageGallery={null}
+            audioCtrl={audioCtrl}
+            audioState={DEFAULT_AUDIO_STATE}
+            audioWaveformWidth={0}
+            bubbleMaxWidth={chatBubbleMaxWidth}
+            documentBubbleWidth={chatDocumentBubbleWidth}
+            disableTemplateButtons={!canComposeInChat || sending}
+            obfuscateContent={shouldObfuscateContent}
+            openedMessageSwipeableRef={openedMessageSwipeableRef}
+            onOpenActions={openMessageActionsForListRow}
+            onPressQuotedMessage={scrollToMessageById}
+            onReplyFromMessage={handleReplyFromMessage}
+            onOpenImage={openImageViewer}
+            onOpenVideo={openVideoViewer}
+            onPressContactCard={handlePressMessageContactCard}
+            onPressContactsGroup={handlePressMessageContactsGroup}
+            onTemplateButtonPress={handleTemplateButtonPress}
+          />
+        );
+      }
+
+      const message = item.message;
+      const messageId = message.message_id;
+      const quotedTargetId = quotedTargetIdByMessageId[messageId] ?? null;
+      const capabilities = messageListCapabilityById[messageId];
+
+      return (
+        <MemoizedChatMessageListRow
+          item={item}
+          chatInfo={chatInfo}
+          currentUserName={currentUserName}
+          highlighted={
+            highlightedMessageId === messageId ||
+            messageActionTarget?.message_id === messageId
+          }
+          canInteract={capabilities?.canOpenActions ?? false}
+          canSwipeReply={capabilities?.canSwipeReply ?? false}
+          quotedTargetId={quotedTargetId}
+          canGoToQuoted={!!quotedTargetId && messageIdSet.has(quotedTargetId)}
+          imageGallery={imageGalleryByMessageId[messageId] ?? null}
+          resolvedContactDisplay={resolvedContactCards[messageId]}
+          audioCtrl={audioCtrl}
+          audioState={audioStates[messageId] ?? DEFAULT_AUDIO_STATE}
+          audioWaveformWidth={audioWaveformWidths[messageId] ?? 0}
+          bubbleMaxWidth={chatBubbleMaxWidth}
+          documentBubbleWidth={chatDocumentBubbleWidth}
+          disableTemplateButtons={!canComposeInChat || sending}
+          obfuscateContent={shouldObfuscateContent}
+          openedMessageSwipeableRef={openedMessageSwipeableRef}
+          onOpenActions={openMessageActionsForListRow}
+          onPressQuotedMessage={scrollToMessageById}
+          onReplyFromMessage={handleReplyFromMessage}
+          onOpenImage={openImageViewer}
+          onOpenVideo={openVideoViewer}
+          onPressContactCard={handlePressMessageContactCard}
+          onPressContactsGroup={handlePressMessageContactsGroup}
+          onTemplateButtonPress={handleTemplateButtonPress}
+        />
+      );
+    },
+    [
+      audioCtrl,
+      audioStates,
+      audioWaveformWidths,
+      canComposeInChat,
+      chatBubbleMaxWidth,
+      chatDocumentBubbleWidth,
+      chatInfo,
+      currentUserName,
+      handlePressMessageContactCard,
+      handlePressMessageContactsGroup,
+      handleReplyFromMessage,
+      handleTemplateButtonPress,
+      highlightedMessageId,
+      imageGalleryByMessageId,
+      messageActionTarget?.message_id,
+      messageIdSet,
+      messageListCapabilityById,
+      openImageViewer,
+      openMessageActionsForListRow,
+      openVideoViewer,
+      quotedTargetIdByMessageId,
+      resolvedContactCards,
+      scrollToMessageById,
+      sending,
+      shouldObfuscateContent,
+    ]
+  );
+
   const messageActionOverlayContent = (
     <KeyboardAvoidingView
       style={styles.keyboardAvoiding}
@@ -13264,6 +13748,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     resolvedContactCards[messageActionTarget.message_id]
                   }
                   audioCtrl={audioCtrl}
+                  audioState={
+                    audioStates[messageActionTarget.message_id] ??
+                    DEFAULT_AUDIO_STATE
+                  }
+                  audioWaveformWidth={
+                    audioWaveformWidths[messageActionTarget.message_id] ?? 0
+                  }
+                  bubbleMaxWidth={chatBubbleMaxWidth}
+                  documentBubbleWidth={chatDocumentBubbleWidth}
                   imageGallery={null}
                   onOpenImage={openImageViewer}
                   onOpenVideo={openVideoViewer}
@@ -13549,167 +14042,19 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 ref={listRef}
                 data={messagesWithSeparators}
                 keyboardDismissMode="on-drag"
-                keyExtractor={(item) =>
-                  item.type === 'separator'
-                    ? `separator-${chatInfo.chat_id}-${item.separatorDate}`
-                    : `message-${chatInfo.chat_id}-${item.message.message_id}${
-                        blurRecoveryMessageId === item.message.message_id
-                          ? `-br${blurRecoveryCountRef.current}`
-                          : ''
-                      }`
-                }
-                renderItem={({ item }) => {
-                  if (item.type === 'separator') {
-                    return <DateSeparator label={item.separatorLabel} />;
-                  }
-
-                  const quotedTargetId = resolveQuotedTargetMessageId(
-                    item.message,
-                    messages
-                  );
-                  const canGoToQuoted =
-                    !!quotedTargetId && messageIdSet.has(quotedTargetId);
-                  const canSwipeReply =
-                    canComposeInChat &&
-                    !isHistoryReadonly &&
-                    !shouldObfuscateContent &&
-                    canInteractWithMessage(item.message);
-                  const galleryMembership =
-                    imageGalleryLookup.membershipByMessageId[
-                      item.message.message_id
-                    ];
-                  const imageGallery = galleryMembership
-                    ? (imageGalleryLookup.groupsById[
-                        galleryMembership.groupId
-                      ] ?? null)
-                    : null;
-
-                  const bubble = (
-                    <MessageBubble
-                      msg={item.message}
-                      fromMe={item.message.type_user !== ETypeUserChat.client}
-                      chatInfo={chatInfo}
-                      imageGallery={imageGallery}
-                      currentUserName={currentUserName}
-                      highlighted={
-                        highlightedMessageId === item.message.message_id ||
-                        messageActionTarget?.message_id ===
-                          item.message.message_id
-                      }
-                      canInteract={canOpenActionsForMessage(item.message)}
-                      onOpenActions={(message) => {
-                        closeOpenedMessageSwipeable();
-                        setMessageActionTarget(cloneMessageForOverlay(message));
-                        setMessageOverlayAnchor({
-                          showReactions: canInteractWithMessage(message),
-                        });
-                        setReactionPickerVisible(false);
-                      }}
-                      onPressQuoted={
-                        canGoToQuoted && quotedTargetId
-                          ? () => scrollToMessageById(quotedTargetId)
-                          : null
-                      }
-                      resolvedContactDisplay={
-                        resolvedContactCards[item.message.message_id]
-                      }
-                      audioCtrl={audioCtrl}
-                      onOpenImage={openImageViewer}
-                      onOpenVideo={openVideoViewer}
-                      onPressContactCard={handlePressMessageContactCard}
-                      onPressContactsGroup={handlePressMessageContactsGroup}
-                      onTemplateButtonPress={handleTemplateButtonPress}
-                      disableTemplateButtons={!canComposeInChat || sending}
-                      obfuscateContent={shouldObfuscateContent}
-                    />
-                  );
-
-                  if (!canSwipeReply) {
-                    return bubble;
-                  }
-
-                  let rowSwipeable: Swipeable | null = null;
-
-                  return (
-                    <Swipeable
-                      ref={(instance) => {
-                        rowSwipeable = instance;
-                      }}
-                      friction={MESSAGE_SWIPE_FRICTION}
-                      leftThreshold={MESSAGE_SWIPE_REPLY_THRESHOLD}
-                      overshootLeft={false}
-                      dragOffsetFromLeftEdge={MESSAGE_SWIPE_DRAG_OFFSET}
-                      containerStyle={styles.messageSwipeContainer}
-                      onSwipeableWillOpen={(direction) => {
-                        if (direction !== 'left') return;
-                        if (
-                          openedMessageSwipeableRef.current &&
-                          openedMessageSwipeableRef.current !== rowSwipeable
-                        ) {
-                          openedMessageSwipeableRef.current.close();
-                        }
-                      }}
-                      onSwipeableOpen={(direction) => {
-                        if (direction !== 'left') return;
-                        openedMessageSwipeableRef.current = rowSwipeable;
-                        rowSwipeable?.close();
-                        handleReplyFromMessage(item.message);
-                      }}
-                      onSwipeableClose={(direction) => {
-                        if (
-                          direction === 'left' &&
-                          openedMessageSwipeableRef.current === rowSwipeable
-                        ) {
-                          openedMessageSwipeableRef.current = null;
-                        }
-                      }}
-                      renderLeftActions={(progress, dragX) => {
-                        const translateX = dragX.interpolate({
-                          inputRange: [0, MESSAGE_SWIPE_REPLY_ACTION_WIDTH],
-                          outputRange: [-MESSAGE_SWIPE_REPLY_ACTION_WIDTH, 0],
-                          extrapolate: 'clamp',
-                        });
-                        const opacity = progress.interpolate({
-                          inputRange: [0, 0.35, 1],
-                          outputRange: [0.1, 0.65, 1],
-                          extrapolate: 'clamp',
-                        });
-
-                        return (
-                          <Animated.View
-                            style={[
-                              styles.messageSwipeRightAction,
-                              {
-                                width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
-                                opacity,
-                                transform: [{ translateX }],
-                              },
-                            ]}
-                          >
-                            <View style={styles.messageSwipeRightActionInner}>
-                              <Ionicons
-                                name="arrow-undo-outline"
-                                size={18}
-                                color={colors.primary}
-                              />
-                              <Text style={styles.messageSwipeRightActionText}>
-                                {pt.reply}
-                              </Text>
-                            </View>
-                          </Animated.View>
-                        );
-                      }}
-                    >
-                      {bubble}
-                    </Swipeable>
-                  );
-                }}
+                keyExtractor={chatMessageKeyExtractor}
+                renderItem={renderChatMessageItem}
                 onScrollToIndexFailed={handleScrollToIndexFailed}
                 onScroll={handleListScroll}
                 onScrollBeginDrag={handleMessageListScrollBeginDrag}
                 scrollEventThrottle={16}
                 onContentSizeChange={handleListContentSizeChange}
                 contentContainerStyle={styles.listContent}
+                initialNumToRender={14}
+                maxToRenderPerBatch={8}
+                updateCellsBatchingPeriod={50}
+                windowSize={7}
+                removeClippedSubviews={Platform.OS === 'android'}
                 inverted={false}
               />
               {loadingOlder ? (
