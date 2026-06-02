@@ -20,6 +20,9 @@ import {
   dismissKeyboardAnd,
 } from '../utils/keyboard';
 
+// Compensates the chat composer height so Android sheets sit on the keyboard.
+const ANDROID_BOTTOM_SHEET_KEYBOARD_VERTICAL_OFFSET = -56;
+
 export interface BottomSheetModalProps {
   /** Whether the modal is visible */
   visible: boolean;
@@ -122,13 +125,18 @@ export function BottomSheetModal({
     </>
   );
 
-  const shouldUseKeyboardAvoidingView = avoidKeyboard && Platform.OS === 'ios';
+  const bottomSheetKeyboardAvoidingBehavior =
+    Platform.OS === 'ios' ? keyboardAvoidingBehavior : 'padding';
+  const bottomSheetKeyboardVerticalOffset =
+    Platform.OS === 'ios'
+      ? getKeyboardVerticalOffset(insets.bottom + 8)
+      : ANDROID_BOTTOM_SHEET_KEYBOARD_VERTICAL_OFFSET;
 
-  const inner = shouldUseKeyboardAvoidingView ? (
+  const inner = avoidKeyboard ? (
     <KeyboardAvoidingView
       style={styles.keyboardAvoiding}
-      behavior={keyboardAvoidingBehavior}
-      keyboardVerticalOffset={getKeyboardVerticalOffset(insets.bottom + 8)}
+      behavior={bottomSheetKeyboardAvoidingBehavior}
+      keyboardVerticalOffset={bottomSheetKeyboardVerticalOffset}
     >
       <View style={[styles.overlay, { paddingBottom: insets.bottom }]}>
         {overlayContent}
