@@ -65,14 +65,17 @@ type ConnectionState struct {
 	WorkerStatusID          string `json:"worker_status_id,omitempty"`
 	Attempt                 int    `json:"attempt,omitempty"`
 	MaxAttempts             int    `json:"max_attempts,omitempty"`
+	ConnectionAttemptID     string `json:"connection_attempt_id,omitempty"`
+	QRPending               bool   `json:"qr_pending,omitempty"`
 }
 
 type StatusConnectionRequest struct {
-	WorkerID        string `json:"worker_id"`
-	Status          string `json:"status"`
-	Type            string `json:"type"`
-	PhoneConnection string `json:"phone_connection"`
-	RemoveSession   bool   `json:"remove_session"`
+	WorkerID            string `json:"worker_id"`
+	Status              string `json:"status"`
+	Type                string `json:"type"`
+	PhoneConnection     string `json:"phone_connection"`
+	RemoveSession       bool   `json:"remove_session"`
+	ConnectionAttemptID string `json:"connection_attempt_id"`
 }
 
 type PhoneValidationRequest struct {

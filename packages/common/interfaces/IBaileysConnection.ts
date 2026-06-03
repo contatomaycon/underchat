@@ -11,4 +11,5 @@ export interface IBaileysConnection {
   from_disconnect_restart?: boolean;
   preserve_session?: boolean;
   remove_session?: boolean;
+  connection_attempt_id?: string;
 }

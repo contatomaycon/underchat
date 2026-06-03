@@ -122,6 +122,7 @@ export class WorkerConnectionStatusConsume {
           requested_by_user: true,
           type: data.type as EBaileysConnectionType,
           phone_connection: data.phone_connection,
+          connection_attempt_id: data.connection_attempt_id,
         });
       } catch (error) {
         const errorMessage =
@@ -153,6 +154,7 @@ export class WorkerConnectionStatusConsume {
           requested_by_user: true,
           type: data.type as EBaileysConnectionType,
           phone_connection: data.phone_connection,
+          connection_attempt_id: data.connection_attempt_id,
         });
       } catch (error) {
         const errorMessage =
@@ -178,6 +180,7 @@ export class WorkerConnectionStatusConsume {
       requested_by_user: true,
       type: data.type as EBaileysConnectionType,
       phone_connection: data.phone_connection,
+      connection_attempt_id: data.connection_attempt_id,
     });
   }
 
@@ -296,6 +299,8 @@ export class WorkerConnectionStatusConsume {
       account_id: baileysEnvironment.baileysAccountId,
       attempt,
       max_attempts: this.connectionRetryMinAttempts,
+      connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
     };
 
     void this.centrifugoService
@@ -323,6 +328,8 @@ export class WorkerConnectionStatusConsume {
       code: ECodeMessage.connectionEstablished,
       phone: getPhoneNumber(this.baileysService.socket?.user?.id),
       worker_status_id: EWorkerStatus.online,
+      connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
     };
 
     await this.centrifugoService
@@ -357,6 +364,8 @@ export class WorkerConnectionStatusConsume {
       code,
       worker_id: baileysEnvironment.baileysWorkerId,
       account_id: baileysEnvironment.baileysAccountId,
+      connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
     };
   }
 
@@ -456,6 +465,7 @@ export class WorkerConnectionStatusConsume {
         from_disconnect_restart: fromDisconnectRestart,
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
+        connection_attempt_id: request.connection_attempt_id,
       })
       .then((state) => {
         this.logConnectionEvent('connection_connect_result', {

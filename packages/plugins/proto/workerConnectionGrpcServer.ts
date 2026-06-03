@@ -67,6 +67,7 @@ interface IStatusConnectionRequestProto {
   type?: string;
   phone_connection?: string;
   remove_session?: boolean;
+  connection_attempt_id?: string;
 }
 
 interface WorkerConnectionGrpcOptions {
@@ -117,6 +118,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     if (req.remove_session === true) {
       payload.remove_session = true;
     }
+    if (req.connection_attempt_id) {
+      payload.connection_attempt_id = req.connection_attempt_id;
+    }
     const contextData = buildConnectionLifecycleContext({
       account_id: accountId,
       worker_id: payload.worker_id,
@@ -159,6 +163,12 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       connectionConsume
         .requestConnection(payload)
         .then((response) => {
+          const responseWithAttempt: IWorkerConnectionStateProto =
+            connectionStateToProto({
+              ...response,
+              connection_attempt_id:
+                response.connection_attempt_id ?? payload.connection_attempt_id,
+            });
           recordConnectionLifecycle({
             stage: 'connection.worker.grpc.request_success',
             decision: 'worker_connection_request',
@@ -186,7 +196,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             },
             'Worker connection request dispatched'
           );
-          callback(null, connectionStateToProto(response));
+          callback(null, responseWithAttempt);
         })
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

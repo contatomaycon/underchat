@@ -27,6 +27,31 @@ describe('WorkerExternalConnectionTokenService', () => {
     });
   });
 
+  it('stores optional worker snapshot fields in new tokens', () => {
+    const sut = makeSut();
+    const now = 1_700_000_000_000;
+    const result = sut.create(
+      'account-1',
+      'worker-1',
+      {
+        server_id: 'server-1',
+        worker_type_id: 'worker-type-1',
+        worker_updated_at: '2026-06-03T12:00:03.000Z',
+      },
+      now
+    );
+
+    expect(sut.validate(result.token, now)).toEqual({
+      account_id: 'account-1',
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      worker_type_id: 'worker-type-1',
+      worker_updated_at: '2026-06-03T12:00:03.000Z',
+      iat: now,
+      exp: now + 24 * 60 * 60 * 1000,
+    });
+  });
+
   it('rejects expired tokens', () => {
     const sut = makeSut();
     const result = sut.create('account-1', 'worker-1', 1_700_000_000_000);

@@ -23,6 +23,10 @@ import {
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
+import {
+  recordConnectionQrSummary,
+  summarizeConnectionQrState,
+} from '@core/plugins/telemetry/connectionQrSummary';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +63,7 @@ export class WorkerBaileysGrpcClientService {
     type: string;
     phone_connection?: string;
     remove_session?: boolean;
+    connection_attempt_id?: string;
   } {
     const protoPayload = {
       worker_id: payload.worker_id,
@@ -71,6 +76,11 @@ export class WorkerBaileysGrpcClientService {
     }
     if (payload.remove_session === true) {
       (protoPayload as { remove_session?: boolean }).remove_session = true;
+    }
+    if (payload.connection_attempt_id) {
+      (
+        protoPayload as { connection_attempt_id?: string }
+      ).connection_attempt_id = payload.connection_attempt_id;
     }
 
     return protoPayload;
@@ -127,6 +137,7 @@ export class WorkerBaileysGrpcClientService {
       type: string;
       phone_connection?: string;
       remove_session?: boolean;
+      connection_attempt_id?: string;
     }
   ): Promise<IBaileysConnectionState> {
     const client = new WorkerConnectionClient(
@@ -202,6 +213,7 @@ export class WorkerBaileysGrpcClientService {
       type: string;
       phone_connection?: string;
       remove_session?: boolean;
+      connection_attempt_id?: string;
     }
   ): Promise<IBaileysConnectionState> {
     const client = new WorkerConnectionClient(
@@ -244,11 +256,23 @@ export class WorkerBaileysGrpcClientService {
               deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
               error: err.message,
             });
+            recordConnectionQrSummary({
+              event: 'balancer_worker_qrcode_grpc_error',
+              worker_id: protoPayload.worker_id,
+              connection_attempt_id: protoPayload.connection_attempt_id,
+              worker_type: undefined,
+              grpc_address: address,
+              status: protoPayload.status,
+              reason: 'grpc_error',
+              error: err.message,
+              level: 'error',
+            });
             reject(err);
             return;
           }
 
           const state = protoToConnectionState(response ?? {});
+          state.connection_attempt_id ??= protoPayload.connection_attempt_id;
           recordConnectionLifecycle({
             stage: 'connection.balancer.worker_connection_grpc.qrcode_success',
             decision: 'grpc_request_connection_qrcode',
@@ -262,6 +286,15 @@ export class WorkerBaileysGrpcClientService {
             pairing_code: state.pairing_code,
             has_qr: Boolean(state.qrcode),
             has_pairing_code: Boolean(state.pairing_code),
+          });
+          recordConnectionQrSummary({
+            event: state.qrcode
+              ? 'balancer_worker_qrcode_grpc_success'
+              : 'balancer_worker_qrcode_grpc_no_qr',
+            ...summarizeConnectionQrState(state),
+            grpc_address: address,
+            qr_pending: state.qr_pending,
+            level: state.qrcode ? 'info' : 'warn',
           });
           resolve(state);
         }

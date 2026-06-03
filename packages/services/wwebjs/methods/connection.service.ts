@@ -140,6 +140,7 @@ export class WwebjsConnectionService {
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
   private phoneConnection: string | undefined;
+  private connectionAttemptId: string | undefined;
 
   constructor(
     @inject(CentrifugoService)
@@ -235,6 +236,7 @@ export class WwebjsConnectionService {
       force_new: forceNew = false,
       requested_by_user: requestedByUser = false,
       from_disconnect_restart: fromDisconnectRestart = false,
+      connection_attempt_id: connectionAttemptId,
     } = input;
     const normalizedPhoneConnection =
       this.normalizePhoneConnection(phoneConnection);
@@ -277,6 +279,7 @@ export class WwebjsConnectionService {
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
     this.phoneConnection = effectivePhoneConnection;
+    this.connectionAttemptId = connectionAttemptId;
     this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (this.connected) {
@@ -602,6 +605,7 @@ export class WwebjsConnectionService {
       attempt,
       max_attempts: MAX_RETRIES,
       seconds_until_next_attempt: Math.ceil(delayMs / 1000),
+      connection_attempt_id: this.connectionAttemptId,
     };
 
     this.publishSub(retryPayload, true);
@@ -622,6 +626,7 @@ export class WwebjsConnectionService {
         worker_id: WORKER,
         account_id: ACCOUNT,
         code: ECodeMessage.awaitConnection,
+        connection_attempt_id: this.connectionAttemptId,
       },
       true
     );
@@ -1023,6 +1028,7 @@ export class WwebjsConnectionService {
           attempt: this.qrGenerationCount,
           max_attempts: MAX_QR_GENERATIONS,
           worker_status_id: EWorkerStatus.disponible,
+          connection_attempt_id: this.connectionAttemptId,
         };
 
         void this.notifyWorkerStatusSafely(payload, 'qr');
@@ -1992,6 +1998,7 @@ export class WwebjsConnectionService {
       account_id: ACCOUNT,
       qrcode: qr,
       code: this.code,
+      connection_attempt_id: this.connectionAttemptId,
     };
     if (this.status === Status.connecting) {
       result.attempt = this.retryCount > 0 ? this.retryCount : 1;

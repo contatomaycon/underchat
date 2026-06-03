@@ -13,6 +13,7 @@ message StatusConnectionRequest {
   string type = 3;
   string phone_connection = 4;
   bool remove_session = 5;
+  string connection_attempt_id = 6;
 }
 
 message WorkerConnectionResponse {
@@ -30,6 +31,8 @@ message WorkerConnectionResponse {
   string worker_status_id = 12;
   int32 attempt = 13;
   int32 max_attempts = 14;
+  string connection_attempt_id = 15;
+  bool qr_pending = 16;
 }
 
 message PhoneValidationRequest {

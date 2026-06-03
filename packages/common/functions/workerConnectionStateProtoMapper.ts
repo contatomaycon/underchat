@@ -39,6 +39,12 @@ export function protoToConnectionState(
   if (proto.worker_status_id) {
     state.worker_status_id = proto.worker_status_id as EWorkerStatus;
   }
+  if (proto.connection_attempt_id) {
+    state.connection_attempt_id = proto.connection_attempt_id;
+  }
+  if (proto.qr_pending === true) {
+    state.qr_pending = true;
+  }
 
   const time = optionalNumber(proto.time);
   const secondsUntilNextAttempt = optionalNumber(
@@ -75,5 +81,7 @@ export function connectionStateToProto(
     worker_status_id: state.worker_status_id ?? '',
     attempt: state.attempt ?? 0,
     max_attempts: state.max_attempts ?? 0,
+    connection_attempt_id: state.connection_attempt_id ?? '',
+    qr_pending: state.qr_pending ?? false,
   };
 }

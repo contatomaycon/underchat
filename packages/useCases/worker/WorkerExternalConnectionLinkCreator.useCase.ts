@@ -30,8 +30,22 @@ export class WorkerExternalConnectionLinkCreatorUseCase {
       throw new Error(t('worker_not_found'));
     }
 
+    const worker = await this.workerService.viewWorker(accountId, workerId);
+    if (!worker) {
+      throw new Error(t('worker_not_found'));
+    }
+    const updatedAt = (worker as { updated_at?: string | Date | null })
+      .updated_at;
+
     const { token, expiresAt } =
-      this.workerExternalConnectionTokenService.create(accountId, workerId);
+      this.workerExternalConnectionTokenService.create(accountId, workerId, {
+        server_id: worker.server?.id,
+        worker_type_id: worker.type?.id,
+        worker_updated_at:
+          updatedAt instanceof Date
+            ? updatedAt.toISOString()
+            : (updatedAt ?? undefined),
+      });
 
     return {
       token,

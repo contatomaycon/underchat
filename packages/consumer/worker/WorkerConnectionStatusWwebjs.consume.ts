@@ -236,6 +236,7 @@ export class WorkerConnectionStatusWwebjsConsume {
         from_disconnect_restart: options.fromDisconnectRestart,
         type: data.type as EBaileysConnectionType,
         phone_connection: data.phone_connection,
+        connection_attempt_id: data.connection_attempt_id,
       });
 
       this.logConnectionEvent('connection_connect_result', {
@@ -313,6 +314,8 @@ export class WorkerConnectionStatusWwebjsConsume {
       account_id: wwebjsEnvironment.wwebjsAccountId,
       attempt,
       max_attempts: this.connectionRetryMinAttempts,
+      connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
     };
 
     void this.centrifugoService
@@ -340,6 +343,8 @@ export class WorkerConnectionStatusWwebjsConsume {
       code: ECodeMessage.connectionEstablished,
       phone: getPhoneNumber(this.wwebjsService.socket?.info?.wid?._serialized),
       worker_status_id: EWorkerStatus.online,
+      connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
     };
 
     await this.centrifugoService
@@ -374,6 +379,8 @@ export class WorkerConnectionStatusWwebjsConsume {
       code,
       worker_id: wwebjsEnvironment.wwebjsWorkerId,
       account_id: wwebjsEnvironment.wwebjsAccountId,
+      connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
     };
   }
 
@@ -477,6 +484,7 @@ export class WorkerConnectionStatusWwebjsConsume {
         from_disconnect_restart: fromDisconnectRestart,
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
+        connection_attempt_id: request.connection_attempt_id,
       })
       .then((state) => {
         this.logConnectionEvent('connection_connect_result', {

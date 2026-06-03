@@ -84,19 +84,19 @@ export function normalizeWorkerConnectionModalState(
     return 'pairing';
   }
 
-  if (code === ECodeMessage.awaitingReadQrCode && state.qrcode) {
-    return 'qrReady';
-  }
-
-  if (code === ECodeMessage.awaitingReadQrCode) {
-    return 'qrPreparing';
-  }
-
   if (
     status === EBaileysConnectionStatus.disconnected ||
     (code !== undefined && disconnectedCodes.has(code))
   ) {
     return 'disconnected';
+  }
+
+  if (state.qrcode) {
+    return 'qrReady';
+  }
+
+  if (code === ECodeMessage.awaitingReadQrCode || state.qr_pending === true) {
+    return 'qrPreparing';
   }
 
   return 'starting';

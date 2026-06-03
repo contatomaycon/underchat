@@ -138,6 +138,7 @@ export class BaileysConnectionService {
   private typeConnection: EBaileysConnectionType =
     EBaileysConnectionType.qrcode;
   private phoneConnection?: string = undefined;
+  private connectionAttemptId?: string = undefined;
 
   private connecting = false;
   private retryCount = 0;
@@ -314,6 +315,7 @@ export class BaileysConnectionService {
       attempt,
       max_attempts: this.maxRetries,
       seconds_until_next_attempt: Math.ceil(delayMs / 1000),
+      connection_attempt_id: this.connectionAttemptId,
     };
     this.publishSub(retryPayload, true);
   }
@@ -333,6 +335,7 @@ export class BaileysConnectionService {
         worker_id: WORKER,
         account_id: ACCOUNT,
         code: ECodeMessage.awaitConnection,
+        connection_attempt_id: this.connectionAttemptId,
       },
       true
     );
@@ -464,6 +467,7 @@ export class BaileysConnectionService {
       force_new: forceNew = false,
       requested_by_user: requestedByUser = false,
       from_disconnect_restart: fromDisconnectRestart = false,
+      connection_attempt_id: connectionAttemptId,
     } = input;
 
     this.logConnectionEvent('connect_requested', {
@@ -500,6 +504,7 @@ export class BaileysConnectionService {
     this.initialConnection = initialConnection;
     this.typeConnection = typeConnection;
     this.phoneConnection = phoneConnection;
+    this.connectionAttemptId = connectionAttemptId;
     this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (this.connected) {
@@ -887,6 +892,7 @@ export class BaileysConnectionService {
       attempt: this.qrGenerationCount,
       max_attempts: this.maxQrGenerations,
       worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: this.connectionAttemptId,
     };
     void this.notifyWorkerStatusSafely(payload, 'qr');
 
@@ -1701,6 +1707,7 @@ export class BaileysConnectionService {
       account_id: ACCOUNT,
       qrcode: qr,
       code: this.code,
+      connection_attempt_id: this.connectionAttemptId,
     };
     if (this.status === Status.connecting) {
       result.attempt = this.retryCount > 0 ? this.retryCount : 1;

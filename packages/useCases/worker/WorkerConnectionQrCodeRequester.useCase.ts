@@ -1,5 +1,6 @@
 import { inject, injectable } from 'tsyringe';
 import { TFunction } from 'i18next';
+import { v7 as uuidv7 } from 'uuid';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -89,12 +90,15 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_status_id: view?.status?.id,
     });
 
+    const connectionAttemptId = uuidv7();
+
     try {
       recordConnectionLifecycle({
         stage: 'connection.manager.grpc.request_start',
         decision: 'request_connection_qrcode',
         outcome: 'started',
         server_id: serverId,
+        connection_attempt_id: connectionAttemptId,
       });
       const response =
         await this.workerGrpcClientService.requestConnectionQrCode(
@@ -103,6 +107,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
             worker_id: workerId,
             status: EWorkerStatus.online,
             type: EBaileysConnectionType.qrcode,
+            connection_attempt_id: connectionAttemptId,
           },
           accountId
         );

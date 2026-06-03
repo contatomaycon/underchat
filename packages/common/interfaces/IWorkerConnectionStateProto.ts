@@ -13,4 +13,6 @@ export interface IWorkerConnectionStateProto {
   worker_status_id?: string;
   attempt?: number;
   max_attempts?: number;
+  connection_attempt_id?: string;
+  qr_pending?: boolean;
 }

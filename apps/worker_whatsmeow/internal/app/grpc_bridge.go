@@ -64,11 +64,12 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		return nil, err
 	}
 	req := StatusConnectionRequest{
-		WorkerID:        dynamicString(msg, "worker_id"),
-		Status:          dynamicString(msg, "status"),
-		Type:            dynamicString(msg, "type"),
-		PhoneConnection: dynamicString(msg, "phone_connection"),
-		RemoveSession:   dynamicBool(msg, "remove_session"),
+		WorkerID:            dynamicString(msg, "worker_id"),
+		Status:              dynamicString(msg, "status"),
+		Type:                dynamicString(msg, "type"),
+		PhoneConnection:     dynamicString(msg, "phone_connection"),
+		RemoveSession:       dynamicBool(msg, "remove_session"),
+		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
 	}
 	ctx = extractIncomingConnectionLifecycleContext(ctx, s.cfg, req, "request_connection")
 	lifecycle, _ := connectionLifecycleFromContext(ctx)
@@ -114,6 +115,9 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
 		return nil, err
 	}
+	if resp.ConnectionAttemptID == "" {
+		resp.ConnectionAttemptID = req.ConnectionAttemptID
+	}
 	recordConnectionLifecycle(ctx, s.cfg, map[string]any{
 		"stage":            "connection.whatsmeow.grpc.request_success",
 		"decision":         "request_connection",
@@ -146,6 +150,8 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "worker_status_id", state.WorkerStatusID)
 	setDynamicInt32(out, "attempt", int32(state.Attempt))
 	setDynamicInt32(out, "max_attempts", int32(state.MaxAttempts))
+	setDynamicString(out, "connection_attempt_id", state.ConnectionAttemptID)
+	setDynamicBool(out, "qr_pending", state.QRPending)
 }
 
 func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {

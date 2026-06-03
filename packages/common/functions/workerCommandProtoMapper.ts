@@ -101,6 +101,12 @@ export function protoToStatusConnectionRequest(
   if (proto.remove_session === true) {
     payload.remove_session = true;
   }
+  if (proto.connection_attempt_id) {
+    payload.connection_attempt_id = proto.connection_attempt_id;
+  }
+  if (proto.qr_pending === true) {
+    payload.qr_pending = true;
+  }
 
   return payload;
 }
@@ -119,6 +125,12 @@ export function statusConnectionRequestToProto(
   }
   if (payload.remove_session === true) {
     proto.remove_session = true;
+  }
+  if (payload.connection_attempt_id) {
+    proto.connection_attempt_id = payload.connection_attempt_id;
+  }
+  if (payload.qr_pending === true) {
+    proto.qr_pending = true;
   }
   if (accountId) {
     proto.account_id = accountId;

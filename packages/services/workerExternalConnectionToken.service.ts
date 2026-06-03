@@ -4,6 +4,9 @@ import { PasswordEncryptorService } from '@core/services/passwordEncryptor.servi
 export interface WorkerExternalConnectionTokenPayload {
   account_id: string;
   worker_id: string;
+  server_id?: string;
+  worker_type_id?: string;
+  worker_updated_at?: string;
   iat: number;
   exp: number;
 }
@@ -25,13 +28,29 @@ export class WorkerExternalConnectionTokenService {
   create(
     accountId: string,
     workerId: string,
+    snapshotOrNow:
+      | Pick<
+          WorkerExternalConnectionTokenPayload,
+          'server_id' | 'worker_type_id' | 'worker_updated_at'
+        >
+      | number = {},
     now = Date.now()
   ): WorkerExternalConnectionToken {
+    const snapshot =
+      typeof snapshotOrNow === 'number' ? undefined : snapshotOrNow;
+    const issuedAt = typeof snapshotOrNow === 'number' ? snapshotOrNow : now;
     const payload: WorkerExternalConnectionTokenPayload = {
       account_id: accountId,
       worker_id: workerId,
-      iat: now,
-      exp: now + TOKEN_TTL_MS,
+      ...(snapshot?.server_id ? { server_id: snapshot.server_id } : {}),
+      ...(snapshot?.worker_type_id
+        ? { worker_type_id: snapshot.worker_type_id }
+        : {}),
+      ...(snapshot?.worker_updated_at
+        ? { worker_updated_at: snapshot.worker_updated_at }
+        : {}),
+      iat: issuedAt,
+      exp: issuedAt + TOKEN_TTL_MS,
     };
 
     const encrypted = this.passwordEncryptorService.encrypt(

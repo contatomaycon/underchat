@@ -1,4 +1,6 @@
 import { injectable, inject } from 'tsyringe';
+import Redis from 'ioredis';
+import { v7 as uuidv7 } from 'uuid';
 import {
   WorkerContainerInspection,
   WorkerService,
@@ -58,6 +60,10 @@ import {
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
+import {
+  recordConnectionQrSummary,
+  summarizeConnectionQrState,
+} from '@core/plugins/telemetry/connectionQrSummary';
 import { WorkerLifecycleLockService } from '@core/services/workerLifecycleLock.service';
 
 interface ResolvedWorkerDataForContainer {
@@ -85,6 +91,13 @@ interface RecreateConnectionReconciliation {
   connectionState?: IBaileysConnectionState;
 }
 
+interface QrConnectionAttemptRetryContext {
+  payload: StatusConnectionWorkerRequest;
+  accountId: string;
+  workerData: ResolvedWorkerDataForContainer;
+  startedAtMs: number;
+}
+
 class WorkerCreateAttemptError extends Error {
   constructor(
     message: string,
@@ -104,11 +117,20 @@ export class WorkerCommandHandlerService {
   private readonly retryIntervalMs = 30 * 1000;
   private readonly connectionRequestRetryIntervalMs = 15_000;
   private readonly connectionRequestMinAttempts = 10;
+  private readonly qrAttemptTtlSeconds = 180;
+  private readonly qrRetryIntervalMs = 3_000;
+  private readonly qrRetryMaxAttempts = 20;
   private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
   private connectionRequestAttempts = new Map<string, number>();
   private connectionRequestPayloads = new Map<
     string,
     StatusConnectionWorkerRequest
+  >();
+  private qrConnectionRequestTimers = new Map<string, NodeJS.Timeout>();
+  private qrConnectionRequestAttempts = new Map<string, number>();
+  private qrConnectionRequestPayloads = new Map<
+    string,
+    QrConnectionAttemptRetryContext
   >();
   private readonly defaultCallAction: IResolveIncomingCallActionResponseProto =
     {
@@ -141,7 +163,9 @@ export class WorkerCommandHandlerService {
     @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
     @inject(WorkerLifecycleLockService)
-    private readonly workerLifecycleLockService: WorkerLifecycleLockService
+    private readonly workerLifecycleLockService: WorkerLifecycleLockService,
+    @inject('Redis')
+    private readonly redis: Redis
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -396,9 +420,11 @@ export class WorkerCommandHandlerService {
       worker_id: input.worker_id,
       status: EWorkerStatus.online,
       type: EBaileysConnectionType.qrcode,
+      connection_attempt_id: input.connection_attempt_id ?? uuidv7(),
     };
 
     this.stopConnectionRequestRetry(payload.worker_id);
+    this.stopQrConnectionAttemptRetry(payload.worker_id);
     return this.runWithWorkerLifecycleLock(
       payload.worker_id,
       'request_qrcode',
@@ -941,17 +967,331 @@ export class WorkerCommandHandlerService {
     });
   }
 
+  private qrAttemptCacheKey(workerId: string): string {
+    return `connection:qrcode:${workerId}:attempt`;
+  }
+
+  private ensureQrConnectionAttemptId(
+    payload: StatusConnectionWorkerRequest
+  ): string {
+    if (!payload.connection_attempt_id) {
+      payload.connection_attempt_id = uuidv7();
+    }
+
+    return payload.connection_attempt_id;
+  }
+
+  private buildQrPendingState(
+    payload: StatusConnectionWorkerRequest,
+    accountId: string,
+    options: {
+      attempt?: number;
+      maxAttempts?: number;
+    } = {}
+  ): IBaileysConnectionState {
+    return {
+      code: ECodeMessage.awaitingReadQrCode,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: payload.worker_id,
+      account_id: accountId,
+      connection_attempt_id: this.ensureQrConnectionAttemptId(payload),
+      qr_pending: true,
+      ...(options.attempt !== undefined ? { attempt: options.attempt } : {}),
+      ...(options.maxAttempts !== undefined
+        ? { max_attempts: options.maxAttempts }
+        : {}),
+    };
+  }
+
+  private normalizeQrWorkerResponse(
+    response: IBaileysConnectionState,
+    payload: StatusConnectionWorkerRequest,
+    accountId: string
+  ): IBaileysConnectionState {
+    const normalized: IBaileysConnectionState = {
+      ...response,
+      worker_id: response.worker_id || payload.worker_id,
+      account_id: response.account_id || accountId,
+      connection_attempt_id:
+        response.connection_attempt_id ??
+        this.ensureQrConnectionAttemptId(payload),
+    };
+
+    if (normalized.qrcode) {
+      normalized.qr_pending = false;
+      return normalized;
+    }
+
+    if (
+      normalized.status !== EBaileysConnectionStatus.connected &&
+      normalized.code !== ECodeMessage.connectionEstablished
+    ) {
+      normalized.qr_pending = true;
+      normalized.code = ECodeMessage.awaitingReadQrCode;
+      normalized.status = EBaileysConnectionStatus.connecting;
+    }
+
+    return normalized;
+  }
+
+  private async cacheQrAttemptState(
+    state: IBaileysConnectionState
+  ): Promise<void> {
+    await this.redis.setex(
+      this.qrAttemptCacheKey(state.worker_id),
+      this.qrAttemptTtlSeconds,
+      JSON.stringify(state)
+    );
+  }
+
+  private async cacheAndPublishQrAttemptState(
+    state: IBaileysConnectionState,
+    options: {
+      event: string;
+      workerType?: EWorkerType;
+      reason?: string;
+      error?: string;
+      recreateReason?: string;
+      timeToFirstQrMs?: number;
+      level?: 'info' | 'warn' | 'error';
+    }
+  ): Promise<void> {
+    try {
+      await this.cacheQrAttemptState(state);
+    } catch (err) {
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_cache_error',
+        ...summarizeConnectionQrState(state),
+        worker_type: options.workerType,
+        reason: 'redis_cache_failed',
+        error: getErrorMessage(err),
+        level: 'error',
+      });
+    }
+
+    recordConnectionQrSummary({
+      event: options.event,
+      ...summarizeConnectionQrState(state),
+      worker_type: options.workerType,
+      reason: options.reason,
+      error: options.error,
+      recreate_reason: options.recreateReason,
+      time_to_first_qr_ms: options.timeToFirstQrMs,
+      level: options.level,
+    });
+
+    if (state.account_id) {
+      try {
+        await this.centrifugoPublish(state);
+      } catch (err) {
+        recordConnectionQrSummary({
+          event: 'balancer_qrcode_publish_error',
+          ...summarizeConnectionQrState(state),
+          worker_type: options.workerType,
+          reason: 'centrifugo_publish_failed',
+          error: getErrorMessage(err),
+          level: 'error',
+        });
+      }
+    }
+  }
+
+  private isRetryableQrRequestError(error: unknown): boolean {
+    const message = getErrorMessage(error).toLowerCase();
+    const code =
+      error && typeof error === 'object' && 'code' in error
+        ? Number((error as { code?: unknown }).code)
+        : undefined;
+
+    return (
+      code === 4 ||
+      code === 14 ||
+      message.includes('deadline') ||
+      message.includes('deadline_exceeded') ||
+      message.includes('unavailable') ||
+      message.includes('failed to connect before the deadline') ||
+      message.includes('econnrefused') ||
+      message.includes('no connection established') ||
+      message.includes('name resolution') ||
+      message.includes('enotfound')
+    );
+  }
+
+  private startQrConnectionAttemptRetry(
+    payload: StatusConnectionWorkerRequest,
+    accountId: string,
+    workerData: ResolvedWorkerDataForContainer
+  ): void {
+    this.stopQrConnectionAttemptRetry(payload.worker_id);
+    this.qrConnectionRequestPayloads.set(payload.worker_id, {
+      payload: { ...payload },
+      accountId,
+      workerData,
+      startedAtMs: Date.now(),
+    });
+    this.qrConnectionRequestAttempts.set(payload.worker_id, 0);
+    this.scheduleNextQrConnectionAttempt(payload.worker_id);
+  }
+
+  private stopQrConnectionAttemptRetry(workerId: string): void {
+    const timer = this.qrConnectionRequestTimers.get(workerId);
+    if (timer) {
+      clearTimeout(timer);
+      this.qrConnectionRequestTimers.delete(workerId);
+    }
+    this.qrConnectionRequestPayloads.delete(workerId);
+    this.qrConnectionRequestAttempts.delete(workerId);
+  }
+
+  private scheduleNextQrConnectionAttempt(workerId: string): void {
+    const timer = setTimeout(() => {
+      void this.runQrConnectionAttempt(workerId);
+    }, this.qrRetryIntervalMs);
+    this.qrConnectionRequestTimers.set(workerId, timer);
+  }
+
+  private async runQrConnectionAttempt(workerId: string): Promise<void> {
+    const context = this.qrConnectionRequestPayloads.get(workerId);
+    if (!context) {
+      return;
+    }
+
+    const attempt = (this.qrConnectionRequestAttempts.get(workerId) ?? 0) + 1;
+    this.qrConnectionRequestAttempts.set(workerId, attempt);
+
+    if (attempt > this.qrRetryMaxAttempts) {
+      const pending = this.buildQrPendingState(
+        context.payload,
+        context.accountId,
+        {
+          attempt: this.qrRetryMaxAttempts,
+          maxAttempts: this.qrRetryMaxAttempts,
+        }
+      );
+      await this.cacheAndPublishQrAttemptState(pending, {
+        event: 'balancer_qrcode_retry_exhausted',
+        workerType: context.workerData.workerTypeId,
+        reason: 'retry_exhausted',
+        level: 'warn',
+      });
+      this.stopQrConnectionAttemptRetry(workerId);
+      return;
+    }
+
+    try {
+      await this.runWithWorkerLifecycleLock(
+        workerId,
+        'request_qrcode_retry',
+        async () => {
+          await this.ensureQrContainerReady(workerId, context.workerData);
+
+          if (context.workerData.lifecycleOperationId) {
+            const current = await this.isLifecycleOperationCurrent(
+              {
+                action: EWorkerAction.create,
+                worker_id: workerId,
+                server_id: context.workerData.serverId,
+                account_id: context.workerData.accountIdResolved,
+                worker_type_id: context.workerData.workerTypeId,
+                lifecycle_operation_id: context.workerData.lifecycleOperationId,
+              },
+              'request_qrcode_retry_before_worker_request'
+            );
+
+            if (!current) {
+              throw new Error('Worker lifecycle changed before QR retry');
+            }
+          } else if (
+            !(await this.isWorkerSnapshotCurrent(
+              workerId,
+              context.workerData.accountIdResolved,
+              context.workerData.serverId,
+              context.workerData.workerTypeId,
+              'request_qrcode_retry_before_worker_request'
+            ))
+          ) {
+            throw new Error('Worker snapshot changed before QR retry');
+          }
+
+          const response =
+            await this.workerBaileysGrpcClientService.requestConnectionQrCode(
+              workerId,
+              context.payload,
+              context.workerData.workerTypeId
+            );
+          const normalized = this.normalizeQrWorkerResponse(
+            response,
+            context.payload,
+            context.accountId
+          );
+          normalized.attempt ??= attempt;
+          normalized.max_attempts ??= this.qrRetryMaxAttempts;
+
+          await this.cacheAndPublishQrAttemptState(normalized, {
+            event: normalized.qrcode
+              ? 'balancer_qrcode_retry_success'
+              : 'balancer_qrcode_retry_pending',
+            workerType: context.workerData.workerTypeId,
+            reason: normalized.qrcode
+              ? undefined
+              : 'worker_response_without_qr',
+            timeToFirstQrMs: normalized.qrcode
+              ? Date.now() - context.startedAtMs
+              : undefined,
+            level: normalized.qrcode ? 'info' : 'warn',
+          });
+
+          if (normalized.qrcode) {
+            this.stopQrConnectionAttemptRetry(workerId);
+          }
+        }
+      );
+    } catch (err) {
+      const retryable = this.isRetryableQrRequestError(err);
+      const pending = this.buildQrPendingState(
+        context.payload,
+        context.accountId,
+        {
+          attempt,
+          maxAttempts: this.qrRetryMaxAttempts,
+        }
+      );
+      await this.cacheAndPublishQrAttemptState(pending, {
+        event: retryable
+          ? 'balancer_qrcode_retry_error_pending'
+          : 'balancer_qrcode_retry_error_stopped',
+        workerType: context.workerData.workerTypeId,
+        reason: retryable
+          ? 'retryable_worker_error'
+          : 'non_retryable_worker_error',
+        error: getErrorMessage(err),
+        level: retryable ? 'warn' : 'error',
+      });
+
+      if (!retryable) {
+        this.stopQrConnectionAttemptRetry(workerId);
+        return;
+      }
+    }
+
+    if (this.qrConnectionRequestPayloads.has(workerId)) {
+      this.scheduleNextQrConnectionAttempt(workerId);
+    }
+  }
+
   private async runConnectionQrCodeWorkflow(
     payload: StatusConnectionWorkerRequest,
     accountId?: string
   ): Promise<IBaileysConnectionState> {
     const workerId = payload.worker_id;
+    this.ensureQrConnectionAttemptId(payload);
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_workflow_start',
       decision: 'run_connection_qrcode_workflow',
       outcome: 'started',
       status: payload.status,
       connection_type: payload.type,
+      connection_attempt_id: payload.connection_attempt_id,
     });
     const workerData = await this.resolveWorkerDataForContainer(
       workerId,
@@ -1022,26 +1362,91 @@ export class WorkerCommandHandlerService {
       worker_type: workerData.workerTypeId,
       status: payload.status,
       connection_type: payload.type,
+      connection_attempt_id: payload.connection_attempt_id,
     });
-    const response =
-      await this.workerBaileysGrpcClientService.requestConnectionQrCode(
-        workerId,
+
+    let response: IBaileysConnectionState;
+    try {
+      response =
+        await this.workerBaileysGrpcClientService.requestConnectionQrCode(
+          workerId,
+          payload,
+          workerData.workerTypeId
+        );
+    } catch (err) {
+      if (!this.isRetryableQrRequestError(err)) {
+        recordConnectionQrSummary({
+          event: 'balancer_qrcode_initial_error',
+          worker_id: workerId,
+          account_id: workerData.accountIdResolved,
+          connection_attempt_id: payload.connection_attempt_id,
+          worker_type: workerData.workerTypeId,
+          status: payload.status,
+          reason: 'non_retryable_worker_error',
+          error: getErrorMessage(err),
+          level: 'error',
+        });
+        throw err;
+      }
+
+      const pending = this.buildQrPendingState(
         payload,
-        workerData.workerTypeId
+        workerData.accountIdResolved
       );
+      await this.cacheAndPublishQrAttemptState(pending, {
+        event: 'balancer_qrcode_initial_error_pending',
+        workerType: workerData.workerTypeId,
+        reason: 'retryable_worker_error',
+        error: getErrorMessage(err),
+        level: 'warn',
+      });
+      this.startQrConnectionAttemptRetry(
+        payload,
+        workerData.accountIdResolved,
+        workerData
+      );
+      return pending;
+    }
+
+    const normalized = this.normalizeQrWorkerResponse(
+      response,
+      payload,
+      workerData.accountIdResolved
+    );
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_new_worker_success',
       decision: 'request_worker_qrcode',
       outcome: 'success',
       worker_type: workerData.workerTypeId,
-      status: response.status,
-      code: response.code,
-      qrcode: response.qrcode,
-      pairing_code: response.pairing_code,
-      has_qr: Boolean(response.qrcode),
-      has_pairing_code: Boolean(response.pairing_code),
+      status: normalized.status,
+      code: normalized.code,
+      qrcode: normalized.qrcode,
+      pairing_code: normalized.pairing_code,
+      has_qr: Boolean(normalized.qrcode),
+      has_pairing_code: Boolean(normalized.pairing_code),
+      qr_pending: normalized.qr_pending === true,
+      connection_attempt_id: normalized.connection_attempt_id,
     });
-    return response;
+
+    await this.cacheAndPublishQrAttemptState(normalized, {
+      event: normalized.qrcode
+        ? 'balancer_qrcode_initial_success'
+        : 'balancer_qrcode_initial_pending',
+      workerType: workerData.workerTypeId,
+      reason: normalized.qrcode ? undefined : 'worker_response_without_qr',
+      timeToFirstQrMs: normalized.qrcode ? 0 : undefined,
+      level: normalized.qrcode ? 'info' : 'warn',
+    });
+
+    if (!normalized.qrcode && normalized.qr_pending === true) {
+      this.startQrConnectionAttemptRetry(
+        payload,
+        workerData.accountIdResolved,
+        workerData
+      );
+    }
+
+    return normalized;
   }
 
   private async ensureQrContainerReady(
@@ -1144,6 +1549,33 @@ export class WorkerCommandHandlerService {
       await this.recordContainerDiagnosticsSafely(workerId, recreateReason);
     }
 
+    if (
+      inspection.exists &&
+      this.shouldResetQrVolumeForRecreateReason(recreateReason, workerData)
+    ) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.qrcode_container_volume_reset',
+        decision: 'remove_incompatible_worker_volume',
+        outcome: 'started',
+        reason: recreateReason,
+        recreate_reason: recreateReason,
+        worker_type: workerData.workerTypeId,
+        worker_status_id: workerData.workerStatusId,
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_container_volume_reset',
+        worker_id: workerId,
+        account_id: workerData.accountIdResolved,
+        worker_type: workerData.workerTypeId,
+        recreate_reason: recreateReason,
+        reason: 'incompatible_container_for_qr',
+        level: 'warn',
+      });
+      await this.workerService.cleanupContainerWorker(workerId, true);
+    }
+
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_container_recreate',
       decision: 'create_worker_with_payload',
@@ -1174,6 +1606,21 @@ export class WorkerCommandHandlerService {
       worker_status_id: workerData.workerStatusId,
       ...this.lifecycleFieldsFromInspection(createdInspection),
     });
+  }
+
+  private shouldResetQrVolumeForRecreateReason(
+    recreateReason: string,
+    workerData: ResolvedWorkerDataForContainer
+  ): boolean {
+    if (workerData.workerStatusId === EWorkerStatus.online) {
+      return false;
+    }
+
+    return [
+      'image_mismatch',
+      'worker_type_mismatch',
+      'worker_grpc_port_mismatch',
+    ].includes(recreateReason);
   }
 
   private async waitForExistingQrContainerReady(

@@ -27,6 +27,10 @@ import {
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
+import {
+  recordConnectionQrSummary,
+  summarizeConnectionQrState,
+} from '@core/plugins/telemetry/connectionQrSummary';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -223,11 +227,24 @@ export class WorkerGrpcClientService {
                 deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
                 error: err.message,
               });
+              recordConnectionQrSummary({
+                event: 'manager_balancer_qrcode_grpc_error',
+                worker_id: payload.worker_id,
+                account_id: accountId,
+                connection_attempt_id: payload.connection_attempt_id,
+                grpc_address: address,
+                server_id: serverId,
+                status: payload.status,
+                reason: 'grpc_error',
+                error: err.message,
+                level: 'error',
+              });
               reject(err);
               return;
             }
 
             const state = protoToConnectionState(response ?? {});
+            state.connection_attempt_id ??= payload.connection_attempt_id;
             recordConnectionLifecycle({
               stage: 'connection.manager.worker_command_grpc.qrcode_success',
               decision: 'grpc_request_connection_qrcode',
@@ -241,6 +258,15 @@ export class WorkerGrpcClientService {
               pairing_code: state.pairing_code,
               has_qr: Boolean(state.qrcode),
               has_pairing_code: Boolean(state.pairing_code),
+            });
+            recordConnectionQrSummary({
+              event: state.qrcode
+                ? 'manager_balancer_qrcode_grpc_success'
+                : 'manager_balancer_qrcode_grpc_no_qr',
+              ...summarizeConnectionQrState(state),
+              grpc_address: address,
+              server_id: serverId,
+              level: state.qrcode ? 'info' : 'warn',
             });
             resolve(state);
           }

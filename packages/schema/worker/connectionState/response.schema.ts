@@ -24,6 +24,8 @@ export const workerConnectionStateResponseSchema = Type.Object({
   ),
   attempt: Type.Optional(Type.Number()),
   max_attempts: Type.Optional(Type.Number()),
+  connection_attempt_id: Type.Optional(Type.String()),
+  qr_pending: Type.Optional(Type.Boolean()),
 });
 
 export type WorkerConnectionStateResponse = Static<

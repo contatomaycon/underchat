@@ -17,4 +17,6 @@ export interface IBaileysConnectionState {
   worker_status_id?: EWorkerStatus;
   attempt?: number;
   max_attempts?: number;
+  connection_attempt_id?: string;
+  qr_pending?: boolean;
 }

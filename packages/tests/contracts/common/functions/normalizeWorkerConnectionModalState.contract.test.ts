@@ -17,6 +17,14 @@ describe('normalizeWorkerConnectionModalState', () => {
     expect(
       normalizeWorkerConnectionModalState({
         status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitConnection,
+        qr_pending: true,
+      })
+    ).toBe('qrPreparing');
+
+    expect(
+      normalizeWorkerConnectionModalState({
+        status: EBaileysConnectionStatus.connecting,
         code: ECodeMessage.awaitingReadQrCode,
       })
     ).toBe('qrPreparing');

@@ -5,4 +5,6 @@ export interface IChangeConnectionStatusRequestProto {
   type?: string;
   phone_connection?: string;
   remove_session?: boolean;
+  connection_attempt_id?: string;
+  qr_pending?: boolean;
 }

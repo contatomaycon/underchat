@@ -5,6 +5,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import type { ContainerHealthResult } from '@core/services/containerHealth.service';
 import { WorkerCommandHandlerService } from '@core/services/workerCommandHandler.service';
 import type {
@@ -200,9 +201,12 @@ function buildHandler(
   const workerBaileysGrpcClientService = {
     requestConnection: jest.fn(async () => buildConnectedState()),
     waitForReady: jest.fn(async () => 'worker-1:50053'),
-    requestConnectionQrCode: jest.fn(async () => ({
-      status: 'connecting',
-      code: 202,
+    requestConnectionQrCode: jest.fn<
+      Promise<IBaileysConnectionState>,
+      [string, unknown, unknown?]
+    >(async () => ({
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
       worker_id: 'worker-1',
       account_id: 'account-1',
       qrcode: 'data:image/png;base64,qr',
@@ -234,6 +238,9 @@ function buildHandler(
       ) => callback()
     ),
   };
+  const redis = {
+    setex: jest.fn(async () => 'OK'),
+  };
 
   const handler = new WorkerCommandHandlerService(
     workerService as never,
@@ -247,7 +254,8 @@ function buildHandler(
     passwordEncryptorService as never,
     s3BackupUploadService as never,
     workerConfigService as never,
-    workerLifecycleLockService as never
+    workerLifecycleLockService as never,
+    redis as never
   );
 
   return {
@@ -258,6 +266,7 @@ function buildHandler(
     kafkaBaileysQueueService,
     workerBaileysGrpcClientService,
     workerLifecycleLockService,
+    redis,
   };
 }
 
@@ -435,6 +444,8 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_id: 'worker-1',
         account_id: 'account-1',
         qrcode: 'data:image/png;base64,qr',
+        connection_attempt_id: 'uuid-v7',
+        qr_pending: false,
       })
     );
     expect(
@@ -445,6 +456,7 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_id: 'worker-1',
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
+        connection_attempt_id: 'uuid-v7',
       }),
       EWorkerType.wwebjs
     );
@@ -462,7 +474,21 @@ describe('WorkerCommandHandlerService connection', () => {
       deps.workerBaileysGrpcClientService.requestConnectionQrCode.mock
         .invocationCallOrder[0]
     );
-    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(deps.redis.setex).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:attempt',
+      expect.any(Number),
+      expect.stringContaining('"connection_attempt_id":"uuid-v7"')
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        qrcode: 'data:image/png;base64,qr',
+        connection_attempt_id: 'uuid-v7',
+        qr_pending: false,
+      })
+    );
   });
 
   it('recreates an existing unhealthy container before requesting QR', async () => {
@@ -617,6 +643,121 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(
       deps.workerBaileysGrpcClientService.requestConnection
     ).not.toHaveBeenCalled();
+  });
+
+  it('returns qr_pending and schedules retry when the worker QR request hits a deadline', async () => {
+    jest.useFakeTimers();
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
+      Object.assign(new Error('4 DEADLINE_EXCEEDED'), { code: 4 })
+    );
+
+    try {
+      const response = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
+
+      expect(response).toEqual(
+        expect.objectContaining({
+          worker_id: 'worker-1',
+          account_id: 'account-1',
+          code: ECodeMessage.awaitingReadQrCode,
+          status: EBaileysConnectionStatus.connecting,
+          connection_attempt_id: 'uuid-v7',
+          qr_pending: true,
+        })
+      );
+      expect(response.qrcode).toBeUndefined();
+      expect(deps.redis.setex).toHaveBeenCalledWith(
+        'connection:qrcode:worker-1:attempt',
+        expect.any(Number),
+        expect.stringContaining('"qr_pending":true')
+      );
+      expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+        'worker:account#account-1',
+        expect.objectContaining({
+          worker_id: 'worker-1',
+          account_id: 'account-1',
+          connection_attempt_id: 'uuid-v7',
+          qr_pending: true,
+        })
+      );
+      expect(jest.getTimerCount()).toBe(1);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('publishes and caches QR with the same attempt when it arrives after the HTTP response', async () => {
+    jest.useFakeTimers();
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.requestConnectionQrCode
+      .mockResolvedValueOnce({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitConnection,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+      })
+      .mockResolvedValueOnce({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        qrcode: 'data:image/png;base64,qr-async',
+      });
+
+    try {
+      const response = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
+
+      expect(response).toEqual(
+        expect.objectContaining({
+          connection_attempt_id: 'uuid-v7',
+          qr_pending: true,
+        })
+      );
+      expect(response.qrcode).toBeUndefined();
+
+      await (
+        deps.handler as unknown as {
+          runQrConnectionAttempt(workerId: string): Promise<void>;
+        }
+      ).runQrConnectionAttempt('worker-1');
+
+      expect(
+        deps.workerBaileysGrpcClientService.requestConnectionQrCode
+      ).toHaveBeenCalledTimes(2);
+      expect(deps.redis.setex).toHaveBeenLastCalledWith(
+        'connection:qrcode:worker-1:attempt',
+        expect.any(Number),
+        expect.stringContaining('"qrcode":"data:image/png;base64,qr-async"')
+      );
+      expect(deps.centrifugoService.publishSub).toHaveBeenLastCalledWith(
+        'worker:account#account-1',
+        expect.objectContaining({
+          worker_id: 'worker-1',
+          account_id: 'account-1',
+          qrcode: 'data:image/png;base64,qr-async',
+          connection_attempt_id: 'uuid-v7',
+          qr_pending: false,
+        })
+      );
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   });
 
   it('marks created workers available only after stable health and gRPC readiness', async () => {

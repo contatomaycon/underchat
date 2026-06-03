@@ -23,6 +23,7 @@ import {
   normalizeWorkerConnectionModalState,
   type WorkerConnectionModalState,
 } from '@core/common/functions/normalizeWorkerConnectionModalState';
+import { reduceWorkerConnectionState } from '@core/common/functions/reduceWorkerConnectionState';
 
 const channelStore = useChannelsStore();
 
@@ -52,6 +53,8 @@ const statusConnection = shallowRef<EBaileysConnectionStatus>(
 );
 const statusCode = shallowRef<ECodeMessage>(ECodeMessage.awaitConnection);
 const qrcode = shallowRef<string | undefined>();
+const connectionAttemptId = shallowRef<string | undefined>();
+const qrPending = shallowRef(false);
 const qrAttempt = shallowRef(0);
 const qrMaxAttempts = shallowRef(0);
 const phoneNumber = shallowRef<string | null>(null);
@@ -75,6 +78,8 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   worker_id: channelId.value ?? '',
   account_id: accountId.value ?? '',
   qrcode: qrcode.value,
+  connection_attempt_id: connectionAttemptId.value,
+  qr_pending: qrPending.value,
   attempt: qrAttempt.value || undefined,
   max_attempts: qrMaxAttempts.value || undefined,
   phone: phoneNumber.value ?? undefined,
@@ -344,6 +349,8 @@ function prepareConnectionStart() {
   statusConnection.value = EBaileysConnectionStatus.connecting;
   statusCode.value = ECodeMessage.awaitConnection;
   qrcode.value = undefined;
+  connectionAttemptId.value = undefined;
+  qrPending.value = true;
   resetQrAttempts();
   disconnectedByUser.value = false;
   phoneNumber.value = null;
@@ -364,6 +371,8 @@ function prepareInitialModalState() {
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
   qrcode.value = undefined;
+  connectionAttemptId.value = undefined;
+  qrPending.value = false;
   resetQrAttempts();
   phoneNumber.value = props.initialPhone
     ? formatPhoneBR(props.initialPhone)
@@ -398,6 +407,8 @@ async function recreateChannelWithFullCleanup() {
   statusCode.value = ECodeMessage.logoutInProgress;
   disconnectedByUser.value = true;
   qrcode.value = undefined;
+  qrPending.value = false;
+  connectionAttemptId.value = undefined;
   resetQrAttempts();
   resetPairingCodes();
   clearNextAttemptCountdown();
@@ -438,51 +449,6 @@ function scheduleConnectedState(data: IBaileysConnectionState) {
   }, remaining);
 }
 
-function shouldIgnoreIncomingState(data: IBaileysConnectionState): boolean {
-  const incomingCode = data.code as ECodeMessage | undefined;
-  const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
-  const incomingQrAttemptsExceeded = hasExceededQrAttempts(data);
-  const isIncomingConnected =
-    incomingStatus === EBaileysConnectionStatus.connected ||
-    incomingCode === ECodeMessage.connectionEstablished;
-  const isStaleStartupEvent =
-    incomingCode === ECodeMessage.awaitConnection && !data.qrcode;
-  const isCurrentUserActionState =
-    statusCode.value === ECodeMessage.awaitingReadQrCode ||
-    statusCode.value === ECodeMessage.awaitingPairingCode ||
-    statusCode.value === ECodeMessage.pairingInProgress ||
-    statusCode.value === ECodeMessage.newLoginAttempt;
-
-  if (
-    statusCode.value === ECodeMessage.phoneNotAvailable &&
-    !isIncomingConnected
-  ) {
-    return true;
-  }
-
-  if (isStaleStartupEvent && qrcode.value && !incomingQrAttemptsExceeded) {
-    return true;
-  }
-
-  if (
-    isStaleStartupEvent &&
-    isCurrentUserActionState &&
-    !incomingQrAttemptsExceeded
-  ) {
-    return true;
-  }
-
-  if (
-    isStaleStartupEvent &&
-    statusConnection.value === EBaileysConnectionStatus.connected &&
-    !incomingQrAttemptsExceeded
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
 function applyConnectedState(data: IBaileysConnectionState) {
   isResetting.value = false;
   statusConnection.value = EBaileysConnectionStatus.connected;
@@ -490,6 +456,9 @@ function applyConnectedState(data: IBaileysConnectionState) {
   phoneNumber.value = data.phone ? formatPhoneBR(data.phone) : null;
   disconnectedByUser.value = false;
   qrcode.value = undefined;
+  qrPending.value = false;
+  connectionAttemptId.value =
+    data.connection_attempt_id ?? connectionAttemptId.value;
   resetQrAttempts();
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
@@ -498,88 +467,36 @@ function applyConnectedState(data: IBaileysConnectionState) {
   clearConnectedStateDelay();
 }
 
-function applyDirectConnectionResponse(data: IBaileysConnectionState) {
-  if (!channelId.value || data.worker_id !== channelId.value) {
-    return;
-  }
-
-  applyQrAttempts(data);
-
+function shouldIgnorePhoneUnavailableState(
+  data: IBaileysConnectionState
+): boolean {
   const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
   const incomingCode = data.code as ECodeMessage | undefined;
-  const isConnectedEvent =
+  const isIncomingConnected =
     incomingStatus === EBaileysConnectionStatus.connected ||
     incomingCode === ECodeMessage.connectionEstablished;
 
-  if (isConnectedEvent) {
-    scheduleConnectedState(data);
-    return;
-  }
-
-  clearConnectedStateDelay();
-
-  if (data.disconnected_user !== undefined) {
-    disconnectedByUser.value = data.disconnected_user;
-  }
-
-  if (hasExceededQrAttempts(data)) {
-    qrcode.value = undefined;
-  } else if (data.qrcode) {
-    qrcode.value = data.qrcode;
-  } else if (
-    incomingCode === ECodeMessage.awaitConnection ||
-    incomingCode === ECodeMessage.logoutInProgress ||
-    incomingCode === ECodeMessage.pairingInProgress ||
-    incomingCode === ECodeMessage.newLoginAttempt ||
-    incomingStatus === EBaileysConnectionStatus.disconnected
-  ) {
-    qrcode.value = undefined;
-  }
-
-  if (incomingStatus) {
-    statusConnection.value = incomingStatus;
-  }
-
-  if (incomingCode && incomingCode !== ECodeMessage.info) {
-    statusCode.value = incomingCode;
-  }
-
-  if (data.phone) {
-    phoneNumber.value = formatPhoneBR(data.phone);
-  }
-
-  if (data.pairing_code) {
-    const [primary, secondary] = splitCode(data.pairing_code);
-    pairingCodePrimary.value = primary;
-    pairingCodeSecondary.value = secondary;
-  }
+  return (
+    statusCode.value === ECodeMessage.phoneNotAvailable && !isIncomingConnected
+  );
 }
 
-function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+function applyReducedConnectionState(data: IBaileysConnectionState) {
   if (!channelId.value || data.worker_id !== channelId.value) {
     return;
   }
 
-  if (data.worker_status_id === EWorkerStatus.recreating) {
-    isResetting.value = true;
-    statusConnection.value = EBaileysConnectionStatus.connecting;
-    statusCode.value = ECodeMessage.awaitConnection;
-    qrcode.value = undefined;
-    pairingStartedAt.value = null;
-    resetPairingCodes();
-    clearConnectedStateDelay();
+  if (shouldIgnorePhoneUnavailableState(data)) {
     return;
   }
 
-  if (data.worker_status_id) {
-    isResetting.value = false;
-  }
-
-  if (shouldIgnoreIncomingState(data)) {
+  const reduced = reduceWorkerConnectionState(connectionState.value, data);
+  if (reduced.ignored) {
     return;
   }
 
-  applyQrAttempts(data);
+  const next = reduced.state;
+  applyQrAttempts(next);
 
   const incomingStatus = data.status as EBaileysConnectionStatus | undefined;
   const incomingCode = data.code as ECodeMessage | undefined;
@@ -601,19 +518,22 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     pairingStartedAt.value = Date.now();
   }
 
-  if (data.disconnected_user !== undefined) {
-    disconnectedByUser.value = data.disconnected_user;
+  if (next.connection_attempt_id) {
+    connectionAttemptId.value = next.connection_attempt_id;
   }
 
-  if (hasExceededQrAttempts(data)) {
+  qrPending.value = next.qr_pending === true;
+
+  if (next.disconnected_user !== undefined) {
+    disconnectedByUser.value = next.disconnected_user;
+  }
+
+  if (hasExceededQrAttempts(next)) {
     qrcode.value = undefined;
-  } else if (
-    incomingCode === ECodeMessage.awaitConnection ||
-    incomingCode === ECodeMessage.logoutInProgress ||
-    incomingCode === ECodeMessage.pairingInProgress ||
-    incomingCode === ECodeMessage.newLoginAttempt ||
-    incomingStatus === EBaileysConnectionStatus.disconnected
-  ) {
+    qrPending.value = false;
+  } else if (next.qrcode) {
+    qrcode.value = next.qrcode;
+  } else {
     qrcode.value = undefined;
   }
 
@@ -631,20 +551,49 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     statusCode.value = incomingCode;
   }
 
-  if (data.phone) {
-    phoneNumber.value = formatPhoneBR(data.phone);
+  if (next.phone) {
+    phoneNumber.value = formatPhoneBR(next.phone);
   }
 
-  if (data.pairing_code) {
-    const [primary, secondary] = splitCode(data.pairing_code);
+  if (next.pairing_code) {
+    const [primary, secondary] = splitCode(next.pairing_code);
     pairingCodePrimary.value = primary;
     pairingCodeSecondary.value = secondary;
   }
 
-  if (data.seconds_until_next_attempt) {
-    secondsNextAttempt.value = data.seconds_until_next_attempt;
+  if (next.seconds_until_next_attempt) {
+    secondsNextAttempt.value = next.seconds_until_next_attempt;
     startNextAttemptCountdown();
   }
+}
+
+function applyDirectConnectionResponse(data: IBaileysConnectionState) {
+  applyReducedConnectionState(data);
+}
+
+function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+  if (!channelId.value || data.worker_id !== channelId.value) {
+    return;
+  }
+
+  if (data.worker_status_id === EWorkerStatus.recreating) {
+    isResetting.value = true;
+    statusConnection.value = EBaileysConnectionStatus.connecting;
+    statusCode.value = ECodeMessage.awaitConnection;
+    qrcode.value = undefined;
+    qrPending.value = false;
+    connectionAttemptId.value = data.connection_attempt_id;
+    pairingStartedAt.value = null;
+    resetPairingCodes();
+    clearConnectedStateDelay();
+    return;
+  }
+
+  if (data.worker_status_id) {
+    isResetting.value = false;
+  }
+
+  applyReducedConnectionState(data);
 }
 
 onMounted(async () => {

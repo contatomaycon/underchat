@@ -8,6 +8,8 @@ export const statusConnectionWorkerRequestSchema = Type.Object({
   type: Type.String({ enum: [EBaileysConnectionType.qrcode] }),
   phone_connection: Type.Optional(Type.String()),
   remove_session: Type.Optional(Type.Boolean()),
+  connection_attempt_id: Type.Optional(Type.String()),
+  qr_pending: Type.Optional(Type.Boolean()),
 });
 
 export type StatusConnectionWorkerRequest = Static<
