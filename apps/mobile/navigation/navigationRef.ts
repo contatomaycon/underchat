@@ -33,6 +33,19 @@ function isRootTabRouteName(value: string): value is keyof RootTabParamList {
   return ROOT_TAB_ROUTES.includes(value as keyof RootTabParamList);
 }
 
+function normalizeIdentifier(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
+}
+
 function resolvePreferredTabRoute(
   status: ListChatsResult['status']
 ): keyof RootTabParamList {
@@ -218,4 +231,39 @@ export function navigateToInternalChatRoom(
   } catch {
     return false;
   }
+}
+
+export function isChatRoomFocused(chatId: string): boolean {
+  if (!navigationRef.isReady()) {
+    return false;
+  }
+
+  const route = navigationRef.getCurrentRoute();
+  if (route?.name !== 'ChatRoom') {
+    return false;
+  }
+
+  const params = route.params as { chat?: { chat_id?: unknown } } | undefined;
+  return (
+    normalizeIdentifier(params?.chat?.chat_id) === normalizeIdentifier(chatId)
+  );
+}
+
+export function isInternalChatRoomFocused(conversationId: string): boolean {
+  if (!navigationRef.isReady()) {
+    return false;
+  }
+
+  const route = navigationRef.getCurrentRoute();
+  if (route?.name !== 'InternalChatRoom') {
+    return false;
+  }
+
+  const params = route.params as
+    | { conversation?: { conversation_id?: unknown } }
+    | undefined;
+  return (
+    normalizeIdentifier(params?.conversation?.conversation_id) ===
+    normalizeIdentifier(conversationId)
+  );
 }

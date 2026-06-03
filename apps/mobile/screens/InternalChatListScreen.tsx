@@ -353,13 +353,6 @@ function InternalChatNotificationSettingsSheet({
             childOptionsDisabled
           )}
           {renderOption(
-            'notifications_internal_chat_browser',
-            'Navegador',
-            'Usado na versão web quando a aba está em segundo plano.',
-            'globe-outline',
-            childOptionsDisabled
-          )}
-          {renderOption(
             'notifications_internal_chat_push',
             'Push em segundo plano',
             'Receber notificação quando o app estiver fechado.',

@@ -499,13 +499,6 @@ function ChatNotificationSettingsSheet({
             childOptionsDisabled
           )}
           {renderOption(
-            'notifications_browser',
-            'Navegador',
-            'Usado na versão web quando a aba está em segundo plano.',
-            'globe-outline',
-            childOptionsDisabled
-          )}
-          {renderOption(
             'notifications_push',
             'Push em segundo plano',
             'Receber notificação quando o app estiver fechado.',

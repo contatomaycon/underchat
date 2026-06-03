@@ -74,6 +74,7 @@ import type {
 } from './types/attendanceHours';
 import { AttendanceGuardLockModal } from './components/AttendanceGuardLockModal';
 import { BatteryOptimizationModal } from './components/BatteryOptimizationModal';
+import { InAppNotificationHost } from './components/InAppNotificationHost';
 import { isIgnoringBatteryOptimizations } from './utils/batteryOptimization';
 import { readChatUserStatus } from './utils/chatUserStatus';
 import {
@@ -83,6 +84,7 @@ import {
 } from './utils/currentUserPresence';
 import type { ChatUserStatus } from './api/chatApi';
 import { unlockBiometricSession } from './utils/biometricAuth';
+import { useForegroundSocketNotifications } from './services/foregroundSocketNotifications';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -194,6 +196,18 @@ export default function App() {
   const reconnectTargetStatusRef = useRef<PresenceStatus>('online');
   const forcedOfflineBySocketRef = useRef(false);
   const hasSeenSocketConnectedRef = useRef(false);
+
+  const getCurrentAppState = useCallback((): AppStateStatus => {
+    return appStateRef.current;
+  }, []);
+
+  useForegroundSocketNotifications({
+    authenticated,
+    navigationReady,
+    canViewChatTabs,
+    canViewInternalChatTab,
+    getAppState: getCurrentAppState,
+  });
 
   const resetAuthAccessState = useCallback((): void => {
     setAuthenticated(false);
@@ -1166,6 +1180,7 @@ export default function App() {
                 onReady={() => setNavigationReady(true)}
               >
                 <RootNavigator />
+                <InAppNotificationHost />
                 <AttendanceGuardLockModal
                   visible={canViewChatTabs && attendanceLocked}
                   status={attendanceGuardStatus}
