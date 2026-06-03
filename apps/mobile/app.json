@@ -2,7 +2,7 @@
   "expo": {
     "name": "Underchat",
     "slug": "underchat",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "6",
+      "buildNumber": "7",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
@@ -24,7 +24,7 @@
       "bundleIdentifier": "com.underchat.mobile"
     },
     "android": {
-      "versionCode": 6,
+      "versionCode": 7,
       "package": "com.underchat.mobile",
       "googleServicesFile": "./google-services.json",
       "icon": "./assets/android-icon-safe.png",

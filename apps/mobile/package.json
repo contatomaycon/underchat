@@ -1,6 +1,6 @@
 {
   "name": "mobile",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.ts",
   "scripts": {
     "dev": "ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk} PATH=${ANDROID_HOME}/platform-tools:$PATH EXPO_UNSTABLE_BONJOUR=0 expo start --localhost",
