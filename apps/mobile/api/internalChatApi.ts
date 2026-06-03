@@ -8,6 +8,7 @@ import {
   apiPostForm,
   apiPostFormWithMessage,
   apiPut,
+  type ApiFormRequestOptions,
 } from './client';
 import type {
   InternalChatActivityState,
@@ -287,7 +288,8 @@ export async function createInternalChatMessage(
 
 export async function createInternalChatMessageWithFormData(
   conversationId: string,
-  formData: FormData
+  formData: FormData,
+  options?: ApiFormRequestOptions
 ): Promise<{
   ok: boolean;
   message: InternalChatMessage | null;
@@ -298,7 +300,8 @@ export async function createInternalChatMessageWithFormData(
   }
   const res = await apiPostFormWithMessage<InternalChatMessage | null>(
     `/internal-chat/${conversationId}/messages`,
-    formData
+    formData,
+    options
   );
   if (!res) {
     return { ok: false, message: null, error: null };

@@ -31,7 +31,9 @@ function buildConversation(
   };
 }
 
-function buildMessage(overrides: Partial<InternalChatMessage> = {}): InternalChatMessage {
+function buildMessage(
+  overrides: Partial<InternalChatMessage> = {}
+): InternalChatMessage {
   return {
     message_id: 'message-1',
     conversation_id: 'conversation-1',
@@ -167,9 +169,9 @@ describe('internalChatReducer', () => {
       },
     });
 
-    expect(
-      state.remoteActivities['conversation-1:user-2']?.state
-    ).toBe('typing');
+    expect(state.remoteActivities['conversation-1:user-2']?.state).toBe(
+      'typing'
+    );
 
     state = internalChatReducer(state, {
       type: 'clearRemoteActivity',
@@ -178,5 +180,77 @@ describe('internalChatReducer', () => {
     });
 
     expect(state.remoteActivities['conversation-1:user-2']).toBeUndefined();
+  });
+
+  it('stores, updates, marks error, and clears upload state by hash', () => {
+    let state = createInitialInternalChatState();
+
+    state = internalChatReducer(state, {
+      type: 'setUploadState',
+      hash: 'hash-1',
+      uploadState: { status: 'uploading', progress: 0 },
+    });
+    expect(state.uploadStates['hash-1']).toEqual({
+      status: 'uploading',
+      progress: 0,
+    });
+
+    state = internalChatReducer(state, {
+      type: 'setUploadState',
+      hash: 'hash-1',
+      uploadState: { status: 'uploading', progress: 42 },
+    });
+    expect(state.uploadStates['hash-1']?.progress).toBe(42);
+
+    state = internalChatReducer(state, {
+      type: 'setUploadState',
+      hash: 'hash-1',
+      uploadState: {
+        status: 'error',
+        progress: 42,
+        errorMessage: 'Falha ao enviar.',
+      },
+    });
+    expect(state.uploadStates['hash-1']).toEqual({
+      status: 'error',
+      progress: 42,
+      errorMessage: 'Falha ao enviar.',
+    });
+
+    state = internalChatReducer(state, {
+      type: 'clearUploadState',
+      hash: 'hash-1',
+    });
+    expect(state.uploadStates['hash-1']).toBeUndefined();
+  });
+
+  it('keeps upload state for local placeholders and clears it for remote hash matches', () => {
+    let state = createInitialInternalChatState();
+    state = internalChatReducer(state, {
+      type: 'setUploadState',
+      hash: 'hash-1',
+      uploadState: { status: 'uploading', progress: 68 },
+    });
+
+    state = internalChatReducer(state, {
+      type: 'upsertMessage',
+      message: buildMessage({
+        message_id: 'local-hash-1',
+        hash: 'hash-1',
+        local_status: 'sending',
+      }),
+      currentUserId: 'user-2',
+    });
+    expect(state.uploadStates['hash-1']?.progress).toBe(68);
+
+    state = internalChatReducer(state, {
+      type: 'upsertMessage',
+      message: buildMessage({
+        message_id: 'remote-message-1',
+        hash: 'hash-1',
+      }),
+      currentUserId: 'user-2',
+    });
+    expect(state.uploadStates['hash-1']).toBeUndefined();
   });
 });

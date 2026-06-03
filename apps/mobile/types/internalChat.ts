@@ -1,5 +1,6 @@
 import type { MessageContent, MessageContentLinkPreview } from './chat';
 import type { ContactListFilters } from './contact';
+import type { UploadProgressState } from './uploadProgress';
 
 export const INTERNAL_CHAT_CONVERSATION_TYPE = {
   direct: 'direct',
@@ -118,6 +119,8 @@ export interface InternalChatMessage {
   local_status?: 'sending' | 'sent' | 'error';
   local_error?: string | null;
 }
+
+export type InternalChatUploadState = UploadProgressState;
 
 export interface InternalChatRemoteActivity {
   conversation_id: string;

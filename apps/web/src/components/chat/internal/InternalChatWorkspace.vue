@@ -23,6 +23,7 @@ import AppContactPicker from '@/components/chat/AppContactPicker.vue';
 import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import UploadProgressBadge from '@/components/chat/UploadProgressBadge.vue';
 import InternalChatSearchSidebarContent from '@/components/chat/internal/InternalChatSearchSidebarContent.vue';
 import InternalChatNotificationSettingsDialog from '@/components/chat/internal/InternalChatNotificationSettingsDialog.vue';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
@@ -1480,6 +1481,29 @@ const resolveMessageUploadProgress = (message: InternalMessage): number => {
 
 const hasMessageUploadError = (message: InternalMessage): boolean => {
   return resolveMessageLocalState(message)?.status === 'error';
+};
+
+const isUploadMediaMessage = (message: InternalMessage): boolean => {
+  const type = message.content?.type;
+  return (
+    type === EMessageType.image ||
+    type === EMessageType.video ||
+    type === EMessageType.video_note ||
+    type === EMessageType.audio ||
+    type === EMessageType.document
+  );
+};
+
+const shouldShowUploadProgressBadge = (message: InternalMessage): boolean => {
+  return Boolean(
+    resolveMessageLocalState(message) && isUploadMediaMessage(message)
+  );
+};
+
+const resolveMessageUploadStatus = (
+  message: InternalMessage
+): 'uploading' | 'error' => {
+  return resolveMessageLocalState(message)?.status ?? 'uploading';
 };
 
 const resolveMessageContacts = (message: InternalMessage) => {
@@ -5746,7 +5770,6 @@ onBeforeUnmount(async () => {
   endGroupPhotoCropResize();
   clearGroupPhoto();
   document.removeEventListener('click', onReactionOutsideClick);
-
 });
 </script>
 
@@ -5765,298 +5788,301 @@ onBeforeUnmount(async () => {
     >
       <div class="internal-chat-sidebar-content">
         <div class="internal-chat-sidebar-header pa-3">
-        <div class="internal-chat-mode-banner">
-          <div class="internal-chat-mode-chip">
-            <VIcon size="18">tabler-users-group</VIcon>
-            <span>{{ t('internal_chat_title') }}</span>
+          <div class="internal-chat-mode-banner">
+            <div class="internal-chat-mode-chip">
+              <VIcon size="18">tabler-users-group</VIcon>
+              <span>{{ t('internal_chat_title') }}</span>
+            </div>
+
+            <div class="internal-chat-mode-actions">
+              <IconBtn
+                :color="isInternalNotificationEnabled ? 'primary' : 'default'"
+                class="internal-chat-notification-btn"
+                :aria-label="t('internal_chat_notification_title')"
+                @click="openNotificationSettingsDialog"
+              >
+                <VIcon size="20">
+                  {{
+                    isInternalNotificationEnabled
+                      ? 'tabler-bell'
+                      : 'tabler-bell-off'
+                  }}
+                </VIcon>
+                <VTooltip activator="parent" location="bottom">
+                  {{ t('internal_chat_notification_title') }}
+                </VTooltip>
+              </IconBtn>
+
+              <IconBtn
+                v-if="$vuetify.display.smAndDown"
+                class="internal-chat-close-sidebar-btn"
+                :aria-label="t('close')"
+                @click="isLeftSidebarOpen = false"
+              >
+                <VIcon size="20">tabler-x</VIcon>
+                <VTooltip activator="parent" location="bottom">
+                  {{ t('close') }}
+                </VTooltip>
+              </IconBtn>
+
+              <VBtn
+                v-if="props.showBackToChat"
+                color="success"
+                variant="tonal"
+                class="internal-chat-back-btn"
+                @click="emit('switch-whatsapp-mode')"
+              >
+                <VIcon size="18" class="me-1">tabler-brand-whatsapp</VIcon>
+                {{ t('internal_chat_back_to_chat') }}
+              </VBtn>
+            </div>
           </div>
 
-          <div class="internal-chat-mode-actions">
-            <IconBtn
-              :color="isInternalNotificationEnabled ? 'primary' : 'default'"
-              class="internal-chat-notification-btn"
-              :aria-label="t('internal_chat_notification_title')"
-              @click="openNotificationSettingsDialog"
-            >
-              <VIcon size="20">
-                {{
-                  isInternalNotificationEnabled
-                    ? 'tabler-bell'
-                    : 'tabler-bell-off'
-                }}
-              </VIcon>
-              <VTooltip activator="parent" location="bottom">
-                {{ t('internal_chat_notification_title') }}
-              </VTooltip>
-            </IconBtn>
+          <div class="internal-chat-search-row">
+            <VAvatar size="40" class="internal-chat-current-avatar">
+              <VImg :src="currentUserAvatar" :alt="currentUserName" cover />
+            </VAvatar>
 
-            <IconBtn
-              v-if="$vuetify.display.smAndDown"
-              class="internal-chat-close-sidebar-btn"
-              :aria-label="t('close')"
-              @click="isLeftSidebarOpen = false"
-            >
-              <VIcon size="20">tabler-x</VIcon>
-              <VTooltip activator="parent" location="bottom">
-                {{ t('close') }}
-              </VTooltip>
-            </IconBtn>
+            <AppTextField
+              v-model="searchQuery"
+              prepend-inner-icon="tabler-search"
+              :placeholder="searchPlaceholder"
+              hide-details
+              density="compact"
+              class="internal-chat-search-field"
+            />
 
             <VBtn
-              v-if="props.showBackToChat"
-              color="success"
-              variant="tonal"
-              class="internal-chat-back-btn"
-              @click="emit('switch-whatsapp-mode')"
+              v-if="canCreateInternalGroup"
+              icon
+              color="primary"
+              variant="flat"
+              class="internal-chat-create-group-btn"
+              @click="openCreateGroupDialog"
             >
-              <VIcon size="18" class="me-1">tabler-brand-whatsapp</VIcon>
-              {{ t('internal_chat_back_to_chat') }}
+              <VIcon size="18">tabler-users-plus</VIcon>
+              <VTooltip activator="parent" location="bottom">
+                {{ t('internal_chat_new_group') }}
+              </VTooltip>
             </VBtn>
+          </div>
+
+          <div class="internal-chat-tabs">
+            <VBtn
+              v-for="tab in sidebarTabs"
+              :key="tab.value"
+              icon
+              :variant="activeSidebarTab === tab.value ? 'flat' : 'text'"
+              :color="activeSidebarTab === tab.value ? 'primary' : undefined"
+              class="internal-chat-tab-btn"
+              :aria-label="tab.label"
+              @click="switchSidebarTab(tab.value)"
+            >
+              <VIcon size="20">
+                {{ tab.icon }}
+              </VIcon>
+              <VTooltip activator="parent" location="bottom">
+                {{ tab.label }}
+              </VTooltip>
+            </VBtn>
+          </div>
+
+          <div class="internal-chat-active-filter">
+            <VIcon size="18">{{ activeSidebarTabInfo.icon }}</VIcon>
+            <span>{{ activeSidebarTabInfo.label }}</span>
           </div>
         </div>
 
-        <div class="internal-chat-search-row">
-          <VAvatar size="40" class="internal-chat-current-avatar">
-            <VImg :src="currentUserAvatar" :alt="currentUserName" cover />
-          </VAvatar>
-
-          <AppTextField
-            v-model="searchQuery"
-            prepend-inner-icon="tabler-search"
-            :placeholder="searchPlaceholder"
-            hide-details
-            density="compact"
-            class="internal-chat-search-field"
-          />
-
-          <VBtn
-            v-if="canCreateInternalGroup"
-            icon
-            color="primary"
-            variant="flat"
-            class="internal-chat-create-group-btn"
-            @click="openCreateGroupDialog"
-          >
-            <VIcon size="18">tabler-users-plus</VIcon>
-            <VTooltip activator="parent" location="bottom">
-              {{ t('internal_chat_new_group') }}
-            </VTooltip>
-          </VBtn>
-        </div>
-
-        <div class="internal-chat-tabs">
-          <VBtn
-            v-for="tab in sidebarTabs"
-            :key="tab.value"
-            icon
-            :variant="activeSidebarTab === tab.value ? 'flat' : 'text'"
-            :color="activeSidebarTab === tab.value ? 'primary' : undefined"
-            class="internal-chat-tab-btn"
-            :aria-label="tab.label"
-            @click="switchSidebarTab(tab.value)"
-          >
-            <VIcon size="20">
-              {{ tab.icon }}
-            </VIcon>
-            <VTooltip activator="parent" location="bottom">
-              {{ tab.label }}
-            </VTooltip>
-          </VBtn>
-        </div>
-
-        <div class="internal-chat-active-filter">
-          <VIcon size="18">{{ activeSidebarTabInfo.icon }}</VIcon>
-          <span>{{ activeSidebarTabInfo.label }}</span>
-        </div>
-      </div>
-
-      <VDivider />
+        <VDivider />
 
         <div
-        ref="sidebarBodyRef"
-        class="internal-chat-sidebar-body"
-        @scroll="handleSidebarScroll"
-      >
-        <ul
-          v-if="hasInitialSidebarLoading"
-          class="internal-chat-card-list internal-chat-skeleton-list"
-          aria-hidden="true"
+          ref="sidebarBodyRef"
+          class="internal-chat-sidebar-body"
+          @scroll="handleSidebarScroll"
         >
-          <li
-            v-for="item in sidebarInitialSkeletonItems"
-            :key="`sidebar-skeleton-${activeSidebarTab}-${item}`"
-            class="internal-chat-card internal-chat-skeleton-card d-flex align-center"
-            :class="{ 'internal-chat-card--user': isUsersTab }"
+          <ul
+            v-if="hasInitialSidebarLoading"
+            class="internal-chat-card-list internal-chat-skeleton-list"
+            aria-hidden="true"
           >
-            <span class="internal-chat-skeleton-avatar" />
-            <span class="internal-chat-skeleton-content">
-              <span class="internal-chat-skeleton-line" />
-              <span
-                v-if="!isUsersTab"
-                class="internal-chat-skeleton-line internal-chat-skeleton-line--short"
-              />
-            </span>
-            <span v-if="!isUsersTab" class="internal-chat-skeleton-meta">
-              <span
-                class="internal-chat-skeleton-line internal-chat-skeleton-line--date"
-              />
-              <span class="internal-chat-skeleton-dot" />
-            </span>
-          </li>
-        </ul>
-
-        <template v-else-if="isUsersTab">
-          <ul v-if="displayedUsers.length > 0" class="internal-chat-card-list">
             <li
-              v-for="listedUser in displayedUsers"
-              :key="listedUser.user_id"
-              class="internal-chat-card internal-chat-card--user cursor-pointer d-flex align-center"
-              role="button"
-              tabindex="0"
-              @click="openConversationFromUser(listedUser.user_id)"
-              @keydown.enter.prevent="
-                openConversationFromUser(listedUser.user_id)
-              "
-              @keydown.space.prevent="
-                openConversationFromUser(listedUser.user_id)
-              "
+              v-for="item in sidebarInitialSkeletonItems"
+              :key="`sidebar-skeleton-${activeSidebarTab}-${item}`"
+              class="internal-chat-card internal-chat-skeleton-card d-flex align-center"
+              :class="{ 'internal-chat-card--user': isUsersTab }"
             >
-              <VAvatar size="42" class="internal-chat-card-avatar">
-                <VImg
-                  :src="resolveAvatarSource(listedUser.photo)"
-                  :alt="resolveUserName(listedUser)"
-                  cover
+              <span class="internal-chat-skeleton-avatar" />
+              <span class="internal-chat-skeleton-content">
+                <span class="internal-chat-skeleton-line" />
+                <span
+                  v-if="!isUsersTab"
+                  class="internal-chat-skeleton-line internal-chat-skeleton-line--short"
                 />
-              </VAvatar>
-
-              <div class="internal-chat-card-content ms-3 overflow-hidden">
-                <p
-                  class="internal-chat-card-title text-base text-high-emphasis mb-0 text-truncate"
-                  :title="resolveUserName(listedUser)"
-                >
-                  {{ resolveUserName(listedUser) }}
-                </p>
-              </div>
+              </span>
+              <span v-if="!isUsersTab" class="internal-chat-skeleton-meta">
+                <span
+                  class="internal-chat-skeleton-line internal-chat-skeleton-line--date"
+                />
+                <span class="internal-chat-skeleton-dot" />
+              </span>
             </li>
           </ul>
-        </template>
 
-        <template v-else>
-          <ul
-            v-if="displayedConversations.length > 0"
-            class="internal-chat-card-list"
-          >
-            <li
-              v-for="conversation in displayedConversations"
-              :key="conversation.conversation_id"
-              class="internal-chat-card cursor-pointer d-flex align-center"
-              :class="{
-                'internal-chat-card--active':
-                  activeConversation?.conversation_id ===
-                  conversation.conversation_id,
-                'internal-chat-card--unread': conversation.unread_count > 0,
-              }"
-              role="button"
-              tabindex="0"
-              :aria-current="
-                activeConversation?.conversation_id ===
-                conversation.conversation_id
-                  ? 'true'
-                  : undefined
-              "
-              @click="openConversation(conversation.conversation_id)"
-              @keydown.enter.prevent="
-                openConversation(conversation.conversation_id)
-              "
-              @keydown.space.prevent="
-                openConversation(conversation.conversation_id)
-              "
+          <template v-else-if="isUsersTab">
+            <ul
+              v-if="displayedUsers.length > 0"
+              class="internal-chat-card-list"
             >
-              <VAvatar size="42" class="internal-chat-card-avatar">
-                <VImg
-                  :src="resolveAvatarSource(conversation.photo)"
-                  :alt="resolveConversationTitle(conversation)"
-                  cover
-                />
-              </VAvatar>
+              <li
+                v-for="listedUser in displayedUsers"
+                :key="listedUser.user_id"
+                class="internal-chat-card internal-chat-card--user cursor-pointer d-flex align-center"
+                role="button"
+                tabindex="0"
+                @click="openConversationFromUser(listedUser.user_id)"
+                @keydown.enter.prevent="
+                  openConversationFromUser(listedUser.user_id)
+                "
+                @keydown.space.prevent="
+                  openConversationFromUser(listedUser.user_id)
+                "
+              >
+                <VAvatar size="42" class="internal-chat-card-avatar">
+                  <VImg
+                    :src="resolveAvatarSource(listedUser.photo)"
+                    :alt="resolveUserName(listedUser)"
+                    cover
+                  />
+                </VAvatar>
 
-              <div class="internal-chat-card-content ms-3 overflow-hidden">
-                <div class="d-flex align-center gap-1">
+                <div class="internal-chat-card-content ms-3 overflow-hidden">
                   <p
                     class="internal-chat-card-title text-base text-high-emphasis mb-0 text-truncate"
-                    :title="resolveConversationTitle(conversation)"
+                    :title="resolveUserName(listedUser)"
                   >
-                    {{ resolveConversationTitle(conversation) }}
+                    {{ resolveUserName(listedUser) }}
                   </p>
-                  <span
-                    v-if="isGroupConversation(conversation)"
-                    class="internal-chat-group-indicator"
-                  >
-                    <VIcon size="13">tabler-users-group</VIcon>
-                    {{ t('internal_chat_group_badge') }}
-                  </span>
                 </div>
-                <p
-                  v-if="resolveConversationPreview(conversation)"
-                  class="internal-chat-card-preview mb-0 text-body-2 text-medium-emphasis text-truncate"
-                >
-                  {{ resolveConversationPreview(conversation) }}
-                </p>
-              </div>
+              </li>
+            </ul>
+          </template>
 
-              <div class="internal-chat-card-meta ms-2">
+          <template v-else>
+            <ul
+              v-if="displayedConversations.length > 0"
+              class="internal-chat-card-list"
+            >
+              <li
+                v-for="conversation in displayedConversations"
+                :key="conversation.conversation_id"
+                class="internal-chat-card cursor-pointer d-flex align-center"
+                :class="{
+                  'internal-chat-card--active':
+                    activeConversation?.conversation_id ===
+                    conversation.conversation_id,
+                  'internal-chat-card--unread': conversation.unread_count > 0,
+                }"
+                role="button"
+                tabindex="0"
+                :aria-current="
+                  activeConversation?.conversation_id ===
+                  conversation.conversation_id
+                    ? 'true'
+                    : undefined
+                "
+                @click="openConversation(conversation.conversation_id)"
+                @keydown.enter.prevent="
+                  openConversation(conversation.conversation_id)
+                "
+                @keydown.space.prevent="
+                  openConversation(conversation.conversation_id)
+                "
+              >
+                <VAvatar size="42" class="internal-chat-card-avatar">
+                  <VImg
+                    :src="resolveAvatarSource(conversation.photo)"
+                    :alt="resolveConversationTitle(conversation)"
+                    cover
+                  />
+                </VAvatar>
+
+                <div class="internal-chat-card-content ms-3 overflow-hidden">
+                  <div class="d-flex align-center gap-1">
+                    <p
+                      class="internal-chat-card-title text-base text-high-emphasis mb-0 text-truncate"
+                      :title="resolveConversationTitle(conversation)"
+                    >
+                      {{ resolveConversationTitle(conversation) }}
+                    </p>
+                    <span
+                      v-if="isGroupConversation(conversation)"
+                      class="internal-chat-group-indicator"
+                    >
+                      <VIcon size="13">tabler-users-group</VIcon>
+                      {{ t('internal_chat_group_badge') }}
+                    </span>
+                  </div>
+                  <p
+                    v-if="resolveConversationPreview(conversation)"
+                    class="internal-chat-card-preview mb-0 text-body-2 text-medium-emphasis text-truncate"
+                  >
+                    {{ resolveConversationPreview(conversation) }}
+                  </p>
+                </div>
+
+                <div class="internal-chat-card-meta ms-2">
+                  <span
+                    v-if="conversation.last_message_at"
+                    class="internal-chat-card-date text-body-2 text-disabled"
+                  >
+                    {{ formatConversationDate(conversation.last_message_at) }}
+                  </span>
+                  <VBadge
+                    v-if="conversation.unread_count > 0"
+                    :content="resolveUnreadCount(conversation.unread_count)"
+                    color="error"
+                    inline
+                    class="internal-chat-card-unread"
+                  />
+                </div>
+              </li>
+            </ul>
+          </template>
+
+          <div v-if="canShowSidebarEmpty" class="internal-chat-empty-state">
+            <VAvatar size="54" variant="tonal" color="primary" class="mb-2">
+              <VIcon size="26">{{ sidebarEmptyIcon }}</VIcon>
+            </VAvatar>
+            <span>{{ sidebarEmptyText }}</span>
+          </div>
+
+          <ul
+            v-if="isSidebarLoading && hasSidebarItems && loadingSidebarAppend"
+            class="internal-chat-card-list internal-chat-skeleton-list internal-chat-skeleton-list--append"
+            aria-hidden="true"
+          >
+            <li
+              v-for="item in sidebarAppendSkeletonItems"
+              :key="`sidebar-append-skeleton-${activeSidebarTab}-${item}`"
+              class="internal-chat-card internal-chat-skeleton-card d-flex align-center"
+              :class="{ 'internal-chat-card--user': isUsersTab }"
+            >
+              <span class="internal-chat-skeleton-avatar" />
+              <span class="internal-chat-skeleton-content">
+                <span class="internal-chat-skeleton-line" />
                 <span
-                  v-if="conversation.last_message_at"
-                  class="internal-chat-card-date text-body-2 text-disabled"
-                >
-                  {{ formatConversationDate(conversation.last_message_at) }}
-                </span>
-                <VBadge
-                  v-if="conversation.unread_count > 0"
-                  :content="resolveUnreadCount(conversation.unread_count)"
-                  color="error"
-                  inline
-                  class="internal-chat-card-unread"
+                  v-if="!isUsersTab"
+                  class="internal-chat-skeleton-line internal-chat-skeleton-line--short"
                 />
-              </div>
+              </span>
+              <span v-if="!isUsersTab" class="internal-chat-skeleton-meta">
+                <span
+                  class="internal-chat-skeleton-line internal-chat-skeleton-line--date"
+                />
+                <span class="internal-chat-skeleton-dot" />
+              </span>
             </li>
           </ul>
-        </template>
-
-        <div v-if="canShowSidebarEmpty" class="internal-chat-empty-state">
-          <VAvatar size="54" variant="tonal" color="primary" class="mb-2">
-            <VIcon size="26">{{ sidebarEmptyIcon }}</VIcon>
-          </VAvatar>
-          <span>{{ sidebarEmptyText }}</span>
-        </div>
-
-        <ul
-          v-if="isSidebarLoading && hasSidebarItems && loadingSidebarAppend"
-          class="internal-chat-card-list internal-chat-skeleton-list internal-chat-skeleton-list--append"
-          aria-hidden="true"
-        >
-          <li
-            v-for="item in sidebarAppendSkeletonItems"
-            :key="`sidebar-append-skeleton-${activeSidebarTab}-${item}`"
-            class="internal-chat-card internal-chat-skeleton-card d-flex align-center"
-            :class="{ 'internal-chat-card--user': isUsersTab }"
-          >
-            <span class="internal-chat-skeleton-avatar" />
-            <span class="internal-chat-skeleton-content">
-              <span class="internal-chat-skeleton-line" />
-              <span
-                v-if="!isUsersTab"
-                class="internal-chat-skeleton-line internal-chat-skeleton-line--short"
-              />
-            </span>
-            <span v-if="!isUsersTab" class="internal-chat-skeleton-meta">
-              <span
-                class="internal-chat-skeleton-line internal-chat-skeleton-line--date"
-              />
-              <span class="internal-chat-skeleton-dot" />
-            </span>
-          </li>
-        </ul>
         </div>
       </div>
     </VNavigationDrawer>
@@ -6064,1810 +6090,1857 @@ onBeforeUnmount(async () => {
     <VMain class="internal-chat-main-container">
       <section class="internal-chat-main d-flex flex-column">
         <template v-if="activeConversation">
-        <div class="internal-chat-main-header d-flex align-center px-4 py-3">
-          <IconBtn class="d-md-none me-1" @click="isLeftSidebarOpen = true">
-            <VIcon size="20">tabler-menu-2</VIcon>
-          </IconBtn>
-
-          <button
-            type="button"
-            class="internal-chat-main-header-profile internal-chat-main-header-profile--clickable"
-            @click="openConversationInfo"
-          >
-            <VAvatar size="38" class="internal-chat-main-avatar">
-              <VImg
-                :src="resolveAvatarSource(activeConversation.photo)"
-                :alt="resolveConversationTitle(activeConversation)"
-                cover
-              />
-            </VAvatar>
-
-            <div class="ms-3 overflow-hidden text-start">
-              <div
-                class="text-subtitle-1 font-weight-medium text-truncate d-flex align-center gap-1"
-              >
-                <span class="text-truncate">
-                  {{ resolveConversationTitle(activeConversation) }}
-                </span>
-                <span
-                  v-if="isActiveGroupConversation"
-                  class="internal-chat-group-indicator internal-chat-group-indicator--header"
-                >
-                  <VIcon size="13">tabler-users-group</VIcon>
-                  {{ t('internal_chat_group_badge') }}
-                </span>
-              </div>
-              <div v-if="firstActivity" class="text-caption text-primary">
-                {{ activityLabel }}
-              </div>
-            </div>
-          </button>
-
-          <VSpacer />
-
-          <div class="internal-chat-main-actions">
-            <IconBtn
-              color="error"
-              :aria-label="closeConversationActionLabel"
-              @click="openCloseConversationDialog"
-            >
-              <VIcon size="20">tabler-x</VIcon>
-              <VTooltip activator="parent" location="bottom">
-                {{ closeConversationActionLabel }}
-              </VTooltip>
+          <div class="internal-chat-main-header d-flex align-center px-4 py-3">
+            <IconBtn class="d-md-none me-1" @click="isLeftSidebarOpen = true">
+              <VIcon size="20">tabler-menu-2</VIcon>
             </IconBtn>
 
-            <VMenu location="bottom end">
-              <template #activator="{ props }">
-                <IconBtn
-                  v-bind="props"
-                  :aria-label="t('internal_chat_more_options')"
-                >
-                  <VIcon size="20">tabler-dots-vertical</VIcon>
-                  <VTooltip activator="parent" location="bottom">
-                    {{ t('internal_chat_more_options') }}
-                  </VTooltip>
-                </IconBtn>
-              </template>
-
-              <VList density="compact" min-width="190">
-                <VListItem @click="openSearchDrawer">
-                  <template #prepend>
-                    <VIcon size="18">tabler-search</VIcon>
-                  </template>
-                  <VListItemTitle>
-                    {{ t('search_messages') }}
-                  </VListItemTitle>
-                </VListItem>
-
-                <VListItem @click="openConversationInfo">
-                  <template #prepend>
-                    <VIcon size="18">tabler-info-circle</VIcon>
-                  </template>
-                  <VListItemTitle>
-                    {{ t('internal_chat_information') }}
-                  </VListItemTitle>
-                </VListItem>
-              </VList>
-            </VMenu>
-          </div>
-        </div>
-
-        <VDivider />
-
-        <div
-          class="internal-chat-message-scroll"
-          @wheel.passive="handleMessageListWheel"
-        >
-          <PerfectScrollbar
-            ref="messageListScrollRef"
-            :options="{ wheelPropagation: false }"
-            class="internal-chat-message-list px-4 py-3"
-            @ps-scroll-y="handleMessageListScroll"
-          >
-            <div
-              v-if="loadingPreviousMessages"
-              class="d-flex justify-center mb-3"
+            <button
+              type="button"
+              class="internal-chat-main-header-profile internal-chat-main-header-profile--clickable"
+              @click="openConversationInfo"
             >
-              <VProgressCircular indeterminate color="primary" size="24" />
-            </div>
+              <VAvatar size="38" class="internal-chat-main-avatar">
+                <VImg
+                  :src="resolveAvatarSource(activeConversation.photo)"
+                  :alt="resolveConversationTitle(activeConversation)"
+                  cover
+                />
+              </VAvatar>
 
-            <template
-              v-for="displayItem in messageDisplayItems"
-              :key="displayItem.id"
+              <div class="ms-3 overflow-hidden text-start">
+                <div
+                  class="text-subtitle-1 font-weight-medium text-truncate d-flex align-center gap-1"
+                >
+                  <span class="text-truncate">
+                    {{ resolveConversationTitle(activeConversation) }}
+                  </span>
+                  <span
+                    v-if="isActiveGroupConversation"
+                    class="internal-chat-group-indicator internal-chat-group-indicator--header"
+                  >
+                    <VIcon size="13">tabler-users-group</VIcon>
+                    {{ t('internal_chat_group_badge') }}
+                  </span>
+                </div>
+                <div v-if="firstActivity" class="text-caption text-primary">
+                  {{ activityLabel }}
+                </div>
+              </div>
+            </button>
+
+            <VSpacer />
+
+            <div class="internal-chat-main-actions">
+              <IconBtn
+                color="error"
+                :aria-label="closeConversationActionLabel"
+                @click="openCloseConversationDialog"
+              >
+                <VIcon size="20">tabler-x</VIcon>
+                <VTooltip activator="parent" location="bottom">
+                  {{ closeConversationActionLabel }}
+                </VTooltip>
+              </IconBtn>
+
+              <VMenu location="bottom end">
+                <template #activator="{ props }">
+                  <IconBtn
+                    v-bind="props"
+                    :aria-label="t('internal_chat_more_options')"
+                  >
+                    <VIcon size="20">tabler-dots-vertical</VIcon>
+                    <VTooltip activator="parent" location="bottom">
+                      {{ t('internal_chat_more_options') }}
+                    </VTooltip>
+                  </IconBtn>
+                </template>
+
+                <VList density="compact" min-width="190">
+                  <VListItem @click="openSearchDrawer">
+                    <template #prepend>
+                      <VIcon size="18">tabler-search</VIcon>
+                    </template>
+                    <VListItemTitle>
+                      {{ t('search_messages') }}
+                    </VListItemTitle>
+                  </VListItem>
+
+                  <VListItem @click="openConversationInfo">
+                    <template #prepend>
+                      <VIcon size="18">tabler-info-circle</VIcon>
+                    </template>
+                    <VListItemTitle>
+                      {{ t('internal_chat_information') }}
+                    </VListItemTitle>
+                  </VListItem>
+                </VList>
+              </VMenu>
+            </div>
+          </div>
+
+          <VDivider />
+
+          <div
+            class="internal-chat-message-scroll"
+            @wheel.passive="handleMessageListWheel"
+          >
+            <PerfectScrollbar
+              ref="messageListScrollRef"
+              :options="{ wheelPropagation: false }"
+              class="internal-chat-message-list px-4 py-3"
+              @ps-scroll-y="handleMessageListScroll"
             >
               <div
-                v-if="displayItem.kind === 'date-separator'"
-                class="internal-chat-date-separator-wrapper"
-                :data-separator-date="displayItem.separatorDate"
-                :data-separator-label="displayItem.separatorLabel"
+                v-if="loadingPreviousMessages"
+                class="d-flex justify-center mb-3"
               >
-                <div class="internal-chat-date-separator-line"></div>
-                <div class="internal-chat-date-separator">
-                  {{ displayItem.separatorLabel }}
-                </div>
-                <div class="internal-chat-date-separator-line"></div>
+                <VProgressCircular indeterminate color="primary" size="24" />
               </div>
 
-              <template v-else-if="displayItem.kind === 'message'">
+              <template
+                v-for="displayItem in messageDisplayItems"
+                :key="displayItem.id"
+              >
                 <div
-                  v-for="message in [displayItem.message]"
-                  :key="getInternalMessageRenderKey(message)"
-                  :id="`internal-msg-${message.message_id}`"
-                  :data-message-id="message.message_id"
-                  class="internal-chat-message-row"
-                  :class="{
-                    'internal-chat-message-row--mine': isOwnMessage(message),
-                    'internal-chat-message-row--system':
-                      isSystemMessage(message),
-                    'internal-chat-message-row--target':
-                      highlightedMessageId === message.message_id,
-                  }"
-                  @mouseenter="onMessageMouseEnter(message)"
-                  @mouseleave="onMessageMouseLeave"
+                  v-if="displayItem.kind === 'date-separator'"
+                  class="internal-chat-date-separator-wrapper"
+                  :data-separator-date="displayItem.separatorDate"
+                  :data-separator-label="displayItem.separatorLabel"
                 >
-                  <div
-                    v-if="isSystemMessage(message)"
-                    class="internal-chat-system-message"
-                  >
-                    {{ resolveSystemMessageText(message) }}
+                  <div class="internal-chat-date-separator-line"></div>
+                  <div class="internal-chat-date-separator">
+                    {{ displayItem.separatorLabel }}
                   </div>
+                  <div class="internal-chat-date-separator-line"></div>
+                </div>
 
-                  <button
-                    v-if="!isSystemMessage(message)"
-                    type="button"
-                    class="internal-chat-message-avatar-button"
-                    :disabled="!message.user?.id"
-                    :aria-label="t('internal_chat_user_information')"
-                    @click.stop="openMessageUserInfoDrawer(message)"
-                  >
-                    <VAvatar
-                      size="32"
-                      class="internal-chat-message-avatar"
-                      :class="{
-                        'internal-chat-message-avatar--mine':
-                          isOwnMessage(message),
-                      }"
-                    >
-                      <VImg
-                        :src="resolveMessageAvatarSource(message)"
-                        :alt="
-                          message.user?.name || t('internal_chat_system_user')
-                        "
-                        cover
-                      />
-                    </VAvatar>
-                  </button>
-
+                <template v-else-if="displayItem.kind === 'message'">
                   <div
-                    v-if="!isSystemMessage(message)"
-                    class="internal-chat-message-shell"
+                    v-for="message in [displayItem.message]"
+                    :key="getInternalMessageRenderKey(message)"
+                    :id="`internal-msg-${message.message_id}`"
+                    :data-message-id="message.message_id"
+                    class="internal-chat-message-row"
                     :class="{
-                      'internal-chat-message-shell--mine':
-                        isOwnMessage(message),
+                      'internal-chat-message-row--mine': isOwnMessage(message),
+                      'internal-chat-message-row--system':
+                        isSystemMessage(message),
+                      'internal-chat-message-row--target':
+                        highlightedMessageId === message.message_id,
                     }"
+                    @mouseenter="onMessageMouseEnter(message)"
+                    @mouseleave="onMessageMouseLeave"
                   >
-                    <button
-                      v-if="
-                        hoveredMessageId === message.message_id &&
-                        canInteractWithMessage(message) &&
-                        showReactionPicker !== message.message_id
-                      "
-                      type="button"
-                      class="internal-chat-reaction-trigger"
-                      :class="{
-                        'internal-chat-reaction-trigger--mine':
-                          isOwnMessage(message),
-                      }"
-                      :aria-label="t('internal_chat_react_to_message')"
-                      @click.stop="toggleReactionPicker(message)"
+                    <div
+                      v-if="isSystemMessage(message)"
+                      class="internal-chat-system-message"
                     >
-                      <VIcon size="20">tabler-mood-smile</VIcon>
+                      {{ resolveSystemMessageText(message) }}
+                    </div>
+
+                    <button
+                      v-if="!isSystemMessage(message)"
+                      type="button"
+                      class="internal-chat-message-avatar-button"
+                      :disabled="!message.user?.id"
+                      :aria-label="t('internal_chat_user_information')"
+                      @click.stop="openMessageUserInfoDrawer(message)"
+                    >
+                      <VAvatar
+                        size="32"
+                        class="internal-chat-message-avatar"
+                        :class="{
+                          'internal-chat-message-avatar--mine':
+                            isOwnMessage(message),
+                        }"
+                      >
+                        <VImg
+                          :src="resolveMessageAvatarSource(message)"
+                          :alt="
+                            message.user?.name || t('internal_chat_system_user')
+                          "
+                          cover
+                        />
+                      </VAvatar>
                     </button>
 
                     <div
-                      class="internal-chat-message-bubble"
+                      v-if="!isSystemMessage(message)"
+                      class="internal-chat-message-shell"
                       :class="{
-                        'internal-chat-message-bubble--mine':
+                        'internal-chat-message-shell--mine':
                           isOwnMessage(message),
-                        'internal-chat-message-bubble--deleted':
-                          isDeletedMessage(message),
-                        'internal-chat-message-bubble--with-reactions':
-                          message.content?.reactions?.length,
                       }"
                     >
-                      <div class="internal-chat-message-header">
-                        <span class="text-caption text-medium-emphasis">
-                          {{
-                            message.user?.name || t('internal_chat_system_user')
-                          }}
-                        </span>
-
-                        <VMenu
-                          v-if="canShowMessageActions(message)"
-                          location="bottom end"
-                          offset="6"
-                        >
-                          <template #activator="{ props }">
-                            <IconBtn
-                              class="internal-chat-message-action-btn"
-                              size="x-small"
-                              v-bind="props"
-                            >
-                              <VIcon size="16">tabler-chevron-down</VIcon>
-                            </IconBtn>
-                          </template>
-
-                          <VList density="compact" min-width="190">
-                            <template v-if="isDeletedMessage(message)">
-                              <VListItem
-                                v-if="canViewMessageHistory(message)"
-                                @click="openMessageHistoryDialog(message)"
-                              >
-                                <template #prepend>
-                                  <VIcon size="18">tabler-history</VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_view_message_history') }}
-                                </VListItemTitle>
-                              </VListItem>
-                            </template>
-
-                            <template v-else>
-                              <VListItem @click="onReply(message)">
-                                <template #prepend>
-                                  <VIcon size="18">
-                                    tabler-corner-up-left
-                                  </VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_reply_action') }}
-                                </VListItemTitle>
-                              </VListItem>
-
-                              <VListItem
-                                v-if="shouldShowCopy(message)"
-                                @click="copyMessage(message)"
-                              >
-                                <template #prepend>
-                                  <VIcon size="18">tabler-copy</VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_copy_action') }}
-                                </VListItemTitle>
-                              </VListItem>
-
-                              <VListItem
-                                v-if="shouldShowDownload(message)"
-                                @click="downloadMessage(message)"
-                              >
-                                <template #prepend>
-                                  <VIcon size="18">tabler-download</VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_download_action') }}
-                                </VListItemTitle>
-                              </VListItem>
-
-                              <VListItem @click="toggleReactionPicker(message)">
-                                <template #prepend>
-                                  <VIcon size="18">tabler-mood-smile</VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_react_action') }}
-                                </VListItemTitle>
-                              </VListItem>
-
-                              <VListItem
-                                v-if="canEditInternalMessage(message)"
-                                @click="onEdit(message)"
-                              >
-                                <template #prepend>
-                                  <VIcon size="18">tabler-edit</VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_edit_action') }}
-                                </VListItemTitle>
-                              </VListItem>
-
-                              <VListItem
-                                v-if="canViewMessageHistory(message)"
-                                @click="openMessageHistoryDialog(message)"
-                              >
-                                <template #prepend>
-                                  <VIcon size="18">tabler-history</VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_view_message_history') }}
-                                </VListItemTitle>
-                              </VListItem>
-
-                              <VListItem
-                                v-if="canDeleteInternalMessage(message)"
-                                @click="onDelete(message)"
-                              >
-                                <template #prepend>
-                                  <VIcon size="18">tabler-trash</VIcon>
-                                </template>
-                                <VListItemTitle>
-                                  {{ t('internal_chat_delete_action') }}
-                                </VListItemTitle>
-                              </VListItem>
-                            </template>
-                          </VList>
-                        </VMenu>
-                      </div>
-
                       <button
-                        v-if="showQuotedMessage(message)"
+                        v-if="
+                          hoveredMessageId === message.message_id &&
+                          canInteractWithMessage(message) &&
+                          showReactionPicker !== message.message_id
+                        "
                         type="button"
-                        class="internal-chat-quoted"
+                        class="internal-chat-reaction-trigger"
                         :class="{
-                          'internal-chat-quoted--clickable':
-                            hasQuotedNavigationTarget(message),
+                          'internal-chat-reaction-trigger--mine':
+                            isOwnMessage(message),
                         }"
-                        :aria-label="t('internal_chat_original_message')"
-                        @click.prevent.stop="goToQuotedMessage(message)"
+                        :aria-label="t('internal_chat_react_to_message')"
+                        @click.stop="toggleReactionPicker(message)"
                       >
-                        <div
-                          v-if="resolveQuotedPreviewImageSrc(message)"
-                          class="internal-chat-reply-preview-media"
-                        >
-                          <img
-                            :src="resolveQuotedPreviewImageSrc(message) || ''"
-                            :alt="t('photo_label')"
-                          />
-                        </div>
-                        <div
-                          v-else-if="
-                            isReplyPreviewDocument(
-                              resolveQuotedPreviewContent(message)
-                            )
-                          "
-                          class="internal-chat-reply-preview-icon"
-                        >
-                          <VIcon
-                            :icon="resolveQuotedPreviewDocumentIcon(message)"
-                            size="26"
-                            color="primary"
-                          />
-                        </div>
-                        <div
-                          v-else-if="
-                            isReplyPreviewVideo(
-                              resolveQuotedPreviewContent(message)
-                            )
-                          "
-                          class="internal-chat-reply-preview-icon"
-                        >
-                          <VIcon size="26" color="primary">
-                            tabler-player-play
-                          </VIcon>
-                        </div>
-                        <div
-                          v-else-if="
-                            isReplyPreviewAudio(
-                              resolveQuotedPreviewContent(message)
-                            )
-                          "
-                          class="internal-chat-reply-preview-icon"
-                        >
-                          <VIcon size="26" color="primary">
-                            tabler-microphone
-                          </VIcon>
-                        </div>
-                        <div
-                          v-else-if="
-                            isReplyPreviewLocation(
-                              resolveQuotedPreviewContent(message)
-                            )
-                          "
-                          class="internal-chat-reply-preview-icon"
-                        >
-                          <VIcon size="26" color="primary">
-                            tabler-map-pin
-                          </VIcon>
-                        </div>
-                        <div
-                          v-else-if="
-                            isReplyPreviewContact(
-                              resolveQuotedPreviewContent(message)
-                            )
-                          "
-                          class="internal-chat-reply-preview-icon"
-                        >
-                          <VAvatar
-                            v-if="resolveQuotedPreviewContactPhoto(message)"
-                            size="26"
+                        <VIcon size="20">tabler-mood-smile</VIcon>
+                      </button>
+
+                      <div
+                        class="internal-chat-message-bubble"
+                        :class="{
+                          'internal-chat-message-bubble--mine':
+                            isOwnMessage(message),
+                          'internal-chat-message-bubble--deleted':
+                            isDeletedMessage(message),
+                          'internal-chat-message-bubble--with-reactions':
+                            message.content?.reactions?.length,
+                        }"
+                      >
+                        <div class="internal-chat-message-header">
+                          <span class="text-caption text-medium-emphasis">
+                            {{
+                              message.user?.name ||
+                              t('internal_chat_system_user')
+                            }}
+                          </span>
+
+                          <VMenu
+                            v-if="canShowMessageActions(message)"
+                            location="bottom end"
+                            offset="6"
                           >
-                            <VImg
-                              :src="
-                                resolveQuotedPreviewContactPhoto(message) || ''
-                              "
-                              :alt="resolveQuotedText(message)"
+                            <template #activator="{ props }">
+                              <IconBtn
+                                class="internal-chat-message-action-btn"
+                                size="x-small"
+                                v-bind="props"
+                              >
+                                <VIcon size="16">tabler-chevron-down</VIcon>
+                              </IconBtn>
+                            </template>
+
+                            <VList density="compact" min-width="190">
+                              <template v-if="isDeletedMessage(message)">
+                                <VListItem
+                                  v-if="canViewMessageHistory(message)"
+                                  @click="openMessageHistoryDialog(message)"
+                                >
+                                  <template #prepend>
+                                    <VIcon size="18">tabler-history</VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{
+                                      t('internal_chat_view_message_history')
+                                    }}
+                                  </VListItemTitle>
+                                </VListItem>
+                              </template>
+
+                              <template v-else>
+                                <VListItem @click="onReply(message)">
+                                  <template #prepend>
+                                    <VIcon size="18">
+                                      tabler-corner-up-left
+                                    </VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{ t('internal_chat_reply_action') }}
+                                  </VListItemTitle>
+                                </VListItem>
+
+                                <VListItem
+                                  v-if="shouldShowCopy(message)"
+                                  @click="copyMessage(message)"
+                                >
+                                  <template #prepend>
+                                    <VIcon size="18">tabler-copy</VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{ t('internal_chat_copy_action') }}
+                                  </VListItemTitle>
+                                </VListItem>
+
+                                <VListItem
+                                  v-if="shouldShowDownload(message)"
+                                  @click="downloadMessage(message)"
+                                >
+                                  <template #prepend>
+                                    <VIcon size="18">tabler-download</VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{ t('internal_chat_download_action') }}
+                                  </VListItemTitle>
+                                </VListItem>
+
+                                <VListItem
+                                  @click="toggleReactionPicker(message)"
+                                >
+                                  <template #prepend>
+                                    <VIcon size="18">tabler-mood-smile</VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{ t('internal_chat_react_action') }}
+                                  </VListItemTitle>
+                                </VListItem>
+
+                                <VListItem
+                                  v-if="canEditInternalMessage(message)"
+                                  @click="onEdit(message)"
+                                >
+                                  <template #prepend>
+                                    <VIcon size="18">tabler-edit</VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{ t('internal_chat_edit_action') }}
+                                  </VListItemTitle>
+                                </VListItem>
+
+                                <VListItem
+                                  v-if="canViewMessageHistory(message)"
+                                  @click="openMessageHistoryDialog(message)"
+                                >
+                                  <template #prepend>
+                                    <VIcon size="18">tabler-history</VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{
+                                      t('internal_chat_view_message_history')
+                                    }}
+                                  </VListItemTitle>
+                                </VListItem>
+
+                                <VListItem
+                                  v-if="canDeleteInternalMessage(message)"
+                                  @click="onDelete(message)"
+                                >
+                                  <template #prepend>
+                                    <VIcon size="18">tabler-trash</VIcon>
+                                  </template>
+                                  <VListItemTitle>
+                                    {{ t('internal_chat_delete_action') }}
+                                  </VListItemTitle>
+                                </VListItem>
+                              </template>
+                            </VList>
+                          </VMenu>
+                        </div>
+
+                        <button
+                          v-if="showQuotedMessage(message)"
+                          type="button"
+                          class="internal-chat-quoted"
+                          :class="{
+                            'internal-chat-quoted--clickable':
+                              hasQuotedNavigationTarget(message),
+                          }"
+                          :aria-label="t('internal_chat_original_message')"
+                          @click.prevent.stop="goToQuotedMessage(message)"
+                        >
+                          <div
+                            v-if="resolveQuotedPreviewImageSrc(message)"
+                            class="internal-chat-reply-preview-media"
+                          >
+                            <img
+                              :src="resolveQuotedPreviewImageSrc(message) || ''"
+                              :alt="t('photo_label')"
                             />
-                          </VAvatar>
-                          <VIcon
-                            v-else
-                            size="26"
-                            color="primary"
-                            :icon="
-                              isReplyPreviewContactGroup(
+                          </div>
+                          <div
+                            v-else-if="
+                              isReplyPreviewDocument(
                                 resolveQuotedPreviewContent(message)
                               )
-                                ? 'tabler-users'
-                                : 'tabler-user'
                             "
-                          />
-                        </div>
-
-                        <div class="internal-chat-reply-preview-content">
-                          <div class="internal-chat-reply-preview-name">
-                            {{ resolveQuotedName(message) }}
-                          </div>
-                          <div class="internal-chat-reply-preview-text">
-                            {{
-                              resolveQuotedText(message) ||
-                              t('internal_chat_message')
-                            }}
-                          </div>
-                          <div
-                            v-if="resolveQuotedPreviewMeta(message)"
-                            class="internal-chat-reply-preview-meta"
+                            class="internal-chat-reply-preview-icon"
                           >
-                            {{ resolveQuotedPreviewMeta(message) }}
-                          </div>
-                        </div>
-                      </button>
-
-                      <div
-                        v-if="
-                          resolveMessageText(message) &&
-                          shouldRenderMessageTextBeforeMedia(message)
-                        "
-                        class="internal-chat-message-text mb-2"
-                        :class="{
-                          'internal-chat-message-text--deleted':
-                            isDeletedMessage(message),
-                        }"
-                      >
-                        {{ resolveMessageText(message) }}
-                      </div>
-
-                      <div
-                        v-if="message.content?.link_preview"
-                        class="internal-chat-link-preview"
-                      >
-                        <ChatLinkPreview
-                          :preview="message.content.link_preview as any"
-                        />
-                      </div>
-
-                      <button
-                        v-if="message.content?.image?.url"
-                        type="button"
-                        class="internal-chat-media-frame"
-                        :aria-label="t('internal_chat_image_alt')"
-                        @click="openMessageMediaViewer(message)"
-                      >
-                        <img
-                          :src="message.content.image.url"
-                          class="internal-chat-media"
-                          :alt="t('internal_chat_image_alt')"
-                        />
-                      </button>
-
-                      <button
-                        v-if="message.content?.video?.url"
-                        type="button"
-                        class="internal-chat-media-frame"
-                        :aria-label="t('internal_chat_videos')"
-                        @click="openMessageMediaViewer(message)"
-                      >
-                        <video
-                          :src="message.content.video.url"
-                          class="internal-chat-media"
-                          preload="metadata"
-                          muted
-                          playsinline
-                        >
-                          <track kind="captions" />
-                        </video>
-                        <span class="internal-chat-video-overlay">
-                          <VIcon size="26">tabler-player-play</VIcon>
-                        </span>
-                      </button>
-
-                      <div
-                        v-if="message.content?.audio?.url"
-                        class="internal-chat-audio-bubble"
-                        :class="{
-                          'internal-chat-audio-bubble--right':
-                            isOwnMessage(message),
-                          'internal-chat-audio-bubble--left':
-                            !isOwnMessage(message),
-                          'is-deleted': isDeletedMessage(message),
-                        }"
-                      >
-                        <div class="internal-chat-audio-player-container">
-                          <button
-                            type="button"
-                            class="internal-chat-audio-speed-btn"
-                            @click.stop="toggleAudioSpeed(message.message_id)"
-                          >
-                            {{ getAudioSpeedLabel(message.message_id) }}
-                          </button>
-                          <VBtn
-                            icon
-                            size="36"
-                            variant="text"
-                            class="internal-chat-audio-play-btn"
-                            @click="
-                              toggleAudioPlay(
-                                message.message_id,
-                                message.content.audio.url || ''
-                              )
-                            "
-                          >
-                            <VIcon size="18">
-                              {{
-                                isAudioPlaying(message.message_id)
-                                  ? 'tabler-player-pause'
-                                  : 'tabler-player-play'
-                              }}
-                            </VIcon>
-                          </VBtn>
-
-                          <div
-                            class="internal-chat-audio-waveform-container"
-                            @click="
-                              seekAudio(
-                                message.message_id,
-                                message.content.audio.url || '',
-                                $event
-                              )
-                            "
-                          >
-                            <template
-                              v-if="
-                                (audioWaveforms[message.message_id]?.length ||
-                                  0) > 0
-                              "
-                            >
-                              <div class="internal-chat-audio-waveform">
-                                <div
-                                  v-for="(barValue, index) in audioWaveforms[
-                                    message.message_id
-                                  ]"
-                                  :key="`${message.message_id}-audio-wave-${index}`"
-                                  class="internal-chat-audio-waveform-bar"
-                                  :class="{
-                                    'internal-chat-audio-waveform-bar--active':
-                                      getAudioProgress(message.message_id) >
-                                      (index /
-                                        (audioWaveforms[message.message_id]
-                                          ?.length || 64)) *
-                                        100,
-                                  }"
-                                  :style="{
-                                    height: `${Math.max(2, barValue * 100)}%`,
-                                  }"
-                                ></div>
-                              </div>
-                              <div
-                                class="internal-chat-audio-progress-indicator"
-                                :style="{
-                                  left: `${getAudioProgress(
-                                    message.message_id
-                                  )}%`,
-                                }"
-                              ></div>
-                            </template>
-                            <div
-                              v-else
-                              class="internal-chat-audio-waveform-placeholder"
-                            >
-                              <div
-                                v-for="index in 64"
-                                :key="`${message.message_id}-audio-placeholder-${index}`"
-                                class="internal-chat-audio-waveform-bar-placeholder"
-                              ></div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="internal-chat-audio-meta">
-                          {{
-                            getDisplayAudioTime(
-                              message.message_id,
-                              message.content.audio.duration
-                            )
-                          }}
-                        </div>
-
-                        <p
-                          v-if="message.content?.message"
-                          class="internal-chat-media-caption"
-                        >
-                          {{ message.content.message }}
-                        </p>
-                      </div>
-
-                      <div
-                        v-if="message.content?.document?.url"
-                        class="internal-chat-document-content"
-                      >
-                        <div
-                          class="internal-chat-document-bubble"
-                          :class="{
-                            'internal-chat-document-bubble--right':
-                              isOwnMessage(message),
-                            'internal-chat-document-bubble--left':
-                              !isOwnMessage(message),
-                            'is-deleted': isDeletedMessage(message),
-                          }"
-                        >
-                          <div class="internal-chat-document-icon">
                             <VIcon
-                              :icon="
-                                resolveInternalDocumentIcon(
-                                  message.content.document
-                                )
-                              "
+                              :icon="resolveQuotedPreviewDocumentIcon(message)"
                               size="26"
                               color="primary"
                             />
                           </div>
-                          <div class="internal-chat-document-details">
-                            <VTooltip location="bottom">
-                              <template #activator="{ props }">
-                                <a
-                                  v-bind="props"
-                                  class="internal-chat-document-name"
-                                  :href="message.content.document.url"
-                                  :download="
-                                    resolveInternalDocumentDownloadName(
-                                      message.content.document
-                                    )
-                                  "
-                                  target="_blank"
-                                  rel="noopener"
-                                >
-                                  {{
-                                    truncateFileName(
-                                      resolveInternalDocumentName(
-                                        message.content.document
-                                      ),
-                                      30
-                                    )
-                                  }}
-                                </a>
-                              </template>
-                              <span>
-                                {{
-                                  resolveInternalDocumentName(
-                                    message.content.document
-                                  )
-                                }}
-                              </span>
-                            </VTooltip>
-
-                            <span
-                              class="internal-chat-document-meta text-caption text-disabled"
-                            >
-                              {{
-                                resolveInternalDocumentMeta(
-                                  message.content.document
-                                )
-                              }}
-                            </span>
-                          </div>
-                          <a
-                            class="internal-chat-document-download"
-                            :href="message.content.document.url"
-                            :download="
-                              resolveInternalDocumentDownloadName(
-                                message.content.document
+                          <div
+                            v-else-if="
+                              isReplyPreviewVideo(
+                                resolveQuotedPreviewContent(message)
                               )
                             "
-                            target="_blank"
-                            rel="noopener"
+                            class="internal-chat-reply-preview-icon"
                           >
-                            <VIcon size="20">tabler-download</VIcon>
-                          </a>
-                        </div>
-
-                        <p
-                          v-if="message.content?.message"
-                          class="internal-chat-media-caption"
-                        >
-                          {{ message.content.message }}
-                        </p>
-                      </div>
-
-                      <button
-                        v-if="hasValidLocation(message)"
-                        type="button"
-                        class="internal-chat-location-bubble"
-                        :class="{
-                          'internal-chat-location-bubble--right':
-                            isOwnMessage(message),
-                          'internal-chat-location-bubble--left':
-                            !isOwnMessage(message),
-                          'is-deleted': isDeletedMessage(message),
-                        }"
-                        @click="openMessageLocation(message)"
-                      >
-                        <div class="internal-chat-location-map-preview">
+                            <VIcon size="26" color="primary">
+                              tabler-player-play
+                            </VIcon>
+                          </div>
                           <div
-                            v-if="
-                              !webGLSupported || mapErrors[message.message_id]
+                            v-else-if="
+                              isReplyPreviewAudio(
+                                resolveQuotedPreviewContent(message)
+                              )
                             "
-                            class="internal-chat-location-map-fallback"
+                            class="internal-chat-reply-preview-icon"
                           >
-                            <VIcon size="32" color="primary">
+                            <VIcon size="26" color="primary">
+                              tabler-microphone
+                            </VIcon>
+                          </div>
+                          <div
+                            v-else-if="
+                              isReplyPreviewLocation(
+                                resolveQuotedPreviewContent(message)
+                              )
+                            "
+                            class="internal-chat-reply-preview-icon"
+                          >
+                            <VIcon size="26" color="primary">
                               tabler-map-pin
                             </VIcon>
-                            <span class="text-caption mt-2">
-                              {{ t('location_map_unavailable') }}
-                            </span>
                           </div>
-                          <MglMap
-                            v-else
-                            :key="`internal-map-${message.message_id}`"
-                            :map-style="mapStyle"
-                            :center="
-                              resolveLocationCoordinates(
-                                message.content.location
+                          <div
+                            v-else-if="
+                              isReplyPreviewContact(
+                                resolveQuotedPreviewContent(message)
                               )
                             "
-                            :zoom="15"
-                            :interactive="false"
-                            :attribution-control="false"
-                            :navigation-control="false"
-                            class="internal-chat-location-map-preview-map"
-                            :style="{ width: '100%', height: '112px' }"
+                            class="internal-chat-reply-preview-icon"
                           >
-                            <MglMarker
-                              :coordinates="
-                                resolveLocationCoordinates(
-                                  message.content.location
+                            <VAvatar
+                              v-if="resolveQuotedPreviewContactPhoto(message)"
+                              size="26"
+                            >
+                              <VImg
+                                :src="
+                                  resolveQuotedPreviewContactPhoto(message) ||
+                                  ''
+                                "
+                                :alt="resolveQuotedText(message)"
+                              />
+                            </VAvatar>
+                            <VIcon
+                              v-else
+                              size="26"
+                              color="primary"
+                              :icon="
+                                isReplyPreviewContactGroup(
+                                  resolveQuotedPreviewContent(message)
                                 )
+                                  ? 'tabler-users'
+                                  : 'tabler-user'
                               "
-                              color="#ef4444"
                             />
-                          </MglMap>
-                        </div>
-                        <div class="internal-chat-location-info">
-                          <div
-                            v-if="message.content.location?.name"
-                            class="internal-chat-location-title"
-                          >
-                            {{ message.content.location.name }}
                           </div>
-                          <div
-                            v-if="message.content.location?.address"
-                            class="internal-chat-location-address text-caption"
-                          >
-                            {{ message.content.location.address }}
-                          </div>
-                        </div>
-                      </button>
 
-                      <div
-                        v-if="resolveMessageContacts(message).length > 0"
-                        class="internal-chat-contact-bubble"
-                        :class="{
-                          'internal-chat-contact-bubble--right':
-                            isOwnMessage(message),
-                          'internal-chat-contact-bubble--left':
-                            !isOwnMessage(message),
-                          'is-deleted': isDeletedMessage(message),
-                        }"
-                      >
-                        <GroupContactMessageCard
-                          :title="resolveMessageContactCardTitle(message)"
-                          :subtitle="resolveMessageContactCardSubtitle(message)"
-                          :align="isOwnMessage(message) ? 'right' : 'left'"
-                          :is-group="resolveMessageContacts(message).length > 1"
-                          :photo="
-                            resolveMessageContacts(message).length === 1
-                              ? resolveMessageContacts(message)[0]?.photo
-                              : null
+                          <div class="internal-chat-reply-preview-content">
+                            <div class="internal-chat-reply-preview-name">
+                              {{ resolveQuotedName(message) }}
+                            </div>
+                            <div class="internal-chat-reply-preview-text">
+                              {{
+                                resolveQuotedText(message) ||
+                                t('internal_chat_message')
+                              }}
+                            </div>
+                            <div
+                              v-if="resolveQuotedPreviewMeta(message)"
+                              class="internal-chat-reply-preview-meta"
+                            >
+                              {{ resolveQuotedPreviewMeta(message) }}
+                            </div>
+                          </div>
+                        </button>
+
+                        <div
+                          v-if="
+                            resolveMessageText(message) &&
+                            shouldRenderMessageTextBeforeMedia(message)
                           "
-                          :show-meta="false"
-                          @toggle="openMessageContacts(message)"
-                          @view-all="openMessageContacts(message)"
-                        />
-
-                        <p
-                          v-if="message.content?.message"
-                          class="internal-chat-media-caption"
+                          class="internal-chat-message-text mb-2"
+                          :class="{
+                            'internal-chat-message-text--deleted':
+                              isDeletedMessage(message),
+                          }"
                         >
-                          {{ message.content.message }}
-                        </p>
-                      </div>
-
-                      <div
-                        v-if="resolveMessageLocalState(message)"
-                        class="internal-chat-upload-state"
-                        :class="{
-                          'internal-chat-upload-state--error':
-                            hasMessageUploadError(message),
-                        }"
-                      >
-                        <VProgressLinear
-                          v-if="!hasMessageUploadError(message)"
-                          :model-value="resolveMessageUploadProgress(message)"
-                          height="3"
-                          color="primary"
-                          rounded
-                        />
-                        <span v-else>
-                          {{ t('internal_chat_send_message_error') }}
-                        </span>
-                        <VBtn
-                          v-if="hasMessageUploadError(message)"
-                          size="x-small"
-                          variant="text"
-                          color="error"
-                          class="ms-1"
-                          @click="retryLocalMessage(message)"
-                        >
-                          {{ t('internal_chat_retry_send') }}
-                        </VBtn>
-                      </div>
-
-                      <div
-                        v-if="message.content?.reactions?.length"
-                        class="internal-chat-reactions-summary"
-                        :class="{
-                          'internal-chat-reactions-summary--mine':
-                            isOwnMessage(message),
-                        }"
-                      >
-                        <span
-                          v-for="reaction in getReactionsSummary(
-                            message.content.reactions
-                          )"
-                          :key="`${message.message_id}-reaction-${reaction.emoji}`"
-                          class="internal-chat-reaction-summary-item"
-                        >
-                          <span>{{ reaction.emoji }}</span>
-                          <span>{{ reaction.count }}</span>
-                        </span>
-                      </div>
-
-                      <div class="internal-chat-message-footer">
-                        <div class="internal-chat-message-meta-content">
-                          <span
-                            v-if="isDeletedMessage(message)"
-                            class="internal-chat-message-status-badge"
-                          >
-                            {{ t('internal_chat_deleted_badge') }}
-                          </span>
-                          <span
-                            v-else-if="hasMessageHistory(message)"
-                            class="internal-chat-message-status-badge"
-                          >
-                            {{ t('internal_chat_edited') }}
-                          </span>
-                          <div class="internal-chat-message-meta-row">
-                            <span class="internal-chat-message-time">
-                              {{ formatMessageDate(message.date) }}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="
-                          showReactionPicker === message.message_id &&
-                          canInteractWithMessage(message)
-                        "
-                        class="internal-chat-reaction-picker"
-                        :class="{
-                          'internal-chat-reaction-picker--mine':
-                            isOwnMessage(message),
-                        }"
-                        @click.stop
-                      >
-                        <div class="internal-chat-reaction-picker-row">
-                          <VBtn
-                            v-for="emoji in quickReactions"
-                            :key="emoji"
-                            icon
-                            size="32"
-                            variant="text"
-                            class="internal-chat-reaction-option"
-                            @click="onReact(message, emoji)"
-                          >
-                            <span class="text-h6">{{ emoji }}</span>
-                          </VBtn>
-
-                          <VDivider vertical class="mx-1" />
-
-                          <VBtn
-                            icon
-                            size="32"
-                            variant="text"
-                            class="internal-chat-reaction-option"
-                            @click.stop="toggleEmojiPicker(message.message_id)"
-                          >
-                            <VIcon size="20">tabler-plus</VIcon>
-                          </VBtn>
+                          {{ resolveMessageText(message) }}
                         </div>
 
                         <div
-                          v-if="showEmojiPicker === message.message_id"
-                          class="internal-chat-emoji-picker"
+                          v-if="message.content?.link_preview"
+                          class="internal-chat-link-preview"
                         >
-                          <Picker
-                            :data="reactionEmojiIndex"
-                            :per-line="8"
-                            :show-preview="false"
-                            :show-skin-tones="false"
-                            :show-search="true"
-                            @select="onSelectReactionEmoji(message, $event)"
+                          <ChatLinkPreview
+                            :preview="message.content.link_preview as any"
                           />
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
 
-              <template v-else-if="displayItem.kind === 'media-group'">
-                <div
-                  class="internal-chat-message-row"
-                  :data-message-group-ids="
-                    displayItem.messages
-                      .map((message) => message.message_id)
-                      .join(' ')
-                  "
-                  :class="{
-                    'internal-chat-message-row--mine': displayItem.isMine,
-                    'internal-chat-message-row--target':
-                      isMediaGroupHighlighted(displayItem),
-                  }"
-                >
-                  <button
-                    type="button"
-                    class="internal-chat-message-avatar-button"
-                    :disabled="!displayItem.firstMessage.user?.id"
-                    :aria-label="t('internal_chat_user_information')"
-                    @click.stop="
-                      openMessageUserInfoDrawer(displayItem.firstMessage)
-                    "
-                  >
-                    <VAvatar
-                      size="32"
-                      class="internal-chat-message-avatar"
-                      :class="{
-                        'internal-chat-message-avatar--mine':
-                          displayItem.isMine,
-                      }"
-                    >
-                      <VImg
-                        :src="
-                          resolveMessageAvatarSource(displayItem.firstMessage)
-                        "
-                        :alt="
-                          displayItem.firstMessage.user?.name ||
-                          t('internal_chat_system_user')
-                        "
-                        cover
-                      />
-                    </VAvatar>
-                  </button>
-
-                  <div
-                    class="internal-chat-message-shell"
-                    :class="{
-                      'internal-chat-message-shell--mine': displayItem.isMine,
-                    }"
-                  >
-                    <div
-                      class="internal-chat-message-bubble internal-chat-message-bubble--media-group"
-                      :class="{
-                        'internal-chat-message-bubble--mine':
-                          displayItem.isMine,
-                      }"
-                    >
-                      <div class="internal-chat-message-header">
-                        <span class="text-caption text-medium-emphasis">
-                          {{
-                            displayItem.firstMessage.user?.name ||
-                            t('internal_chat_system_user')
-                          }}
-                        </span>
-                      </div>
-
-                      <div
-                        class="internal-chat-media-group-grid"
-                        :class="getMediaGroupGridClass(displayItem)"
-                      >
                         <button
-                          v-for="(
-                            mediaMessage, mediaIndex
-                          ) in getMediaGroupPreviewItems(displayItem)"
-                          :key="getInternalMessageRenderKey(mediaMessage)"
+                          v-if="message.content?.image?.url"
                           type="button"
-                          :id="`internal-msg-${mediaMessage.message_id}`"
-                          :data-message-id="mediaMessage.message_id"
-                          class="internal-chat-media-group-tile"
-                          :aria-label="
-                            displayItem.mediaKind === 'video'
-                              ? t('internal_chat_videos')
-                              : t('internal_chat_image_alt')
-                          "
-                          @click="openMediaGroupViewer(displayItem, mediaIndex)"
+                          class="internal-chat-media-frame"
+                          :aria-label="t('internal_chat_image_alt')"
+                          @click="openMessageMediaViewer(message)"
                         >
                           <img
-                            v-if="
-                              resolveMessageMediaKind(mediaMessage) === 'image'
-                            "
-                            :src="mediaMessage.content?.image?.url"
-                            class="internal-chat-media-group-thumb"
+                            :src="message.content.image.url"
+                            class="internal-chat-media"
                             :alt="t('internal_chat_image_alt')"
                           />
+                          <UploadProgressBadge
+                            v-if="shouldShowUploadProgressBadge(message)"
+                            class="internal-chat-upload-progress-overlay"
+                            :progress="resolveMessageUploadProgress(message)"
+                            :status="resolveMessageUploadStatus(message)"
+                          />
+                        </button>
+
+                        <button
+                          v-if="message.content?.video?.url"
+                          type="button"
+                          class="internal-chat-media-frame"
+                          :aria-label="t('internal_chat_videos')"
+                          @click="openMessageMediaViewer(message)"
+                        >
                           <video
-                            v-else
-                            :src="mediaMessage.content?.video?.url"
-                            class="internal-chat-media-group-thumb"
+                            :src="message.content.video.url"
+                            class="internal-chat-media"
                             preload="metadata"
                             muted
                             playsinline
                           >
                             <track kind="captions" />
                           </video>
-
-                          <span
-                            v-if="
-                              resolveMessageMediaKind(mediaMessage) === 'video'
-                            "
-                            class="internal-chat-video-overlay"
-                          >
-                            <VIcon size="24">tabler-player-play</VIcon>
+                          <span class="internal-chat-video-overlay">
+                            <VIcon size="26">tabler-player-play</VIcon>
                           </span>
-
-                          <span
-                            v-if="
-                              mediaIndex === 3 &&
-                              getMediaGroupRemainingCount(displayItem) > 0
-                            "
-                            class="internal-chat-media-group-more"
-                          >
-                            +{{ getMediaGroupRemainingCount(displayItem) }}
-                          </span>
+                          <UploadProgressBadge
+                            v-if="shouldShowUploadProgressBadge(message)"
+                            class="internal-chat-upload-progress-overlay"
+                            :progress="resolveMessageUploadProgress(message)"
+                            :status="resolveMessageUploadStatus(message)"
+                          />
                         </button>
-                      </div>
 
-                      <div class="internal-chat-message-footer">
-                        <div class="internal-chat-message-meta-content">
-                          <div class="internal-chat-message-meta-row">
-                            <span class="internal-chat-message-time">
-                              {{
-                                formatMessageDate(displayItem.lastMessage.date)
-                              }}
+                        <div
+                          v-if="message.content?.audio?.url"
+                          class="internal-chat-audio-bubble"
+                          :class="{
+                            'internal-chat-audio-bubble--right':
+                              isOwnMessage(message),
+                            'internal-chat-audio-bubble--left':
+                              !isOwnMessage(message),
+                            'is-deleted': isDeletedMessage(message),
+                          }"
+                        >
+                          <div class="internal-chat-audio-player-container">
+                            <button
+                              type="button"
+                              class="internal-chat-audio-speed-btn"
+                              @click.stop="toggleAudioSpeed(message.message_id)"
+                            >
+                              {{ getAudioSpeedLabel(message.message_id) }}
+                            </button>
+                            <VBtn
+                              icon
+                              size="36"
+                              variant="text"
+                              class="internal-chat-audio-play-btn"
+                              @click="
+                                toggleAudioPlay(
+                                  message.message_id,
+                                  message.content.audio.url || ''
+                                )
+                              "
+                            >
+                              <VIcon size="18">
+                                {{
+                                  isAudioPlaying(message.message_id)
+                                    ? 'tabler-player-pause'
+                                    : 'tabler-player-play'
+                                }}
+                              </VIcon>
+                            </VBtn>
+
+                            <div
+                              class="internal-chat-audio-waveform-container"
+                              @click="
+                                seekAudio(
+                                  message.message_id,
+                                  message.content.audio.url || '',
+                                  $event
+                                )
+                              "
+                            >
+                              <template
+                                v-if="
+                                  (audioWaveforms[message.message_id]?.length ||
+                                    0) > 0
+                                "
+                              >
+                                <div class="internal-chat-audio-waveform">
+                                  <div
+                                    v-for="(barValue, index) in audioWaveforms[
+                                      message.message_id
+                                    ]"
+                                    :key="`${message.message_id}-audio-wave-${index}`"
+                                    class="internal-chat-audio-waveform-bar"
+                                    :class="{
+                                      'internal-chat-audio-waveform-bar--active':
+                                        getAudioProgress(message.message_id) >
+                                        (index /
+                                          (audioWaveforms[message.message_id]
+                                            ?.length || 64)) *
+                                          100,
+                                    }"
+                                    :style="{
+                                      height: `${Math.max(2, barValue * 100)}%`,
+                                    }"
+                                  ></div>
+                                </div>
+                                <div
+                                  class="internal-chat-audio-progress-indicator"
+                                  :style="{
+                                    left: `${getAudioProgress(
+                                      message.message_id
+                                    )}%`,
+                                  }"
+                                ></div>
+                              </template>
+                              <div
+                                v-else
+                                class="internal-chat-audio-waveform-placeholder"
+                              >
+                                <div
+                                  v-for="index in 64"
+                                  :key="`${message.message_id}-audio-placeholder-${index}`"
+                                  class="internal-chat-audio-waveform-bar-placeholder"
+                                ></div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="internal-chat-audio-meta">
+                            {{
+                              getDisplayAudioTime(
+                                message.message_id,
+                                message.content.audio.duration
+                              )
+                            }}
+                          </div>
+
+                          <p
+                            v-if="message.content?.message"
+                            class="internal-chat-media-caption"
+                          >
+                            {{ message.content.message }}
+                          </p>
+                          <UploadProgressBadge
+                            v-if="shouldShowUploadProgressBadge(message)"
+                            class="internal-chat-upload-progress-overlay internal-chat-upload-progress-overlay--audio"
+                            :progress="resolveMessageUploadProgress(message)"
+                            :status="resolveMessageUploadStatus(message)"
+                          />
+                        </div>
+
+                        <div
+                          v-if="message.content?.document?.url"
+                          class="internal-chat-document-content"
+                        >
+                          <div
+                            class="internal-chat-document-bubble"
+                            :class="{
+                              'internal-chat-document-bubble--right':
+                                isOwnMessage(message),
+                              'internal-chat-document-bubble--left':
+                                !isOwnMessage(message),
+                              'is-deleted': isDeletedMessage(message),
+                            }"
+                          >
+                            <div class="internal-chat-document-icon">
+                              <VIcon
+                                :icon="
+                                  resolveInternalDocumentIcon(
+                                    message.content.document
+                                  )
+                                "
+                                size="26"
+                                color="primary"
+                              />
+                            </div>
+                            <div class="internal-chat-document-details">
+                              <VTooltip location="bottom">
+                                <template #activator="{ props }">
+                                  <a
+                                    v-bind="props"
+                                    class="internal-chat-document-name"
+                                    :href="message.content.document.url"
+                                    :download="
+                                      resolveInternalDocumentDownloadName(
+                                        message.content.document
+                                      )
+                                    "
+                                    target="_blank"
+                                    rel="noopener"
+                                  >
+                                    {{
+                                      truncateFileName(
+                                        resolveInternalDocumentName(
+                                          message.content.document
+                                        ),
+                                        30
+                                      )
+                                    }}
+                                  </a>
+                                </template>
+                                <span>
+                                  {{
+                                    resolveInternalDocumentName(
+                                      message.content.document
+                                    )
+                                  }}
+                                </span>
+                              </VTooltip>
+
+                              <span
+                                class="internal-chat-document-meta text-caption text-disabled"
+                              >
+                                {{
+                                  resolveInternalDocumentMeta(
+                                    message.content.document
+                                  )
+                                }}
+                              </span>
+                            </div>
+                            <a
+                              class="internal-chat-document-download"
+                              :href="message.content.document.url"
+                              :download="
+                                resolveInternalDocumentDownloadName(
+                                  message.content.document
+                                )
+                              "
+                              target="_blank"
+                              rel="noopener"
+                            >
+                              <VIcon size="20">tabler-download</VIcon>
+                            </a>
+                            <UploadProgressBadge
+                              v-if="shouldShowUploadProgressBadge(message)"
+                              class="internal-chat-upload-progress-overlay internal-chat-upload-progress-overlay--document"
+                              :progress="resolveMessageUploadProgress(message)"
+                              :status="resolveMessageUploadStatus(message)"
+                            />
+                          </div>
+
+                          <p
+                            v-if="message.content?.message"
+                            class="internal-chat-media-caption"
+                          >
+                            {{ message.content.message }}
+                          </p>
+                        </div>
+
+                        <button
+                          v-if="hasValidLocation(message)"
+                          type="button"
+                          class="internal-chat-location-bubble"
+                          :class="{
+                            'internal-chat-location-bubble--right':
+                              isOwnMessage(message),
+                            'internal-chat-location-bubble--left':
+                              !isOwnMessage(message),
+                            'is-deleted': isDeletedMessage(message),
+                          }"
+                          @click="openMessageLocation(message)"
+                        >
+                          <div class="internal-chat-location-map-preview">
+                            <div
+                              v-if="
+                                !webGLSupported || mapErrors[message.message_id]
+                              "
+                              class="internal-chat-location-map-fallback"
+                            >
+                              <VIcon size="32" color="primary">
+                                tabler-map-pin
+                              </VIcon>
+                              <span class="text-caption mt-2">
+                                {{ t('location_map_unavailable') }}
+                              </span>
+                            </div>
+                            <MglMap
+                              v-else
+                              :key="`internal-map-${message.message_id}`"
+                              :map-style="mapStyle"
+                              :center="
+                                resolveLocationCoordinates(
+                                  message.content.location
+                                )
+                              "
+                              :zoom="15"
+                              :interactive="false"
+                              :attribution-control="false"
+                              :navigation-control="false"
+                              class="internal-chat-location-map-preview-map"
+                              :style="{ width: '100%', height: '112px' }"
+                            >
+                              <MglMarker
+                                :coordinates="
+                                  resolveLocationCoordinates(
+                                    message.content.location
+                                  )
+                                "
+                                color="#ef4444"
+                              />
+                            </MglMap>
+                          </div>
+                          <div class="internal-chat-location-info">
+                            <div
+                              v-if="message.content.location?.name"
+                              class="internal-chat-location-title"
+                            >
+                              {{ message.content.location.name }}
+                            </div>
+                            <div
+                              v-if="message.content.location?.address"
+                              class="internal-chat-location-address text-caption"
+                            >
+                              {{ message.content.location.address }}
+                            </div>
+                          </div>
+                        </button>
+
+                        <div
+                          v-if="resolveMessageContacts(message).length > 0"
+                          class="internal-chat-contact-bubble"
+                          :class="{
+                            'internal-chat-contact-bubble--right':
+                              isOwnMessage(message),
+                            'internal-chat-contact-bubble--left':
+                              !isOwnMessage(message),
+                            'is-deleted': isDeletedMessage(message),
+                          }"
+                        >
+                          <GroupContactMessageCard
+                            :title="resolveMessageContactCardTitle(message)"
+                            :subtitle="
+                              resolveMessageContactCardSubtitle(message)
+                            "
+                            :align="isOwnMessage(message) ? 'right' : 'left'"
+                            :is-group="
+                              resolveMessageContacts(message).length > 1
+                            "
+                            :photo="
+                              resolveMessageContacts(message).length === 1
+                                ? resolveMessageContacts(message)[0]?.photo
+                                : null
+                            "
+                            :show-meta="false"
+                            @toggle="openMessageContacts(message)"
+                            @view-all="openMessageContacts(message)"
+                          />
+
+                          <p
+                            v-if="message.content?.message"
+                            class="internal-chat-media-caption"
+                          >
+                            {{ message.content.message }}
+                          </p>
+                        </div>
+
+                        <div
+                          v-if="hasMessageUploadError(message)"
+                          class="internal-chat-upload-state"
+                          :class="{
+                            'internal-chat-upload-state--error':
+                              hasMessageUploadError(message),
+                          }"
+                        >
+                          <span>
+                            {{ t('internal_chat_send_message_error') }}
+                          </span>
+                          <VBtn
+                            size="x-small"
+                            variant="text"
+                            color="error"
+                            class="ms-1"
+                            @click="retryLocalMessage(message)"
+                          >
+                            {{ t('internal_chat_retry_send') }}
+                          </VBtn>
+                        </div>
+
+                        <div
+                          v-if="message.content?.reactions?.length"
+                          class="internal-chat-reactions-summary"
+                          :class="{
+                            'internal-chat-reactions-summary--mine':
+                              isOwnMessage(message),
+                          }"
+                        >
+                          <span
+                            v-for="reaction in getReactionsSummary(
+                              message.content.reactions
+                            )"
+                            :key="`${message.message_id}-reaction-${reaction.emoji}`"
+                            class="internal-chat-reaction-summary-item"
+                          >
+                            <span>{{ reaction.emoji }}</span>
+                            <span>{{ reaction.count }}</span>
+                          </span>
+                        </div>
+
+                        <div class="internal-chat-message-footer">
+                          <div class="internal-chat-message-meta-content">
+                            <span
+                              v-if="isDeletedMessage(message)"
+                              class="internal-chat-message-status-badge"
+                            >
+                              {{ t('internal_chat_deleted_badge') }}
                             </span>
+                            <span
+                              v-else-if="hasMessageHistory(message)"
+                              class="internal-chat-message-status-badge"
+                            >
+                              {{ t('internal_chat_edited') }}
+                            </span>
+                            <div class="internal-chat-message-meta-row">
+                              <span class="internal-chat-message-time">
+                                {{ formatMessageDate(message.date) }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          v-if="
+                            showReactionPicker === message.message_id &&
+                            canInteractWithMessage(message)
+                          "
+                          class="internal-chat-reaction-picker"
+                          :class="{
+                            'internal-chat-reaction-picker--mine':
+                              isOwnMessage(message),
+                          }"
+                          @click.stop
+                        >
+                          <div class="internal-chat-reaction-picker-row">
+                            <VBtn
+                              v-for="emoji in quickReactions"
+                              :key="emoji"
+                              icon
+                              size="32"
+                              variant="text"
+                              class="internal-chat-reaction-option"
+                              @click="onReact(message, emoji)"
+                            >
+                              <span class="text-h6">{{ emoji }}</span>
+                            </VBtn>
+
+                            <VDivider vertical class="mx-1" />
+
+                            <VBtn
+                              icon
+                              size="32"
+                              variant="text"
+                              class="internal-chat-reaction-option"
+                              @click.stop="
+                                toggleEmojiPicker(message.message_id)
+                              "
+                            >
+                              <VIcon size="20">tabler-plus</VIcon>
+                            </VBtn>
+                          </div>
+
+                          <div
+                            v-if="showEmojiPicker === message.message_id"
+                            class="internal-chat-emoji-picker"
+                          >
+                            <Picker
+                              :data="reactionEmojiIndex"
+                              :per-line="8"
+                              :show-preview="false"
+                              :show-skin-tones="false"
+                              :show-search="true"
+                              @select="onSelectReactionEmoji(message, $event)"
+                            />
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                </template>
+
+                <template v-else-if="displayItem.kind === 'media-group'">
+                  <div
+                    class="internal-chat-message-row"
+                    :data-message-group-ids="
+                      displayItem.messages
+                        .map((message) => message.message_id)
+                        .join(' ')
+                    "
+                    :class="{
+                      'internal-chat-message-row--mine': displayItem.isMine,
+                      'internal-chat-message-row--target':
+                        isMediaGroupHighlighted(displayItem),
+                    }"
+                  >
+                    <button
+                      type="button"
+                      class="internal-chat-message-avatar-button"
+                      :disabled="!displayItem.firstMessage.user?.id"
+                      :aria-label="t('internal_chat_user_information')"
+                      @click.stop="
+                        openMessageUserInfoDrawer(displayItem.firstMessage)
+                      "
+                    >
+                      <VAvatar
+                        size="32"
+                        class="internal-chat-message-avatar"
+                        :class="{
+                          'internal-chat-message-avatar--mine':
+                            displayItem.isMine,
+                        }"
+                      >
+                        <VImg
+                          :src="
+                            resolveMessageAvatarSource(displayItem.firstMessage)
+                          "
+                          :alt="
+                            displayItem.firstMessage.user?.name ||
+                            t('internal_chat_system_user')
+                          "
+                          cover
+                        />
+                      </VAvatar>
+                    </button>
+
+                    <div
+                      class="internal-chat-message-shell"
+                      :class="{
+                        'internal-chat-message-shell--mine': displayItem.isMine,
+                      }"
+                    >
+                      <div
+                        class="internal-chat-message-bubble internal-chat-message-bubble--media-group"
+                        :class="{
+                          'internal-chat-message-bubble--mine':
+                            displayItem.isMine,
+                        }"
+                      >
+                        <div class="internal-chat-message-header">
+                          <span class="text-caption text-medium-emphasis">
+                            {{
+                              displayItem.firstMessage.user?.name ||
+                              t('internal_chat_system_user')
+                            }}
+                          </span>
+                        </div>
+
+                        <div
+                          class="internal-chat-media-group-grid"
+                          :class="getMediaGroupGridClass(displayItem)"
+                        >
+                          <button
+                            v-for="(
+                              mediaMessage, mediaIndex
+                            ) in getMediaGroupPreviewItems(displayItem)"
+                            :key="getInternalMessageRenderKey(mediaMessage)"
+                            type="button"
+                            :id="`internal-msg-${mediaMessage.message_id}`"
+                            :data-message-id="mediaMessage.message_id"
+                            class="internal-chat-media-group-tile"
+                            :aria-label="
+                              displayItem.mediaKind === 'video'
+                                ? t('internal_chat_videos')
+                                : t('internal_chat_image_alt')
+                            "
+                            @click="
+                              openMediaGroupViewer(displayItem, mediaIndex)
+                            "
+                          >
+                            <img
+                              v-if="
+                                resolveMessageMediaKind(mediaMessage) ===
+                                'image'
+                              "
+                              :src="mediaMessage.content?.image?.url"
+                              class="internal-chat-media-group-thumb"
+                              :alt="t('internal_chat_image_alt')"
+                            />
+                            <video
+                              v-else
+                              :src="mediaMessage.content?.video?.url"
+                              class="internal-chat-media-group-thumb"
+                              preload="metadata"
+                              muted
+                              playsinline
+                            >
+                              <track kind="captions" />
+                            </video>
+
+                            <span
+                              v-if="
+                                resolveMessageMediaKind(mediaMessage) ===
+                                'video'
+                              "
+                              class="internal-chat-video-overlay"
+                            >
+                              <VIcon size="24">tabler-player-play</VIcon>
+                            </span>
+
+                            <span
+                              v-if="
+                                mediaIndex === 3 &&
+                                getMediaGroupRemainingCount(displayItem) > 0
+                              "
+                              class="internal-chat-media-group-more"
+                            >
+                              +{{ getMediaGroupRemainingCount(displayItem) }}
+                            </span>
+                            <UploadProgressBadge
+                              v-if="shouldShowUploadProgressBadge(mediaMessage)"
+                              class="internal-chat-upload-progress-overlay internal-chat-upload-progress-overlay--group"
+                              :progress="
+                                resolveMessageUploadProgress(mediaMessage)
+                              "
+                              :status="resolveMessageUploadStatus(mediaMessage)"
+                            />
+                          </button>
+                        </div>
+
+                        <div class="internal-chat-message-footer">
+                          <div class="internal-chat-message-meta-content">
+                            <div class="internal-chat-message-meta-row">
+                              <span class="internal-chat-message-time">
+                                {{
+                                  formatMessageDate(
+                                    displayItem.lastMessage.date
+                                  )
+                                }}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
               </template>
-            </template>
-          </PerfectScrollbar>
+            </PerfectScrollbar>
 
-          <Transition name="fade">
-            <VBtn
-              v-if="showScrollToBottom"
-              class="internal-chat-scroll-to-bottom"
-              icon
-              size="small"
-              variant="flat"
-              color="white"
-              elevation="2"
-              :aria-label="t('internal_chat_scroll_to_bottom')"
-              @click="scrollMessagesToBottom(true)"
-            >
-              <VIcon size="18" color="primary">tabler-arrow-down</VIcon>
-              <VTooltip activator="parent" location="top">
-                {{ t('internal_chat_scroll_to_bottom') }}
-              </VTooltip>
-            </VBtn>
-          </Transition>
-
-          <Teleport to="body">
             <Transition name="fade">
-              <div
-                v-if="shouldShowFixedMessageDate"
-                class="internal-chat-fixed-date-indicator"
-                :style="{
-                  top: `${fixedMessageDateIndicatorTop + 8}px`,
-                  left: `${fixedMessageDateIndicatorLeft}px`,
-                  width: `${fixedMessageDateIndicatorWidth}px`,
-                }"
+              <VBtn
+                v-if="showScrollToBottom"
+                class="internal-chat-scroll-to-bottom"
+                icon
+                size="small"
+                variant="flat"
+                color="white"
+                elevation="2"
+                :aria-label="t('internal_chat_scroll_to_bottom')"
+                @click="scrollMessagesToBottom(true)"
               >
-                <div class="internal-chat-fixed-date-indicator-badge">
-                  {{ fixedMessageDateLabel }}
-                </div>
-              </div>
+                <VIcon size="18" color="primary">tabler-arrow-down</VIcon>
+                <VTooltip activator="parent" location="top">
+                  {{ t('internal_chat_scroll_to_bottom') }}
+                </VTooltip>
+              </VBtn>
             </Transition>
-          </Teleport>
-        </div>
 
-        <VDivider />
-
-        <div class="internal-chat-composer px-4 py-3">
-          <div v-if="replyMessage" class="internal-chat-reply-preview">
-            <div
-              v-if="resolveReplyPreviewImageSrc(activeReplyPreviewContent)"
-              class="internal-chat-reply-preview-media"
-            >
-              <img
-                :src="
-                  resolveReplyPreviewImageSrc(activeReplyPreviewContent) || ''
-                "
-                :alt="t('photo_label')"
-              />
-            </div>
-            <div
-              v-else-if="isReplyPreviewDocument(activeReplyPreviewContent)"
-              class="internal-chat-reply-preview-icon"
-            >
-              <VIcon
-                :icon="
-                  resolveReplyPreviewDocumentIcon(activeReplyPreviewContent)
-                "
-                size="26"
-                color="primary"
-              />
-            </div>
-            <div
-              v-else-if="isReplyPreviewVideo(activeReplyPreviewContent)"
-              class="internal-chat-reply-preview-icon"
-            >
-              <VIcon size="26" color="primary">tabler-player-play</VIcon>
-            </div>
-            <div
-              v-else-if="isReplyPreviewAudio(activeReplyPreviewContent)"
-              class="internal-chat-reply-preview-icon"
-            >
-              <VIcon size="26" color="primary">tabler-microphone</VIcon>
-            </div>
-            <div
-              v-else-if="isReplyPreviewLocation(activeReplyPreviewContent)"
-              class="internal-chat-reply-preview-icon"
-            >
-              <VIcon size="26" color="primary">tabler-map-pin</VIcon>
-            </div>
-            <div
-              v-else-if="isReplyPreviewContact(activeReplyPreviewContent)"
-              class="internal-chat-reply-preview-icon"
-            >
-              <VAvatar
-                v-if="
-                  resolveReplyPreviewContactPhoto(activeReplyPreviewContent)
-                "
-                size="26"
-              >
-                <VImg
-                  :src="
-                    resolveReplyPreviewContactPhoto(
-                      activeReplyPreviewContent
-                    ) || ''
-                  "
-                  :alt="resolveReplyPreviewText(activeReplyPreviewContent)"
-                />
-              </VAvatar>
-              <VIcon
-                v-else
-                size="26"
-                color="primary"
-                :icon="
-                  isReplyPreviewContactGroup(activeReplyPreviewContent)
-                    ? 'tabler-users'
-                    : 'tabler-user'
-                "
-              />
-            </div>
-
-            <div class="internal-chat-reply-preview-content">
-              <div class="internal-chat-reply-preview-name">
-                {{ resolveReplyPreviewName(replyMessage) }}
-              </div>
-              <div class="internal-chat-reply-preview-text">
-                {{ resolveReplyPreviewText(activeReplyPreviewContent) }}
-              </div>
-              <div
-                v-if="resolveReplyPreviewMeta(activeReplyPreviewContent)"
-                class="internal-chat-reply-preview-meta"
-              >
-                {{ resolveReplyPreviewMeta(activeReplyPreviewContent) }}
-              </div>
-            </div>
-
-            <VBtn
-              class="internal-chat-reply-preview-close"
-              icon
-              size="22"
-              density="comfortable"
-              variant="text"
-              :aria-label="t('close')"
-              @click="replyMessage = null"
-            >
-              <VIcon size="18">tabler-x</VIcon>
-            </VBtn>
+            <Teleport to="body">
+              <Transition name="fade">
+                <div
+                  v-if="shouldShowFixedMessageDate"
+                  class="internal-chat-fixed-date-indicator"
+                  :style="{
+                    top: `${fixedMessageDateIndicatorTop + 8}px`,
+                    left: `${fixedMessageDateIndicatorLeft}px`,
+                    width: `${fixedMessageDateIndicatorWidth}px`,
+                  }"
+                >
+                  <div class="internal-chat-fixed-date-indicator-badge">
+                    {{ fixedMessageDateLabel }}
+                  </div>
+                </div>
+              </Transition>
+            </Teleport>
           </div>
 
-          <ChatLinkPreview
-            v-if="linkPreview || isLoadingLinkPreview"
-            :preview="linkPreview"
-            :loading="isLoadingLinkPreview"
-            class="internal-chat-composer-link-preview"
-            @close="linkPreview = null"
-          />
+          <VDivider />
 
-          <Transition name="fade">
-            <VCard
-              v-if="selectedImages.length > 0"
-              class="internal-chat-attachment-card mb-3"
-            >
-              <VCardTitle class="internal-chat-attachment-title">
-                <span
-                  >{{ t('images_selected') }} ({{
-                    selectedImages.length
-                  }}/10)</span
+          <div class="internal-chat-composer px-4 py-3">
+            <div v-if="replyMessage" class="internal-chat-reply-preview">
+              <div
+                v-if="resolveReplyPreviewImageSrc(activeReplyPreviewContent)"
+                class="internal-chat-reply-preview-media"
+              >
+                <img
+                  :src="
+                    resolveReplyPreviewImageSrc(activeReplyPreviewContent) || ''
+                  "
+                  :alt="t('photo_label')"
+                />
+              </div>
+              <div
+                v-else-if="isReplyPreviewDocument(activeReplyPreviewContent)"
+                class="internal-chat-reply-preview-icon"
+              >
+                <VIcon
+                  :icon="
+                    resolveReplyPreviewDocumentIcon(activeReplyPreviewContent)
+                  "
+                  size="26"
+                  color="primary"
+                />
+              </div>
+              <div
+                v-else-if="isReplyPreviewVideo(activeReplyPreviewContent)"
+                class="internal-chat-reply-preview-icon"
+              >
+                <VIcon size="26" color="primary">tabler-player-play</VIcon>
+              </div>
+              <div
+                v-else-if="isReplyPreviewAudio(activeReplyPreviewContent)"
+                class="internal-chat-reply-preview-icon"
+              >
+                <VIcon size="26" color="primary">tabler-microphone</VIcon>
+              </div>
+              <div
+                v-else-if="isReplyPreviewLocation(activeReplyPreviewContent)"
+                class="internal-chat-reply-preview-icon"
+              >
+                <VIcon size="26" color="primary">tabler-map-pin</VIcon>
+              </div>
+              <div
+                v-else-if="isReplyPreviewContact(activeReplyPreviewContent)"
+                class="internal-chat-reply-preview-icon"
+              >
+                <VAvatar
+                  v-if="
+                    resolveReplyPreviewContactPhoto(activeReplyPreviewContent)
+                  "
+                  size="26"
                 >
-                <IconBtn size="small" @click="clearSelectedImages">
-                  <VIcon size="18">tabler-x</VIcon>
-                </IconBtn>
-              </VCardTitle>
-              <VCardText>
-                <div class="internal-chat-attachment-grid">
-                  <div
-                    v-for="(photo, index) in selectedImages"
-                    :key="`${photo.file.name}-${index}`"
-                    class="internal-chat-photo-preview"
-                  >
-                    <VImg
-                      :src="photo.preview"
-                      cover
-                      class="internal-chat-photo-preview-image"
-                    />
-                    <VBtn
-                      icon
-                      size="20"
-                      variant="flat"
-                      color="error"
-                      class="internal-chat-preview-remove"
-                      @click.stop="removeImage(index)"
-                    >
-                      <VIcon size="14">tabler-x</VIcon>
-                    </VBtn>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </Transition>
-
-          <Transition name="fade">
-            <VCard
-              v-if="selectedVideos.length > 0"
-              class="internal-chat-attachment-card mb-3"
-            >
-              <VCardTitle class="internal-chat-attachment-title">
-                <span
-                  >{{ t('videos_selected') }} ({{
-                    selectedVideos.length
-                  }}/10)</span
-                >
-                <IconBtn size="small" @click="clearSelectedVideos">
-                  <VIcon size="18">tabler-x</VIcon>
-                </IconBtn>
-              </VCardTitle>
-              <VCardText>
-                <div
-                  class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
-                >
-                  <div
-                    v-for="(video, index) in selectedVideos"
-                    :key="`${video.name}-${index}`"
-                    class="internal-chat-file-preview"
-                  >
-                    <div class="internal-chat-file-preview-media">
-                      <video
-                        :src="video.preview"
-                        muted
-                        playsinline
-                        preload="metadata"
-                      />
-                      <VIcon size="24">tabler-player-play</VIcon>
-                    </div>
-                    <div class="internal-chat-file-preview-meta">
-                      <span>{{ truncateFileName(video.name) }}</span>
-                      <small>
-                        {{ formatFileSize(video.size) }}
-                        <template v-if="video.duration">
-                          • {{ formatAttachmentDuration(video.duration) }}
-                        </template>
-                      </small>
-                    </div>
-                    <VBtn
-                      icon
-                      size="20"
-                      variant="flat"
-                      color="error"
-                      class="internal-chat-preview-remove"
-                      @click.stop="removeVideo(index)"
-                    >
-                      <VIcon size="14">tabler-x</VIcon>
-                    </VBtn>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </Transition>
-
-          <Transition name="fade">
-            <VCard
-              v-if="selectedDocuments.length > 0"
-              class="internal-chat-attachment-card mb-3"
-            >
-              <VCardTitle class="internal-chat-attachment-title">
-                <span
-                  >{{ t('documents_selected') }} ({{
-                    selectedDocuments.length
-                  }}/10)</span
-                >
-                <IconBtn size="small" @click="clearSelectedDocuments">
-                  <VIcon size="18">tabler-x</VIcon>
-                </IconBtn>
-              </VCardTitle>
-              <VCardText>
-                <div
-                  class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
-                >
-                  <div
-                    v-for="(doc, index) in selectedDocuments"
-                    :key="`${doc.name}-${index}`"
-                    class="internal-chat-file-preview"
-                  >
-                    <div class="internal-chat-file-preview-icon">
-                      <VIcon size="30">tabler-file-description</VIcon>
-                    </div>
-                    <div class="internal-chat-file-preview-meta">
-                      <span>{{ truncateFileName(doc.name) }}</span>
-                      <small
-                        >{{ doc.extension.toUpperCase() }} •
-                        {{ formatFileSize(doc.size) }}</small
-                      >
-                    </div>
-                    <VBtn
-                      icon
-                      size="20"
-                      variant="flat"
-                      color="error"
-                      class="internal-chat-preview-remove"
-                      @click.stop="removeDocument(index)"
-                    >
-                      <VIcon size="14">tabler-x</VIcon>
-                    </VBtn>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </Transition>
-
-          <Transition name="fade">
-            <VCard
-              v-if="selectedAudios.length > 0"
-              class="internal-chat-attachment-card mb-3"
-            >
-              <VCardTitle class="internal-chat-attachment-title">
-                <span
-                  >{{ t('audios_selected') }} ({{
-                    selectedAudios.length
-                  }}/10)</span
-                >
-                <IconBtn size="small" @click="clearSelectedAudios">
-                  <VIcon size="18">tabler-x</VIcon>
-                </IconBtn>
-              </VCardTitle>
-              <VCardText>
-                <div
-                  class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
-                >
-                  <div
-                    v-for="(audio, index) in selectedAudios"
-                    :key="`${audio.name}-${index}`"
-                    class="internal-chat-file-preview"
-                  >
-                    <div class="internal-chat-file-preview-icon">
-                      <VIcon size="30">tabler-headphones</VIcon>
-                    </div>
-                    <div class="internal-chat-file-preview-meta">
-                      <span>{{ truncateFileName(audio.name) }}</span>
-                      <small>
-                        {{ formatFileSize(audio.size) }}
-                        <template v-if="audio.duration">
-                          • {{ formatAttachmentDuration(audio.duration) }}
-                        </template>
-                      </small>
-                    </div>
-                    <VBtn
-                      icon
-                      size="20"
-                      variant="flat"
-                      color="error"
-                      class="internal-chat-preview-remove"
-                      @click.stop="removeAudio(index)"
-                    >
-                      <VIcon size="14">tabler-x</VIcon>
-                    </VBtn>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </Transition>
-
-          <Transition name="fade">
-            <VCard
-              v-if="selectedContacts.length > 0"
-              class="internal-chat-attachment-card mb-3"
-            >
-              <VCardTitle class="internal-chat-attachment-title">
-                <span
-                  >{{ t('contacts_selected') }} ({{
-                    selectedContacts.length
-                  }}/10)</span
-                >
-                <IconBtn size="small" @click="clearSelectedContacts">
-                  <VIcon size="18">tabler-x</VIcon>
-                </IconBtn>
-              </VCardTitle>
-              <VCardText>
-                <div class="internal-chat-attachment-grid">
-                  <div
-                    v-for="(contact, index) in selectedContacts"
-                    :key="`${contact.contact_id}-${index}`"
-                    class="internal-chat-contact-preview"
-                  >
-                    <VAvatar
-                      size="44"
-                      :variant="contact.photo ? undefined : 'tonal'"
-                    >
-                      <VImg v-if="contact.photo" :src="contact.photo" />
-                      <VIcon v-else size="24">tabler-user</VIcon>
-                    </VAvatar>
-                    <div class="internal-chat-file-preview-meta">
-                      <span
-                        >{{ contact.name }} {{ contact.last_name || '' }}</span
-                      >
-                      <small>{{
-                        contact.phone_partial || contact.email_partial || ''
-                      }}</small>
-                    </div>
-                    <VBtn
-                      icon
-                      size="20"
-                      variant="flat"
-                      color="error"
-                      class="internal-chat-preview-remove"
-                      @click.stop="removeContact(index)"
-                    >
-                      <VIcon size="14">tabler-x</VIcon>
-                    </VBtn>
-                  </div>
-                </div>
-              </VCardText>
-            </VCard>
-          </Transition>
-
-          <Transition name="fade">
-            <VCard
-              v-if="selectedLocation"
-              class="internal-chat-attachment-card internal-chat-location-preview mb-3"
-            >
-              <VCardText class="d-flex align-center gap-3">
-                <VAvatar size="44" variant="tonal" color="primary">
-                  <VIcon size="24">tabler-map-pin</VIcon>
+                  <VImg
+                    :src="
+                      resolveReplyPreviewContactPhoto(
+                        activeReplyPreviewContent
+                      ) || ''
+                    "
+                    :alt="resolveReplyPreviewText(activeReplyPreviewContent)"
+                  />
                 </VAvatar>
-                <div class="min-w-0 flex-grow-1">
-                  <div class="text-body-2 font-weight-medium text-truncate">
-                    {{ selectedLocation.name || t('internal_chat_location') }}
-                  </div>
-                  <div class="text-caption text-medium-emphasis text-truncate">
-                    {{
-                      selectedLocation.address ||
-                      `${selectedLocation.latitude}, ${selectedLocation.longitude}`
-                    }}
-                  </div>
+                <VIcon
+                  v-else
+                  size="26"
+                  color="primary"
+                  :icon="
+                    isReplyPreviewContactGroup(activeReplyPreviewContent)
+                      ? 'tabler-users'
+                      : 'tabler-user'
+                  "
+                />
+              </div>
+
+              <div class="internal-chat-reply-preview-content">
+                <div class="internal-chat-reply-preview-name">
+                  {{ resolveReplyPreviewName(replyMessage) }}
                 </div>
-                <IconBtn size="small" @click="selectedLocation = null">
-                  <VIcon size="18">tabler-x</VIcon>
-                </IconBtn>
-              </VCardText>
-            </VCard>
-          </Transition>
+                <div class="internal-chat-reply-preview-text">
+                  {{ resolveReplyPreviewText(activeReplyPreviewContent) }}
+                </div>
+                <div
+                  v-if="resolveReplyPreviewMeta(activeReplyPreviewContent)"
+                  class="internal-chat-reply-preview-meta"
+                >
+                  {{ resolveReplyPreviewMeta(activeReplyPreviewContent) }}
+                </div>
+              </div>
 
-          <div
-            v-if="isRecordingAudio"
-            class="internal-chat-recording-bar d-flex align-center gap-3 px-4"
-          >
-            <IconBtn
-              class="internal-chat-recording-action"
-              :aria-label="t('internal_chat_cancel_recording')"
-              @click="cancelAudioRecording"
-            >
-              <VIcon size="20">tabler-trash</VIcon>
-              <VTooltip activator="parent" location="top">
-                {{ t('internal_chat_cancel_recording') }}
-              </VTooltip>
-            </IconBtn>
-
-            <span
-              class="internal-chat-recording-dot"
-              :class="{ 'is-paused': isRecordingPaused }"
-            ></span>
-            <span class="internal-chat-recording-clock">
-              {{ formattedRecordingDuration }}
-            </span>
-
-            <div class="internal-chat-recording-wave flex-grow-1">
-              <canvas
-                ref="audioCanvasRef"
-                class="internal-chat-recording-wave-canvas"
-                height="32"
-              ></canvas>
+              <VBtn
+                class="internal-chat-reply-preview-close"
+                icon
+                size="22"
+                density="comfortable"
+                variant="text"
+                :aria-label="t('close')"
+                @click="replyMessage = null"
+              >
+                <VIcon size="18">tabler-x</VIcon>
+              </VBtn>
             </div>
 
-            <IconBtn
-              class="internal-chat-recording-action flex-shrink-0"
-              :aria-label="
-                isRecordingPaused
-                  ? t('internal_chat_resume_recording')
-                  : t('internal_chat_pause_recording')
-              "
-              @click="togglePauseAudioRecording"
+            <ChatLinkPreview
+              v-if="linkPreview || isLoadingLinkPreview"
+              :preview="linkPreview"
+              :loading="isLoadingLinkPreview"
+              class="internal-chat-composer-link-preview"
+              @close="linkPreview = null"
+            />
+
+            <Transition name="fade">
+              <VCard
+                v-if="selectedImages.length > 0"
+                class="internal-chat-attachment-card mb-3"
+              >
+                <VCardTitle class="internal-chat-attachment-title">
+                  <span
+                    >{{ t('images_selected') }} ({{
+                      selectedImages.length
+                    }}/10)</span
+                  >
+                  <IconBtn size="small" @click="clearSelectedImages">
+                    <VIcon size="18">tabler-x</VIcon>
+                  </IconBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="internal-chat-attachment-grid">
+                    <div
+                      v-for="(photo, index) in selectedImages"
+                      :key="`${photo.file.name}-${index}`"
+                      class="internal-chat-photo-preview"
+                    >
+                      <VImg
+                        :src="photo.preview"
+                        cover
+                        class="internal-chat-photo-preview-image"
+                      />
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="internal-chat-preview-remove"
+                        @click.stop="removeImage(index)"
+                      >
+                        <VIcon size="14">tabler-x</VIcon>
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </Transition>
+
+            <Transition name="fade">
+              <VCard
+                v-if="selectedVideos.length > 0"
+                class="internal-chat-attachment-card mb-3"
+              >
+                <VCardTitle class="internal-chat-attachment-title">
+                  <span
+                    >{{ t('videos_selected') }} ({{
+                      selectedVideos.length
+                    }}/10)</span
+                  >
+                  <IconBtn size="small" @click="clearSelectedVideos">
+                    <VIcon size="18">tabler-x</VIcon>
+                  </IconBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div
+                    class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
+                  >
+                    <div
+                      v-for="(video, index) in selectedVideos"
+                      :key="`${video.name}-${index}`"
+                      class="internal-chat-file-preview"
+                    >
+                      <div class="internal-chat-file-preview-media">
+                        <video
+                          :src="video.preview"
+                          muted
+                          playsinline
+                          preload="metadata"
+                        />
+                        <VIcon size="24">tabler-player-play</VIcon>
+                      </div>
+                      <div class="internal-chat-file-preview-meta">
+                        <span>{{ truncateFileName(video.name) }}</span>
+                        <small>
+                          {{ formatFileSize(video.size) }}
+                          <template v-if="video.duration">
+                            • {{ formatAttachmentDuration(video.duration) }}
+                          </template>
+                        </small>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="internal-chat-preview-remove"
+                        @click.stop="removeVideo(index)"
+                      >
+                        <VIcon size="14">tabler-x</VIcon>
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </Transition>
+
+            <Transition name="fade">
+              <VCard
+                v-if="selectedDocuments.length > 0"
+                class="internal-chat-attachment-card mb-3"
+              >
+                <VCardTitle class="internal-chat-attachment-title">
+                  <span
+                    >{{ t('documents_selected') }} ({{
+                      selectedDocuments.length
+                    }}/10)</span
+                  >
+                  <IconBtn size="small" @click="clearSelectedDocuments">
+                    <VIcon size="18">tabler-x</VIcon>
+                  </IconBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div
+                    class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
+                  >
+                    <div
+                      v-for="(doc, index) in selectedDocuments"
+                      :key="`${doc.name}-${index}`"
+                      class="internal-chat-file-preview"
+                    >
+                      <div class="internal-chat-file-preview-icon">
+                        <VIcon size="30">tabler-file-description</VIcon>
+                      </div>
+                      <div class="internal-chat-file-preview-meta">
+                        <span>{{ truncateFileName(doc.name) }}</span>
+                        <small
+                          >{{ doc.extension.toUpperCase() }} •
+                          {{ formatFileSize(doc.size) }}</small
+                        >
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="internal-chat-preview-remove"
+                        @click.stop="removeDocument(index)"
+                      >
+                        <VIcon size="14">tabler-x</VIcon>
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </Transition>
+
+            <Transition name="fade">
+              <VCard
+                v-if="selectedAudios.length > 0"
+                class="internal-chat-attachment-card mb-3"
+              >
+                <VCardTitle class="internal-chat-attachment-title">
+                  <span
+                    >{{ t('audios_selected') }} ({{
+                      selectedAudios.length
+                    }}/10)</span
+                  >
+                  <IconBtn size="small" @click="clearSelectedAudios">
+                    <VIcon size="18">tabler-x</VIcon>
+                  </IconBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div
+                    class="internal-chat-attachment-grid internal-chat-attachment-grid--wide"
+                  >
+                    <div
+                      v-for="(audio, index) in selectedAudios"
+                      :key="`${audio.name}-${index}`"
+                      class="internal-chat-file-preview"
+                    >
+                      <div class="internal-chat-file-preview-icon">
+                        <VIcon size="30">tabler-headphones</VIcon>
+                      </div>
+                      <div class="internal-chat-file-preview-meta">
+                        <span>{{ truncateFileName(audio.name) }}</span>
+                        <small>
+                          {{ formatFileSize(audio.size) }}
+                          <template v-if="audio.duration">
+                            • {{ formatAttachmentDuration(audio.duration) }}
+                          </template>
+                        </small>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="internal-chat-preview-remove"
+                        @click.stop="removeAudio(index)"
+                      >
+                        <VIcon size="14">tabler-x</VIcon>
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </Transition>
+
+            <Transition name="fade">
+              <VCard
+                v-if="selectedContacts.length > 0"
+                class="internal-chat-attachment-card mb-3"
+              >
+                <VCardTitle class="internal-chat-attachment-title">
+                  <span
+                    >{{ t('contacts_selected') }} ({{
+                      selectedContacts.length
+                    }}/10)</span
+                  >
+                  <IconBtn size="small" @click="clearSelectedContacts">
+                    <VIcon size="18">tabler-x</VIcon>
+                  </IconBtn>
+                </VCardTitle>
+                <VCardText>
+                  <div class="internal-chat-attachment-grid">
+                    <div
+                      v-for="(contact, index) in selectedContacts"
+                      :key="`${contact.contact_id}-${index}`"
+                      class="internal-chat-contact-preview"
+                    >
+                      <VAvatar
+                        size="44"
+                        :variant="contact.photo ? undefined : 'tonal'"
+                      >
+                        <VImg v-if="contact.photo" :src="contact.photo" />
+                        <VIcon v-else size="24">tabler-user</VIcon>
+                      </VAvatar>
+                      <div class="internal-chat-file-preview-meta">
+                        <span
+                          >{{ contact.name }}
+                          {{ contact.last_name || '' }}</span
+                        >
+                        <small>{{
+                          contact.phone_partial || contact.email_partial || ''
+                        }}</small>
+                      </div>
+                      <VBtn
+                        icon
+                        size="20"
+                        variant="flat"
+                        color="error"
+                        class="internal-chat-preview-remove"
+                        @click.stop="removeContact(index)"
+                      >
+                        <VIcon size="14">tabler-x</VIcon>
+                      </VBtn>
+                    </div>
+                  </div>
+                </VCardText>
+              </VCard>
+            </Transition>
+
+            <Transition name="fade">
+              <VCard
+                v-if="selectedLocation"
+                class="internal-chat-attachment-card internal-chat-location-preview mb-3"
+              >
+                <VCardText class="d-flex align-center gap-3">
+                  <VAvatar size="44" variant="tonal" color="primary">
+                    <VIcon size="24">tabler-map-pin</VIcon>
+                  </VAvatar>
+                  <div class="min-w-0 flex-grow-1">
+                    <div class="text-body-2 font-weight-medium text-truncate">
+                      {{ selectedLocation.name || t('internal_chat_location') }}
+                    </div>
+                    <div
+                      class="text-caption text-medium-emphasis text-truncate"
+                    >
+                      {{
+                        selectedLocation.address ||
+                        `${selectedLocation.latitude}, ${selectedLocation.longitude}`
+                      }}
+                    </div>
+                  </div>
+                  <IconBtn size="small" @click="selectedLocation = null">
+                    <VIcon size="18">tabler-x</VIcon>
+                  </IconBtn>
+                </VCardText>
+              </VCard>
+            </Transition>
+
+            <div
+              v-if="isRecordingAudio"
+              class="internal-chat-recording-bar d-flex align-center gap-3 px-4"
             >
-              <VIcon size="20">
-                {{
-                  isRecordingPaused
-                    ? 'tabler-player-play'
-                    : 'tabler-player-pause'
-                }}
-              </VIcon>
-              <VTooltip activator="parent" location="top">
-                {{
+              <IconBtn
+                class="internal-chat-recording-action"
+                :aria-label="t('internal_chat_cancel_recording')"
+                @click="cancelAudioRecording"
+              >
+                <VIcon size="20">tabler-trash</VIcon>
+                <VTooltip activator="parent" location="top">
+                  {{ t('internal_chat_cancel_recording') }}
+                </VTooltip>
+              </IconBtn>
+
+              <span
+                class="internal-chat-recording-dot"
+                :class="{ 'is-paused': isRecordingPaused }"
+              ></span>
+              <span class="internal-chat-recording-clock">
+                {{ formattedRecordingDuration }}
+              </span>
+
+              <div class="internal-chat-recording-wave flex-grow-1">
+                <canvas
+                  ref="audioCanvasRef"
+                  class="internal-chat-recording-wave-canvas"
+                  height="32"
+                ></canvas>
+              </div>
+
+              <IconBtn
+                class="internal-chat-recording-action flex-shrink-0"
+                :aria-label="
                   isRecordingPaused
                     ? t('internal_chat_resume_recording')
                     : t('internal_chat_pause_recording')
-                }}
-              </VTooltip>
-            </IconBtn>
+                "
+                @click="togglePauseAudioRecording"
+              >
+                <VIcon size="20">
+                  {{
+                    isRecordingPaused
+                      ? 'tabler-player-play'
+                      : 'tabler-player-pause'
+                  }}
+                </VIcon>
+                <VTooltip activator="parent" location="top">
+                  {{
+                    isRecordingPaused
+                      ? t('internal_chat_resume_recording')
+                      : t('internal_chat_pause_recording')
+                  }}
+                </VTooltip>
+              </IconBtn>
 
-            <VBtn
-              class="internal-chat-send-btn"
-              color="success"
-              variant="flat"
-              icon
-              rounded="pill"
-              :aria-label="t('internal_chat_send_audio')"
-              :loading="recordingSending"
-              @click="finalizeAudioRecording"
+              <VBtn
+                class="internal-chat-send-btn"
+                color="success"
+                variant="flat"
+                icon
+                rounded="pill"
+                :aria-label="t('internal_chat_send_audio')"
+                :loading="recordingSending"
+                @click="finalizeAudioRecording"
+              >
+                <VIcon size="20">tabler-send</VIcon>
+                <VTooltip activator="parent" location="top">
+                  {{ t('internal_chat_send_audio') }}
+                </VTooltip>
+              </VBtn>
+            </div>
+
+            <VTextarea
+              v-else
+              v-model="composerText"
+              :rows="1"
+              :max-rows="8"
+              auto-grow
+              variant="solo"
+              density="comfortable"
+              :placeholder="t('internal_chat_type_message')"
+              class="internal-chat-textarea internal-chat-whats-composer"
+              @keydown.enter.exact.prevent="sendMessage"
+              @paste="handlePaste"
             >
-              <VIcon size="20">tabler-send</VIcon>
-              <VTooltip activator="parent" location="top">
-                {{ t('internal_chat_send_audio') }}
-              </VTooltip>
-            </VBtn>
-          </div>
-
-          <VTextarea
-            v-else
-            v-model="composerText"
-            :rows="1"
-            :max-rows="8"
-            auto-grow
-            variant="solo"
-            density="comfortable"
-            :placeholder="t('internal_chat_type_message')"
-            class="internal-chat-textarea internal-chat-whats-composer"
-            @keydown.enter.exact.prevent="sendMessage"
-            @paste="handlePaste"
-          >
-            <template #prepend-inner>
-              <VMenu
-                offset="8"
-                :close-on-content-click="true"
-                location="top start"
-              >
-                <template #activator="{ props }">
-                  <IconBtn
-                    v-bind="props"
-                    class="internal-chat-composer-btn"
-                    :aria-label="t('internal_chat_attach')"
-                  >
-                    <VIcon size="22">tabler-plus</VIcon>
-                  </IconBtn>
-                </template>
-
-                <VList
-                  density="comfortable"
-                  min-width="220"
-                  class="internal-chat-attach-menu"
+              <template #prepend-inner>
+                <VMenu
+                  offset="8"
+                  :close-on-content-click="true"
+                  location="top start"
                 >
-                  <VListItem @click="documentInputRef?.click()">
-                    <template #prepend>
-                      <VIcon size="20">tabler-file</VIcon>
-                    </template>
-                    <VListItemTitle>
-                      {{ t('internal_chat_documents') }}
-                    </VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="imageInputRef?.click()">
-                    <template #prepend>
-                      <VIcon size="20">tabler-photo</VIcon>
-                    </template>
-                    <VListItemTitle>
-                      {{ t('internal_chat_photos') }}
-                    </VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="videoInputRef?.click()">
-                    <template #prepend>
-                      <VIcon size="20">tabler-video</VIcon>
-                    </template>
-                    <VListItemTitle>
-                      {{ t('internal_chat_videos') }}
-                    </VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="audioInputRef?.click()">
-                    <template #prepend>
-                      <VIcon size="20">tabler-headphones</VIcon>
-                    </template>
-                    <VListItemTitle>
-                      {{ t('internal_chat_audio') }}
-                    </VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="isContactPickerOpen = true">
-                    <template #prepend>
-                      <VIcon size="20">tabler-user</VIcon>
-                    </template>
-                    <VListItemTitle>
-                      {{ t('internal_chat_contact') }}
-                    </VListItemTitle>
-                  </VListItem>
-                  <VListItem @click="isLocationPickerOpen = true">
-                    <template #prepend>
-                      <VIcon size="20">tabler-map-pin</VIcon>
-                    </template>
-                    <VListItemTitle>
-                      {{ t('internal_chat_location') }}
-                    </VListItemTitle>
-                  </VListItem>
-                </VList>
-              </VMenu>
+                  <template #activator="{ props }">
+                    <IconBtn
+                      v-bind="props"
+                      class="internal-chat-composer-btn"
+                      :aria-label="t('internal_chat_attach')"
+                    >
+                      <VIcon size="22">tabler-plus</VIcon>
+                    </IconBtn>
+                  </template>
 
-              <VMenu
-                v-model="isComposerEmojiOpen"
-                location="top start"
-                :close-on-content-click="false"
-                offset="8"
-              >
-                <template #activator="{ props }">
-                  <IconBtn
-                    v-bind="props"
-                    class="internal-chat-composer-btn"
-                    :aria-label="t('internal_chat_emoji')"
+                  <VList
+                    density="comfortable"
+                    min-width="220"
+                    class="internal-chat-attach-menu"
                   >
-                    <VIcon size="22">tabler-mood-smile</VIcon>
-                  </IconBtn>
-                </template>
+                    <VListItem @click="documentInputRef?.click()">
+                      <template #prepend>
+                        <VIcon size="20">tabler-file</VIcon>
+                      </template>
+                      <VListItemTitle>
+                        {{ t('internal_chat_documents') }}
+                      </VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="imageInputRef?.click()">
+                      <template #prepend>
+                        <VIcon size="20">tabler-photo</VIcon>
+                      </template>
+                      <VListItemTitle>
+                        {{ t('internal_chat_photos') }}
+                      </VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="videoInputRef?.click()">
+                      <template #prepend>
+                        <VIcon size="20">tabler-video</VIcon>
+                      </template>
+                      <VListItemTitle>
+                        {{ t('internal_chat_videos') }}
+                      </VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="audioInputRef?.click()">
+                      <template #prepend>
+                        <VIcon size="20">tabler-headphones</VIcon>
+                      </template>
+                      <VListItemTitle>
+                        {{ t('internal_chat_audio') }}
+                      </VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="isContactPickerOpen = true">
+                      <template #prepend>
+                        <VIcon size="20">tabler-user</VIcon>
+                      </template>
+                      <VListItemTitle>
+                        {{ t('internal_chat_contact') }}
+                      </VListItemTitle>
+                    </VListItem>
+                    <VListItem @click="isLocationPickerOpen = true">
+                      <template #prepend>
+                        <VIcon size="20">tabler-map-pin</VIcon>
+                      </template>
+                      <VListItemTitle>
+                        {{ t('internal_chat_location') }}
+                      </VListItemTitle>
+                    </VListItem>
+                  </VList>
+                </VMenu>
 
-                <div class="internal-chat-composer-emoji-picker">
-                  <Picker
-                    :data="reactionEmojiIndex"
-                    :per-line="8"
-                    :show-preview="false"
-                    :show-search="true"
-                    :show-skin-tones="false"
-                    @select="onComposerEmojiSelect"
-                  />
+                <VMenu
+                  v-model="isComposerEmojiOpen"
+                  location="top start"
+                  :close-on-content-click="false"
+                  offset="8"
+                >
+                  <template #activator="{ props }">
+                    <IconBtn
+                      v-bind="props"
+                      class="internal-chat-composer-btn"
+                      :aria-label="t('internal_chat_emoji')"
+                    >
+                      <VIcon size="22">tabler-mood-smile</VIcon>
+                    </IconBtn>
+                  </template>
+
+                  <div class="internal-chat-composer-emoji-picker">
+                    <Picker
+                      :data="reactionEmojiIndex"
+                      :per-line="8"
+                      :show-preview="false"
+                      :show-search="true"
+                      :show-skin-tones="false"
+                      @select="onComposerEmojiSelect"
+                    />
+                  </div>
+                </VMenu>
+              </template>
+
+              <template #append-inner>
+                <div class="d-flex align-center gap-1">
+                  <IconBtn
+                    v-if="!hasComposerContent"
+                    class="internal-chat-composer-btn internal-chat-mic-btn"
+                    :aria-label="t('internal_chat_record_audio')"
+                    :disabled="recordingStarting || recordingSending"
+                    @click="startAudioRecording"
+                  >
+                    <VIcon size="22">tabler-microphone</VIcon>
+                  </IconBtn>
+
+                  <VBtn
+                    v-if="hasComposerContent"
+                    class="internal-chat-send-btn"
+                    color="success"
+                    variant="flat"
+                    icon
+                    rounded="pill"
+                    :aria-label="t('internal_chat_send_message')"
+                    :loading="sendingMessage"
+                    @click="sendMessage"
+                  >
+                    <VIcon size="22">tabler-send</VIcon>
+                  </VBtn>
                 </div>
-              </VMenu>
-            </template>
+              </template>
+            </VTextarea>
 
-            <template #append-inner>
-              <div class="d-flex align-center gap-1">
-                <IconBtn
-                  v-if="!hasComposerContent"
-                  class="internal-chat-composer-btn internal-chat-mic-btn"
-                  :aria-label="t('internal_chat_record_audio')"
-                  :disabled="recordingStarting || recordingSending"
-                  @click="startAudioRecording"
-                >
-                  <VIcon size="22">tabler-microphone</VIcon>
-                </IconBtn>
-
-                <VBtn
-                  v-if="hasComposerContent"
-                  class="internal-chat-send-btn"
-                  color="success"
-                  variant="flat"
-                  icon
-                  rounded="pill"
-                  :aria-label="t('internal_chat_send_message')"
-                  :loading="sendingMessage"
-                  @click="sendMessage"
-                >
-                  <VIcon size="22">tabler-send</VIcon>
-                </VBtn>
-              </div>
-            </template>
-          </VTextarea>
-
-          <input
-            ref="imageInputRef"
-            type="file"
-            hidden
-            multiple
-            accept="image/*"
-            @change="onImagesSelected"
-          />
-          <input
-            ref="videoInputRef"
-            type="file"
-            hidden
-            multiple
-            accept="video/*"
-            @change="onVideosSelected"
-          />
-          <input
-            ref="documentInputRef"
-            type="file"
-            hidden
-            multiple
-            @change="onDocumentsSelected"
-          />
-          <input
-            ref="audioInputRef"
-            type="file"
-            hidden
-            multiple
-            accept="audio/*"
-            @change="onAudiosSelected"
-          />
-        </div>
-      </template>
+            <input
+              ref="imageInputRef"
+              type="file"
+              hidden
+              multiple
+              accept="image/*"
+              @change="onImagesSelected"
+            />
+            <input
+              ref="videoInputRef"
+              type="file"
+              hidden
+              multiple
+              accept="video/*"
+              @change="onVideosSelected"
+            />
+            <input
+              ref="documentInputRef"
+              type="file"
+              hidden
+              multiple
+              @change="onDocumentsSelected"
+            />
+            <input
+              ref="audioInputRef"
+              type="file"
+              hidden
+              multiple
+              accept="audio/*"
+              @change="onAudiosSelected"
+            />
+          </div>
+        </template>
 
         <div
-        v-else
-        class="internal-chat-main-empty d-flex h-100 align-center justify-center flex-column text-medium-emphasis"
-      >
-        <VAvatar size="92" variant="tonal" color="primary" class="mb-3">
-          <VIcon size="44">tabler-users-group</VIcon>
-        </VAvatar>
-        <div class="text-subtitle-1 mb-1">{{ t('internal_chat_title') }}</div>
-        <div class="text-body-2">
-          {{
-            isUsersTab
-              ? t('internal_chat_empty_pick_user')
-              : t('internal_chat_empty_pick_conversation')
-          }}
-        </div>
-        <VBtn
-          class="d-md-none mt-4"
-          color="primary"
-          variant="flat"
-          @click="isLeftSidebarOpen = true"
+          v-else
+          class="internal-chat-main-empty d-flex h-100 align-center justify-center flex-column text-medium-emphasis"
         >
-          <VIcon size="18" class="me-1">tabler-menu-2</VIcon>
-          {{ t('internal_chat_title') }}
-        </VBtn>
+          <VAvatar size="92" variant="tonal" color="primary" class="mb-3">
+            <VIcon size="44">tabler-users-group</VIcon>
+          </VAvatar>
+          <div class="text-subtitle-1 mb-1">{{ t('internal_chat_title') }}</div>
+          <div class="text-body-2">
+            {{
+              isUsersTab
+                ? t('internal_chat_empty_pick_user')
+                : t('internal_chat_empty_pick_conversation')
+            }}
+          </div>
+          <VBtn
+            class="d-md-none mt-4"
+            color="primary"
+            variant="flat"
+            @click="isLeftSidebarOpen = true"
+          >
+            <VIcon size="18" class="me-1">tabler-menu-2</VIcon>
+            {{ t('internal_chat_title') }}
+          </VBtn>
         </div>
       </section>
     </VMain>
@@ -10361,6 +10434,25 @@ onBeforeUnmount(async () => {
   margin-bottom: 6px;
   padding: 10px;
   background: rgba(var(--v-theme-on-surface), 0.04);
+  position: relative;
+}
+
+.internal-chat-upload-progress-overlay {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 5;
+}
+
+.internal-chat-upload-progress-overlay--audio {
+  right: 6px;
+  bottom: 6px;
+}
+
+.internal-chat-upload-progress-overlay--document,
+.internal-chat-upload-progress-overlay--group {
+  right: 8px;
+  bottom: 8px;
 }
 
 .internal-chat-document-bubble--left {

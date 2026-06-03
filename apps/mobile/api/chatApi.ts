@@ -9,6 +9,7 @@ import {
   apiPostForm,
   apiPostFormWithMessage,
   apiPut,
+  type ApiFormRequestOptions,
 } from './client';
 import {
   MY_CHATS_STATUS,
@@ -566,7 +567,8 @@ export async function deletePushSubscription(
 
 export async function createMessageWithFormData(
   chatId: string,
-  formData: FormData
+  formData: FormData,
+  options?: ApiFormRequestOptions
 ): Promise<{
   ok: boolean;
   message: ListMessageResult | null;
@@ -574,7 +576,8 @@ export async function createMessageWithFormData(
 }> {
   const res = await apiPostFormWithMessage<ListMessageResult | null>(
     `/chat/${chatId}`,
-    formData
+    formData,
+    options
   );
   if (!res) {
     return { ok: false, message: null, error: null };

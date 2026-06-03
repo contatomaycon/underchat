@@ -1023,7 +1023,7 @@ export const useChatStore = defineStore('chat', {
       if (!target) {
         return;
       }
-      target.progress = Math.max(0, Math.min(progress, 100));
+      target.progress = Math.max(0, Math.min(progress, 99));
     },
     markLocalMessageError(hash: string, errorMessage?: string) {
       if (!hash) {

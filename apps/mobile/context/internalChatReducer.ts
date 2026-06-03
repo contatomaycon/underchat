@@ -4,6 +4,7 @@ import type {
   InternalChatPagedResponse,
   InternalChatPaging,
   InternalChatRemoteActivity,
+  InternalChatUploadState,
   InternalChatUser,
 } from '../types/internalChat';
 import { resolveInternalChatMessagePreview } from '../utils/internalChatText';
@@ -25,6 +26,7 @@ export type InternalChatState = {
   messagesPaging: Record<string, InternalChatPaging>;
   activeConversation: InternalChatConversation | null;
   remoteActivities: Record<string, InternalChatRemoteActivity>;
+  uploadStates: Record<string, InternalChatUploadState>;
 };
 
 export type InternalChatAction =
@@ -46,11 +48,24 @@ export type InternalChatAction =
     }
   | { type: 'upsertConversation'; conversation: InternalChatConversation }
   | { type: 'removeConversation'; conversationId: string }
-  | { type: 'setActiveConversation'; conversation: InternalChatConversation | null }
-  | { type: 'upsertMessage'; message: InternalChatMessage; currentUserId: string | null }
+  | {
+      type: 'setActiveConversation';
+      conversation: InternalChatConversation | null;
+    }
+  | {
+      type: 'upsertMessage';
+      message: InternalChatMessage;
+      currentUserId: string | null;
+    }
   | { type: 'markRead'; conversationId: string }
   | { type: 'setRemoteActivity'; activity: InternalChatRemoteActivity }
   | { type: 'clearRemoteActivity'; conversationId: string; userId: string }
+  | {
+      type: 'setUploadState';
+      hash: string;
+      uploadState: InternalChatUploadState;
+    }
+  | { type: 'clearUploadState'; hash: string }
   | { type: 'reset' };
 
 export function createInitialInternalChatState(): InternalChatState {
@@ -63,7 +78,33 @@ export function createInitialInternalChatState(): InternalChatState {
     messagesPaging: {},
     activeConversation: null,
     remoteActivities: {},
+    uploadStates: {},
   };
+}
+
+function isRemoteMessage(message: InternalChatMessage): boolean {
+  return !message.message_id.startsWith('local-');
+}
+
+function clearUploadStatesForMessages(
+  uploadStates: Record<string, InternalChatUploadState>,
+  messages: InternalChatMessage[]
+): Record<string, InternalChatUploadState> {
+  let next: Record<string, InternalChatUploadState> | null = null;
+
+  for (const message of messages) {
+    if (
+      !message.hash ||
+      !isRemoteMessage(message) ||
+      !uploadStates[message.hash]
+    ) {
+      continue;
+    }
+    if (!next) next = { ...uploadStates };
+    delete next[message.hash];
+  }
+
+  return next ?? uploadStates;
 }
 
 function compareConversations(
@@ -72,7 +113,9 @@ function compareConversations(
 ): number {
   const dateA = Date.parse(a.last_message_at ?? a.updated_at ?? a.created_at);
   const dateB = Date.parse(b.last_message_at ?? b.updated_at ?? b.created_at);
-  return (Number.isFinite(dateB) ? dateB : 0) - (Number.isFinite(dateA) ? dateA : 0);
+  return (
+    (Number.isFinite(dateB) ? dateB : 0) - (Number.isFinite(dateA) ? dateA : 0)
+  );
 }
 
 function mergeConversations(
@@ -120,7 +163,10 @@ function sortMessages(messages: InternalChatMessage[]): InternalChatMessage[] {
   return [...messages].sort((a, b) => {
     const dateA = Date.parse(a.date);
     const dateB = Date.parse(b.date);
-    return (Number.isFinite(dateA) ? dateA : 0) - (Number.isFinite(dateB) ? dateB : 0);
+    return (
+      (Number.isFinite(dateA) ? dateA : 0) -
+      (Number.isFinite(dateB) ? dateB : 0)
+    );
   });
 }
 
@@ -190,7 +236,8 @@ function upsertMessageState(
           last_message_at: message.date,
           last_message_preview: resolveInternalChatMessagePreview(message),
           is_closed_for_me: false,
-          unread_count: isActive || fromMe ? 0 : state.activeConversation.unread_count,
+          unread_count:
+            isActive || fromMe ? 0 : state.activeConversation.unread_count,
         }
       : state.activeConversation;
 
@@ -198,6 +245,9 @@ function upsertMessageState(
     ...state,
     conversations: foundConversation ? conversations : state.conversations,
     activeConversation,
+    uploadStates: message.hash
+      ? clearUploadStatesForMessages(state.uploadStates, [message])
+      : state.uploadStates,
     messages: {
       ...state.messages,
       [conversationId]: nextMessages,
@@ -229,7 +279,11 @@ export function internalChatReducer(
     case 'setUsers':
       return {
         ...state,
-        users: mergeUsers(action.append ? state.users : [], action.payload.results, true),
+        users: mergeUsers(
+          action.append ? state.users : [],
+          action.payload.results,
+          true
+        ),
         usersPaging: {
           current_page: action.payload.current_page,
           total_pages: action.payload.total_pages,
@@ -241,10 +295,14 @@ export function internalChatReducer(
     case 'setMessages':
       return {
         ...state,
+        uploadStates: clearUploadStatesForMessages(
+          state.uploadStates,
+          action.payload.results
+        ),
         messages: {
           ...state.messages,
           [action.conversationId]: mergeMessages(
-            action.append ? state.messages[action.conversationId] ?? [] : [],
+            action.append ? (state.messages[action.conversationId] ?? []) : [],
             [...action.payload.results].reverse(),
             true
           ),
@@ -328,6 +386,24 @@ export function internalChatReducer(
         remoteActivities: next,
       };
     }
+    case 'setUploadState':
+      if (!action.hash) return state;
+      return {
+        ...state,
+        uploadStates: {
+          ...state.uploadStates,
+          [action.hash]: action.uploadState,
+        },
+      };
+    case 'clearUploadState': {
+      if (!state.uploadStates[action.hash]) return state;
+      const next = { ...state.uploadStates };
+      delete next[action.hash];
+      return {
+        ...state,
+        uploadStates: next,
+      };
+    }
     case 'reset':
       return createInitialInternalChatState();
     default:
@@ -337,7 +413,8 @@ export function internalChatReducer(
 
 export function getInternalChatTotalUnread(state: InternalChatState): number {
   return state.conversations.reduce(
-    (total, conversation) => total + Math.max(0, conversation.unread_count || 0),
+    (total, conversation) =>
+      total + Math.max(0, conversation.unread_count || 0),
     0
   );
 }

@@ -7,10 +7,54 @@ import { refreshSessionTokenWithSingleFlight } from './sessionRefresh';
 
 const BASE = `${BACKEND_URL}/v1`;
 const AUTH_REQUEST_TIMEOUT_MS = 30000;
-const AUTH_FORM_REQUEST_TIMEOUT_MS = 120000;
+const AUTH_FORM_REQUEST_TIMEOUT_MS = 600000;
+
+export type ApiUploadProgressCallback = (progress: number) => void;
+
+export type ApiFormRequestOptions = {
+  onUploadProgress?: ApiUploadProgressCallback;
+  timeoutMs?: number;
+};
 
 async function handleUnauthorized(): Promise<void> {
   await teardownMobileSessionOnUnauthorized();
+}
+
+type AttendanceBlockedBody = {
+  message?: unknown;
+  data?: {
+    reason?: unknown;
+    attendance_guard?: unknown;
+  };
+};
+
+function handleAttendanceBlockedBody(body: unknown): boolean {
+  const typed = body as AttendanceBlockedBody | null;
+
+  if (typed?.data?.reason !== 'user_attendance_hours_blocked') {
+    return false;
+  }
+
+  if (
+    !typed?.data?.attendance_guard ||
+    typeof typed.data.attendance_guard !== 'object'
+  ) {
+    return false;
+  }
+
+  const payload: AttendanceBlockedPayload = {
+    reason: 'user_attendance_hours_blocked',
+    attendance_guard: typed.data
+      .attendance_guard as AttendanceBlockedPayload['attendance_guard'],
+    message:
+      typeof typed.message === 'string' && typed.message.trim().length > 0
+        ? typed.message
+        : null,
+  };
+
+  emitAttendanceBlocked(payload);
+
+  return true;
 }
 
 async function handleAttendanceBlocked(response: Response): Promise<boolean> {
@@ -19,38 +63,7 @@ async function handleAttendanceBlocked(response: Response): Promise<boolean> {
   }
 
   try {
-    const body = (await response.json()) as {
-      message?: unknown;
-      data?: {
-        reason?: unknown;
-        attendance_guard?: unknown;
-      };
-    };
-
-    if (body?.data?.reason !== 'user_attendance_hours_blocked') {
-      return false;
-    }
-
-    if (
-      !body?.data?.attendance_guard ||
-      typeof body.data.attendance_guard !== 'object'
-    ) {
-      return false;
-    }
-
-    const payload: AttendanceBlockedPayload = {
-      reason: 'user_attendance_hours_blocked',
-      attendance_guard: body.data
-        .attendance_guard as AttendanceBlockedPayload['attendance_guard'],
-      message:
-        typeof body.message === 'string' && body.message.trim().length > 0
-          ? body.message
-          : null,
-    };
-
-    emitAttendanceBlocked(payload);
-
-    return true;
+    return handleAttendanceBlockedBody(await response.json());
   } catch {
     return false;
   }
@@ -83,27 +96,47 @@ async function parseJsonSafe<T>(
   }
 }
 
+function normalizeDetailedResponse<T>(
+  data: ApiEnvelopeWithMessage<T> | null | undefined
+): ApiDetailedResponse<T> {
+  const message =
+    typeof data?.message === 'string' && data.message.trim().length > 0
+      ? data.message
+      : null;
+  const status = data?.status === true;
+  const payload =
+    data?.data !== undefined && data?.data !== null ? data.data : null;
+
+  return {
+    status,
+    data: payload,
+    message,
+  };
+}
+
 async function parseJsonDetailed<T>(
   response: Response
 ): Promise<ApiDetailedResponse<T> | null> {
   try {
     const data = (await response.json()) as ApiEnvelopeWithMessage<T>;
-    const message =
-      typeof data?.message === 'string' && data.message.trim().length > 0
-        ? data.message
-        : null;
-    const status = data?.status === true;
-    const payload =
-      data?.data !== undefined && data?.data !== null ? data.data : null;
-
-    return {
-      status,
-      data: payload,
-      message,
-    };
+    return normalizeDetailedResponse(data);
   } catch {
     return null;
   }
+}
+
+function parseJsonText<T>(text: string): T | null {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function parseDetailedJsonText<T>(text: string): ApiDetailedResponse<T> | null {
+  const data = parseJsonText<ApiEnvelopeWithMessage<T>>(text);
+  if (!data) return null;
+  return normalizeDetailedResponse(data);
 }
 
 async function buildAuthHeaders(
@@ -191,6 +224,124 @@ async function requestWithAuthRetry(
     retryHeaders,
     timeoutMs
   );
+  if (!retriedResponse) {
+    return null;
+  }
+
+  if (retriedResponse.status === 401) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  return retriedResponse;
+}
+
+type UploadRequestMethod = 'POST' | 'PATCH';
+
+type UploadRequestResult = {
+  status: number;
+  bodyText: string;
+};
+
+function executeUploadRequest(input: {
+  url: string;
+  method: UploadRequestMethod;
+  body: FormData;
+  headers: Record<string, string>;
+  options?: ApiFormRequestOptions;
+}): Promise<UploadRequestResult | null> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+
+    const settle = (result: UploadRequestResult | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    xhr.open(input.method, input.url);
+    xhr.timeout = input.options?.timeoutMs ?? AUTH_FORM_REQUEST_TIMEOUT_MS;
+
+    for (const [key, value] of Object.entries(input.headers)) {
+      xhr.setRequestHeader(key, value);
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (!input.options?.onUploadProgress) return;
+      if (!event.lengthComputable || !event.total) {
+        input.options.onUploadProgress(0);
+        return;
+      }
+
+      const progress = Math.min(
+        99,
+        Math.round((event.loaded / event.total) * 100)
+      );
+      input.options.onUploadProgress(progress);
+    };
+
+    xhr.onload = () => {
+      settle({
+        status: xhr.status,
+        bodyText: typeof xhr.responseText === 'string' ? xhr.responseText : '',
+      });
+    };
+    xhr.onerror = () => settle(null);
+    xhr.onabort = () => settle(null);
+    xhr.ontimeout = () => settle(null);
+
+    try {
+      xhr.send(input.body);
+    } catch {
+      settle(null);
+    }
+  });
+}
+
+async function uploadWithAuthRetry(input: {
+  url: string;
+  method: UploadRequestMethod;
+  body: FormData;
+  options?: ApiFormRequestOptions;
+}): Promise<UploadRequestResult | null> {
+  const initialHeaders = await buildAuthHeaders(undefined);
+  if (!initialHeaders) {
+    return null;
+  }
+
+  const initialResponse = await executeUploadRequest({
+    ...input,
+    headers: initialHeaders,
+  });
+  if (!initialResponse) {
+    return null;
+  }
+
+  if (initialResponse.status !== 401) {
+    return initialResponse;
+  }
+
+  const refreshedToken = await refreshSessionTokenWithSingleFlight();
+
+  if (!refreshedToken) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  const retryHeaders = await buildAuthHeaders(undefined, refreshedToken);
+
+  if (!retryHeaders) {
+    await handleUnauthorized();
+    return null;
+  }
+
+  input.options?.onUploadProgress?.(0);
+
+  const retriedResponse = await executeUploadRequest({
+    ...input,
+    headers: retryHeaders,
+  });
   if (!retriedResponse) {
     return null;
   }
@@ -336,11 +487,32 @@ export async function apiPostForm<T>(
 
 export async function apiPostFormWithMessage<T>(
   path: string,
-  body: FormData
+  body: FormData,
+  options?: ApiFormRequestOptions
 ): Promise<ApiDetailedResponse<T> | null> {
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  if (options?.onUploadProgress) {
+    const uploadResponse = await uploadWithAuthRetry({
+      url,
+      method: 'POST',
+      body,
+      options,
+    });
+
+    if (!uploadResponse) {
+      return null;
+    }
+
+    const rawBody = parseJsonText<unknown>(uploadResponse.bodyText);
+    if (uploadResponse.status === 403 && handleAttendanceBlockedBody(rawBody)) {
+      return null;
+    }
+
+    return parseDetailedJsonText<T>(uploadResponse.bodyText);
+  }
 
   const res = await requestWithAuthRetry(
     undefined,
@@ -477,11 +649,32 @@ export async function apiPatchForm<T>(
 
 export async function apiPatchFormWithMessage<T>(
   path: string,
-  body: FormData
+  body: FormData,
+  options?: ApiFormRequestOptions
 ): Promise<ApiDetailedResponse<T> | null> {
   const url = path.startsWith('http')
     ? path
     : `${BASE}${path.startsWith('/') ? '' : '/'}${path}`;
+
+  if (options?.onUploadProgress) {
+    const uploadResponse = await uploadWithAuthRetry({
+      url,
+      method: 'PATCH',
+      body,
+      options,
+    });
+
+    if (!uploadResponse) {
+      return null;
+    }
+
+    const rawBody = parseJsonText<unknown>(uploadResponse.bodyText);
+    if (uploadResponse.status === 403 && handleAttendanceBlockedBody(rawBody)) {
+      return null;
+    }
+
+    return parseDetailedJsonText<T>(uploadResponse.bodyText);
+  }
 
   const res = await requestWithAuthRetry(
     undefined,

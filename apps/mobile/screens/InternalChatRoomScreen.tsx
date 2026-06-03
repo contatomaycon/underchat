@@ -23,6 +23,7 @@ import {
   type StyleProp,
   type TextStyle,
   type TextInputContentSizeChangeEvent,
+  type ViewStyle,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import {
@@ -59,6 +60,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import { LocationMessagePreview } from '../components/LocationMessagePreview';
+import { UploadProgressBadge } from '../components/UploadProgressBadge';
 import {
   ContactFormModal,
   type ContactFormInitialValues,
@@ -88,6 +90,7 @@ import type {
   InternalChatMessage,
   InternalChatParticipant,
   InternalChatSearchMessageResult,
+  InternalChatUploadState,
   InternalChatUploadFile,
 } from '../types/internalChat';
 import type {
@@ -1919,6 +1922,7 @@ function InternalMessageContent({
   audioCtrl,
   audioState: audioStateProp,
   audioWaveformWidth,
+  uploadState,
   onOpenActions,
   onOpenImage,
   onOpenVideo,
@@ -1930,6 +1934,7 @@ function InternalMessageContent({
   audioCtrl: InternalAudioCtrl;
   audioState?: InternalAudioState;
   audioWaveformWidth?: number;
+  uploadState?: InternalChatUploadState | null;
   onOpenActions: (message: InternalChatMessage) => void;
   onOpenImage: (message: InternalChatMessage) => void;
   onOpenVideo: (message: InternalChatMessage) => void;
@@ -1977,6 +1982,14 @@ function InternalMessageContent({
       </View>
     );
   };
+  const renderUploadBadge = (badgeStyle?: StyleProp<ViewStyle>) =>
+    uploadState ? (
+      <UploadProgressBadge
+        progress={uploadState.progress}
+        status={uploadState.status}
+        style={[styles.uploadProgressBadge, badgeStyle]}
+      />
+    ) : null;
 
   if (msg.deleted) {
     return renderWithContextCards(
@@ -2001,7 +2014,13 @@ function InternalMessageContent({
     if (!imageUri) return null;
     const cap = content.image.caption;
     return renderWithContextCards(
-      <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
+      <View
+        style={[
+          styles.mediaBubble,
+          styles.mediaBubbleImage,
+          styles.uploadProgressHost,
+        ]}
+      >
         <Pressable
           onPress={() => onOpenImage(msg)}
           onLongPress={() => onOpenActions(msg)}
@@ -2020,6 +2039,7 @@ function InternalMessageContent({
             onLinkLongPress={() => onOpenActions(msg)}
           />
         ) : null}
+        {renderUploadBadge()}
       </View>
     );
   }
@@ -2032,7 +2052,7 @@ function InternalMessageContent({
     const videoMeta = resolveVideoMeta(content.video);
 
     return renderWithContextCards(
-      <View style={styles.mediaBubble}>
+      <View style={[styles.mediaBubble, styles.uploadProgressHost]}>
         <InternalVideoMessagePreview
           sourceUri={videoUri}
           thumbnailUri={thumbUri}
@@ -2047,6 +2067,7 @@ function InternalMessageContent({
             onLinkLongPress={() => onOpenActions(msg)}
           />
         ) : null}
+        {renderUploadBadge()}
       </View>
     );
   }
@@ -2094,7 +2115,7 @@ function InternalMessageContent({
     const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
 
     return renderWithContextCards(
-      <View style={styles.audioBubble}>
+      <View style={[styles.audioBubble, styles.uploadProgressHost]}>
         <View
           style={[
             styles.audioPlayerContainer,
@@ -2199,6 +2220,7 @@ function InternalMessageContent({
             onLinkLongPress={() => onOpenActions(msg)}
           />
         ) : null}
+        {renderUploadBadge(styles.uploadProgressBadgeAudio)}
       </View>
     );
   }
@@ -2215,7 +2237,7 @@ function InternalMessageContent({
     const cap = readNonEmptyString(content.message);
 
     return renderWithContextCards(
-      <View>
+      <View style={styles.uploadProgressHost}>
         <View style={[styles.documentCard, fromMe && styles.documentCardRight]}>
           <Pressable
             style={styles.documentMainAction}
@@ -2271,6 +2293,7 @@ function InternalMessageContent({
               color={colors.primary}
             />
           </Pressable>
+          {renderUploadBadge(styles.uploadProgressBadgeDocument)}
         </View>
         {cap ? (
           <WhatsAppFormattedText
@@ -2557,6 +2580,7 @@ function InternalMessageBubble({
   audioCtrl,
   audioState,
   audioWaveformWidth,
+  uploadState,
   onOpenActions,
   onOpenImage,
   onOpenVideo,
@@ -2572,6 +2596,7 @@ function InternalMessageBubble({
   audioCtrl: InternalAudioCtrl;
   audioState?: InternalAudioState;
   audioWaveformWidth?: number;
+  uploadState?: InternalChatUploadState | null;
   onOpenActions: (message: InternalChatMessage) => void;
   onOpenImage: (message: InternalChatMessage) => void;
   onOpenVideo: (message: InternalChatMessage) => void;
@@ -2677,6 +2702,7 @@ function InternalMessageBubble({
             audioCtrl={audioCtrl}
             audioState={audioState}
             audioWaveformWidth={audioWaveformWidth}
+            uploadState={uploadState}
             onOpenActions={onOpenActions}
             onOpenImage={onOpenImage}
             onOpenVideo={onOpenVideo}
@@ -2753,6 +2779,7 @@ type InternalMessageListRowProps = {
   audioCtrl: InternalAudioCtrl;
   audioState: InternalAudioState;
   audioWaveformWidth: number;
+  uploadState: InternalChatUploadState | null;
   onOpenActions: (message: InternalChatMessage) => void;
   onOpenImage: (message: InternalChatMessage) => void;
   onOpenVideo: (message: InternalChatMessage) => void;
@@ -2776,6 +2803,7 @@ function InternalMessageListRow({
   audioCtrl,
   audioState,
   audioWaveformWidth,
+  uploadState,
   onOpenActions,
   onOpenImage,
   onOpenVideo,
@@ -2797,6 +2825,7 @@ function InternalMessageListRow({
       audioCtrl={audioCtrl}
       audioState={audioState}
       audioWaveformWidth={audioWaveformWidth}
+      uploadState={uploadState}
       onOpenActions={onOpenActions}
       onOpenImage={onOpenImage}
       onOpenVideo={onOpenVideo}
@@ -2832,6 +2861,7 @@ function areInternalMessageListRowsEqual(
     previous.audioCtrl === next.audioCtrl &&
     areInternalAudioStatesEqual(previous.audioState, next.audioState) &&
     previous.audioWaveformWidth === next.audioWaveformWidth &&
+    previous.uploadState === next.uploadState &&
     previous.onOpenActions === next.onOpenActions &&
     previous.onOpenImage === next.onOpenImage &&
     previous.onOpenVideo === next.onOpenVideo &&
@@ -5065,6 +5095,7 @@ export function InternalChatRoomScreen() {
               audioCtrl={audioCtrl}
               audioState={DEFAULT_INTERNAL_AUDIO_STATE}
               audioWaveformWidth={0}
+              uploadState={null}
               onOpenActions={setActionMessage}
               onOpenImage={openImageViewer}
               onOpenVideo={openVideoViewer}
@@ -5076,6 +5107,9 @@ export function InternalChatRoomScreen() {
 
         const message = item.message;
         const own = !!currentUserId && message.user?.id === currentUserId;
+        const uploadState = message.hash
+          ? (state.uploadStates[message.hash] ?? null)
+          : null;
 
         return (
           <MemoizedInternalMessageListRow
@@ -5090,6 +5124,7 @@ export function InternalChatRoomScreen() {
               audioStates[message.message_id] ?? DEFAULT_INTERNAL_AUDIO_STATE
             }
             audioWaveformWidth={audioWaveformWidths[message.message_id] ?? 0}
+            uploadState={uploadState}
             onOpenActions={setActionMessage}
             onOpenImage={openImageViewer}
             onOpenVideo={openVideoViewer}
@@ -5111,6 +5146,7 @@ export function InternalChatRoomScreen() {
         openImageViewer,
         openVideoViewer,
         responsiveBubbleMaxWidth,
+        state.uploadStates,
       ]
     );
 
@@ -6709,6 +6745,23 @@ const styles = StyleSheet.create({
     maxWidth: 232,
     overflow: 'hidden',
     borderRadius: 8,
+  },
+  uploadProgressHost: {
+    position: 'relative',
+  },
+  uploadProgressBadge: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    zIndex: 20,
+  },
+  uploadProgressBadgeAudio: {
+    right: 6,
+    bottom: 6,
+  },
+  uploadProgressBadgeDocument: {
+    right: 8,
+    bottom: 8,
   },
   mediaBubbleImage: {
     maxWidth: 210,

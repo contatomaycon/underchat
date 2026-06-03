@@ -33,6 +33,7 @@ import {
   NativeModules,
   useWindowDimensions,
   type StyleProp,
+  type ViewStyle,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type TextStyle,
@@ -168,6 +169,7 @@ import {
 import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
 import { LocationMessagePreview } from '../components/LocationMessagePreview';
+import { UploadProgressBadge } from '../components/UploadProgressBadge';
 import {
   ContactFormModal,
   type ContactFormInitialValues,
@@ -214,6 +216,7 @@ import {
   shouldShowClosureReasonInput,
 } from '../utils/chatClosure';
 import { normalizeLocationCoordinate } from '../utils/locationPreview';
+import type { UploadProgressState } from '../types/uploadProgress';
 
 type EmojiDatasetEntry = {
   unified?: string;
@@ -3390,6 +3393,22 @@ type SubmitFormDataMessageOptions = {
   showFailureAlert?: boolean;
 };
 
+function normalizeUploadProgress(progress: number): number {
+  if (!Number.isFinite(progress)) return 0;
+  return Math.max(0, Math.min(99, Math.round(progress)));
+}
+
+function shouldTrackUploadProgressForFormData(formData: FormData): boolean {
+  const type = readNonEmptyString(formData.get('type'));
+  return (
+    type === EMessageType.image ||
+    type === EMessageType.video ||
+    type === EMessageType.video_note ||
+    type === EMessageType.audio ||
+    type === EMessageType.document
+  );
+}
+
 function formatMessageTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -4467,6 +4486,7 @@ function BubbleContent({
   audioCtrl,
   audioState: audioStateProp,
   audioWaveformWidth,
+  uploadState,
   onOpenImage,
   onOpenVideo,
   onOpenActions,
@@ -4486,6 +4506,7 @@ function BubbleContent({
   audioCtrl: AudioCtrl | null;
   audioState?: AudioState;
   audioWaveformWidth?: number;
+  uploadState?: UploadProgressState | null;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
   onOpenVideo: (msg: ListMessageResult) => void;
   onOpenActions?: (message: ListMessageResult) => void;
@@ -4563,6 +4584,14 @@ function BubbleContent({
       </View>
     );
   };
+  const renderUploadBadge = (badgeStyle?: StyleProp<ViewStyle>) =>
+    uploadState ? (
+      <UploadProgressBadge
+        progress={uploadState.progress}
+        status={uploadState.status}
+        style={[styles.uploadProgressBadge, badgeStyle]}
+      />
+    ) : null;
 
   if (isViewOnce) {
     return renderWithContextCards(
@@ -4585,7 +4614,13 @@ function BubbleContent({
       );
 
       return renderWithContextCards(
-        <View style={[styles.mediaBubble, styles.mediaBubbleImageGallery]}>
+        <View
+          style={[
+            styles.mediaBubble,
+            styles.mediaBubbleImageGallery,
+            styles.uploadProgressHost,
+          ]}
+        >
           <View style={styles.imageGalleryGrid}>
             {visibleItems.map((galleryItem, galleryIndex) => {
               const isLastVisibleItem =
@@ -4619,6 +4654,7 @@ function BubbleContent({
               );
             })}
           </View>
+          {renderUploadBadge()}
         </View>
       );
     }
@@ -4627,7 +4663,13 @@ function BubbleContent({
     const imageUri = resolveMediaUri(content.image.url);
     if (!imageUri) return null;
     return renderWithContextCards(
-      <View style={[styles.mediaBubble, styles.mediaBubbleImage]}>
+      <View
+        style={[
+          styles.mediaBubble,
+          styles.mediaBubbleImage,
+          styles.uploadProgressHost,
+        ]}
+      >
         <Pressable
           onPress={() => onOpenImage(msg, 0)}
           onLongPress={() => onOpenActions?.(msg)}
@@ -4646,6 +4688,7 @@ function BubbleContent({
             onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
+        {renderUploadBadge()}
       </View>
     );
   }
@@ -4665,7 +4708,7 @@ function BubbleContent({
       : resolveVideoMeta(content.video);
 
     return renderWithContextCards(
-      <View style={styles.mediaBubble}>
+      <View style={[styles.mediaBubble, styles.uploadProgressHost]}>
         <VideoMessagePreview
           sourceUri={videoUri}
           thumbnailUri={thumbUri}
@@ -4681,6 +4724,7 @@ function BubbleContent({
             onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
+        {renderUploadBadge()}
       </View>
     );
   }
@@ -4750,7 +4794,7 @@ function BubbleContent({
       const durStr =
         fallbackDuration > 0 ? formatAudioTime(fallbackDuration) : pt.audio;
       return renderWithContextCards(
-        <View style={styles.audioWrap}>
+        <View style={[styles.audioWrap, styles.uploadProgressHost]}>
           <Text style={[styles.audioDuration, textColor]}>{durStr}</Text>
           {cap ? (
             <WhatsAppFormattedText
@@ -4759,6 +4803,7 @@ function BubbleContent({
               onLinkLongPress={() => onOpenActions?.(msg)}
             />
           ) : null}
+          {renderUploadBadge(styles.uploadProgressBadgeAudio)}
         </View>
       );
     }
@@ -4783,7 +4828,7 @@ function BubbleContent({
     const waveformToRender = fitWaveformToWidth(waveform, waveformWidth);
 
     return renderWithContextCards(
-      <View style={styles.audioBubble}>
+      <View style={[styles.audioBubble, styles.uploadProgressHost]}>
         <View
           style={[
             styles.audioPlayerContainer,
@@ -4903,6 +4948,7 @@ function BubbleContent({
             onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
+        {renderUploadBadge(styles.uploadProgressBadgeAudio)}
       </View>
     );
   }
@@ -4918,7 +4964,7 @@ function BubbleContent({
     const meta = [ext, sizeStr].filter(Boolean).join(' • ');
     const cap = content.message;
     return renderWithContextCards(
-      <View>
+      <View style={styles.uploadProgressHost}>
         <View style={[styles.documentCard, fromMe && styles.documentCardRight]}>
           <Pressable
             style={styles.documentMainAction}
@@ -4973,6 +5019,7 @@ function BubbleContent({
               color={colors.primary}
             />
           </Pressable>
+          {renderUploadBadge(styles.uploadProgressBadgeDocument)}
         </View>
         {cap ? (
           <WhatsAppFormattedText
@@ -5248,6 +5295,7 @@ function MessageBubble({
   audioCtrl,
   audioState,
   audioWaveformWidth,
+  uploadState,
   bubbleMaxWidth,
   documentBubbleWidth,
   onOpenImage,
@@ -5272,6 +5320,7 @@ function MessageBubble({
   audioCtrl: AudioCtrl | null;
   audioState?: AudioState;
   audioWaveformWidth?: number;
+  uploadState?: UploadProgressState | null;
   bubbleMaxWidth: number;
   documentBubbleWidth: number;
   onOpenImage: (msg: ListMessageResult, galleryIndex?: number) => void;
@@ -5520,6 +5569,7 @@ function MessageBubble({
           audioCtrl={audioCtrl}
           audioState={audioState}
           audioWaveformWidth={audioWaveformWidth}
+          uploadState={uploadState}
           onOpenImage={onOpenImage}
           onOpenVideo={onOpenVideo}
           onPressContactCard={onPressContactCard}
@@ -5610,6 +5660,7 @@ type ChatMessageListRowProps = {
   audioCtrl: AudioCtrl | null;
   audioState: AudioState;
   audioWaveformWidth: number;
+  uploadState: UploadProgressState | null;
   bubbleMaxWidth: number;
   documentBubbleWidth: number;
   disableTemplateButtons: boolean;
@@ -5648,6 +5699,7 @@ function ChatMessageListRow({
   audioCtrl,
   audioState,
   audioWaveformWidth,
+  uploadState,
   bubbleMaxWidth,
   documentBubbleWidth,
   disableTemplateButtons,
@@ -5728,6 +5780,7 @@ function ChatMessageListRow({
       audioCtrl={audioCtrl}
       audioState={audioState}
       audioWaveformWidth={audioWaveformWidth}
+      uploadState={uploadState}
       bubbleMaxWidth={bubbleMaxWidth}
       documentBubbleWidth={documentBubbleWidth}
       onOpenImage={onOpenImage}
@@ -5816,6 +5869,7 @@ function areChatMessageListRowsEqual(
     previous.audioCtrl === next.audioCtrl &&
     areAudioStatesEqual(previous.audioState, next.audioState) &&
     previous.audioWaveformWidth === next.audioWaveformWidth &&
+    previous.uploadState === next.uploadState &&
     previous.bubbleMaxWidth === next.bubbleMaxWidth &&
     previous.documentBubbleWidth === next.documentBubbleWidth &&
     previous.disableTemplateButtons === next.disableTemplateButtons &&
@@ -6051,6 +6105,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     string | null
   >(null);
   const [messages, setMessages] = useState<ListMessageResult[]>([]);
+  const [uploadProgressByHash, setUploadProgressByHash] = useState<
+    Record<string, UploadProgressState>
+  >({});
   const imageGalleryLookup = useMemo(
     () => buildImageGalleryLookup(messages),
     [messages]
@@ -10241,6 +10298,95 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     );
   }, []);
 
+  const initializeUploadProgress = useCallback((hash: string | null) => {
+    const normalizedHash = readNonEmptyString(hash);
+    if (!normalizedHash) return;
+
+    setUploadProgressByHash((previous) => ({
+      ...previous,
+      [normalizedHash]: { status: 'uploading', progress: 0 },
+    }));
+  }, []);
+
+  const updateUploadProgress = useCallback(
+    (hash: string | null, progress: number) => {
+      const normalizedHash = readNonEmptyString(hash);
+      if (!normalizedHash) return;
+      const normalizedProgress = normalizeUploadProgress(progress);
+
+      setUploadProgressByHash((previous) => {
+        const current = previous[normalizedHash];
+        if (
+          current?.status === 'uploading' &&
+          current.progress === normalizedProgress
+        ) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [normalizedHash]: {
+            status: 'uploading',
+            progress: normalizedProgress,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const markUploadProgressError = useCallback(
+    (hash: string | null, errorMessage?: string | null) => {
+      const normalizedHash = readNonEmptyString(hash);
+      if (!normalizedHash) return;
+
+      setUploadProgressByHash((previous) => {
+        const current = previous[normalizedHash];
+        return {
+          ...previous,
+          [normalizedHash]: {
+            status: 'error',
+            progress: normalizeUploadProgress(current?.progress ?? 0),
+            errorMessage: errorMessage ?? null,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const clearUploadProgress = useCallback((hash: string | null) => {
+    const normalizedHash = readNonEmptyString(hash);
+    if (!normalizedHash) return;
+
+    setUploadProgressByHash((previous) => {
+      if (!previous[normalizedHash]) return previous;
+      const next = { ...previous };
+      delete next[normalizedHash];
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    setUploadProgressByHash((previous) => {
+      let next: Record<string, UploadProgressState> | null = null;
+
+      for (const hash of Object.keys(previous)) {
+        const hasRemoteMessage = messages.some(
+          (message) =>
+            readNonEmptyString(message.hash) === hash &&
+            !message.message_id.startsWith('local-')
+        );
+        if (!hasRemoteMessage) continue;
+
+        if (!next) next = { ...previous };
+        delete next[hash];
+      }
+
+      return next ?? previous;
+    });
+  }, [messages]);
+
   const buildOptimisticMessage = useCallback(
     (input: {
       hash: string;
@@ -10414,17 +10560,32 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       const messageHash =
         readNonEmptyString(options?.hash) ??
         readNonEmptyString(formData.get('hash'));
+      const shouldTrackUploadProgress =
+        shouldTrackUploadProgressForFormData(formData);
       if (options?.optimisticMessage) {
         pushMessageToList(options.optimisticMessage);
+      }
+      if (shouldTrackUploadProgress) {
+        initializeUploadProgress(messageHash);
       }
 
       try {
         const result = await createMessageWithFormData(
           chatInfo.chat_id,
-          formData
+          formData,
+          shouldTrackUploadProgress
+            ? {
+                onUploadProgress: (progress) => {
+                  updateUploadProgress(messageHash, progress);
+                },
+              }
+            : undefined
         );
         if (!result.ok) {
           markMessageAsFailedByHash(messageHash);
+          if (shouldTrackUploadProgress) {
+            markUploadProgressError(messageHash, result.error ?? pt.send_error);
+          }
           if (options?.showFailureAlert !== false) {
             Alert.alert(pt.error_title, result.error ?? pt.send_error);
           }
@@ -10440,9 +10601,15 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         if (replyMessageId) {
           setReplyMessageTarget(null);
         }
+        if (shouldTrackUploadProgress) {
+          clearUploadProgress(messageHash);
+        }
         return true;
       } catch {
         markMessageAsFailedByHash(messageHash);
+        if (shouldTrackUploadProgress) {
+          markUploadProgressError(messageHash, pt.send_error);
+        }
         if (options?.showFailureAlert !== false) {
           Alert.alert(pt.error_title, pt.send_error);
         }
@@ -10451,10 +10618,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     },
     [
       chatInfo.chat_id,
+      clearUploadProgress,
+      initializeUploadProgress,
       markMessageAsFailedByHash,
+      markUploadProgressError,
       pushMessageToList,
       replyMessageTarget?.message_id,
       syncLatestMessages,
+      updateUploadProgress,
     ]
   );
 
@@ -11469,6 +11640,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
       uploadingVideoHashesRef.current.add(draft.hash);
       pendingVideoUploadsRef.current.set(draft.hash, draft);
+      initializeUploadProgress(draft.hash);
       setSendingCapturedMedia(true);
       setMessages((previous) =>
         previous.map((entry) => {
@@ -11517,10 +11689,16 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
         const result = await createMessageWithFormData(
           chatInfo.chat_id,
-          formData
+          formData,
+          {
+            onUploadProgress: (progress) => {
+              updateUploadProgress(draft.hash, progress);
+            },
+          }
         );
         if (!result.ok) {
           markMessageAsFailedByHash(draft.hash);
+          markUploadProgressError(draft.hash, result.error ?? pt.send_error);
           Alert.alert(pt.error_title, result.error ?? pt.send_error);
           return false;
         }
@@ -11532,12 +11710,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           await syncLatestMessages();
         }
         pendingVideoUploadsRef.current.delete(draft.hash);
+        clearUploadProgress(draft.hash);
         if (!options?.isRetry && draft.replyMessageId) {
           setReplyMessageTarget(null);
         }
         return true;
       } catch {
         markMessageAsFailedByHash(draft.hash);
+        markUploadProgressError(draft.hash, pt.send_error);
         Alert.alert(pt.error_title, pt.send_error);
         return false;
       } finally {
@@ -11547,10 +11727,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     },
     [
       chatInfo.chat_id,
+      clearUploadProgress,
+      initializeUploadProgress,
       isHistoryReadonly,
       markMessageAsFailedByHash,
+      markUploadProgressError,
       pushMessageToList,
       syncLatestMessages,
+      updateUploadProgress,
     ]
   );
 
@@ -13588,6 +13772,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             audioCtrl={audioCtrl}
             audioState={DEFAULT_AUDIO_STATE}
             audioWaveformWidth={0}
+            uploadState={null}
             bubbleMaxWidth={chatBubbleMaxWidth}
             documentBubbleWidth={chatDocumentBubbleWidth}
             disableTemplateButtons={false}
@@ -13613,6 +13798,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         message.content?.type === EMessageType.text &&
         !!message.content.template &&
         (!canComposeInChat || sending);
+      const uploadHash = readNonEmptyString(message.hash);
+      const uploadState = uploadHash
+        ? uploadProgressByHash[uploadHash] ?? null
+        : null;
 
       return (
         <MemoizedChatMessageListRow
@@ -13632,6 +13821,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           audioCtrl={audioCtrl}
           audioState={audioStates[messageId] ?? DEFAULT_AUDIO_STATE}
           audioWaveformWidth={audioWaveformWidths[messageId] ?? 0}
+          uploadState={uploadState}
           bubbleMaxWidth={chatBubbleMaxWidth}
           documentBubbleWidth={chatDocumentBubbleWidth}
           disableTemplateButtons={disableTemplateButtonsForMessage}
@@ -13674,6 +13864,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       scrollToMessageById,
       sending,
       shouldObfuscateContent,
+      uploadProgressByHash,
     ]
   );
 
@@ -13772,6 +13963,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   audioWaveformWidth={
                     audioWaveformWidths[messageActionTarget.message_id] ?? 0
                   }
+                  uploadState={null}
                   bubbleMaxWidth={chatBubbleMaxWidth}
                   documentBubbleWidth={chatDocumentBubbleWidth}
                   imageGallery={null}
@@ -17598,6 +17790,23 @@ const styles = StyleSheet.create({
     maxWidth: 232,
     overflow: 'hidden',
     borderRadius: 8,
+  },
+  uploadProgressHost: {
+    position: 'relative',
+  },
+  uploadProgressBadge: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    zIndex: 20,
+  },
+  uploadProgressBadgeAudio: {
+    right: 6,
+    bottom: 6,
+  },
+  uploadProgressBadgeDocument: {
+    right: 8,
+    bottom: 8,
   },
   mediaBubbleImage: {
     maxWidth: 210,

@@ -41,6 +41,7 @@ import { CreateContactRequest } from '@core/schema/contact/createContact/request
 import type { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import UploadProgressBadge from '@/components/chat/UploadProgressBadge.vue';
 import {
   buildImageGalleryLookup,
   isGhostEmptyTextMessage,
@@ -1032,6 +1033,33 @@ const getLocalMessageState = (
 
 const isMessageUploadError = (message: ListMessageResult): boolean => {
   return getLocalMessageState(message)?.status === 'error';
+};
+
+const isUploadMediaMessage = (message: ListMessageResult): boolean => {
+  const type = message.content?.type;
+  return (
+    type === EMessageType.image ||
+    type === EMessageType.video ||
+    type === EMessageType.video_note ||
+    type === EMessageType.audio ||
+    type === EMessageType.document
+  );
+};
+
+const shouldShowUploadProgressBadge = (message: ListMessageResult): boolean => {
+  return Boolean(
+    getLocalMessageState(message) && isUploadMediaMessage(message)
+  );
+};
+
+const getMessageUploadProgress = (message: ListMessageResult): number => {
+  return getLocalMessageState(message)?.progress ?? 0;
+};
+
+const getMessageUploadStatus = (
+  message: ListMessageResult
+): LocalUploadState['status'] => {
+  return getLocalMessageState(message)?.status ?? 'uploading';
 };
 
 const retryMessage = (message: ListMessageResult) => {
@@ -3800,6 +3828,12 @@ onUnmounted(() => {
                         </div>
                       </div>
                     </div>
+                    <UploadProgressBadge
+                      v-if="shouldShowUploadProgressBadge(item.message)"
+                      class="upload-progress-overlay"
+                      :progress="getMessageUploadProgress(item.message)"
+                      :status="getMessageUploadStatus(item.message)"
+                    />
                   </div>
 
                   <div
@@ -3866,6 +3900,12 @@ onUnmounted(() => {
                         tabler-pin
                       </VIcon>
                     </div>
+                    <UploadProgressBadge
+                      v-if="shouldShowUploadProgressBadge(item.message)"
+                      class="upload-progress-overlay"
+                      :progress="getMessageUploadProgress(item.message)"
+                      :status="getMessageUploadStatus(item.message)"
+                    />
                   </div>
 
                   <div
@@ -3937,6 +3977,12 @@ onUnmounted(() => {
                         tabler-pin
                       </VIcon>
                     </div>
+                    <UploadProgressBadge
+                      v-if="shouldShowUploadProgressBadge(item.message)"
+                      class="upload-progress-overlay"
+                      :progress="getMessageUploadProgress(item.message)"
+                      :status="getMessageUploadStatus(item.message)"
+                    />
                   </div>
 
                   <div
@@ -4008,6 +4054,12 @@ onUnmounted(() => {
                         tabler-pin
                       </VIcon>
                     </div>
+                    <UploadProgressBadge
+                      v-if="shouldShowUploadProgressBadge(item.message)"
+                      class="upload-progress-overlay"
+                      :progress="getMessageUploadProgress(item.message)"
+                      :status="getMessageUploadStatus(item.message)"
+                    />
                   </div>
 
                   <div
@@ -4294,6 +4346,12 @@ onUnmounted(() => {
                         tabler-pin
                       </VIcon>
                     </div>
+                    <UploadProgressBadge
+                      v-if="shouldShowUploadProgressBadge(item.message)"
+                      class="upload-progress-overlay upload-progress-overlay--audio"
+                      :progress="getMessageUploadProgress(item.message)"
+                      :status="getMessageUploadStatus(item.message)"
+                    />
                   </div>
 
                   <div
@@ -4692,6 +4750,12 @@ onUnmounted(() => {
                     >
                       <VIcon size="22">tabler-download</VIcon>
                     </a>
+                    <UploadProgressBadge
+                      v-if="shouldShowUploadProgressBadge(item.message)"
+                      class="upload-progress-overlay upload-progress-overlay--document"
+                      :progress="getMessageUploadProgress(item.message)"
+                      :status="getMessageUploadStatus(item.message)"
+                    />
                   </div>
 
                   <div
@@ -5997,6 +6061,7 @@ onUnmounted(() => {
         max-inline-size: 180px;
         inline-size: min(180px, 72vw);
         cursor: zoom-in;
+        position: relative;
 
         &.is-deleted {
           cursor: default;
@@ -6067,6 +6132,7 @@ onUnmounted(() => {
         max-inline-size: 260px;
         inline-size: 100%;
         cursor: zoom-in;
+        position: relative;
 
         .image-thumb {
           border-radius: 8px;
@@ -6108,6 +6174,7 @@ onUnmounted(() => {
         border-radius: 10px;
         background: rgba(var(--v-theme-on-surface), 0.04);
         padding: 10px;
+        position: relative;
       }
 
       .video-bubble--left {
@@ -6134,6 +6201,7 @@ onUnmounted(() => {
         background: rgba(var(--v-theme-on-surface), 0.04);
         padding: 10px;
         align-items: center;
+        position: relative;
       }
 
       .video-note-bubble--left {
@@ -6519,6 +6587,24 @@ onUnmounted(() => {
         border-radius: 10px;
         background: rgba(var(--v-theme-on-surface), 0.04);
         margin-bottom: 6px;
+        position: relative;
+      }
+
+      .upload-progress-overlay {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        z-index: 4;
+      }
+
+      .upload-progress-overlay--audio {
+        right: 6px;
+        bottom: 6px;
+      }
+
+      .upload-progress-overlay--document {
+        right: 8px;
+        bottom: 8px;
       }
 
       .document-bubble--left {

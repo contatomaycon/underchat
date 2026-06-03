@@ -68,6 +68,27 @@ const INTERNAL_MESSAGES_PER_PAGE = 20;
 const REMOTE_ACTIVITY_TIMEOUT_MS = 5000;
 const REFRESH_DEBOUNCE_MS = 1000;
 
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeUploadProgress(progress: number): number {
+  if (!Number.isFinite(progress)) return 0;
+  return Math.max(0, Math.min(99, Math.round(progress)));
+}
+
+function resolveUploadHash(
+  formData: FormData,
+  optimisticMessage?: InternalChatMessage | null
+): string | null {
+  return (
+    readNonEmptyString(optimisticMessage?.hash) ??
+    readNonEmptyString(formData.get('hash'))
+  );
+}
+
 type LoadConversationsOptions = {
   tab?: InternalChatTab;
   search?: string | null;
@@ -548,6 +569,7 @@ export function InternalChatProvider({
       error: string | null;
     }> => {
       if (!enabled) return { message: null, error: null };
+      const uploadHash = resolveUploadHash(formData, optimisticMessage);
       if (optimisticMessage) {
         dispatch({
           type: 'upsertMessage',
@@ -555,10 +577,31 @@ export function InternalChatProvider({
           currentUserId: currentUserIdRef.current,
         });
       }
+      if (uploadHash) {
+        dispatch({
+          type: 'setUploadState',
+          hash: uploadHash,
+          uploadState: { status: 'uploading', progress: 0 },
+        });
+      }
       try {
         const result = await createInternalChatMessageWithFormData(
           conversationId,
-          formData
+          formData,
+          uploadHash
+            ? {
+                onUploadProgress: (progress) => {
+                  dispatch({
+                    type: 'setUploadState',
+                    hash: uploadHash,
+                    uploadState: {
+                      status: 'uploading',
+                      progress: normalizeUploadProgress(progress),
+                    },
+                  });
+                },
+              }
+            : undefined
         );
         if (result.ok && result.message) {
           dispatch({
@@ -566,9 +609,23 @@ export function InternalChatProvider({
             message: result.message,
             currentUserId: currentUserIdRef.current,
           });
+          if (uploadHash) {
+            dispatch({ type: 'clearUploadState', hash: uploadHash });
+          }
           return { message: result.message, error: null };
         }
         const backendError = result.error ?? 'Erro ao enviar mensagem.';
+        if (uploadHash) {
+          dispatch({
+            type: 'setUploadState',
+            hash: uploadHash,
+            uploadState: {
+              status: 'error',
+              progress: 0,
+              errorMessage: backendError,
+            },
+          });
+        }
         if (optimisticMessage) {
           dispatch({
             type: 'upsertMessage',
@@ -583,6 +640,17 @@ export function InternalChatProvider({
         return { message: null, error: backendError };
       } catch {
         // The optimistic message below must not remain stuck as "sending".
+      }
+      if (uploadHash) {
+        dispatch({
+          type: 'setUploadState',
+          hash: uploadHash,
+          uploadState: {
+            status: 'error',
+            progress: 0,
+            errorMessage: 'Erro ao enviar mensagem.',
+          },
+        });
       }
       if (optimisticMessage) {
         dispatch({

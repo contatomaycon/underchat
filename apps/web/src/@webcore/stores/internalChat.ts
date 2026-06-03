@@ -423,7 +423,7 @@ export const useInternalChatStore = defineStore('internalChat', {
       if (!hash) return;
       const target = this.localMessageState[hash];
       if (!target) return;
-      target.progress = Math.max(0, Math.min(progress, 100));
+      target.progress = Math.max(0, Math.min(progress, 99));
     },
 
     markLocalMessageError(hash: string, errorMessage?: string) {
@@ -1117,7 +1117,10 @@ export const useInternalChatStore = defineStore('internalChat', {
               return;
             }
 
-            const progress = Math.round((event.loaded * 100) / event.total);
+            const progress = Math.min(
+              99,
+              Math.round((event.loaded * 100) / event.total)
+            );
             options.onUploadProgress?.(progress);
           };
         }
