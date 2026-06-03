@@ -584,7 +584,6 @@ watch(
     }
 
     await openChat(nextValue, {
-      skipClearSummary: true,
       forceReload: true,
     });
   }
@@ -1470,7 +1469,9 @@ const canToggleForwardToOutputChatbot = computed(() => {
 });
 
 const attendanceInactivityAlertEnabledForChat = computed(() => {
-  return workerConfigForChat.value?.attendance_inactivity_alert_enabled === true;
+  return (
+    workerConfigForChat.value?.attendance_inactivity_alert_enabled === true
+  );
 });
 
 const canShowDisableAttendanceInactivityAction = computed(() => {
@@ -1803,10 +1804,14 @@ const formattedRecordingTime = computed(() => {
 });
 
 const scrollToBottomInChatLog = async (smooth: boolean = false) => {
-  if (!chatLogPS.value) return;
+  if (!chatLogPS.value) {
+    return;
+  }
 
   const scrollEl = chatLogPS.value.$el || chatLogPS.value;
-  if (!scrollEl) return;
+  if (!scrollEl) {
+    return;
+  }
 
   const psContainer =
     (scrollEl.querySelector('.ps') as HTMLElement) ||
@@ -2721,12 +2726,13 @@ const sendTextMessage = async (
     replyMessage || null,
     quickMessageTemplateId
   );
-  const success = await chatStore.createMessage(messageBody);
+  const success = await chatStore.createMessage(messageBody, {
+    skipLoading: true,
+  });
 
   if (!success) {
     markUploadError(hash);
   }
-
   return success;
 };
 
@@ -2753,11 +2759,13 @@ const sendAnnotationMessage = async (): Promise<void> => {
   isAnnotationModalOpen.value = false;
   annotationText.value = '';
 
-  chatStore.createMessage(messageBody).then((success) => {
-    if (!success) {
-      markUploadError(hash);
-    }
-  });
+  chatStore
+    .createMessage(messageBody, { skipLoading: true })
+    .then((success) => {
+      if (!success) {
+        markUploadError(hash);
+      }
+    });
 };
 
 const onAnnotationEmojiSelect = (emoji: any) => {
@@ -3010,10 +3018,53 @@ const openChat = async (
   options?: OpenChatOptions
 ) => {
   const isSameChat = chatStore.activeChat?.chat_id === chatId;
-  if (isSameChat && !options?.forceReload) return;
+  if (isSameChat && !options?.forceReload) {
+    return;
+  }
 
   linkPreview.value = null;
   isLoadingLinkPreview.value = false;
+
+  const requestQueue: ListMessageChatsQuery = {
+    current_page: isSameChat ? currentPage.value : 1,
+    per_page: perPage.value,
+  };
+
+  const shouldPreserveCurrentMessages =
+    isSameChat && chatStore.listMessages.length > 0;
+
+  if (!isSameChat) {
+    const messagesData = await chatStore.getChatMessagesById(
+      chatId,
+      requestQueue
+    );
+
+    if (!messagesData) {
+      return;
+    }
+    chatStore.setActiveChat(chatId, options?.fallbackChat);
+
+    if (chatStore.activeChat?.chat_id !== chatId) {
+      return;
+    }
+
+    chatStore.listMessages = [...messagesData.results].reverse();
+    chatStore.currentPage = messagesData.pagings.current_page;
+    chatStore.totalPages = messagesData.pagings.total_pages;
+    currentPage.value = messagesData.pagings.current_page;
+  } else {
+    if (!chatStore.activeChat) {
+      chatStore.setActiveChat(chatId, options?.fallbackChat);
+    }
+
+    if (chatStore.activeChat?.chat_id !== chatId) {
+      return;
+    }
+    await chatStore.getChatById(requestQueue, chatId, {
+      preserveMessages: shouldPreserveCurrentMessages,
+      skipLoading: shouldPreserveCurrentMessages,
+    });
+  }
 
   if (chatLogPS.value) {
     const scrollEl = chatLogPS.value.$el || chatLogPS.value;
@@ -3022,30 +3073,17 @@ const openChat = async (
     }
   }
 
-  if (!isSameChat || !chatStore.activeChat) {
-    chatStore.setActiveChat(chatId, options?.fallbackChat);
-  }
-
-  if (chatStore.activeChat?.chat_id !== chatId) {
-    return;
-  }
-
-  const requestQueue: ListMessageChatsQuery = {
-    current_page: currentPage.value,
-    per_page: perPage.value,
-  };
-
-  await chatStore.getChatById(requestQueue, chatId);
-
   if (
     chatStore.activeChat?.status === EChatStatus.in_chat &&
     isChatParticipant(
       chatStore.activeChat as unknown as IChat,
       chatStore.user?.user_id
     ) &&
+    (chatStore.activeChat.summary?.unread_count ?? 0) > 0 &&
     !options?.skipClearSummary
   ) {
-    await chatStore.clearChatSummary(chatId);
+    chatStore.clearActiveChatUnreadCountLocally();
+    void chatStore.clearChatSummary(chatId);
   }
 
   if (vuetifyDisplays.smAndDown.value) {
@@ -5307,7 +5345,9 @@ const retryTextMessage = async (
     messageBody.message_quoted_id = content.message_quoted_id;
   }
 
-  const success = await chatStore.createMessage(messageBody);
+  const success = await chatStore.createMessage(messageBody, {
+    skipLoading: true,
+  });
   if (!success) {
     markUploadError(hash);
   }
@@ -5821,6 +5861,13 @@ const handleGlobalChatUpdate = async (e: Event) => {
     return;
   }
 
+  const activeChatIdBeforeUpdate = chatStore.activeChat?.chat_id;
+  if (chatStore.isActiveChatSummaryOnlyUpdate(chatData)) {
+    chatStore.clearActiveChatUnreadCountLocally();
+    chatStore.scheduleUnreadSummaryRefresh();
+    return;
+  }
+
   chatStore.addChat(chatData);
 
   const isActiveChatForUser =
@@ -5828,29 +5875,45 @@ const handleGlobalChatUpdate = async (e: Event) => {
     isChatParticipant(chatData, chatStore.user?.user_id);
 
   if (isActiveChatForUser) {
-    const previousActiveChatId = chatStore.activeChat?.chat_id;
+    const previousActiveChatId =
+      activeChatIdBeforeUpdate ?? chatStore.activeChat?.chat_id;
 
-    if (previousActiveChatId !== chatData.chat_id) {
-      chatStore.listMessages = [];
-      chatStore.currentPage = 1;
-      chatStore.totalPages = 1;
-      currentPage.value = 1;
+    const requestQueue: ListMessageChatsQuery = {
+      current_page: 1,
+      per_page: perPage.value,
+    };
+    const shouldPreserveMessages = previousActiveChatId === chatData.chat_id;
+
+    if (shouldPreserveMessages) {
+      chatStore.setActiveChat(chatData.chat_id);
+      chatStore.clearActiveChatUnreadCountLocally();
+      chatStore.scheduleUnreadSummaryRefresh();
+    } else {
+      const messagesData = await chatStore.getChatMessagesById(
+        chatData.chat_id,
+        requestQueue
+      );
+
+      if (!messagesData) {
+        return;
+      }
+
+      chatStore.setActiveChat(chatData.chat_id, chatData as ListChatsResult);
+
+      if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
+        return;
+      }
+
+      chatStore.listMessages = [...messagesData.results].reverse();
+      chatStore.currentPage = messagesData.pagings.current_page;
+      chatStore.totalPages = messagesData.pagings.total_pages;
+      currentPage.value = messagesData.pagings.current_page;
     }
 
-    chatStore.setActiveChat(chatData.chat_id);
-
-    if (chatStore.activeChat?.chat_id === chatData.chat_id) {
-      const requestQueue: ListMessageChatsQuery = {
-        current_page: 1,
-        per_page: perPage.value,
-      };
-      await chatStore.getChatById(requestQueue);
-
-      await nextTick();
-      requestAnimationFrame(() => {
-        scrollToBottomInChatLog();
-      });
-    }
+    await nextTick();
+    requestAnimationFrame(() => {
+      scrollToBottomInChatLog();
+    });
   }
 };
 
@@ -5862,7 +5925,6 @@ onMounted(async () => {
   const routeChatId = resolveRouteChatId();
   if (routeChatId) {
     await openChat(routeChatId, {
-      skipClearSummary: true,
       forceReload: true,
     });
   } else {
@@ -6457,7 +6519,7 @@ onBeforeUnmount(() => {
             :options="{ wheelPropagation: false }"
             class="flex-grow-1"
           >
-            <ChatLog :key="chatStore.activeChat?.chat_id || 'no-chat'" />
+            <ChatLog />
           </PerfectScrollbar>
 
           <ChatLinkPreview

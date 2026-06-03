@@ -59,10 +59,6 @@ const systemMessageBackground = computed(() => {
   if (isDarkMode.value) return 'rgba(var(--v-theme-on-surface), 0.14)';
   return 'rgb(227, 242, 253)';
 });
-
-const showSkeleton = computed(
-  () => chatStore.loading && chatStore.listMessages.length === 0
-);
 const reactionEmojiIndex = new EmojiIndex(data);
 const showScrollToBottom = ref(false);
 const shouldAutoScrollOnNewMessage = ref(true);
@@ -71,6 +67,9 @@ const fixedDateLabel = ref<string>('');
 const fixedDateIndicatorTop = ref(0);
 const fixedDateIndicatorLeft = ref(0);
 const fixedDateIndicatorWidth = ref(0);
+const lastVisibleMessages = ref<ListMessageResult[]>([]);
+const isPreservingTransientMessages = ref(false);
+let transientMessagesTimer: ReturnType<typeof setTimeout> | null = null;
 
 type ViewerMediaItem = {
   src: string;
@@ -2108,12 +2107,81 @@ const goToQuoted = (m: ListMessageResult) => {
   );
 };
 
-const visibleMessages = computed(() => {
+const sourceVisibleMessages = computed(() => {
   return chatStore.listMessages.filter(
     (message) =>
       !isGhostPinMessage(message) && !isGhostEmptyTextMessage(message)
   );
 });
+
+const clearTransientMessagesTimer = () => {
+  if (transientMessagesTimer) {
+    clearTimeout(transientMessagesTimer);
+    transientMessagesTimer = null;
+  }
+};
+
+watch(
+  [sourceVisibleMessages, () => activeChat.value?.chat_id],
+  ([messages, chatId], [_previousMessages, previousChatId]) => {
+    if (chatId !== previousChatId) {
+      if (messages.length > 0 || lastVisibleMessages.value.length === 0) {
+        clearTransientMessagesTimer();
+        isPreservingTransientMessages.value = false;
+        lastVisibleMessages.value = messages;
+        return;
+      }
+
+      isPreservingTransientMessages.value = true;
+      clearTransientMessagesTimer();
+      transientMessagesTimer = setTimeout(() => {
+        isPreservingTransientMessages.value = false;
+        transientMessagesTimer = null;
+      }, 1200);
+      return;
+    }
+
+    if (messages.length > 0) {
+      clearTransientMessagesTimer();
+      isPreservingTransientMessages.value = false;
+      lastVisibleMessages.value = messages;
+      return;
+    }
+
+    if (!chatId || lastVisibleMessages.value.length === 0) {
+      isPreservingTransientMessages.value = false;
+      return;
+    }
+
+    isPreservingTransientMessages.value = true;
+    clearTransientMessagesTimer();
+    transientMessagesTimer = setTimeout(() => {
+      isPreservingTransientMessages.value = false;
+      transientMessagesTimer = null;
+    }, 1200);
+  },
+  { immediate: true }
+);
+
+const visibleMessages = computed(() => {
+  if (
+    isPreservingTransientMessages.value &&
+    sourceVisibleMessages.value.length === 0
+  ) {
+    return lastVisibleMessages.value;
+  }
+
+  return sourceVisibleMessages.value;
+});
+
+const showSkeleton = computed(
+  () => chatStore.loading && visibleMessages.value.length === 0
+);
+
+const getMessageRenderKey = (message?: ListMessageResult | null): string => {
+  if (!message) return 'unknown';
+  return message.hash || message.message_id;
+};
 
 const imageGalleryLookup = computed(() => {
   return buildImageGalleryLookup(visibleMessages.value);
@@ -2748,6 +2816,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearTransientMessagesTimer();
+
   const scrollElement = scrollElementRef.value;
   if (scrollElement) {
     scrollElement.removeEventListener('scroll', handleScroll);
@@ -2837,7 +2907,7 @@ onUnmounted(() => {
         :key="
           item.type === 'separator'
             ? `separator-${item.separatorDate}`
-            : `msg-${item.message?.message_id}`
+            : `msg-${getMessageRenderKey(item.message)}`
         "
       >
         <div

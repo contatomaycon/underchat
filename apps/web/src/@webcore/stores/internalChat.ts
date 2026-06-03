@@ -114,6 +114,44 @@ const parseDate = (value?: string | null): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const getInternalMessageIdentityKeys = (
+  message: Pick<InternalMessage, 'message_id' | 'hash'>
+): string[] => {
+  const keys: string[] = [];
+
+  if (message.message_id) {
+    keys.push(`message_id:${message.message_id}`);
+  }
+
+  if (message.hash) {
+    keys.push(`hash:${message.hash}`);
+  }
+
+  return keys;
+};
+
+const isSameInternalMessage = (
+  a: Pick<InternalMessage, 'message_id' | 'hash'>,
+  b: Pick<InternalMessage, 'message_id' | 'hash'>
+): boolean => {
+  const bKeys = new Set(getInternalMessageIdentityKeys(b));
+  return getInternalMessageIdentityKeys(a).some((key) => bKeys.has(key));
+};
+
+const hasInternalLocalMessageState = (
+  message: InternalMessage,
+  localMessageState: Record<string, LocalMessageState>
+): boolean => Boolean(message.hash && localMessageState[message.hash]);
+
+const sortInternalMessagesByDate = (
+  messages: InternalMessage[]
+): InternalMessage[] =>
+  messages.sort((a, b) => parseDate(a.date) - parseDate(b.date));
+
+let internalUnreadSummaryRefreshTimer: ReturnType<typeof setTimeout> | null =
+  null;
+let internalUnreadSummaryRequestInFlight = false;
+
 export const useInternalChatStore = defineStore('internalChat', {
   state: () => ({
     i18n: getI18n(),
@@ -167,6 +205,10 @@ export const useInternalChatStore = defineStore('internalChat', {
         ? Math.max(0, Math.trunc(count))
         : 0;
 
+      if (this.unreadSummaryCount === normalizedCount) {
+        return;
+      }
+
       this.unreadSummaryCount = normalizedCount;
     },
 
@@ -179,32 +221,35 @@ export const useInternalChatStore = defineStore('internalChat', {
     },
 
     resetUnreadSummary(): void {
-      if (this.unreadSummaryRefreshTimer) {
-        clearTimeout(this.unreadSummaryRefreshTimer);
-        this.unreadSummaryRefreshTimer = null;
+      if (internalUnreadSummaryRefreshTimer) {
+        clearTimeout(internalUnreadSummaryRefreshTimer);
+        internalUnreadSummaryRefreshTimer = null;
       }
 
-      this.unreadSummaryCount = 0;
-      this.loadingUnreadSummary = false;
+      this.setUnreadSummaryCount(0);
+      if (this.loadingUnreadSummary) {
+        this.loadingUnreadSummary = false;
+      }
+      internalUnreadSummaryRequestInFlight = false;
     },
 
     scheduleUnreadSummaryRefresh(delayMs = 700): void {
-      if (this.unreadSummaryRefreshTimer) {
+      if (internalUnreadSummaryRefreshTimer) {
         return;
       }
 
-      this.unreadSummaryRefreshTimer = setTimeout(() => {
-        this.unreadSummaryRefreshTimer = null;
+      internalUnreadSummaryRefreshTimer = setTimeout(() => {
+        internalUnreadSummaryRefreshTimer = null;
         void this.viewUnreadSummary();
       }, delayMs);
     },
 
     async viewUnreadSummary(): Promise<number> {
-      if (this.loadingUnreadSummary) {
+      if (internalUnreadSummaryRequestInFlight) {
         return this.unreadSummaryCount;
       }
 
-      this.loadingUnreadSummary = true;
+      internalUnreadSummaryRequestInFlight = true;
 
       try {
         const response = await axios.get<
@@ -214,7 +259,10 @@ export const useInternalChatStore = defineStore('internalChat', {
       } catch {
         // The menu badge is opportunistic; navigation must not be blocked by it.
       } finally {
-        this.loadingUnreadSummary = false;
+        internalUnreadSummaryRequestInFlight = false;
+        if (this.loadingUnreadSummary) {
+          this.loadingUnreadSummary = false;
+        }
       }
 
       return this.unreadSummaryCount;
@@ -956,13 +1004,22 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (append) {
           const next = [...normalized];
           for (const current of this.messages) {
-            if (!next.some((item) => item.message_id === current.message_id)) {
+            if (!next.some((item) => isSameInternalMessage(item, current))) {
               next.push(current);
             }
           }
-          this.messages = next;
+          this.messages = sortInternalMessagesByDate(next);
         } else {
-          this.messages = normalized;
+          const next = [...normalized];
+          for (const current of this.messages) {
+            if (
+              hasInternalLocalMessageState(current, this.localMessageState) &&
+              !next.some((item) => isSameInternalMessage(item, current))
+            ) {
+              next.push(current);
+            }
+          }
+          this.messages = sortInternalMessagesByDate(next);
         }
 
         this.messagesPaging = {

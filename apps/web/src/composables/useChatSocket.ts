@@ -62,6 +62,31 @@ const createChatSocket = () => {
     return name === 'chat' || name === 'kanban';
   };
 
+  const isActiveAttendedChatForCurrentUser = (
+    chatId: string,
+    chat?: IChat | null
+  ): boolean => {
+    if (!isChatOrKanbanRoute()) {
+      return false;
+    }
+
+    const activeChat = chatStore.activeChat;
+    if (!activeChat || activeChat.chat_id !== chatId) {
+      return false;
+    }
+
+    const participantSource = chat ?? (activeChat as unknown as IChat);
+    return (
+      participantSource.status === EChatStatus.in_chat &&
+      isChatParticipant(participantSource, chatStore.user?.user_id)
+    );
+  };
+
+  const shouldRefreshUnreadSummaryForChat = (
+    chatId: string,
+    chat?: IChat | null
+  ): boolean => !isActiveAttendedChatForCurrentUser(chatId, chat);
+
   const processPendingMessages = async (chatId: string) => {
     const messages = pendingMessages.value.get(chatId);
     if (!messages || messages.length === 0) return;
@@ -101,7 +126,10 @@ const createChatSocket = () => {
       current_page: 1,
       per_page: 10,
     };
-    await chatStore.getChatById(requestQueue);
+    await chatStore.getChatById(requestQueue, chatId, {
+      preserveMessages: true,
+      skipLoading: true,
+    });
   };
 
   const syncFromCentrifugoHistory = async () => {
@@ -242,26 +270,36 @@ const createChatSocket = () => {
       messagesByChat.set(chatId, chatMessages);
     }
 
+    let shouldRefreshUnreadSummary = false;
+
     for (const [chatId, chatMessages] of messagesByChat) {
       const isActiveChat =
         isChatOrKanbanRoute() && chatStore.activeChat?.chat_id === chatId;
 
+      if (shouldRefreshUnreadSummaryForChat(chatId)) {
+        shouldRefreshUnreadSummary = true;
+      }
+
       if (isActiveChat) {
         const touchedMessageIds = new Set<string>();
         for (const msg of chatMessages) {
-          chatStore.addMessageActiveChat(msg);
-          touchedMessageIds.add(msg.message_id);
+          const changeType = chatStore.addMessageActiveChat(msg);
+          if (changeType !== 'unchanged') {
+            touchedMessageIds.add(msg.message_id);
+          }
         }
 
         const updatedMessages = chatStore.listMessages.filter((msg) =>
           touchedMessageIds.has(msg.message_id)
         );
 
-        globalThis.dispatchEvent(
-          new CustomEvent('chat-messages-batch', {
-            detail: { messages: updatedMessages },
-          })
-        );
+        if (updatedMessages.length > 0) {
+          globalThis.dispatchEvent(
+            new CustomEvent('chat-messages-batch', {
+              detail: { messages: updatedMessages },
+            })
+          );
+        }
       } else {
         for (const msg of chatMessages) {
           handleNewMessage(msg);
@@ -273,7 +311,9 @@ const createChatSocket = () => {
       evictPendingMessages(chatId, pending);
     }
 
-    chatStore.scheduleUnreadSummaryRefresh();
+    if (shouldRefreshUnreadSummary) {
+      chatStore.scheduleUnreadSummaryRefresh();
+    }
   };
 
   const flushChatUpdateBatch = (shouldScheduleKanbanRefresh = true) => {
@@ -290,7 +330,15 @@ const createChatSocket = () => {
       latestByChatId.set(chat.chat_id, chat);
     }
 
+    let shouldRefreshUnreadSummary = false;
+
     for (const chatData of latestByChatId.values()) {
+      if (chatStore.isActiveChatSummaryOnlyUpdate(chatData)) {
+        chatStore.clearActiveChatUnreadCountLocally();
+        chatStore.scheduleUnreadSummaryRefresh();
+        continue;
+      }
+
       const previousChat =
         chatStore.findChatInLists(chatData.chat_id) ??
         (chatStore.activeChat?.chat_id === chatData.chat_id
@@ -312,6 +360,10 @@ const createChatSocket = () => {
 
       chatStore.addChat(chatData);
 
+      if (shouldRefreshUnreadSummaryForChat(chatData.chat_id, chatData)) {
+        shouldRefreshUnreadSummary = true;
+      }
+
       if (!isActiveChat) {
         const handledTransfer = handleChatTransfer(
           chatData,
@@ -329,6 +381,7 @@ const createChatSocket = () => {
         isChatParticipant(chatData, chatStore.user?.user_id)
       ) {
         chatStore.clearActiveChatUnreadCountLocally();
+        chatStore.scheduleUnreadSummaryRefresh();
       }
 
       if (
@@ -351,7 +404,9 @@ const createChatSocket = () => {
       evictPendingChatUpdates(chatId, pendingUpdates);
     }
 
-    chatStore.scheduleUnreadSummaryRefresh();
+    if (shouldRefreshUnreadSummary) {
+      chatStore.scheduleUnreadSummaryRefresh();
+    }
 
     if (shouldScheduleKanbanRefresh) {
       scheduleKanbanFilteredRefresh();
@@ -512,12 +567,20 @@ const createChatSocket = () => {
         await onMessage(
           chatQueueAccountCentrifugo(accountId),
           (data: IChat) => {
+            if (chatStore.isActiveChatSummaryOnlyUpdate(data)) {
+              chatStore.clearActiveChatUnreadCountLocally();
+              chatStore.scheduleUnreadSummaryRefresh();
+              return;
+            }
+
             const isActiveChat =
               isChatOrKanbanRoute() &&
               chatStore.activeChat?.chat_id === data.chat_id;
 
             chatStore.addChat(data);
-            chatStore.scheduleUnreadSummaryRefresh();
+            if (shouldRefreshUnreadSummaryForChat(data.chat_id, data)) {
+              chatStore.scheduleUnreadSummaryRefresh();
+            }
             scheduleKanbanFilteredRefresh();
 
             if (
@@ -526,6 +589,7 @@ const createChatSocket = () => {
               isChatParticipant(data, chatStore.user?.user_id)
             ) {
               chatStore.clearActiveChatUnreadCountLocally();
+              chatStore.scheduleUnreadSummaryRefresh();
             }
           }
         );

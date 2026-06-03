@@ -1280,6 +1280,10 @@ const canGroupMessageMedia = (message: InternalMessage): boolean => {
   );
 };
 
+const getInternalMessageRenderKey = (message: InternalMessage): string => {
+  return message.hash || message.message_id;
+};
+
 const buildMediaViewerItem = (
   message: InternalMessage
 ): InternalViewerMediaItem | null => {
@@ -1335,7 +1339,7 @@ const messageDisplayItems = computed<InternalMessageDisplayItem[]>(() => {
     if (!mediaKind || !canGroupMessageMedia(firstMessage)) {
       displayItems.push({
         kind: 'message',
-        id: `message:${firstMessage.message_id}`,
+        id: `message:${getInternalMessageRenderKey(firstMessage)}`,
         message: firstMessage,
       });
       index += 1;
@@ -1366,7 +1370,7 @@ const messageDisplayItems = computed<InternalMessageDisplayItem[]>(() => {
     if (groupedMessages.length === 1) {
       displayItems.push({
         kind: 'message',
-        id: `message:${firstMessage.message_id}`,
+        id: `message:${getInternalMessageRenderKey(firstMessage)}`,
         message: firstMessage,
       });
       index += 1;
@@ -1374,9 +1378,11 @@ const messageDisplayItems = computed<InternalMessageDisplayItem[]>(() => {
     }
 
     const lastMessage = groupedMessages[groupedMessages.length - 1];
+    const firstMessageKey = getInternalMessageRenderKey(firstMessage);
+    const lastMessageKey = getInternalMessageRenderKey(lastMessage);
     displayItems.push({
       kind: 'media-group',
-      id: `media-group:${mediaKind}:${firstMessage.message_id}:${lastMessage.message_id}`,
+      id: `media-group:${mediaKind}:${firstMessageKey}:${lastMessageKey}`,
       mediaKind,
       messages: groupedMessages,
       firstMessage,
@@ -6186,7 +6192,7 @@ onBeforeUnmount(async () => {
               <template v-else-if="displayItem.kind === 'message'">
                 <div
                   v-for="message in [displayItem.message]"
-                  :key="message.message_id"
+                  :key="getInternalMessageRenderKey(message)"
                   :id="`internal-msg-${message.message_id}`"
                   :data-message-id="message.message_id"
                   class="internal-chat-message-row"
@@ -7085,7 +7091,7 @@ onBeforeUnmount(async () => {
                           v-for="(
                             mediaMessage, mediaIndex
                           ) in getMediaGroupPreviewItems(displayItem)"
-                          :key="mediaMessage.message_id"
+                          :key="getInternalMessageRenderKey(mediaMessage)"
                           type="button"
                           :id="`internal-msg-${mediaMessage.message_id}`"
                           :data-message-id="mediaMessage.message_id"

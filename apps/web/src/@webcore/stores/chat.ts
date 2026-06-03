@@ -100,6 +100,21 @@ type UploadOptions = {
   skipLoading?: boolean;
 };
 
+type ChatMessagesFetchOptions = {
+  preserveMessages?: boolean;
+  skipLoading?: boolean;
+};
+
+type CreateMessageOptions = {
+  skipLoading?: boolean;
+};
+
+type ActiveMessageChangeType = 'created' | 'updated' | 'unchanged';
+
+let chatUnreadSummaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let chatUnreadSummaryRequestInFlight = false;
+let chatUnreadSummaryRefreshQueued = false;
+
 type ChatFilters = {
   filter_label_template_id?: string | null;
   filter_worker_id?: string | null;
@@ -207,6 +222,189 @@ const normalizeMessageDeliverySummary = (
   };
 };
 
+const stableStringify = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const areMessageDeliverySummariesEqual = (
+  first?: ListMessageResult['summary'] | IChatMessage['summary'] | null,
+  second?: ListMessageResult['summary'] | IChatMessage['summary'] | null
+): boolean => {
+  const normalizedFirst = normalizeMessageDeliverySummary(first);
+  const normalizedSecond = normalizeMessageDeliverySummary(second);
+
+  return (
+    normalizedFirst?.is_sent === normalizedSecond?.is_sent &&
+    normalizedFirst?.is_delivered === normalizedSecond?.is_delivered &&
+    normalizedFirst?.is_seen === normalizedSecond?.is_seen &&
+    normalizedFirst?.is_sent_to_internal ===
+      normalizedSecond?.is_sent_to_internal
+  );
+};
+
+const areMessagesEquivalent = (
+  first: ListMessageResult,
+  second: ListMessageResult
+): boolean => {
+  return (
+    first.message_id === second.message_id &&
+    first.chat_id === second.chat_id &&
+    first.type_user === second.type_user &&
+    first.date === second.date &&
+    first.deleted === second.deleted &&
+    first.has_quoted === second.has_quoted &&
+    (first.hash ?? null) === (second.hash ?? null) &&
+    stableStringify(first.message_key) ===
+      stableStringify(second.message_key) &&
+    stableStringify(first.user) === stableStringify(second.user) &&
+    stableStringify(first.content) === stableStringify(second.content) &&
+    areMessageDeliverySummariesEqual(first.summary, second.summary)
+  );
+};
+
+const parseMessageDate = (value?: string | null): number => {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getMessageIdentityKeys = (
+  message: Pick<ListMessageResult, 'message_id' | 'hash' | 'message_key'>
+): string[] => {
+  const keys: string[] = [];
+
+  if (message.message_id) {
+    keys.push(`message_id:${message.message_id}`);
+  }
+
+  if (message.hash) {
+    keys.push(`hash:${message.hash}`);
+  }
+
+  if (message.message_key?.id) {
+    keys.push(`message_key:${message.message_key.id}`);
+  }
+
+  return keys;
+};
+
+const buildMessageIdentityIndex = (
+  messages: ListMessageResult[]
+): Map<string, ListMessageResult> => {
+  const index = new Map<string, ListMessageResult>();
+
+  for (const message of messages) {
+    for (const key of getMessageIdentityKeys(message)) {
+      if (!index.has(key)) {
+        index.set(key, message);
+      }
+    }
+  }
+
+  return index;
+};
+
+const findMessageByIdentity = (
+  message: ListMessageResult,
+  index: Map<string, ListMessageResult>
+): ListMessageResult | null => {
+  for (const key of getMessageIdentityKeys(message)) {
+    const match = index.get(key);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+};
+
+const normalizeComparableMessageText = (value?: string | null): string =>
+  (value ?? '').replace(/^\*[^*\n]+\*:\s*\n\n?/, '').trim();
+
+const isPotentialLocalEchoMatch = (
+  incoming: ListMessageResult,
+  existing: ListMessageResult,
+  localMessageState: Record<string, LocalMessageState>
+): boolean => {
+  if (!existing.hash || !localMessageState[existing.hash]) {
+    return false;
+  }
+
+  if (incoming.chat_id !== existing.chat_id) {
+    return false;
+  }
+
+  if (incoming.type_user !== existing.type_user) {
+    return false;
+  }
+
+  if (incoming.content?.type !== existing.content?.type) {
+    return false;
+  }
+
+  const incomingText = normalizeComparableMessageText(
+    incoming.content?.message
+  );
+  const existingText = normalizeComparableMessageText(
+    existing.content?.message
+  );
+
+  if (!incomingText || incomingText !== existingText) {
+    return false;
+  }
+
+  const incomingAt = parseMessageDate(incoming.date);
+  const existingAt = parseMessageDate(existing.date);
+
+  if (!incomingAt || !existingAt) {
+    return true;
+  }
+
+  return Math.abs(incomingAt - existingAt) <= 60_000;
+};
+
+const findPendingLocalEchoMessage = (
+  incoming: ListMessageResult,
+  existingMessages: ListMessageResult[],
+  localMessageState: Record<string, LocalMessageState>
+): ListMessageResult | null => {
+  return (
+    existingMessages.find((existing) =>
+      isPotentialLocalEchoMatch(incoming, existing, localMessageState)
+    ) ?? null
+  );
+};
+
+const shouldPreserveExistingMessage = (
+  message: ListMessageResult,
+  localMessageState: Record<string, LocalMessageState>,
+  oldestLoadedAt: number,
+  newestLoadedAt: number
+): boolean => {
+  if (message.hash && localMessageState[message.hash]) {
+    return true;
+  }
+
+  if (!oldestLoadedAt || !newestLoadedAt) {
+    return true;
+  }
+
+  const messageDate = parseMessageDate(message.date);
+  if (!messageDate) {
+    return false;
+  }
+
+  return messageDate < oldestLoadedAt || messageDate > newestLoadedAt;
+};
+
 const mergeMessageDeliverySummary = (
   incoming?: ListMessageResult['summary'] | IChatMessage['summary'] | null,
   existing?: ListMessageResult['summary'] | IChatMessage['summary'] | null
@@ -250,6 +448,86 @@ const mergeMessageDeliverySummary = (
     is_seen: isSeen,
     is_sent_to_internal: true,
   };
+};
+
+const mergeLoadedChatMessages = (
+  loadedMessages: ListMessageResult[],
+  existingMessages: ListMessageResult[],
+  localMessageState: Record<string, LocalMessageState>
+): ListMessageResult[] => {
+  const existingIndex = buildMessageIdentityIndex(existingMessages);
+  const consumedExistingMessages = new Set<ListMessageResult>();
+
+  const mergedMessages: ListMessageResult[] = loadedMessages.map((message) => {
+    const existing =
+      findMessageByIdentity(message, existingIndex) ??
+      findPendingLocalEchoMessage(message, existingMessages, localMessageState);
+    if (existing) {
+      consumedExistingMessages.add(existing);
+    }
+
+    const preservedHash = message.hash ?? existing?.hash ?? null;
+    if (preservedHash && localMessageState[preservedHash]) {
+      delete localMessageState[preservedHash];
+    }
+
+    return {
+      ...message,
+      hash: preservedHash,
+      summary: mergeMessageDeliverySummary(message.summary, existing?.summary),
+    };
+  });
+
+  const loadedIndex = buildMessageIdentityIndex(mergedMessages);
+  const loadedDates = mergedMessages
+    .map((message) => parseMessageDate(message.date))
+    .filter((date) => date > 0);
+  const oldestLoadedAt = loadedDates.length > 0 ? Math.min(...loadedDates) : 0;
+  const newestLoadedAt = loadedDates.length > 0 ? Math.max(...loadedDates) : 0;
+
+  for (const existing of existingMessages) {
+    if (
+      consumedExistingMessages.has(existing) ||
+      findMessageByIdentity(existing, loadedIndex)
+    ) {
+      continue;
+    }
+
+    if (
+      shouldPreserveExistingMessage(
+        existing,
+        localMessageState,
+        oldestLoadedAt,
+        newestLoadedAt
+      )
+    ) {
+      mergedMessages.push(existing);
+    }
+  }
+
+  return mergedMessages.sort(
+    (a, b) => parseMessageDate(a.date) - parseMessageDate(b.date)
+  );
+};
+
+const normalizeSummaryComparableValue = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 };
 
 export const useChatStore = defineStore('chat', {
@@ -376,6 +654,10 @@ export const useChatStore = defineStore('chat', {
         ? Math.max(0, Math.trunc(count))
         : 0;
 
+      if (this.unreadSummaryCount === normalizedCount) {
+        return;
+      }
+
       this.unreadSummaryCount = normalizedCount;
     },
     adjustUnreadSummaryCount(delta: number): void {
@@ -386,30 +668,35 @@ export const useChatStore = defineStore('chat', {
       this.setUnreadSummaryCount(this.unreadSummaryCount + delta);
     },
     resetUnreadSummary(): void {
-      if (this.unreadSummaryRefreshTimer) {
-        clearTimeout(this.unreadSummaryRefreshTimer);
-        this.unreadSummaryRefreshTimer = null;
+      if (chatUnreadSummaryRefreshTimer) {
+        clearTimeout(chatUnreadSummaryRefreshTimer);
+        chatUnreadSummaryRefreshTimer = null;
       }
 
-      this.unreadSummaryCount = 0;
-      this.loadingUnreadSummary = false;
+      this.setUnreadSummaryCount(0);
+      if (this.loadingUnreadSummary) {
+        this.loadingUnreadSummary = false;
+      }
+      chatUnreadSummaryRequestInFlight = false;
+      chatUnreadSummaryRefreshQueued = false;
     },
     scheduleUnreadSummaryRefresh(delayMs = 700): void {
-      if (this.unreadSummaryRefreshTimer) {
+      if (chatUnreadSummaryRefreshTimer) {
         return;
       }
 
-      this.unreadSummaryRefreshTimer = setTimeout(() => {
-        this.unreadSummaryRefreshTimer = null;
+      chatUnreadSummaryRefreshTimer = setTimeout(() => {
+        chatUnreadSummaryRefreshTimer = null;
         void this.viewUnreadSummary();
       }, delayMs);
     },
     async viewUnreadSummary(): Promise<number> {
-      if (this.loadingUnreadSummary) {
+      if (chatUnreadSummaryRequestInFlight) {
+        chatUnreadSummaryRefreshQueued = true;
         return this.unreadSummaryCount;
       }
 
-      this.loadingUnreadSummary = true;
+      chatUnreadSummaryRequestInFlight = true;
 
       try {
         const response = await axios.get<IApiResponse<ChatUnreadSummaryData>>(
@@ -419,7 +706,15 @@ export const useChatStore = defineStore('chat', {
       } catch {
         // The menu badge is opportunistic; navigation must not be blocked by it.
       } finally {
-        this.loadingUnreadSummary = false;
+        chatUnreadSummaryRequestInFlight = false;
+        if (this.loadingUnreadSummary) {
+          this.loadingUnreadSummary = false;
+        }
+
+        if (chatUnreadSummaryRefreshQueued) {
+          chatUnreadSummaryRefreshQueued = false;
+          this.scheduleUnreadSummaryRefresh(250);
+        }
       }
 
       return this.unreadSummaryCount;
@@ -793,7 +1088,7 @@ export const useChatStore = defineStore('chat', {
       }
       this.clearLocalMessageState(hash);
     },
-    addMessageActiveChat(message: IChatMessage): 'created' | 'updated' {
+    addMessageActiveChat(message: IChatMessage): ActiveMessageChangeType {
       const input: ListMessageResult = {
         message_id: message.message_id,
         chat_id: message.chat_id,
@@ -821,16 +1116,32 @@ export const useChatStore = defineStore('chat', {
         );
       }
 
+      if (existingIndex === -1) {
+        existingIndex = this.listMessages.findIndex((item) =>
+          isPotentialLocalEchoMatch(input, item, this.localMessageState)
+        );
+      }
+
       if (existingIndex !== -1) {
         const existing = this.listMessages[existingIndex];
+        const preservedHash = input.hash ?? existing.hash ?? null;
         const next: ListMessageResult = {
           ...input,
+          hash: preservedHash,
           summary: mergeMessageDeliverySummary(input.summary, existing.summary),
         };
-        const [removed] = this.listMessages.splice(existingIndex, 1, next);
-        cleanupMessageMedia(removed);
-        if (message.hash) {
-          this.clearLocalMessageState(message.hash);
+
+        if (
+          areMessagesEquivalent(existing, next) &&
+          (!preservedHash || !this.localMessageState[preservedHash])
+        ) {
+          return 'unchanged';
+        }
+
+        cleanupMessageMedia(existing);
+        Object.assign(existing, next);
+        if (preservedHash) {
+          this.clearLocalMessageState(preservedHash);
         }
         return 'updated';
       }
@@ -1388,7 +1699,11 @@ export const useChatStore = defineStore('chat', {
         nextIsParticipant
       );
 
-      if (!shouldSkipEvents) {
+      const shouldDispatchStatusChanged =
+        !shouldSkipEvents &&
+        (!wasInAnyList || previousStatus !== resolvedChat.status);
+
+      if (shouldDispatchStatusChanged) {
         const reason = wasInAnyList ? 'update' : 'new';
         this.markSkipChatStatusEvents(resolvedChat.chat_id);
         globalThis.dispatchEvent(
@@ -3578,28 +3893,32 @@ export const useChatStore = defineStore('chat', {
 
     async getChatById(
       query: ListMessageChatsQuery,
-      chatId?: string
+      chatId?: string,
+      options: ChatMessagesFetchOptions = {}
     ): Promise<void> {
+      const shouldPreserveMessages = options.preserveMessages === true;
+      const shouldHandleLoading = options.skipLoading !== true;
+
       try {
         const targetChatId = chatId ?? this.activeChat?.chat_id;
+
         if (!targetChatId) {
-          this.listMessages = [];
+          if (!shouldPreserveMessages) {
+            this.listMessages = [];
+          }
           return;
         }
 
-        const existingSummaries = new Map<
-          string,
-          ListMessageResult['summary'] | null
-        >(
-          this.listMessages.map((message) => [
-            message.message_id,
-            normalizeMessageDeliverySummary(message.summary),
-          ])
-        );
+        const existingMessages = [...this.listMessages];
 
-        this.loading = true;
-        this.listMessages = [];
-        this.currentPage = 1;
+        if (shouldHandleLoading) {
+          this.loading = true;
+        }
+
+        if (!shouldPreserveMessages) {
+          this.listMessages = [];
+          this.currentPage = 1;
+        }
 
         const response = await axios.get<IApiResponse<ListMessageResponse>>(
           `/chat/${targetChatId}`,
@@ -3611,26 +3930,40 @@ export const useChatStore = defineStore('chat', {
         const data = response?.data;
 
         if (!data?.status || !data?.data) {
-          this.listMessages = [];
-          this.loading = false;
+          if (!shouldPreserveMessages) {
+            this.listMessages = [];
+          }
 
           return;
         }
 
-        this.loading = false;
+        const loadedMessages = [...data.data.results].reverse();
+        const existingIndex = buildMessageIdentityIndex(existingMessages);
+        const normalizedLoadedMessages = loadedMessages.map((message) => {
+          const existing = findMessageByIdentity(message, existingIndex);
 
-        this.listMessages = [...data.data.results].reverse().map((message) => ({
-          ...message,
-          summary: mergeMessageDeliverySummary(
-            message.summary,
-            existingSummaries.get(message.message_id) ?? null
-          ),
-        }));
+          return {
+            ...message,
+            summary: mergeMessageDeliverySummary(
+              message.summary,
+              existing?.summary
+            ),
+          };
+        });
+
+        this.listMessages = shouldPreserveMessages
+          ? mergeLoadedChatMessages(
+              loadedMessages,
+              existingMessages,
+              this.localMessageState
+            )
+          : normalizedLoadedMessages;
         this.currentPage = data.data.pagings.current_page;
         this.totalPages = data.data.pagings.total_pages;
       } catch (error) {
-        this.loading = false;
-        this.listMessages = [];
+        if (!shouldPreserveMessages) {
+          this.listMessages = [];
+        }
 
         if (error instanceof AxiosError) {
           if (error.response?.status === 404) {
@@ -3646,6 +3979,10 @@ export const useChatStore = defineStore('chat', {
         }
 
         return;
+      } finally {
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
       }
     },
 
@@ -3725,16 +4062,21 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    async createMessage(input: CreateMessageChatsBody): Promise<boolean> {
+    async createMessage(
+      input: CreateMessageChatsBody,
+      options: CreateMessageOptions = {}
+    ): Promise<boolean> {
+      const shouldHandleLoading = options.skipLoading !== true;
+
       try {
-        this.loading = true;
+        if (shouldHandleLoading) {
+          this.loading = true;
+        }
 
         const response = await axios.post<IApiResponse<boolean>>(
           `/chat/${this.activeChat?.chat_id}`,
           input
         );
-
-        this.loading = false;
 
         const data = response?.data;
 
@@ -3742,11 +4084,14 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.scheduleUnreadSummaryRefresh();
         return true;
       } catch {
-        this.loading = false;
-
         return false;
+      } finally {
+        if (shouldHandleLoading) {
+          this.loading = false;
+        }
       }
     },
 
@@ -3798,6 +4143,7 @@ export const useChatStore = defineStore('chat', {
           const isActiveChat = this.activeChat?.chat_id === chatId;
 
           this.addChat(data.data, true);
+          this.scheduleUnreadSummaryRefresh();
 
           if (isActiveChat && isClosing) {
             this.activeChat = null;
@@ -3900,6 +4246,8 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.scheduleUnreadSummaryRefresh();
+
         return true;
       } catch (error) {
         this.loading = false;
@@ -3937,6 +4285,8 @@ export const useChatStore = defineStore('chat', {
           this.showSnackbar(errorMessage, EColor.error);
           return null;
         }
+
+        this.scheduleUnreadSummaryRefresh();
 
         return data.data;
       } catch (error) {
@@ -3977,6 +4327,7 @@ export const useChatStore = defineStore('chat', {
         }
 
         this.addChat(data.data as unknown as IChat, true);
+        this.scheduleUnreadSummaryRefresh();
 
         if (this.activeChat?.chat_id === chatId) {
           this.activeChat = this.createUpdatedActiveChat(data.data, true);
@@ -4076,7 +4427,7 @@ export const useChatStore = defineStore('chat', {
 
       try {
         await axios.post(`/chat/${chatId}/clear-summary`, {});
-
+        this.scheduleUnreadSummaryRefresh();
         return true;
       } catch {
         return false;
@@ -4131,6 +4482,8 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
+
+        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -4191,6 +4544,8 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.scheduleUnreadSummaryRefresh();
+
         return true;
       } catch {
         if (shouldHandleLoading) {
@@ -4250,6 +4605,8 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.scheduleUnreadSummaryRefresh();
+
         return true;
       } catch {
         if (shouldHandleLoading) {
@@ -4308,6 +4665,8 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.scheduleUnreadSummaryRefresh();
+
         return true;
       } catch {
         if (shouldHandleLoading) {
@@ -4350,6 +4709,8 @@ export const useChatStore = defineStore('chat', {
         if (!data?.status) {
           return false;
         }
+
+        this.scheduleUnreadSummaryRefresh();
 
         return true;
       } catch {
@@ -4394,6 +4755,8 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        this.scheduleUnreadSummaryRefresh();
+
         return true;
       } catch {
         if (shouldHandleLoading) {
@@ -4431,7 +4794,9 @@ export const useChatStore = defineStore('chat', {
     },
 
     setActiveChat(chatId: string, fallbackChat?: ListChatsResult): void {
-      if (this.activeChat?.chat_id === chatId) return;
+      if (this.activeChat?.chat_id === chatId) {
+        return;
+      }
 
       const chat = ((fallbackChat?.chat_id === chatId ? fallbackChat : null) ??
         this.listQueue.find((c) => c.chat_id === chatId) ??
@@ -4447,7 +4812,6 @@ export const useChatStore = defineStore('chat', {
         | undefined;
 
       if (!chat?.chat_id) {
-        this.activeChat = null;
         return;
       }
 
@@ -4481,6 +4845,47 @@ export const useChatStore = defineStore('chat', {
       };
     },
 
+    isActiveChatSummaryOnlyUpdate(chat: {
+      chat_id?: string | null;
+      status?: string | null;
+      summary?: {
+        last_date?: unknown;
+        last_message?: unknown;
+        operator_reply_pending_since?: unknown;
+        unread_count?: unknown;
+      } | null;
+    }): boolean {
+      if (
+        !this.activeChat?.chat_id ||
+        this.activeChat.chat_id !== chat.chat_id
+      ) {
+        return false;
+      }
+
+      if (this.activeChat.status !== chat.status) {
+        return false;
+      }
+
+      const currentSummary = this.activeChat.summary;
+      const nextSummary = chat.summary;
+      if (!currentSummary || !nextSummary) {
+        return false;
+      }
+
+      return (
+        normalizeSummaryComparableValue(currentSummary.last_date) ===
+          normalizeSummaryComparableValue(nextSummary.last_date) &&
+        normalizeSummaryComparableValue(currentSummary.last_message) ===
+          normalizeSummaryComparableValue(nextSummary.last_message) &&
+        normalizeSummaryComparableValue(
+          currentSummary.operator_reply_pending_since
+        ) ===
+          normalizeSummaryComparableValue(
+            nextSummary.operator_reply_pending_since
+          )
+      );
+    },
+
     ensureActiveChatUnreadCountIsZero(): void {
       if (!this.activeChat?.chat_id) {
         return;
@@ -4491,7 +4896,6 @@ export const useChatStore = defineStore('chat', {
       }
 
       const chatId = this.activeChat.chat_id;
-      const previousUnreadCount = this.activeChat.summary?.unread_count ?? 0;
 
       if (this.activeChat.summary) {
         this.activeChat.summary = {
@@ -4514,10 +4918,6 @@ export const useChatStore = defineStore('chat', {
           ...chatInList.summary,
           unread_count: 0,
         };
-      }
-
-      if (previousUnreadCount > 0) {
-        this.adjustUnreadSummaryCount(-previousUnreadCount);
       }
     },
 
@@ -4527,7 +4927,6 @@ export const useChatStore = defineStore('chat', {
       }
 
       const chatId = this.activeChat.chat_id;
-      const previousUnreadCount = this.activeChat.summary?.unread_count ?? 0;
 
       if (this.activeChat.summary) {
         this.activeChat.summary = {
@@ -4550,10 +4949,6 @@ export const useChatStore = defineStore('chat', {
           ...chatInList.summary,
           unread_count: 0,
         };
-      }
-
-      if (previousUnreadCount > 0) {
-        this.adjustUnreadSummaryCount(-previousUnreadCount);
       }
     },
 
