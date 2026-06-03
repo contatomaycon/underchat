@@ -296,7 +296,7 @@ async function deletePushSubscriptionDirect(payload: {
 
   try {
     const response = await fetch(`${BACKEND_URL}/v1/push/unsubscribe`, {
-      method: 'POST',
+      method: 'DELETE',
       headers: {
         Accept: 'application/json',
         'Accept-Language': 'pt',

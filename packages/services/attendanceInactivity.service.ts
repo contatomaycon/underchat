@@ -26,6 +26,7 @@ import {
 } from '@core/common/functions/createCacheKey';
 import { withLock } from '@core/common/functions/withLock';
 import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
+import { PushNotificationService } from '@core/services/pushNotification.service';
 
 @injectable()
 export class AttendanceInactivityService {
@@ -45,7 +46,9 @@ export class AttendanceInactivityService {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(ChatbotFlowRunnerService)
-    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
+    @inject(PushNotificationService)
+    private readonly pushNotificationService: PushNotificationService
   ) {}
 
   private getInactivityScheduleKey(): string {
@@ -65,7 +68,11 @@ export class AttendanceInactivityService {
     workerId: string,
     chatId: string
   ): string {
-    return createAttendanceInactivityDisabledCacheKey(accountId, workerId, chatId);
+    return createAttendanceInactivityDisabledCacheKey(
+      accountId,
+      workerId,
+      chatId
+    );
   }
 
   private getInactivityLockKey(
@@ -807,6 +814,12 @@ export class AttendanceInactivityService {
       ),
       this.chatService.invalidateChatCache(finalChat),
     ]);
+
+    if (currentChat.status !== finalChat.status) {
+      await this.pushNotificationService
+        .sendNotificationForChatStatusChange(finalChat)
+        .catch(() => {});
+    }
 
     if (targetStatus === EChatStatus.ura_output) {
       await this.bootstrapOutputChatbotIfNeeded(t, finalChat);

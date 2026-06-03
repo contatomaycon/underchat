@@ -73,6 +73,7 @@ describe('PushSubscriptionRegistrarUseCase', () => {
       ok: false,
       reason: 'vapid_not_configured',
     });
+    expect(pushSubscriptionService.registerSubscription).not.toHaveBeenCalled();
   });
 
   it('registers webpush subscription and returns public key', async () => {

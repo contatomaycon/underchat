@@ -621,6 +621,12 @@ export class MessageUpsertConsume {
       createChat.chat_id
     );
 
+    await this.notifyChatStatusChangeIfNeeded(
+      null,
+      updatedChat ?? createChat,
+      data
+    );
+
     if (updatedChat && updatedChat.status === EChatStatus.queue) {
       await this.centrifugoChatQueuePublish(updatedChat);
       return;
@@ -629,6 +635,24 @@ export class MessageUpsertConsume {
     if (!updatedChat) {
       await this.centrifugoChatQueuePublish(createChat);
     }
+  }
+
+  private async notifyChatStatusChangeIfNeeded(
+    previousStatus: IChat['status'] | null | undefined,
+    chat: IChat | null | undefined,
+    data: IUpsertMessage
+  ): Promise<void> {
+    if (!chat || data.from_history_sync) {
+      return;
+    }
+
+    if (previousStatus === chat.status) {
+      return;
+    }
+
+    await this.pushNotificationService
+      .sendNotificationForChatStatusChange(chat)
+      .catch(() => {});
   }
 
   private async ensureChatAndHandleMessage(
@@ -705,6 +729,7 @@ export class MessageUpsertConsume {
     if (shouldSkipMessageCreation) {
       await this.saveChatWithCaches(newChat);
       await this.centrifugoChatQueuePublish(newChat);
+      await this.notifyChatStatusChangeIfNeeded(null, newChat, data);
       return newChat;
     }
 
@@ -4590,6 +4615,7 @@ export class MessageUpsertConsume {
       if (shouldSkipMessageCreation) {
         await this.saveChatWithCaches(createChat);
         await this.centrifugoChatQueuePublish(createChat);
+        await this.notifyChatStatusChangeIfNeeded(null, createChat, data);
         this.logLifecycle(data, {
           stage: 'message_upsert.queue.empty_webhook',
           decision: 'empty_message_filter',
@@ -4781,6 +4807,43 @@ export class MessageUpsertConsume {
     }
   }
 
+  private async listTransferNotificationCandidateUserIds(input: {
+    accountId: string;
+    workerId: string;
+    targetUserId?: string | null;
+  }): Promise<string[]> {
+    if (input.targetUserId) {
+      return [input.targetUserId];
+    }
+
+    return this.userService.listUserIdsWithAccessToChannel(
+      input.accountId,
+      input.workerId
+    );
+  }
+
+  private async notifyChatTransfer(input: {
+    chat: IChat;
+    user: IChat['user'] | null;
+    sector: IChat['sector'] | null;
+  }): Promise<void> {
+    const transferNotificationCandidateUserIds =
+      await this.listTransferNotificationCandidateUserIds({
+        accountId: input.chat.account.id,
+        workerId: input.chat.worker.id,
+        targetUserId: input.user?.id ?? null,
+      });
+
+    await this.pushNotificationService.sendNotificationForChatTransfer({
+      chat: input.chat,
+      actorUserId: '',
+      candidateUserIds: transferNotificationCandidateUserIds,
+      targetUserName: input.user?.name ?? null,
+      targetSectorName: input.sector?.name ?? null,
+      targetWorkerName: input.chat.worker?.name ?? null,
+    });
+  }
+
   private async transferToSector(
     t: TFunction<'translation', undefined>,
     chat: IChat,
@@ -4830,6 +4893,15 @@ export class MessageUpsertConsume {
     }
 
     await this.chatService.updateChatUserAndSector(chat.chat_id, user, sector);
+    await this.notifyChatTransfer({
+      chat: {
+        ...chat,
+        user,
+        sector,
+      },
+      user,
+      sector,
+    }).catch(() => {});
     this.logLifecycle(data, {
       stage: 'message_upsert.transfer.sector_success',
       decision: 'transfer_sector',
@@ -4872,6 +4944,15 @@ export class MessageUpsertConsume {
     };
 
     await this.chatService.updateChatUserAndSector(chat.chat_id, user, null);
+    await this.notifyChatTransfer({
+      chat: {
+        ...chat,
+        user,
+        sector: null,
+      },
+      user,
+      sector: null,
+    }).catch(() => {});
     this.logLifecycle(data, {
       stage: 'message_upsert.transfer.user_success',
       decision: 'transfer_user',
@@ -5261,6 +5342,11 @@ export class MessageUpsertConsume {
 
     if (updatedChat) {
       await this.centrifugoChatQueuePublish(updatedChat);
+      await this.notifyChatStatusChangeIfNeeded(
+        currentChat.status,
+        updatedChat,
+        data
+      );
     }
   }
 

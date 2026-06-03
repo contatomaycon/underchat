@@ -374,18 +374,6 @@ export const useChatNotifications = () => {
     return event ?? null;
   };
 
-  const getSecondaryUserIds = (chat: Pick<IChat, 'secondary_users'>) => {
-    if (!Array.isArray(chat.secondary_users)) {
-      return '';
-    }
-
-    return chat.secondary_users
-      .map((user) => user?.id)
-      .filter(Boolean)
-      .sort()
-      .join(',');
-  };
-
   const hasTransferRelevantChange = (
     chat: IChat,
     previousChat: IChat | null
@@ -397,8 +385,7 @@ export const useChatNotifications = () => {
     return (
       previousChat.worker?.id !== chat.worker?.id ||
       previousChat.sector?.id !== chat.sector?.id ||
-      previousChat.user?.id !== chat.user?.id ||
-      getSecondaryUserIds(previousChat) !== getSecondaryUserIds(chat)
+      previousChat.user?.id !== chat.user?.id
     );
   };
 

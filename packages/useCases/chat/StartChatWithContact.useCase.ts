@@ -34,6 +34,7 @@ import {
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
+import { PushNotificationService } from '@core/services/pushNotification.service';
 
 type StartChatWithContactExistingInChatBehavior =
   | 'error'
@@ -70,6 +71,8 @@ export class StartChatWithContactUseCase {
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject(AttendanceInactivityService)
     private readonly attendanceInactivityService: AttendanceInactivityService,
+    @inject(PushNotificationService)
+    private readonly pushNotificationService: PushNotificationService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -460,6 +463,11 @@ export class StartChatWithContactUseCase {
     }
 
     await this.publishChatUpdate(updatedChat);
+    if (existingChat.status !== EChatStatus.in_chat) {
+      await this.pushNotificationService
+        .sendNotificationForChatStatusChange(updatedChat)
+        .catch(() => {});
+    }
 
     return updatedChat;
   }
@@ -636,6 +644,9 @@ export class StartChatWithContactUseCase {
     );
 
     await this.publishChatUpdate(chatWithProtocol);
+    await this.pushNotificationService
+      .sendNotificationForChatStatusChange(chatWithProtocol)
+      .catch(() => {});
 
     return chatWithProtocol;
   }

@@ -342,14 +342,49 @@ describe('MessageUpsertConsume edit fallback', () => {
         conflict: false,
         id: 'message-created',
       })),
+      ensureProtocolForNewChat: jest.fn(async (chatInput: IChat) => chatInput),
       patchExistingMessageMissingFields: jest.fn(
         async (..._args: unknown[]) => undefined
       ),
       updateMessageChat: jest.fn(async (..._args: unknown[]) => undefined),
       updateChatSummaryAtomically: jest.fn(async (..._args: unknown[]) => true),
+      updateChatUserAndSector: jest.fn(async (..._args: unknown[]) => true),
       findChatByChatId: jest.fn(async (..._args: unknown[]) => chat),
       findChatByPhone: jest.fn(async (..._args: unknown[]) => null),
       saveChat: jest.fn(async (..._args: unknown[]) => undefined),
+      invalidateChatCache: jest.fn(async (..._args: unknown[]) => undefined),
+    };
+    const accountService = {
+      viewAccountName: jest.fn(async () => account),
+    };
+    const workerService = {
+      viewWorkerNameAndId: jest.fn(async () => worker),
+      viewWorkerConfigFieldsByWorkerId: jest.fn(async () => ({
+        auto_save_contacts: false,
+      })),
+    };
+    const userService = {
+      viewUserNamePhoto: jest.fn(async (userId: string) => ({
+        id: userId,
+        name: userId === 'user-2' ? 'Target User' : 'Target Sector User',
+        photo: null,
+      })),
+      listUserIdsWithAccessToChannel: jest.fn(async () => [
+        'sector-user-1',
+        'sector-user-2',
+      ]),
+    };
+    const sectorService = {
+      viewSectorById: jest.fn(async (sectorId: string) => ({
+        sector_id: sectorId,
+        name: 'Support Sector',
+        color: '#0055ff',
+      })),
+    };
+    const pushNotificationService = {
+      sendNotificationForChatMessage: jest.fn(async () => undefined),
+      sendNotificationForChatStatusChange: jest.fn(async () => undefined),
+      sendNotificationForChatTransfer: jest.fn(async () => undefined),
     };
     const elasticDatabaseService = {
       select: jest.fn(async () => selectResult),
@@ -369,10 +404,8 @@ describe('MessageUpsertConsume edit fallback', () => {
         getReplicationFactor: jest.fn(() => 1),
       } as never,
       elasticDatabaseService as never,
-      {} as never,
-      {
-        viewWorkerConfigFieldsByWorkerId: jest.fn(async () => null),
-      } as never,
+      accountService as never,
+      workerService as never,
       chatService as never,
       {} as never,
       {
@@ -406,21 +439,23 @@ describe('MessageUpsertConsume edit fallback', () => {
       } as never,
       {
         canTriggerChatbotEvent: jest.fn(async () => false),
+        clearFlowCacheForChat: jest.fn(async () => undefined),
       } as never,
       {
         cancelInactivityTrackingForEndedAttendance: jest.fn(
           async () => undefined
         ),
+        startTrackingOnInChatEntry: jest.fn(async () => undefined),
         resetOnContactMessage: jest.fn(async () => undefined),
         resetOnOperatorMessage: jest.fn(async () => undefined),
         resetOnOperatorAnnotationMessage: jest.fn(async () => undefined),
       } as never,
-      {} as never,
       {
-        sendNotificationForChatMessage: jest.fn(async () => undefined),
+        validateCanCreateContactReceived: jest.fn(async () => false),
       } as never,
-      {} as never,
-      {} as never,
+      pushNotificationService as never,
+      sectorService as never,
+      userService as never,
       activeWhatsappValidationService as never
     );
 
@@ -428,6 +463,9 @@ describe('MessageUpsertConsume edit fallback', () => {
       consumer,
       chat,
       chatService,
+      userService,
+      sectorService,
+      pushNotificationService,
       elasticDatabaseService,
       activeWhatsappValidationService,
     };
@@ -643,5 +681,102 @@ describe('MessageUpsertConsume edit fallback', () => {
         message: adBody,
       }),
     ]);
+  });
+
+  it('sends a transfer push when message upsert transfers the chat to a user', async () => {
+    const { consumer, chat, chatService, pushNotificationService } =
+      makeConsumer();
+
+    await (consumer as any).transferToUser(jest.fn(), chat, {
+      ...makeTextUpsert(),
+      transfer_user_id: 'user-2',
+    });
+
+    expect(chatService.updateChatUserAndSector).toHaveBeenCalledWith(
+      'chat-1',
+      expect.objectContaining({
+        id: 'user-2',
+        name: 'Target User',
+      }),
+      null
+    );
+    expect(
+      pushNotificationService.sendNotificationForChatTransfer
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: '',
+        candidateUserIds: ['user-2'],
+        targetUserName: 'Target User',
+        targetSectorName: null,
+        targetWorkerName: 'WWebJS',
+        chat: expect.objectContaining({
+          chat_id: 'chat-1',
+          user: expect.objectContaining({ id: 'user-2' }),
+          sector: null,
+        }),
+      })
+    );
+  });
+
+  it('sends a transfer push to channel users when message upsert transfers only to a sector', async () => {
+    const { consumer, chat, userService, pushNotificationService } =
+      makeConsumer();
+
+    await (consumer as any).transferToSector(jest.fn(), chat, {
+      ...makeTextUpsert(),
+      transfer_sector_id: 'sector-2',
+    });
+
+    expect(userService.listUserIdsWithAccessToChannel).toHaveBeenCalledWith(
+      'account-1',
+      'worker-1'
+    );
+    expect(
+      pushNotificationService.sendNotificationForChatTransfer
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateUserIds: ['sector-user-1', 'sector-user-2'],
+        targetUserName: null,
+        targetSectorName: 'Support Sector',
+        targetWorkerName: 'WWebJS',
+        chat: expect.objectContaining({
+          chat_id: 'chat-1',
+          sector: expect.objectContaining({ id: 'sector-2' }),
+        }),
+      })
+    );
+  });
+
+  it('sends a status push when a new queue chat is created from message upsert', async () => {
+    const { consumer, chatService, pushNotificationService } = makeConsumer();
+    const createdChat = {
+      ...makeChat(),
+      chat_id: 'uuid-v7',
+      status: EChatStatus.queue,
+    } as IChat;
+    chatService.findChatByChatId.mockResolvedValue(createdChat);
+
+    await (consumer as any).createOrUpdateChatQueue(
+      jest.fn((key: string) => key),
+      null,
+      makeTextUpsert()
+    );
+
+    expect(
+      pushNotificationService.sendNotificationForChatStatusChange
+    ).toHaveBeenCalledWith(createdChat);
+  });
+
+  it('does not send a status push for historical message sync chat creation', async () => {
+    const { consumer, pushNotificationService } = makeConsumer();
+
+    await (consumer as any).notifyChatStatusChangeIfNeeded(null, makeChat(), {
+      ...makeTextUpsert(),
+      from_history_sync: true,
+    });
+
+    expect(
+      pushNotificationService.sendNotificationForChatStatusChange
+    ).not.toHaveBeenCalled();
   });
 });

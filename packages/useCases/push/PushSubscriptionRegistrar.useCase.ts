@@ -49,6 +49,15 @@ export class PushSubscriptionRegistrarUseCase {
       return { ok: false, reason: 'invalid_payload' };
     }
 
+    const publicKey =
+      provider === 'webpush'
+        ? this.pushSubscriptionService.getPublicKey()
+        : null;
+
+    if (provider === 'webpush' && !publicKey) {
+      return { ok: false, reason: 'vapid_not_configured' };
+    }
+
     const result = await this.pushSubscriptionService.registerSubscription({
       user_id: input.userId,
       provider,
@@ -58,12 +67,6 @@ export class PushSubscriptionRegistrarUseCase {
       auth: input.keys?.auth ?? null,
       user_agent: input.userAgent,
     });
-
-    const publicKey = this.pushSubscriptionService.getPublicKey();
-
-    if (provider === 'webpush' && !publicKey) {
-      return { ok: false, reason: 'vapid_not_configured' };
-    }
 
     return {
       ok: true,
