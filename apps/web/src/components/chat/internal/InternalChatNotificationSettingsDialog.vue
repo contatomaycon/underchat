@@ -130,6 +130,8 @@ watch(
 
 <template>
   <VDialog v-model="model" max-width="540">
+    <DialogCloseBtn :disabled="saving" @click="closeDialog" />
+
     <VCard class="internal-chat-notification-dialog">
       <VCardItem class="pb-2">
         <template #prepend>
@@ -240,7 +242,12 @@ watch(
       <VDivider />
 
       <VCardActions class="justify-end pa-4">
-        <VBtn variant="text" :disabled="saving" @click="closeDialog">
+        <VBtn
+          color="secondary"
+          variant="tonal"
+          :disabled="saving"
+          @click="closeDialog"
+        >
           {{ t('cancel') }}
         </VBtn>
         <VBtn

@@ -21,14 +21,40 @@ definePage({
 <template>
   <VLayout class="internal-chat-page-layout" style="z-index: 0">
     <VMain class="internal-chat-page-main">
-      <InternalChatWorkspace />
+      <div class="internal-chat-page-shell">
+        <InternalChatWorkspace />
+      </div>
     </VMain>
   </VLayout>
 </template>
 
-<style scoped>
-.internal-chat-page-layout,
+<style scoped lang="scss">
+@use '@styles/variables/vuetify';
+@use '@webcore/scss/base/mixins';
+
+.internal-chat-page-layout {
+  border-radius: vuetify.$card-border-radius;
+  block-size: 100%;
+  min-block-size: 100%;
+  overflow: hidden;
+  @include mixins.elevation(vuetify.$card-elevation);
+  $sel-internal-chat-page-layout: &;
+
+  @at-root {
+    .skin--bordered {
+      @include mixins.bordered-skin($sel-internal-chat-page-layout);
+    }
+  }
+}
+
 .internal-chat-page-main {
   block-size: 100%;
+  min-block-size: 0;
+  background: rgb(var(--v-theme-background));
+}
+
+.internal-chat-page-shell {
+  block-size: 100%;
+  min-block-size: 0;
 }
 </style>

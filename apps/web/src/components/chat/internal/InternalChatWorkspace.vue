@@ -14,6 +14,7 @@ import { refDebounced } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
+import { useDisplay } from 'vuetify';
 import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import axios from '@webcore/axios';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
@@ -159,6 +160,10 @@ const props = withDefaults(
 const internalChatStore = useInternalChatStore();
 const { t, getLocaleMessage } = useI18n();
 const route = useRoute();
+const vuetifyDisplays = useDisplay();
+const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
+  vuetifyDisplays.smAndDown
+);
 
 const {
   user,
@@ -3264,9 +3269,16 @@ const switchSidebarTab = async (tab: InternalSidebarTab) => {
   sidebarBodyRef.value?.scrollTo({ top: 0 });
 };
 
+const closeLeftSidebarOnMobile = () => {
+  if (!vuetifyDisplays.smAndDown.value) return;
+
+  isLeftSidebarOpen.value = false;
+};
+
 const openConversation = async (conversationId: string) => {
   shouldAutoScrollMessages.value = true;
   await internalChatStore.openConversation(conversationId);
+  closeLeftSidebarOnMobile();
   await scrollMessagesToBottom();
 };
 
@@ -3277,6 +3289,7 @@ const openConversationFromUser = async (userId: string) => {
 
   activeSidebarTab.value = 'all';
   sidebarBodyRef.value?.scrollTo({ top: 0 });
+  closeLeftSidebarOnMobile();
   await scrollMessagesToBottom();
 };
 
@@ -5732,9 +5745,20 @@ onBeforeUnmount(async () => {
 </script>
 
 <template>
-  <div class="internal-chat-layout d-flex h-100">
-    <aside class="internal-chat-sidebar">
-      <div class="internal-chat-sidebar-header pa-3">
+  <VLayout class="internal-chat-layout" style="z-index: 0">
+    <VNavigationDrawer
+      v-model="isLeftSidebarOpen"
+      data-allow-mismatch
+      absolute
+      touchless
+      location="start"
+      width="370"
+      :temporary="$vuetify.display.smAndDown"
+      :permanent="$vuetify.display.mdAndUp"
+      class="internal-chat-sidebar"
+    >
+      <div class="internal-chat-sidebar-content">
+        <div class="internal-chat-sidebar-header pa-3">
         <div class="internal-chat-mode-banner">
           <div class="internal-chat-mode-chip">
             <VIcon size="18">tabler-users-group</VIcon>
@@ -5757,6 +5781,18 @@ onBeforeUnmount(async () => {
               </VIcon>
               <VTooltip activator="parent" location="bottom">
                 {{ t('internal_chat_notification_title') }}
+              </VTooltip>
+            </IconBtn>
+
+            <IconBtn
+              v-if="$vuetify.display.smAndDown"
+              class="internal-chat-close-sidebar-btn"
+              :aria-label="t('close')"
+              @click="isLeftSidebarOpen = false"
+            >
+              <VIcon size="20">tabler-x</VIcon>
+              <VTooltip activator="parent" location="bottom">
+                {{ t('close') }}
               </VTooltip>
             </IconBtn>
 
@@ -5830,7 +5866,7 @@ onBeforeUnmount(async () => {
 
       <VDivider />
 
-      <div
+        <div
         ref="sidebarBodyRef"
         class="internal-chat-sidebar-body"
         @scroll="handleSidebarScroll"
@@ -6015,12 +6051,18 @@ onBeforeUnmount(async () => {
             </span>
           </li>
         </ul>
+        </div>
       </div>
-    </aside>
+    </VNavigationDrawer>
 
-    <section class="internal-chat-main d-flex flex-column">
-      <template v-if="activeConversation">
+    <VMain class="internal-chat-main-container">
+      <section class="internal-chat-main d-flex flex-column">
+        <template v-if="activeConversation">
         <div class="internal-chat-main-header d-flex align-center px-4 py-3">
+          <IconBtn class="d-md-none me-1" @click="isLeftSidebarOpen = true">
+            <VIcon size="20">tabler-menu-2</VIcon>
+          </IconBtn>
+
           <button
             type="button"
             class="internal-chat-main-header-profile internal-chat-main-header-profile--clickable"
@@ -7796,9 +7838,9 @@ onBeforeUnmount(async () => {
         </div>
       </template>
 
-      <div
+        <div
         v-else
-        class="d-flex h-100 align-center justify-center flex-column text-medium-emphasis"
+        class="internal-chat-main-empty d-flex h-100 align-center justify-center flex-column text-medium-emphasis"
       >
         <VAvatar size="92" variant="tonal" color="primary" class="mb-3">
           <VIcon size="44">tabler-users-group</VIcon>
@@ -7811,13 +7853,26 @@ onBeforeUnmount(async () => {
               : t('internal_chat_empty_pick_conversation')
           }}
         </div>
-      </div>
-    </section>
+        <VBtn
+          class="d-md-none mt-4"
+          color="primary"
+          variant="flat"
+          @click="isLeftSidebarOpen = true"
+        >
+          <VIcon size="18" class="me-1">tabler-menu-2</VIcon>
+          {{ t('internal_chat_title') }}
+        </VBtn>
+        </div>
+      </section>
+    </VMain>
 
     <VNavigationDrawer
       v-model="isSearchDrawerOpen"
+      data-allow-mismatch
       location="end"
       temporary
+      absolute
+      touchless
       width="390"
       class="internal-chat-search-drawer"
     >
@@ -7832,8 +7887,11 @@ onBeforeUnmount(async () => {
 
     <VNavigationDrawer
       v-model="isGroupInfoDrawerOpen"
+      data-allow-mismatch
       location="end"
       temporary
+      absolute
+      touchless
       width="390"
       class="internal-chat-group-info-drawer"
     >
@@ -8881,18 +8939,32 @@ onBeforeUnmount(async () => {
       :saving="savingNotificationSettings"
       @save="saveNotificationSettings"
     />
-  </div>
+  </VLayout>
 </template>
 
 <style scoped lang="scss">
 .internal-chat-layout {
-  min-height: 100%;
+  block-size: 100%;
+  min-block-size: 100%;
+  overflow: hidden;
   background: rgb(var(--v-theme-background));
 }
 
 .internal-chat-sidebar {
-  width: 340px;
   border-right: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: rgb(var(--v-theme-surface));
+  max-inline-size: 100vw;
+}
+
+.internal-chat-sidebar :deep(.v-navigation-drawer__content) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.internal-chat-sidebar-content {
+  block-size: 100%;
+  min-block-size: 0;
   background: rgb(var(--v-theme-surface));
   display: flex;
   flex-direction: column;
@@ -8909,7 +8981,8 @@ onBeforeUnmount(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px;
+  min-height: 54px;
+  padding: 10px;
   border-radius: 8px;
   background: rgba(var(--v-theme-primary), 0.07);
   border: 1px solid rgba(var(--v-theme-primary), 0.16);
@@ -8965,25 +9038,25 @@ onBeforeUnmount(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-inline: 4px;
+  padding-inline: 2px;
 }
 
 .internal-chat-tab-btn {
-  flex: 0 0 40px;
-  inline-size: 40px;
-  block-size: 38px;
-  min-width: 40px;
+  flex: 1 1 0;
+  inline-size: auto;
+  block-size: 48px;
+  min-width: 0;
   border-radius: 8px;
   padding: 0;
   text-transform: none;
 }
 
 .internal-chat-active-filter {
-  min-height: 42px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-radius: 8px;
   color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.08);
@@ -8992,19 +9065,20 @@ onBeforeUnmount(async () => {
 
 .internal-chat-sidebar-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
 .internal-chat-card-list {
   list-style: none;
   margin: 0;
-  padding: 10px 12px;
+  padding: 12px;
 }
 
 .internal-chat-card {
-  min-height: 74px;
+  min-height: 78px;
   border-radius: 8px;
-  padding: 12px;
+  padding: 16px 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   background: rgb(var(--v-theme-surface));
   transition:
@@ -9031,8 +9105,9 @@ onBeforeUnmount(async () => {
 .internal-chat-card--active {
   border-color: rgb(var(--v-theme-primary));
   background: rgb(var(--v-theme-primary));
-  color: rgb(var(--v-theme-on-primary));
-  box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.22);
+  color: #fff;
+  --v-theme-on-background: #fff;
+  box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.28);
 
   &:hover {
     border-color: rgb(var(--v-theme-primary));
@@ -9052,7 +9127,7 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-card--user {
-  min-height: 66px;
+  min-height: 74px;
 }
 
 .internal-chat-card--unread .internal-chat-card-title {
@@ -9215,7 +9290,23 @@ onBeforeUnmount(async () => {
 
 .internal-chat-main {
   flex: 1;
+  block-size: 100%;
+  inline-size: 100%;
   min-width: 0;
+  min-block-size: 0;
+}
+
+.internal-chat-main-container {
+  block-size: 100%;
+  min-block-size: 0;
+  background: rgb(var(--v-theme-background));
+}
+
+.internal-chat-main-empty {
+  block-size: 100%;
+  min-block-size: 360px;
+  padding: 24px;
+  text-align: center;
 }
 
 @keyframes internal-chat-skeleton-shimmer {
@@ -9225,10 +9316,11 @@ onBeforeUnmount(async () => {
 }
 
 .internal-chat-main-header {
-  min-height: 72px;
+  min-height: 76px;
 }
 
 .internal-chat-main-header-profile {
+  flex: 1 1 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -11151,18 +11243,8 @@ onBeforeUnmount(async () => {
 }
 
 @media (max-width: 959px) {
-  .internal-chat-layout {
-    flex-direction: column;
-  }
-
-  .internal-chat-sidebar {
-    width: 100%;
-    max-height: 45vh;
-  }
-
   .internal-chat-mode-banner {
-    align-items: stretch;
-    flex-direction: column;
+    min-height: 54px;
   }
 
   .internal-chat-mode-actions {
@@ -11170,7 +11252,13 @@ onBeforeUnmount(async () => {
   }
 
   .internal-chat-back-btn {
-    width: 100%;
+    width: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .internal-chat-main-header {
+    padding-inline: 0.75rem !important;
   }
 }
 </style>
