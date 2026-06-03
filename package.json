@@ -221,6 +221,10 @@
   "pnpm": {
     "overrides": {
       "inflight": "^1.0.6"
+    },
+    "patchedDependencies": {
+      "expo-file-system@55.0.10": "patches/expo-file-system@55.0.10.patch",
+      "expo-image-picker@55.0.11": "patches/expo-image-picker@55.0.11.patch"
     }
   }
 }

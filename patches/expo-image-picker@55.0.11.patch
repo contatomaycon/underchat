@@ -1,0 +1,14 @@
+diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
+index 58e2df1c145828aa9c15fc2fa856beeed5fe00ab..0c9a4c83e82a50dbb19fddd441d4cdaf43af42aa 100644
+--- a/android/src/main/AndroidManifest.xml
++++ b/android/src/main/AndroidManifest.xml
+@@ -24,8 +24,7 @@
+     <activity
+       android:name="expo.modules.imagepicker.ExpoCropImageActivity"
+       android:theme="@style/Base.Theme.AppCompat"
+-      android:exported="false"
+-      tools:replace="android:exported" />
++      android:exported="false" />
+     <!-- https://developer.android.com/guide/topics/manifest/provider-element.html -->
+     <provider
+       android:name=".fileprovider.ImagePickerFileProvider"
