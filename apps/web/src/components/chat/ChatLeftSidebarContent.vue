@@ -6,6 +6,7 @@ import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
 import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
 import ChatAdvancedFiltersModal from '@/components/chat/ChatAdvancedFiltersModal.vue';
 import ChatContactAdvancedFiltersModal from '@/components/chat/ChatContactAdvancedFiltersModal.vue';
+import ChatNotificationSettingsDialog from '@/components/chat/ChatNotificationSettingsDialog.vue';
 import ChatSortModal from '@/components/chat/ChatSortModal.vue';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useChannelsStore } from '@/@webcore/stores/channels';
@@ -34,6 +35,8 @@ import type { TransferUserResponse } from '@core/schema/chat/listTransferUsers/r
 import type { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 import type { BulkActionChatRequest } from '@core/schema/chat/bulkAction/request.schema';
 import type { BulkActionChatResponse } from '@core/schema/chat/bulkAction/response.schema';
+import type { ChatNotificationSettingsData } from '@core/schema/chat/notificationSettings/response.schema';
+import type { ChatNotificationSettingsRequest } from '@core/schema/chat/notificationSettings/request.schema';
 
 type OpenChatOptions = {
   skipClearSummary?: boolean;
@@ -87,6 +90,10 @@ const isValidateContactDialogOpen = ref(false);
 const contactToValidate = ref<string | null>(null);
 const isEditContactModalOpen = ref(false);
 const editContactId = ref<string | null>(null);
+const isNotificationSettingsDialogOpen = ref(false);
+const notificationSettings = ref<ChatNotificationSettingsData | null>(null);
+const loadingNotificationSettings = ref(false);
+const savingNotificationSettings = ref(false);
 const hoveredContactId = ref<string | null>(null);
 const editingContactId = ref<string | null>(null);
 const validatingContactId = ref<string | null>(null);
@@ -3419,6 +3426,39 @@ const handleChatStatusChanged = async (event: Event) => {
   }, 100);
 };
 
+const loadNotificationSettings = async () => {
+  loadingNotificationSettings.value = true;
+  try {
+    const settings = await chatStore.viewNotificationSettings();
+    notificationSettings.value = settings ?? notificationSettings.value;
+  } finally {
+    loadingNotificationSettings.value = false;
+  }
+};
+
+const openNotificationSettingsDialog = async () => {
+  isNotificationSettingsDialogOpen.value = true;
+
+  if (!notificationSettings.value) {
+    await loadNotificationSettings();
+  }
+};
+
+const saveNotificationSettings = async (
+  input: ChatNotificationSettingsRequest
+) => {
+  savingNotificationSettings.value = true;
+  try {
+    const settings = await chatStore.updateNotificationSettings(input);
+    if (settings) {
+      notificationSettings.value = settings;
+      isNotificationSettingsDialogOpen.value = false;
+    }
+  } finally {
+    savingNotificationSettings.value = false;
+  }
+};
+
 onMounted(async () => {
   await loadChatsByFilter();
 
@@ -3462,6 +3502,24 @@ defineExpose({
 
 <template>
   <div class="chat-list-header px-3 py-3">
+    <div class="chat-section-label mb-3">
+      <div class="d-flex align-center gap-2 min-w-0">
+        <VIcon size="19" color="primary">tabler-messages</VIcon>
+        <span class="chat-section-label-title">{{ $t('chat') }}</span>
+      </div>
+
+      <IconBtn
+        class="chat-section-label-action"
+        :disabled="loadingNotificationSettings"
+        @click="openNotificationSettingsDialog"
+      >
+        <VIcon size="20" icon="tabler-bell" />
+        <VTooltip activator="parent" location="bottom">
+          {{ $t('notifications') }}
+        </VTooltip>
+      </IconBtn>
+    </div>
+
     <div class="d-flex align-center gap-2 w-100">
       <VBadge
         dot
@@ -5320,6 +5378,14 @@ defineExpose({
     </VCard>
   </VDialog>
 
+  <ChatNotificationSettingsDialog
+    v-model="isNotificationSettingsDialogOpen"
+    :settings="notificationSettings"
+    :loading="loadingNotificationSettings"
+    :saving="savingNotificationSettings"
+    @save="saveNotificationSettings"
+  />
+
   <ChatSortModal
     v-model="isSortModalOpen"
     :filter-type="sortModalFilterType"
@@ -5554,6 +5620,32 @@ defineExpose({
       color: #fff !important;
     }
   }
+}
+
+.chat-section-label {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.22);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+
+.chat-section-label-title {
+  color: rgb(var(--v-theme-primary));
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-section-label-action {
+  flex: 0 0 auto;
+  color: rgb(var(--v-theme-primary));
 }
 
 .chat-list-header {

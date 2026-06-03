@@ -457,20 +457,43 @@ export class TransferChatUseCase {
 
   private async publishChatUpdate(
     chatWithProtocol: IChat,
-    accountId: string
+    accountId: string,
+    actorUserId: string
   ): Promise<void> {
     const channelAccountId = chatWithProtocol.account?.id ?? accountId;
+    const payload = {
+      ...chatWithProtocol,
+      notification_event: {
+        type: 'chat_transfer',
+        actor_user_id: actorUserId,
+      },
+    };
 
     await Promise.all([
       this.centrifugoService.publishSub(
         chatAccountCentrifugo(channelAccountId),
-        chatWithProtocol
+        payload
       ),
       this.centrifugoService.publishSub(
         chatQueueAccountCentrifugo(channelAccountId),
-        chatWithProtocol
+        payload
       ),
     ]);
+  }
+
+  private async listTransferNotificationCandidateUserIds(input: {
+    accountId: string;
+    targetWorkerId: string;
+    targetUserId?: string;
+  }): Promise<string[]> {
+    if (input.targetUserId) {
+      return [input.targetUserId];
+    }
+
+    return this.userService.listUserIdsWithAccessToChannel(
+      input.accountId,
+      input.targetWorkerId
+    );
   }
 
   async execute(
@@ -617,19 +640,25 @@ export class TransferChatUseCase {
       sector
     );
 
-    await this.publishChatUpdate(chatWithProtocol, accountId);
+    await this.publishChatUpdate(chatWithProtocol, accountId, actorUserId);
 
-    const hasStatusTransition = chat.status !== chatWithProtocol.status;
+    const transferNotificationCandidateUserIds =
+      await this.listTransferNotificationCandidateUserIds({
+        accountId,
+        targetWorkerId: targetWorker.id,
+        targetUserId: user?.id ?? undefined,
+      });
 
-    if (
-      hasStatusTransition &&
-      (chatWithProtocol.status === EChatStatus.queue ||
-        chatWithProtocol.status === EChatStatus.in_chat)
-    ) {
-      await this.pushNotificationService
-        .sendNotificationForChatStatusChange(chatWithProtocol)
-        .catch(() => {});
-    }
+    await this.pushNotificationService
+      .sendNotificationForChatTransfer({
+        chat: chatWithProtocol,
+        actorUserId,
+        candidateUserIds: transferNotificationCandidateUserIds,
+        targetUserName: user?.name ?? null,
+        targetSectorName: sector?.name ?? null,
+        targetWorkerName: targetWorker.name ?? null,
+      })
+      .catch(() => {});
 
     if (body.annotation?.trim()) {
       await this.sendAnnotationMessage(

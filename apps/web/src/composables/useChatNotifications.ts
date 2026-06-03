@@ -178,7 +178,8 @@ export const useChatNotifications = () => {
   const router = useRouter();
   const { t } = useI18n();
   const chatStore = useChatStore();
-  const { showMessageToast, showStatusToast } = useChatNotificationToast();
+  const { showMessageToast, showStatusToast, showTransferToast } =
+    useChatNotificationToast();
   const isPageVisible = ref(true);
   const processingMessages = ref(new Set<string>());
   const serviceWorkerRegistration = ref<ServiceWorkerRegistration | null>(null);
@@ -255,15 +256,50 @@ export const useChatNotifications = () => {
   };
 
   const isQueueNotificationsEnabled = () => {
-    return isQueueStatusNotificationsEnabled();
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_message_queue === true;
   };
 
   const isInChatNotificationsEnabled = () => {
-    return isInChatStatusNotificationsEnabled();
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_message_in_chat !== false;
   };
 
   const isChatbotNotificationsEnabled = () => {
-    return isChatbotStatusNotificationsEnabled();
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_message_chatbot === true;
+  };
+
+  const isTransferNotificationsEnabled = () => {
+    if (!isMasterNotificationsEnabled()) {
+      return false;
+    }
+
+    return chatStore.user?.chat_user?.notifications_transfer !== false;
+  };
+
+  const isInternalChatPushNotificationsEnabled = () => {
+    const chatUser = chatStore.user?.chat_user;
+
+    return (
+      chatUser?.notifications_internal_chat !== false &&
+      chatUser?.notifications_internal_chat_push !== false
+    );
+  };
+
+  const shouldKeepPushSubscription = () => {
+    return (
+      isPushNotificationsEnabled() || isInternalChatPushNotificationsEnabled()
+    );
   };
 
   const isViewingChatConversation = (chatId: string): boolean => {
@@ -324,6 +360,46 @@ export const useChatNotifications = () => {
     } catch {
       return;
     }
+  };
+
+  const getChatNotificationEvent = (
+    chat: IChat
+  ): { type?: string; actor_user_id?: string | null } | null => {
+    const event = (
+      chat as IChat & {
+        notification_event?: { type?: string; actor_user_id?: string | null };
+      }
+    ).notification_event;
+
+    return event ?? null;
+  };
+
+  const getSecondaryUserIds = (chat: Pick<IChat, 'secondary_users'>) => {
+    if (!Array.isArray(chat.secondary_users)) {
+      return '';
+    }
+
+    return chat.secondary_users
+      .map((user) => user?.id)
+      .filter(Boolean)
+      .sort()
+      .join(',');
+  };
+
+  const hasTransferRelevantChange = (
+    chat: IChat,
+    previousChat: IChat | null
+  ): boolean => {
+    if (!previousChat) {
+      return false;
+    }
+
+    return (
+      previousChat.worker?.id !== chat.worker?.id ||
+      previousChat.sector?.id !== chat.sector?.id ||
+      previousChat.user?.id !== chat.user?.id ||
+      getSecondaryUserIds(previousChat) !== getSecondaryUserIds(chat)
+    );
   };
 
   async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
@@ -470,7 +546,9 @@ export const useChatNotifications = () => {
 
       if (!isPushNotificationsEnabled()) {
         isSubscribing.value = false;
-        await unsubscribeFromPushNotificationsInternal();
+        if (!shouldKeepPushSubscription()) {
+          await unsubscribeFromPushNotificationsInternal();
+        }
         return;
       }
 
@@ -479,7 +557,9 @@ export const useChatNotifications = () => {
 
       if (existingSubscription) {
         if (!isPushNotificationsEnabled()) {
-          await unsubscribeFromPushNotificationsInternal();
+          if (!shouldKeepPushSubscription()) {
+            await unsubscribeFromPushNotificationsInternal();
+          }
         }
         isSubscribing.value = false;
         return;
@@ -489,7 +569,9 @@ export const useChatNotifications = () => {
 
       if (!isPushNotificationsEnabled()) {
         isSubscribing.value = false;
-        await unsubscribeFromPushNotificationsInternal();
+        if (!shouldKeepPushSubscription()) {
+          await unsubscribeFromPushNotificationsInternal();
+        }
         return;
       }
 
@@ -505,7 +587,9 @@ export const useChatNotifications = () => {
 
       if (!isPushNotificationsEnabled()) {
         isSubscribing.value = false;
-        await unsubscribeFromPushNotificationsInternal();
+        if (!shouldKeepPushSubscription()) {
+          await unsubscribeFromPushNotificationsInternal();
+        }
         return;
       }
 
@@ -515,9 +599,13 @@ export const useChatNotifications = () => {
       });
 
       if (!isPushNotificationsEnabled()) {
-        await subscription.unsubscribe().catch(() => {});
+        if (!shouldKeepPushSubscription()) {
+          await subscription.unsubscribe().catch(() => {});
+        }
         isSubscribing.value = false;
-        return;
+        if (!shouldKeepPushSubscription()) {
+          return;
+        }
       }
 
       const subscriptionData = {
@@ -530,9 +618,13 @@ export const useChatNotifications = () => {
       };
 
       if (!isPushNotificationsEnabled()) {
-        await subscription.unsubscribe().catch(() => {});
+        if (!shouldKeepPushSubscription()) {
+          await subscription.unsubscribe().catch(() => {});
+        }
         isSubscribing.value = false;
-        return;
+        if (!shouldKeepPushSubscription()) {
+          return;
+        }
       }
 
       await axiosAuth.post('/push/subscribe', subscriptionData);
@@ -650,13 +742,66 @@ export const useChatNotifications = () => {
     }, 5000);
   }
 
+  function handleChatTransfer(
+    chat: IChat,
+    previousChat: IChat | null = null
+  ): boolean {
+    const event = getChatNotificationEvent(chat);
+    const isTransferEvent = event?.type === 'chat_transfer';
+
+    if (!isTransferEvent && !hasTransferRelevantChange(chat, previousChat)) {
+      return false;
+    }
+
+    if (event?.actor_user_id === chatStore.user?.user_id) {
+      return true;
+    }
+
+    if (!isTransferNotificationsEnabled()) {
+      return true;
+    }
+
+    if (!canReceiveMessageNotification(chat, chatStore)) {
+      return true;
+    }
+
+    if (isViewingChatConversation(chat.chat_id)) {
+      return true;
+    }
+
+    const title = getChatTitle(chat, t('chat_notification_transfer'));
+    const body = formatNotificationBody(
+      t('chat_notification_transfer_received')
+    );
+
+    if (isSoundNotificationsEnabled()) {
+      playAlertSound();
+    }
+
+    if (isToastNotificationsEnabled() && isPageVisible.value) {
+      showTransferToast(chat);
+    }
+
+    if (isBrowserNotificationsEnabled() && !isPageVisible.value) {
+      showBrowserNotification(
+        title,
+        body,
+        chat.chat_id,
+        `chat-transfer-browser-${chat.chat_id}`
+      );
+    }
+
+    return true;
+  }
+
   function handleChatStatusChange(
     chat: IChat,
     previousStatus: string | null = null
   ): void {
     if (
       chat.status !== EChatStatus.in_chat &&
-      chat.status !== EChatStatus.queue
+      chat.status !== EChatStatus.queue &&
+      !isChatbotStatus(chat.status)
     ) {
       return;
     }
@@ -669,12 +814,18 @@ export const useChatNotifications = () => {
       isStatusNotificationsEnabled() && isQueueStatusNotificationsEnabled();
     const shouldNotifyInChatStatus =
       isStatusNotificationsEnabled() && isInChatStatusNotificationsEnabled();
+    const shouldNotifyChatbotStatus =
+      isStatusNotificationsEnabled() && isChatbotStatusNotificationsEnabled();
 
     if (chat.status === EChatStatus.queue && !shouldNotifyQueueStatus) {
       return;
     }
 
     if (chat.status === EChatStatus.in_chat && !shouldNotifyInChatStatus) {
+      return;
+    }
+
+    if (isChatbotStatus(chat.status) && !shouldNotifyChatbotStatus) {
       return;
     }
 
@@ -689,7 +840,9 @@ export const useChatNotifications = () => {
     const statusBody =
       chat.status === EChatStatus.in_chat
         ? t('chat_notification_status_in_chat')
-        : t('chat_notification_status_queue');
+        : chat.status === EChatStatus.queue
+          ? t('chat_notification_status_queue')
+          : t('chat_notification_status_chatbot');
 
     if (isSoundNotificationsEnabled()) {
       playAlertSound();
@@ -718,7 +871,9 @@ export const useChatNotifications = () => {
     const shouldUsePushNotifications = isPushNotificationsEnabled();
 
     if (!('Notification' in globalThis)) {
-      await unsubscribeFromPushNotificationsInternal();
+      if (!shouldKeepPushSubscription()) {
+        await unsubscribeFromPushNotificationsInternal();
+      }
       return;
     }
 
@@ -729,7 +884,9 @@ export const useChatNotifications = () => {
     }
 
     if (!shouldUsePushNotifications) {
-      await unsubscribeFromPushNotificationsInternal();
+      if (!shouldKeepPushSubscription()) {
+        await unsubscribeFromPushNotificationsInternal();
+      }
       return;
     }
 
@@ -746,7 +903,9 @@ export const useChatNotifications = () => {
       return;
     }
 
-    await unsubscribeFromPushNotificationsInternal();
+    if (!shouldKeepPushSubscription()) {
+      await unsubscribeFromPushNotificationsInternal();
+    }
   }
 
   async function runNotificationSettingsSync(): Promise<void> {
@@ -812,9 +971,20 @@ export const useChatNotifications = () => {
   watch(
     () => [
       chatStore.user?.chat_user?.notifications,
+      chatStore.user?.chat_user?.notifications_sound,
+      chatStore.user?.chat_user?.notifications_toast,
       chatStore.user?.chat_user?.notifications_push,
       chatStore.user?.chat_user?.notifications_browser,
+      chatStore.user?.chat_user?.notifications_status_update,
+      chatStore.user?.chat_user?.notifications_status_queue,
+      chatStore.user?.chat_user?.notifications_status_in_chat,
       chatStore.user?.chat_user?.notifications_status_chatbot,
+      chatStore.user?.chat_user?.notifications_message_queue,
+      chatStore.user?.chat_user?.notifications_message_in_chat,
+      chatStore.user?.chat_user?.notifications_message_chatbot,
+      chatStore.user?.chat_user?.notifications_transfer,
+      chatStore.user?.chat_user?.notifications_internal_chat,
+      chatStore.user?.chat_user?.notifications_internal_chat_push,
     ],
     async () => {
       await runNotificationSettingsSync();
@@ -825,6 +995,7 @@ export const useChatNotifications = () => {
   return {
     handleNewMessage,
     handleChatStatusChange,
+    handleChatTransfer,
     requestNotificationPermission,
     registerServiceWorker,
     unsubscribeFromPushNotifications: unsubscribeFromPushNotificationsInternal,

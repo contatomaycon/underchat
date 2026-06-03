@@ -66,7 +66,7 @@ export type ChatUserStatus =
 export type UpdateChatUserPayload = {
   about?: string | null;
   status?: ChatUserStatus;
-  notifications: boolean;
+  notifications?: boolean;
   notifications_sound?: boolean;
   notifications_toast?: boolean;
   notifications_browser?: boolean;
@@ -75,6 +75,10 @@ export type UpdateChatUserPayload = {
   notifications_status_queue?: boolean;
   notifications_status_in_chat?: boolean;
   notifications_status_chatbot?: boolean;
+  notifications_message_queue?: boolean;
+  notifications_message_in_chat?: boolean;
+  notifications_message_chatbot?: boolean;
+  notifications_transfer?: boolean;
   sort_by_chat_order?: string | null;
   sort_in_chat_order?: string | null;
   sort_by_my_chats_order?: string | null;
@@ -198,6 +202,25 @@ export type DeletePushSubscriptionPayload = {
   endpoint: string;
   provider?: PushSubscriptionProvider;
 };
+
+export interface ChatNotificationSettings {
+  chat_user_id?: string;
+  notifications: boolean;
+  notifications_sound: boolean;
+  notifications_toast: boolean;
+  notifications_browser: boolean;
+  notifications_push: boolean;
+  notifications_status_update: boolean;
+  notifications_status_queue: boolean;
+  notifications_status_in_chat: boolean;
+  notifications_status_chatbot: boolean;
+  notifications_message_queue: boolean;
+  notifications_message_in_chat: boolean;
+  notifications_message_chatbot: boolean;
+  notifications_transfer: boolean;
+}
+
+export type ChatNotificationSettingsPayload = Partial<ChatNotificationSettings>;
 
 export type ListChatsParams = {
   status: string | string[];
@@ -916,6 +939,23 @@ export async function updateChatUser(
 ): Promise<boolean> {
   const res = await apiPut<null>('/chat/user', payload);
   return !!res?.status;
+}
+
+export async function getChatNotificationSettings(): Promise<ChatNotificationSettings | null> {
+  const res = await apiGet<ChatNotificationSettings>(
+    '/chat/notification-settings'
+  );
+  return res?.data ?? null;
+}
+
+export async function updateChatNotificationSettings(
+  payload: ChatNotificationSettingsPayload
+): Promise<ChatNotificationSettings | null> {
+  const res = await apiPut<ChatNotificationSettings>(
+    '/chat/notification-settings',
+    payload
+  );
+  return res?.data ?? null;
 }
 
 export async function uploadUserPhoto(

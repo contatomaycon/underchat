@@ -147,7 +147,7 @@ export class PushNotificationService {
       await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
         accountId,
         chat.status,
-        false
+        'message'
       );
 
     if (userIds.length === 0) {
@@ -200,10 +200,7 @@ export class PushNotificationService {
   }
 
   async sendNotificationForChatStatusChange(chat: IChat): Promise<void> {
-    if (
-      chat.status !== EChatStatus.queue &&
-      chat.status !== EChatStatus.in_chat
-    ) {
+    if (!this.isChatStatusEligible(chat.status)) {
       return;
     }
 
@@ -212,7 +209,7 @@ export class PushNotificationService {
       await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
         accountId,
         chat.status,
-        true
+        'status'
       );
 
     if (userIds.length === 0) {
@@ -220,10 +217,7 @@ export class PushNotificationService {
     }
 
     const senderName = chat.name || chat.contact?.name || 'Desconhecido';
-    const statusLabel =
-      chat.status === EChatStatus.queue
-        ? 'Aguardando atendimento'
-        : 'Em atendimento';
+    const statusLabel = this.getChatStatusNotificationLabel(chat.status);
 
     const payload: IPushNotificationPayload = {
       title: senderName,
@@ -255,6 +249,95 @@ export class PushNotificationService {
     if (eligibleUserIds.size === 0) {
       return;
     }
+
+    const promises = Array.from(eligibleUserIds).map((userId) =>
+      this.sendNotificationToUser(userId, payload).catch(() => {})
+    );
+
+    await Promise.all(promises);
+  }
+
+  async sendNotificationForChatTransfer(input: {
+    chat: IChat;
+    actorUserId: string;
+    candidateUserIds: string[];
+    targetUserName?: string | null;
+    targetSectorName?: string | null;
+    targetWorkerName?: string | null;
+  }): Promise<void> {
+    const accountId = input.chat.account.id;
+    const candidateUserIds = Array.from(
+      new Set(
+        input.candidateUserIds.filter(
+          (userId) => userId && userId !== input.actorUserId
+        )
+      )
+    );
+
+    if (candidateUserIds.length === 0) {
+      return;
+    }
+
+    const userIds =
+      await this.usersWithNotificationsListerRepository.listUsersWithTransferNotifications(
+        accountId,
+        candidateUserIds
+      );
+
+    if (userIds.length === 0) {
+      return;
+    }
+
+    const eligibleUserIds = new Set<string>();
+
+    for (const userId of userIds) {
+      const canReceive = await this.canUserReceiveNotification(
+        userId,
+        accountId,
+        input.chat
+      );
+
+      if (canReceive) {
+        eligibleUserIds.add(userId);
+      }
+    }
+
+    if (eligibleUserIds.size === 0) {
+      return;
+    }
+
+    const senderName =
+      input.chat.name || input.chat.contact?.name || 'Desconhecido';
+    const destination = [
+      input.targetUserName,
+      input.targetSectorName,
+      input.targetWorkerName,
+    ]
+      .filter((value) => !!value?.trim())
+      .join(' - ');
+    const body = destination
+      ? `Atendimento transferido para ${destination}`
+      : 'Atendimento transferido';
+
+    const payload: IPushNotificationPayload = {
+      title: senderName,
+      body,
+      icon:
+        input.chat.photo ||
+        input.chat.contact?.photo ||
+        '/images/svg/avatar-default.svg',
+      tag: `chat-transfer-${input.chat.chat_id}`,
+      data: {
+        chatId: input.chat.chat_id,
+        notificationType: 'chat_transfer',
+        chatSnapshot: this.buildChatSnapshot(input.chat),
+        transferTarget: {
+          userName: input.targetUserName ?? null,
+          sectorName: input.targetSectorName ?? null,
+          workerName: input.targetWorkerName ?? null,
+        },
+      },
+    };
 
     const promises = Array.from(eligibleUserIds).map((userId) =>
       this.sendNotificationToUser(userId, payload).catch(() => {})
@@ -387,6 +470,22 @@ export class PushNotificationService {
       status === EChatStatus.ura_schedule ||
       status === EChatStatus.ura_webhook
     );
+  }
+
+  private getChatStatusNotificationLabel(status: EChatStatus): string {
+    if (status === EChatStatus.queue) {
+      return 'Aguardando atendimento';
+    }
+
+    if (status === EChatStatus.in_chat) {
+      return 'Em atendimento';
+    }
+
+    if (this.isChatbotStatus(status)) {
+      return 'Chatbot';
+    }
+
+    return 'Status atualizado';
   }
 
   private getInternalChatMessagePreview(message: IInternalChatMessage): string {

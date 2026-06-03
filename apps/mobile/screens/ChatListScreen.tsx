@@ -39,14 +39,18 @@ import {
   listChats,
   searchChats,
   clearChatSummary,
+  getChatNotificationSettings,
   updateChatStatus,
   updateChatStatusDetailed,
+  updateChatNotificationSettings,
   viewWorkerConfigForChat,
   transferChat,
   listTransferOptions,
   listTransferUsers,
   listTransferSectors,
   listTransferSectorUsers,
+  type ChatNotificationSettings,
+  type ChatNotificationSettingsPayload,
   type ChatUserStatus,
   type TransferChatPayload,
   type TransferSectorOption,
@@ -57,6 +61,7 @@ import {
   getPermissions,
   getSectors,
   getChannels,
+  patchUser,
   type UserChannel,
 } from '../storage/authStorage';
 import {
@@ -85,6 +90,7 @@ import {
 import { UserSidebar } from '../components/UserSidebar';
 import { ChannelStatusBanner } from '../components/ChannelStatusBanner';
 import { AppAvatar } from '../components/AppAvatar';
+import { BottomSheetModal } from '../components/BottomSheetModal';
 import type { WorkerConfigForChat } from '../types/contact';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
@@ -129,6 +135,11 @@ import {
   type WhatsAppTextToken,
 } from '../utils/whatsAppTextFormat';
 import { addCurrentUserPresenceStatusListener } from '../utils/currentUserPresence';
+import {
+  disableMobilePushNotifications,
+  enableMobilePushNotifications,
+  isAnyMobilePushPreferenceEnabled,
+} from '../services/pushNotifications';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -175,6 +186,22 @@ const CHATBOT_FILTER_OPTIONS: Array<{
   { value: 'ura_webhook', label: pt.chatbot_type_webhook },
 ];
 
+const DEFAULT_CHAT_NOTIFICATION_SETTINGS: ChatNotificationSettings = {
+  notifications: true,
+  notifications_sound: true,
+  notifications_toast: true,
+  notifications_browser: true,
+  notifications_push: true,
+  notifications_status_update: true,
+  notifications_status_queue: false,
+  notifications_status_in_chat: true,
+  notifications_status_chatbot: false,
+  notifications_message_queue: false,
+  notifications_message_in_chat: true,
+  notifications_message_chatbot: false,
+  notifications_transfer: true,
+};
+
 function getChatbotFilterKey(filters: ChatbotFilterStatus[]): string {
   return [...filters].sort().join('|');
 }
@@ -193,10 +220,302 @@ type TransferChannelOption = {
   label: string;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function readString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const out = value.trim();
   return out.length > 0 ? out : null;
+}
+
+function readBooleanDefaultTrue(value: unknown): boolean {
+  return value !== false;
+}
+
+function readBooleanDefaultFalse(value: unknown): boolean {
+  return value === true;
+}
+
+function readChatNotificationSettingsFromUser(
+  user: unknown
+): ChatNotificationSettings {
+  const chatUser =
+    isRecord(user) && isRecord(user.chat_user) ? user.chat_user : {};
+
+  return {
+    chat_user_id:
+      typeof chatUser.chat_user_id === 'string'
+        ? chatUser.chat_user_id
+        : undefined,
+    notifications: readBooleanDefaultTrue(chatUser.notifications),
+    notifications_sound: readBooleanDefaultTrue(chatUser.notifications_sound),
+    notifications_toast: readBooleanDefaultTrue(chatUser.notifications_toast),
+    notifications_browser: readBooleanDefaultTrue(
+      chatUser.notifications_browser
+    ),
+    notifications_push: readBooleanDefaultTrue(chatUser.notifications_push),
+    notifications_status_update: readBooleanDefaultTrue(
+      chatUser.notifications_status_update
+    ),
+    notifications_status_queue: readBooleanDefaultFalse(
+      chatUser.notifications_status_queue
+    ),
+    notifications_status_in_chat: readBooleanDefaultTrue(
+      chatUser.notifications_status_in_chat
+    ),
+    notifications_status_chatbot: readBooleanDefaultFalse(
+      chatUser.notifications_status_chatbot
+    ),
+    notifications_message_queue: readBooleanDefaultFalse(
+      chatUser.notifications_message_queue
+    ),
+    notifications_message_in_chat: readBooleanDefaultTrue(
+      chatUser.notifications_message_in_chat
+    ),
+    notifications_message_chatbot: readBooleanDefaultFalse(
+      chatUser.notifications_message_chatbot
+    ),
+    notifications_transfer: readBooleanDefaultTrue(
+      chatUser.notifications_transfer
+    ),
+  };
+}
+
+function shouldUseChatPush(settings: ChatNotificationSettingsPayload): boolean {
+  return (
+    settings.notifications !== false && settings.notifications_push !== false
+  );
+}
+
+type ChatNotificationSettingKey = Exclude<
+  keyof ChatNotificationSettings,
+  'chat_user_id'
+>;
+
+function ChatNotificationSettingsSheet({
+  visible,
+  settings,
+  loading,
+  saving,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  settings: ChatNotificationSettings;
+  loading: boolean;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (settings: ChatNotificationSettingsPayload) => void;
+}) {
+  const [draft, setDraft] = useState<ChatNotificationSettings>(
+    DEFAULT_CHAT_NOTIFICATION_SETTINGS
+  );
+
+  useEffect(() => {
+    if (visible) {
+      setDraft(settings);
+    }
+  }, [settings, visible]);
+
+  const updateDraft = useCallback(
+    (key: ChatNotificationSettingKey, value: boolean) => {
+      setDraft((current) => ({
+        ...current,
+        [key]: value,
+      }));
+    },
+    []
+  );
+
+  const renderOption = (
+    key: ChatNotificationSettingKey,
+    title: string,
+    description: string,
+    icon: keyof typeof Ionicons.glyphMap,
+    disabled = false
+  ) => {
+    const enabled = draft[key] !== false;
+    return (
+      <Pressable
+        key={key}
+        style={[styles.notificationOption, disabled && styles.optionDisabled]}
+        onPress={() => {
+          if (!disabled && !saving && !loading) {
+            updateDraft(key, !enabled);
+          }
+        }}
+        disabled={disabled || saving || loading}
+      >
+        <View style={styles.notificationOptionIcon}>
+          <Ionicons name={icon} size={20} color={colors.primary} />
+        </View>
+        <View style={styles.notificationOptionText}>
+          <Text style={styles.notificationOptionTitle}>{title}</Text>
+          <Text style={styles.notificationOptionDescription}>
+            {description}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.notificationSwitch,
+            enabled && styles.notificationSwitchOn,
+          ]}
+        >
+          <View
+            style={[
+              styles.notificationSwitchThumb,
+              enabled && styles.notificationSwitchThumbOn,
+            ]}
+          />
+        </View>
+      </Pressable>
+    );
+  };
+
+  const childOptionsDisabled =
+    saving || loading || draft.notifications === false;
+  const movementOptionsDisabled =
+    childOptionsDisabled || draft.notifications_status_update === false;
+
+  return (
+    <BottomSheetModal
+      visible={visible}
+      onClose={onClose}
+      title="Notificações"
+      footer={
+        <>
+          <Pressable
+            style={styles.sheetCancelBtn}
+            onPress={onClose}
+            disabled={saving}
+          >
+            <Text style={styles.sheetCancelText}>{pt.cancel}</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.sheetSaveBtn, saving && styles.actionBtnDisabled]}
+            onPress={() => onSave(draft)}
+            disabled={saving || loading}
+          >
+            {saving ? (
+              <ActivityIndicator color={colors.onPrimary} />
+            ) : (
+              <Text style={styles.sheetSaveText}>{pt.save}</Text>
+            )}
+          </Pressable>
+        </>
+      }
+    >
+      {loading ? (
+        <View style={styles.notificationLoading}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.notificationLoadingText}>
+            Carregando configurações...
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.notificationContent}>
+          {renderOption(
+            'notifications',
+            'Habilitar notificações',
+            'Controla todos os avisos do Chat.',
+            'notifications-outline'
+          )}
+
+          <Text style={styles.notificationSectionTitle}>Mensagens</Text>
+          {renderOption(
+            'notifications_message_queue',
+            'Mensagens na fila',
+            'Avisar quando chegar mensagem em atendimento aguardando na fila.',
+            'file-tray-stacked-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_message_in_chat',
+            'Mensagens em atendimento',
+            'Avisar novas mensagens nos atendimentos em andamento.',
+            'chatbubbles-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_message_chatbot',
+            'Mensagens no chatbot',
+            'Avisar novas mensagens em conversas no chatbot.',
+            'hardware-chip-outline',
+            childOptionsDisabled
+          )}
+
+          <Text style={styles.notificationSectionTitle}>Movimentações</Text>
+          {renderOption(
+            'notifications_status_update',
+            'Atualizações de atendimento',
+            'Controla avisos quando conversas mudam de etapa.',
+            'git-compare-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_status_queue',
+            'Recebimento na fila',
+            'Avisar quando um atendimento entrar na fila.',
+            'time-outline',
+            movementOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_status_in_chat',
+            'Entrada em atendimento',
+            'Avisar quando um atendimento for assumido ou enviado ao atendimento.',
+            'checkmark-circle-outline',
+            movementOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_status_chatbot',
+            'Movimentações no chatbot',
+            'Avisar quando uma conversa entrar ou circular pelo chatbot.',
+            'chatbox-ellipses-outline',
+            movementOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_transfer',
+            'Transferência',
+            'Avisar quando um atendimento for transferido para você ou sua fila.',
+            'swap-horizontal-outline',
+            childOptionsDisabled
+          )}
+
+          <Text style={styles.notificationSectionTitle}>Entrega</Text>
+          {renderOption(
+            'notifications_sound',
+            'Som',
+            'Tocar alerta sonoro quando disponível.',
+            'volume-high-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_toast',
+            'Alerta na tela',
+            'Mostrar aviso enquanto o app estiver aberto.',
+            'albums-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_browser',
+            'Navegador',
+            'Usado na versão web quando a aba está em segundo plano.',
+            'globe-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_push',
+            'Push em segundo plano',
+            'Receber notificação quando o app estiver fechado.',
+            'phone-portrait-outline',
+            childOptionsDisabled
+          )}
+        </View>
+      )}
+    </BottomSheetModal>
+  );
 }
 
 function readIdentifier(value: unknown): string | null {
@@ -706,6 +1025,14 @@ export function ChatListScreen({ route, navigation }: Props) {
   ] = useState(false);
   const [canPickAnyQueueChat, setCanPickAnyQueueChat] = useState(false);
   const [profileSidebarVisible, setProfileSidebarVisible] = useState(false);
+  const [notificationSheetVisible, setNotificationSheetVisible] =
+    useState(false);
+  const [notificationSettings, setNotificationSettings] =
+    useState<ChatNotificationSettings>(DEFAULT_CHAT_NOTIFICATION_SETTINGS);
+  const [notificationSettingsLoading, setNotificationSettingsLoading] =
+    useState(false);
+  const [notificationSettingsSaving, setNotificationSettingsSaving] =
+    useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(false);
@@ -904,6 +1231,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         setIsCurrentUserMasterOrAdministrator(
           isMasterOrAdministratorUser(user)
         );
+        setNotificationSettings(readChatNotificationSettingsFromUser(user));
       })
       .finally(() => {
         setIsUserResolved(true);
@@ -966,6 +1294,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         setIsCurrentUserMasterOrAdministrator(
           isMasterOrAdministratorUser(user)
         );
+        setNotificationSettings(readChatNotificationSettingsFromUser(user));
       });
 
       void getPermissions().then((permissions) => {
@@ -1542,6 +1871,79 @@ export function ChatListScreen({ route, navigation }: Props) {
       profileSidebarReopenTimerRef.current = null;
     }, 40);
   }, [profileSidebarVisible]);
+
+  const openNotificationSheet = useCallback(() => {
+    dismissKeyboard();
+    openedSwipeableRef.current?.close();
+    setNotificationSheetVisible(true);
+    setNotificationSettingsLoading(true);
+
+    void getChatNotificationSettings()
+      .then((settings) => {
+        if (settings) {
+          setNotificationSettings(settings);
+          void patchUser({ chat_user: settings });
+        }
+      })
+      .catch(() => {
+        Alert.alert(pt.error_title, 'Não foi possível carregar notificações.');
+      })
+      .finally(() => {
+        setNotificationSettingsLoading(false);
+      });
+  }, []);
+
+  const closeNotificationSheet = useCallback(() => {
+    if (notificationSettingsSaving) return;
+    setNotificationSheetVisible(false);
+  }, [notificationSettingsSaving]);
+
+  const saveNotificationSettings = useCallback(
+    async (nextSettings: ChatNotificationSettingsPayload) => {
+      if (notificationSettingsSaving) return;
+
+      setNotificationSettingsSaving(true);
+
+      try {
+        if (shouldUseChatPush(nextSettings)) {
+          const result = await enableMobilePushNotifications();
+
+          if (!result.ok) {
+            Alert.alert(
+              pt.warning_title,
+              result.reason === 'permission_denied'
+                ? pt.notification_permission_denied
+                : pt.notification_enable_error
+            );
+            return;
+          }
+        }
+
+        const updated = await updateChatNotificationSettings(nextSettings);
+
+        if (!updated) {
+          Alert.alert(
+            pt.error_title,
+            'Não foi possível salvar as notificações.'
+          );
+          return;
+        }
+
+        setNotificationSettings(updated);
+        await patchUser({ chat_user: updated });
+
+        const userAfterUpdate = await getUser().catch(() => null);
+        if (!isAnyMobilePushPreferenceEnabled(userAfterUpdate)) {
+          await disableMobilePushNotifications().catch(() => false);
+        }
+
+        setNotificationSheetVisible(false);
+      } finally {
+        setNotificationSettingsSaving(false);
+      }
+    },
+    [notificationSettingsSaving]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -2367,83 +2769,121 @@ export function ChatListScreen({ route, navigation }: Props) {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Pressable
-          style={styles.avatarPlaceholder}
-          onPress={handleOpenProfileSidebar}
-        >
-          <View style={styles.headerAvatarWrap}>
-            <AppAvatar
-              uri={userPhoto}
-              size={40}
-              style={styles.headerAvatarImage}
-              iconName="person-circle-outline"
-              iconSize={40}
-              iconColor={colors.grey400}
-            />
-            <View
-              style={[
-                styles.statusBadge,
-                { backgroundColor: getChatUserStatusColor(userStatus) },
-              ]}
-            />
-          </View>
-        </Pressable>
-        <View style={styles.searchWrap}>
-          <Ionicons
-            name="search"
-            size={20}
-            color={colors.grey500}
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder={pt.search_service}
-            placeholderTextColor={colors.grey500}
-            value={search}
-            onChangeText={(value) => {
-              closeOpenedSwipeable();
-              setSearch(value);
-            }}
-          />
-          {search.trim().length > 0 ? (
-            <Pressable
-              style={styles.searchClearBtn}
-              onPress={handleClearSearch}
-              hitSlop={8}
-              accessibilityLabel={pt.clear_filter}
-            >
-              <Ionicons name="close-circle" size={18} color={colors.grey500} />
-            </Pressable>
-          ) : null}
-        </View>
-        <Pressable
-          style={styles.filterBtn}
-          onPress={() => {
-            dismissKeyboard();
-            closeOpenedSwipeable();
-            setFilterModalVisible(true);
-          }}
-        >
-          <Ionicons name="filter" size={22} color={colors.onSurface} />
-        </Pressable>
-        {hasAdvancedFiltersApplied ? (
+        <View style={styles.headerTitleRow}>
           <Pressable
-            style={styles.clearFilterBtn}
+            style={styles.avatarPlaceholder}
+            onPress={handleOpenProfileSidebar}
+            accessibilityLabel="Abrir perfil"
+          >
+            <View style={styles.headerAvatarWrap}>
+              <AppAvatar
+                uri={userPhoto}
+                size={40}
+                style={styles.headerAvatarImage}
+                iconName="person-circle-outline"
+                iconSize={40}
+                iconColor={colors.grey400}
+              />
+              <View
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: getChatUserStatusColor(userStatus) },
+                ]}
+              />
+            </View>
+          </Pressable>
+          <View style={styles.headerTextWrap}>
+            <Text style={styles.headerTitle}>Chat</Text>
+            <Text style={styles.headerSubtitle}>
+              {tab === 'queue'
+                ? pt.awaiting_service
+                : tab === 'in_chat'
+                  ? pt.in_service
+                  : tab === 'closed'
+                    ? pt.closed
+                    : tab === 'chatbot'
+                      ? pt.chatbot
+                      : pt.all}
+            </Text>
+          </View>
+          <Pressable
+            style={styles.headerAction}
+            onPress={openNotificationSheet}
+            accessibilityLabel="Configurar notificações"
+          >
+            <Ionicons
+              name={
+                notificationSettings.notifications !== false
+                  ? 'notifications-outline'
+                  : 'notifications-off-outline'
+              }
+              size={20}
+              color={colors.primary}
+            />
+          </Pressable>
+        </View>
+        <View style={styles.searchActionRow}>
+          <View style={styles.searchWrap}>
+            <Ionicons
+              name="search"
+              size={20}
+              color={colors.grey500}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder={pt.search_service}
+              placeholderTextColor={colors.grey500}
+              value={search}
+              onChangeText={(value) => {
+                closeOpenedSwipeable();
+                setSearch(value);
+              }}
+            />
+            {search.trim().length > 0 ? (
+              <Pressable
+                style={styles.searchClearBtn}
+                onPress={handleClearSearch}
+                hitSlop={8}
+                accessibilityLabel={pt.clear_filter}
+              >
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={colors.grey500}
+                />
+              </Pressable>
+            ) : null}
+          </View>
+          <Pressable
+            style={styles.filterBtn}
             onPress={() => {
               dismissKeyboard();
               closeOpenedSwipeable();
-              if (tab === 'closed') {
-                (
-                  navigation.getParent() as { navigate: (n: string) => void }
-                )?.navigate('InChat');
-              }
-              clearAdvancedFilters();
+              setFilterModalVisible(true);
             }}
-            accessibilityLabel={pt.clear_filters}
           >
-            <Ionicons name="close" size={16} color={colors.onPrimary} />
+            <Ionicons name="filter" size={22} color={colors.onSurface} />
           </Pressable>
-        ) : null}
+          {hasAdvancedFiltersApplied ? (
+            <Pressable
+              style={styles.clearFilterBtn}
+              onPress={() => {
+                dismissKeyboard();
+                closeOpenedSwipeable();
+                if (tab === 'closed') {
+                  (
+                    navigation.getParent() as { navigate: (n: string) => void }
+                  )?.navigate('InChat');
+                }
+                clearAdvancedFilters();
+              }}
+              accessibilityLabel={pt.clear_filters}
+            >
+              <Ionicons name="close" size={16} color={colors.onPrimary} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
       <ChannelStatusBanner />
       {tab === 'in_chat' ? (
@@ -2506,6 +2946,14 @@ export function ChatListScreen({ route, navigation }: Props) {
         onClose={handleCloseProfileSidebar}
         onProfileUpdated={(nextPhoto) => setUserPhoto(nextPhoto)}
         onStatusUpdated={setUserStatus}
+      />
+      <ChatNotificationSettingsSheet
+        visible={notificationSheetVisible}
+        settings={notificationSettings}
+        loading={notificationSettingsLoading}
+        saving={notificationSettingsSaving}
+        onClose={closeNotificationSheet}
+        onSave={saveNotificationSettings}
       />
       <AdvancedFilterModal
         visible={filterModalVisible}
@@ -3188,13 +3636,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    gap: 8,
+    gap: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.grey200,
+    backgroundColor: colors.surface,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   avatarPlaceholder: {
     width: 40,
@@ -3226,6 +3678,36 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     zIndex: 2,
   },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  headerTitle: {
+    color: colors.onSurface,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  headerSubtitle: {
+    marginTop: 2,
+    color: colors.grey600,
+    fontSize: 12,
+  },
+  headerAction: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EAF2FF',
+    borderWidth: 1,
+    borderColor: '#D6E6FF',
+  },
+  searchActionRow: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3252,7 +3734,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   filterBtn: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   clearFilterBtn: {
     width: 28,
@@ -3793,6 +4282,109 @@ const styles = StyleSheet.create({
   transferSubmitText: {
     color: colors.onPrimary,
     fontWeight: '700',
+  },
+  notificationContent: {
+    gap: 10,
+  },
+  notificationLoading: {
+    minHeight: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  notificationLoadingText: {
+    color: colors.grey600,
+    fontSize: 13,
+  },
+  notificationSectionTitle: {
+    marginTop: 8,
+    color: colors.grey600,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  notificationOption: {
+    minHeight: 68,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.grey200,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surface,
+  },
+  optionDisabled: {
+    opacity: 0.55,
+  },
+  notificationOptionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EAF2FF',
+  },
+  notificationOptionText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  notificationOptionTitle: {
+    color: colors.onSurface,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  notificationOptionDescription: {
+    marginTop: 3,
+    color: colors.grey600,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  notificationSwitch: {
+    width: 42,
+    height: 24,
+    borderRadius: 12,
+    padding: 2,
+    backgroundColor: colors.grey300,
+    justifyContent: 'center',
+  },
+  notificationSwitchOn: {
+    backgroundColor: colors.primary,
+  },
+  notificationSwitchThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+  },
+  notificationSwitchThumbOn: {
+    transform: [{ translateX: 18 }],
+  },
+  sheetCancelBtn: {
+    minHeight: 42,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.grey100,
+  },
+  sheetCancelText: {
+    color: colors.grey700,
+    fontWeight: '800',
+  },
+  sheetSaveBtn: {
+    minHeight: 42,
+    minWidth: 104,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  sheetSaveText: {
+    color: colors.onPrimary,
+    fontWeight: '800',
   },
   actionBtnDisabled: {
     opacity: 0.55,

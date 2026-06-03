@@ -51,6 +51,10 @@ const notificationChat = computed(() => {
     return props.notification.chat;
   }
 
+  if (props.notification.type === 'transfer') {
+    return props.notification.chat;
+  }
+
   const chatId = props.notification.message.chat_id;
 
   return (
@@ -148,7 +152,20 @@ const messagePreview = computed(() => {
       return t('chat_notification_status_queue');
     }
 
+    if (
+      props.notification.chat.status === EChatStatus.ura ||
+      props.notification.chat.status === EChatStatus.ura_output ||
+      props.notification.chat.status === EChatStatus.ura_schedule ||
+      props.notification.chat.status === EChatStatus.ura_webhook
+    ) {
+      return t('chat_notification_status_chatbot');
+    }
+
     return t('chat_notification_status_update');
+  }
+
+  if (props.notification.type === 'transfer') {
+    return t('chat_notification_transfer_received');
   }
 
   return getMessagePreview(props.notification.message);

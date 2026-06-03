@@ -29,6 +29,7 @@ self.addEventListener('notificationclick', (event) => {
   const data = event.notification.data || {};
   const chatId = data.chatId;
   const internalChatConversationId = data.internalChatConversationId;
+  const notificationType = data.notificationType;
 
   event.waitUntil(
     self.clients
@@ -42,7 +43,11 @@ self.addEventListener('notificationclick', (event) => {
               conversationId: internalChatConversationId,
             });
           } else if (chatId) {
-            client.postMessage({ type: 'navigateToChat', chatId });
+            client.postMessage({
+              type: 'navigateToChat',
+              chatId,
+              notificationType,
+            });
           }
           return client.focus().catch(() => {});
         }

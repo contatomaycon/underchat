@@ -14,6 +14,10 @@ import {
   viewChatAttendantsPermissions,
 } from '@/permissions';
 import { updateChatsUserSchema } from '@core/schema/chat/updateChatsUser';
+import {
+  updateChatNotificationSettingsSchema,
+  viewChatNotificationSettingsSchema,
+} from '@core/schema/chat/notificationSettings';
 import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
 import { createMessageChatsSchema } from '@core/schema/chat/createMessageChats';
 import { viewLinkPreviewSchema } from '@core/schema/chat/viewLinkPreview';
@@ -103,6 +107,28 @@ export default function chatRoutes(server: FastifyInstance) {
   server.post('/chat/link-preview', {
     schema: viewLinkPreviewSchema,
     handler: chatController.viewChatLinkPreview,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/notification-settings', {
+    schema: viewChatNotificationSettingsSchema,
+    handler: chatController.viewNotificationSettings,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.put('/chat/notification-settings', {
+    schema: updateChatNotificationSettingsSchema,
+    handler: chatController.updateNotificationSettings,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

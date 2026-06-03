@@ -54,7 +54,8 @@ const telemetry = getCentrifugoTelemetry();
 const createChatSocket = () => {
   const chatStore = useChatStore();
   const route = useRoute();
-  const { handleNewMessage, handleChatStatusChange } = useChatNotifications();
+  const { handleNewMessage, handleChatStatusChange, handleChatTransfer } =
+    useChatNotifications();
 
   const isChatOrKanbanRoute = () => {
     const name = route.name as string | undefined;
@@ -288,8 +289,20 @@ const createChatSocket = () => {
     }
 
     for (const chatData of latestByChatId.values()) {
-      const previousStatus =
-        chatStore.findChatInLists(chatData.chat_id)?.status ?? null;
+      const previousChat =
+        chatStore.findChatInLists(chatData.chat_id) ??
+        (chatStore.activeChat?.chat_id === chatData.chat_id
+          ? chatStore.activeChat
+          : null);
+      const previousChatSnapshot = previousChat
+        ? ({
+            ...previousChat,
+            secondary_users: Array.isArray(previousChat.secondary_users)
+              ? [...previousChat.secondary_users]
+              : [],
+          } as IChat)
+        : null;
+      const previousStatus = previousChatSnapshot?.status ?? null;
 
       const isActiveChat =
         isChatOrKanbanRoute() &&
@@ -298,7 +311,14 @@ const createChatSocket = () => {
       chatStore.addChat(chatData);
 
       if (!isActiveChat) {
-        handleChatStatusChange(chatData, previousStatus);
+        const handledTransfer = handleChatTransfer(
+          chatData,
+          previousChatSnapshot
+        );
+
+        if (!handledTransfer) {
+          handleChatStatusChange(chatData, previousStatus);
+        }
       }
 
       if (

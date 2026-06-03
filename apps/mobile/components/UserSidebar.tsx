@@ -37,11 +37,6 @@ import {
   modalKeyboardAvoidingBehavior,
 } from '../utils/keyboard';
 import { teardownMobileSession } from '../utils/sessionTeardown';
-import {
-  disableMobilePushNotifications,
-  enableMobilePushNotifications,
-  isAnyMobilePushPreferenceEnabled,
-} from '../services/pushNotifications';
 import { useChannelStatus } from '../context/ChannelStatusContext';
 import { addSessionUpdatedListener } from '../utils/appResumeBus';
 
@@ -95,10 +90,6 @@ function readString(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function readBoolean(value: unknown): boolean {
-  return value === true;
-}
-
 function normalizeStatus(value: unknown): SidebarStatus {
   if (value === 'busy') return 'busy';
   if (value === 'do_not_disturb') return 'do_not_disturb';
@@ -143,7 +134,6 @@ function readUserProfile(user: unknown): {
   photo: string | null;
   about: string;
   status: SidebarStatus;
-  notifications: boolean;
 } {
   const root = isRecord(user) ? user : {};
   const info = isRecord(root.info) ? root.info : {};
@@ -163,7 +153,6 @@ function readUserProfile(user: unknown): {
     photo,
     about: readString(chatUser.about) ?? '',
     status: normalizeStatus(chatUser.status),
-    notifications: readBoolean(chatUser.notifications),
   };
 }
 
@@ -371,10 +360,8 @@ export function UserSidebar({
 
   const [about, setAbout] = useState('');
   const [status, setStatus] = useState<SidebarStatus>('online');
-  const [notifications, setNotifications] = useState(false);
 
   const [statusSaving, setStatusSaving] = useState(false);
-  const [notificationSaving, setNotificationSaving] = useState(false);
   const [aboutSaving, setAboutSaving] = useState(false);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
@@ -404,19 +391,15 @@ export function UserSidebar({
     async (input?: {
       about?: string;
       status?: SidebarStatus;
-      notifications?: boolean;
     }): Promise<boolean> => {
       const resolvedAbout = input?.about ?? about;
       const resolvedStatus = input?.status ?? status;
-      const resolvedNotifications = input?.notifications ?? notifications;
 
       const payload: {
         about: string;
         status?: ChatUserStatus;
-        notifications: boolean;
       } = {
         about: resolvedAbout,
-        notifications: resolvedNotifications,
       };
 
       if (input?.status && canUpdateOwnStatus) {
@@ -435,7 +418,6 @@ export function UserSidebar({
           ...(input?.status && canUpdateOwnStatus
             ? { status: resolvedStatus }
             : {}),
-          notifications: resolvedNotifications,
         },
       });
 
@@ -445,7 +427,7 @@ export function UserSidebar({
 
       return true;
     },
-    [about, canUpdateOwnStatus, notifications, onStatusUpdated, status]
+    [about, canUpdateOwnStatus, onStatusUpdated, status]
   );
 
   useEffect(() => {
@@ -454,7 +436,6 @@ export function UserSidebar({
       setPhotoModalVisible(false);
       setLoadingProfile(false);
       setStatusSaving(false);
-      setNotificationSaving(false);
       setAboutSaving(false);
       setPhotoLoading(false);
       if (aboutTimerRef.current) {
@@ -486,7 +467,6 @@ export function UserSidebar({
       setPhoto(profile.photo);
       setAbout(profile.about);
       setStatus(profile.status);
-      setNotifications(profile.notifications);
       lastSyncedAboutRef.current = profile.about;
       profileReadyRef.current = true;
       setLoadingProfile(false);
@@ -529,7 +509,6 @@ export function UserSidebar({
         setPhoto(profile.photo);
         setAbout(profile.about);
         setStatus(profile.status);
-        setNotifications(profile.notifications);
         lastSyncedAboutRef.current = profile.about;
         profileReadyRef.current = true;
       })().catch(() => {
@@ -589,67 +568,6 @@ export function UserSidebar({
       setStatusSaving(false);
     },
     [canUpdateOwnStatus, persistProfile, status, statusSaving]
-  );
-
-  const handleNotificationToggle = useCallback(
-    async (nextValue: boolean) => {
-      if (notificationSaving || nextValue === notifications) return;
-
-      const previous = notifications;
-      setNotifications(nextValue);
-      setNotificationSaving(true);
-
-      if (nextValue) {
-        const result = await enableMobilePushNotifications();
-
-        if (!result.ok) {
-          setNotifications(previous);
-          setNotificationSaving(false);
-          Alert.alert(
-            pt.warning_title,
-            result.reason === 'permission_denied'
-              ? pt.notification_permission_denied
-              : pt.notification_enable_error
-          );
-          return;
-        }
-
-        const profileUpdated = await persistProfile({
-          notifications: nextValue,
-        });
-
-        if (!profileUpdated) {
-          setNotifications(previous);
-          const userAfterFailure = await getUser().catch(() => null);
-          if (!isAnyMobilePushPreferenceEnabled(userAfterFailure)) {
-            await disableMobilePushNotifications().catch(() => false);
-          }
-          setNotificationSaving(false);
-          return;
-        }
-
-        setNotificationSaving(false);
-        return;
-      }
-
-      const profileUpdated = await persistProfile({ notifications: nextValue });
-      if (!profileUpdated) {
-        setNotifications(previous);
-        setNotificationSaving(false);
-        return;
-      }
-
-      const userAfterUpdate = await getUser().catch(() => null);
-      if (!isAnyMobilePushPreferenceEnabled(userAfterUpdate)) {
-        const pushDisabled = await disableMobilePushNotifications();
-        if (!pushDisabled) {
-          Alert.alert(pt.warning_title, pt.notification_disable_error);
-        }
-      }
-
-      setNotificationSaving(false);
-    },
-    [notificationSaving, notifications, persistProfile]
   );
 
   const uploadPhotoByAsset = useCallback(
@@ -951,48 +869,6 @@ export function UserSidebar({
                       ) : null}
 
                       <ChannelStatusSection />
-
-                      <View style={[styles.section, styles.settingsSection]}>
-                        <Text style={styles.sectionTitle}>{pt.settings}</Text>
-                        <View style={styles.settingRow}>
-                          <View style={styles.settingLabelWrap}>
-                            <Ionicons
-                              name="notifications-outline"
-                              size={20}
-                              color={colors.onSurface}
-                            />
-                            <Text style={styles.settingLabel}>
-                              {pt.notification}
-                            </Text>
-                          </View>
-                          <Pressable
-                            style={[
-                              styles.switch,
-                              notifications
-                                ? styles.switchOn
-                                : styles.switchOff,
-                            ]}
-                            onPress={dismissKeyboardAnd(() =>
-                              handleNotificationToggle(!notifications)
-                            )}
-                            disabled={notificationSaving}
-                          >
-                            <View
-                              style={[
-                                styles.switchThumb,
-                                notifications && styles.switchThumbOn,
-                              ]}
-                            />
-                          </Pressable>
-                        </View>
-                        {notificationSaving ? (
-                          <ActivityIndicator
-                            size="small"
-                            color={colors.primary}
-                            style={styles.inlineLoader}
-                          />
-                        ) : null}
-                      </View>
                     </ScrollView>
                   </>
                 )}
@@ -1230,9 +1106,6 @@ const styles = StyleSheet.create({
   section: {
     marginTop: 14,
   },
-  settingsSection: {
-    marginTop: 24,
-  },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '500',
@@ -1287,45 +1160,6 @@ const styles = StyleSheet.create({
   statusLabel: {
     fontSize: 18,
     color: colors.onSurface,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  settingLabelWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  settingLabel: {
-    fontSize: 18,
-    color: colors.onSurface,
-  },
-  switch: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
-    paddingHorizontal: 3,
-    justifyContent: 'center',
-  },
-  switchOn: {
-    backgroundColor: colors.primary,
-    alignItems: 'flex-end',
-  },
-  switchOff: {
-    backgroundColor: colors.grey300,
-    alignItems: 'flex-start',
-  },
-  switchThumb: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#fff',
-  },
-  switchThumbOn: {
-    backgroundColor: '#fff',
   },
   inlineLoader: {
     marginTop: 8,

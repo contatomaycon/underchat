@@ -64,6 +64,25 @@ export class ChatUserUpdaterRepository {
         input.notifications_status_chatbot;
     }
 
+    if (input.notifications_message_queue !== undefined) {
+      inputUpdate.notifications_message_queue =
+        input.notifications_message_queue;
+    }
+
+    if (input.notifications_message_in_chat !== undefined) {
+      inputUpdate.notifications_message_in_chat =
+        input.notifications_message_in_chat;
+    }
+
+    if (input.notifications_message_chatbot !== undefined) {
+      inputUpdate.notifications_message_chatbot =
+        input.notifications_message_chatbot;
+    }
+
+    if (input.notifications_transfer !== undefined) {
+      inputUpdate.notifications_transfer = input.notifications_transfer;
+    }
+
     if (input.notifications_internal_chat !== undefined) {
       inputUpdate.notifications_internal_chat =
         input.notifications_internal_chat;

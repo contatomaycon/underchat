@@ -15,6 +15,10 @@ const enabledPreferences = {
   notifications_status_queue: true,
   notifications_status_in_chat: true,
   notifications_status_chatbot: true,
+  notifications_message_queue: true,
+  notifications_message_in_chat: true,
+  notifications_message_chatbot: true,
+  notifications_transfer: true,
 };
 
 describe('canReceivePushForChatStatus', () => {
@@ -36,36 +40,36 @@ describe('canReceivePushForChatStatus', () => {
     ).toBe(false);
   });
 
-  it('blocks queue push when queue notifications are disabled', () => {
+  it('blocks queue message push when queue message notifications are disabled', () => {
     expect(
       canReceivePushForChatStatus(
         {
           ...enabledPreferences,
-          notifications_status_queue: false,
+          notifications_message_queue: false,
         },
         EChatStatus.queue
       )
     ).toBe(false);
   });
 
-  it('blocks in-chat push when in-chat notifications are disabled', () => {
+  it('blocks in-chat message push when in-chat message notifications are disabled', () => {
     expect(
       canReceivePushForChatStatus(
         {
           ...enabledPreferences,
-          notifications_status_in_chat: false,
+          notifications_message_in_chat: false,
         },
         EChatStatus.in_chat
       )
     ).toBe(false);
   });
 
-  it('blocks chatbot push when chatbot notifications are disabled', () => {
+  it('blocks chatbot message push when chatbot message notifications are disabled', () => {
     expect(
       canReceivePushForChatStatus(
         {
           ...enabledPreferences,
-          notifications_status_chatbot: false,
+          notifications_message_chatbot: false,
         },
         EChatStatus.ura
       )
@@ -80,7 +84,20 @@ describe('canReceivePushForChatStatus', () => {
           notifications_status_update: false,
         },
         EChatStatus.queue,
-        true
+        'status'
+      )
+    ).toBe(false);
+  });
+
+  it('blocks status push when the specific status toggle is disabled', () => {
+    expect(
+      canReceivePushForChatStatus(
+        {
+          ...enabledPreferences,
+          notifications_status_queue: false,
+        },
+        EChatStatus.queue,
+        'status'
       )
     ).toBe(false);
   });
@@ -138,6 +155,33 @@ describe('UsersWithNotificationsListerRepository', () => {
     await repository.listUsersWithNotifications('account-1', EChatStatus.ura);
 
     expect(where).toHaveBeenCalledTimes(3);
+  });
+
+  it('skips transfer notification query when there are no candidates', async () => {
+    const { db } = createSelectDbMock([]);
+    const repository = new UsersWithNotificationsListerRepository(db as never);
+
+    await expect(
+      repository.listUsersWithTransferNotifications('account-1', [])
+    ).resolves.toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('returns transfer notification user ids from eligible candidates', async () => {
+    const { db, execute, where } = createSelectDbMock([
+      { user_id: 'user-1' },
+      { user_id: 'user-2' },
+    ]);
+    const repository = new UsersWithNotificationsListerRepository(db as never);
+
+    await expect(
+      repository.listUsersWithTransferNotifications('account-1', [
+        'user-1',
+        'user-2',
+      ])
+    ).resolves.toEqual(['user-1', 'user-2']);
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 
   it('skips internal chat query when there are no participants', async () => {

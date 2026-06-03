@@ -8,8 +8,8 @@ import { ExtractTablesWithRelations, eq } from 'drizzle-orm';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { inject, injectable } from 'tsyringe';
 import { v7 as uuidv7 } from 'uuid';
-import { InternalChatNotificationSettingsRequest } from '@core/schema/internalChat/notificationSettings/request.schema';
-import { InternalChatNotificationSettingsData } from '@core/schema/internalChat/notificationSettings/response.schema';
+import { ChatNotificationSettingsRequest } from '@core/schema/chat/notificationSettings/request.schema';
+import { ChatNotificationSettingsData } from '@core/schema/chat/notificationSettings/response.schema';
 
 type DatabaseTransaction = PgTransaction<
   NodePgQueryResultHKT,
@@ -18,7 +18,7 @@ type DatabaseTransaction = PgTransaction<
 >;
 
 @injectable()
-export class InternalChatNotificationSettingsRepository {
+export class ChatNotificationSettingsRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>,
     @inject('DatabaseRw') private readonly dbRw: NodePgDatabase<typeof schema>
@@ -31,19 +31,19 @@ export class InternalChatNotificationSettingsRepository {
     return db
       .select({
         chat_user_id: chatUser.chat_user_id,
-        notifications_internal_chat: chatUser.notifications_internal_chat,
-        notifications_internal_chat_direct:
-          chatUser.notifications_internal_chat_direct,
-        notifications_internal_chat_group:
-          chatUser.notifications_internal_chat_group,
-        notifications_internal_chat_sound:
-          chatUser.notifications_internal_chat_sound,
-        notifications_internal_chat_toast:
-          chatUser.notifications_internal_chat_toast,
-        notifications_internal_chat_browser:
-          chatUser.notifications_internal_chat_browser,
-        notifications_internal_chat_push:
-          chatUser.notifications_internal_chat_push,
+        notifications: chatUser.notifications,
+        notifications_sound: chatUser.notifications_sound,
+        notifications_toast: chatUser.notifications_toast,
+        notifications_browser: chatUser.notifications_browser,
+        notifications_push: chatUser.notifications_push,
+        notifications_status_update: chatUser.notifications_status_update,
+        notifications_status_queue: chatUser.notifications_status_queue,
+        notifications_status_in_chat: chatUser.notifications_status_in_chat,
+        notifications_status_chatbot: chatUser.notifications_status_chatbot,
+        notifications_message_queue: chatUser.notifications_message_queue,
+        notifications_message_in_chat: chatUser.notifications_message_in_chat,
+        notifications_message_chatbot: chatUser.notifications_message_chatbot,
+        notifications_transfer: chatUser.notifications_transfer,
       })
       .from(chatUser)
       .where(eq(chatUser.user_id, userId))
@@ -52,76 +52,61 @@ export class InternalChatNotificationSettingsRepository {
   }
 
   private buildUpdateInput(
-    input: InternalChatNotificationSettingsRequest
+    input: ChatNotificationSettingsRequest
   ): Partial<typeof chatUser.$inferInsert> {
     const updateInput: Partial<typeof chatUser.$inferInsert> = {};
+    const keys = [
+      'notifications',
+      'notifications_sound',
+      'notifications_toast',
+      'notifications_browser',
+      'notifications_push',
+      'notifications_status_update',
+      'notifications_status_queue',
+      'notifications_status_in_chat',
+      'notifications_status_chatbot',
+      'notifications_message_queue',
+      'notifications_message_in_chat',
+      'notifications_message_chatbot',
+      'notifications_transfer',
+    ] as const;
 
-    if (input.notifications_internal_chat !== undefined) {
-      updateInput.notifications_internal_chat =
-        input.notifications_internal_chat;
-    }
-
-    if (input.notifications_internal_chat_direct !== undefined) {
-      updateInput.notifications_internal_chat_direct =
-        input.notifications_internal_chat_direct;
-    }
-
-    if (input.notifications_internal_chat_group !== undefined) {
-      updateInput.notifications_internal_chat_group =
-        input.notifications_internal_chat_group;
-    }
-
-    if (input.notifications_internal_chat_sound !== undefined) {
-      updateInput.notifications_internal_chat_sound =
-        input.notifications_internal_chat_sound;
-    }
-
-    if (input.notifications_internal_chat_toast !== undefined) {
-      updateInput.notifications_internal_chat_toast =
-        input.notifications_internal_chat_toast;
-    }
-
-    if (input.notifications_internal_chat_browser !== undefined) {
-      updateInput.notifications_internal_chat_browser =
-        input.notifications_internal_chat_browser;
-    }
-
-    if (input.notifications_internal_chat_push !== undefined) {
-      updateInput.notifications_internal_chat_push =
-        input.notifications_internal_chat_push;
+    for (const key of keys) {
+      if (input[key] !== undefined) {
+        updateInput[key] = input[key];
+      }
     }
 
     return updateInput;
   }
 
   private normalizeSettings(
-    row: InternalChatNotificationSettingsData | undefined
-  ): InternalChatNotificationSettingsData | null {
+    row: ChatNotificationSettingsData | undefined
+  ): ChatNotificationSettingsData | null {
     if (!row) {
       return null;
     }
 
     return {
       chat_user_id: row.chat_user_id,
-      notifications_internal_chat: row.notifications_internal_chat !== false,
-      notifications_internal_chat_direct:
-        row.notifications_internal_chat_direct !== false,
-      notifications_internal_chat_group:
-        row.notifications_internal_chat_group !== false,
-      notifications_internal_chat_sound:
-        row.notifications_internal_chat_sound !== false,
-      notifications_internal_chat_toast:
-        row.notifications_internal_chat_toast !== false,
-      notifications_internal_chat_browser:
-        row.notifications_internal_chat_browser !== false,
-      notifications_internal_chat_push:
-        row.notifications_internal_chat_push !== false,
+      notifications: row.notifications !== false,
+      notifications_sound: row.notifications_sound !== false,
+      notifications_toast: row.notifications_toast !== false,
+      notifications_browser: row.notifications_browser !== false,
+      notifications_push: row.notifications_push !== false,
+      notifications_status_update: row.notifications_status_update !== false,
+      notifications_status_queue: row.notifications_status_queue === true,
+      notifications_status_in_chat: row.notifications_status_in_chat !== false,
+      notifications_status_chatbot: row.notifications_status_chatbot === true,
+      notifications_message_queue: row.notifications_message_queue === true,
+      notifications_message_in_chat:
+        row.notifications_message_in_chat !== false,
+      notifications_message_chatbot: row.notifications_message_chatbot === true,
+      notifications_transfer: row.notifications_transfer !== false,
     };
   }
 
-  async viewByUserId(
-    userId: string
-  ): Promise<InternalChatNotificationSettingsData> {
+  async viewByUserId(userId: string): Promise<ChatNotificationSettingsData> {
     const existing = this.normalizeSettings(
       (await this.selectSettings(this.dbRo, userId))[0]
     );
@@ -146,8 +131,8 @@ export class InternalChatNotificationSettingsRepository {
 
   async updateByUserId(
     userId: string,
-    input: InternalChatNotificationSettingsRequest
-  ): Promise<InternalChatNotificationSettingsData> {
+    input: ChatNotificationSettingsRequest
+  ): Promise<ChatNotificationSettingsData> {
     return this.dbRw.transaction(async (tx) => {
       await this.ensureChatUser(tx, userId);
       const updateInput = this.buildUpdateInput(input);

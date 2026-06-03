@@ -202,6 +202,22 @@ export const useInternalChatStore = defineStore('internalChat', {
           input.notifications_status_chatbot ??
           existingChatUser?.notifications_status_chatbot ??
           false,
+        notifications_message_queue:
+          input.notifications_message_queue ??
+          existingChatUser?.notifications_message_queue ??
+          false,
+        notifications_message_in_chat:
+          input.notifications_message_in_chat ??
+          existingChatUser?.notifications_message_in_chat ??
+          true,
+        notifications_message_chatbot:
+          input.notifications_message_chatbot ??
+          existingChatUser?.notifications_message_chatbot ??
+          false,
+        notifications_transfer:
+          input.notifications_transfer ??
+          existingChatUser?.notifications_transfer ??
+          true,
         notifications_internal_chat:
           input.notifications_internal_chat ??
           existingChatUser?.notifications_internal_chat ??

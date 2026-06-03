@@ -194,9 +194,9 @@ export function isAnyMobilePushPreferenceEnabled(user: unknown): boolean {
   if (!chatUser) return false;
 
   const customerChatEnabled =
-    chatUser.notifications === true && chatUser.notifications_push !== false;
+    chatUser.notifications !== false && chatUser.notifications_push !== false;
   const internalChatEnabled =
-    chatUser.notifications_internal_chat === true &&
+    chatUser.notifications_internal_chat !== false &&
     chatUser.notifications_internal_chat_push !== false;
 
   return customerChatEnabled || internalChatEnabled;

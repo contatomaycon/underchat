@@ -16,6 +16,11 @@ import {
 import { SearchChatsResponse } from '@core/schema/chat/searchChats/response.schema';
 import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
+import type { ChatNotificationSettingsRequest } from '@core/schema/chat/notificationSettings/request.schema';
+import type {
+  ChatNotificationSettingsData,
+  ChatNotificationSettingsResponse,
+} from '@core/schema/chat/notificationSettings/response.schema';
 import {
   getUser,
   setUser,
@@ -361,6 +366,120 @@ export const useChatStore = defineStore('chat', {
     },
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+    patchChatUser(input: Partial<NonNullable<AuthUserResponse['chat_user']>>) {
+      if (!this.user) return;
+
+      const existingChatUser = this.user.chat_user ?? undefined;
+      const chatUser = {
+        chat_user_id:
+          input.chat_user_id ?? existingChatUser?.chat_user_id ?? '',
+        about: input.about ?? existingChatUser?.about ?? null,
+        status:
+          input.status ?? existingChatUser?.status ?? EChatUserStatus.offline,
+        notifications:
+          input.notifications ?? existingChatUser?.notifications ?? true,
+        notifications_sound:
+          input.notifications_sound ??
+          existingChatUser?.notifications_sound ??
+          true,
+        notifications_toast:
+          input.notifications_toast ??
+          existingChatUser?.notifications_toast ??
+          true,
+        notifications_browser:
+          input.notifications_browser ??
+          existingChatUser?.notifications_browser ??
+          true,
+        notifications_push:
+          input.notifications_push ??
+          existingChatUser?.notifications_push ??
+          true,
+        notifications_status_update:
+          input.notifications_status_update ??
+          existingChatUser?.notifications_status_update ??
+          true,
+        notifications_status_queue:
+          input.notifications_status_queue ??
+          existingChatUser?.notifications_status_queue ??
+          false,
+        notifications_status_in_chat:
+          input.notifications_status_in_chat ??
+          existingChatUser?.notifications_status_in_chat ??
+          true,
+        notifications_status_chatbot:
+          input.notifications_status_chatbot ??
+          existingChatUser?.notifications_status_chatbot ??
+          false,
+        notifications_message_queue:
+          input.notifications_message_queue ??
+          existingChatUser?.notifications_message_queue ??
+          false,
+        notifications_message_in_chat:
+          input.notifications_message_in_chat ??
+          existingChatUser?.notifications_message_in_chat ??
+          true,
+        notifications_message_chatbot:
+          input.notifications_message_chatbot ??
+          existingChatUser?.notifications_message_chatbot ??
+          false,
+        notifications_transfer:
+          input.notifications_transfer ??
+          existingChatUser?.notifications_transfer ??
+          true,
+        notifications_internal_chat:
+          input.notifications_internal_chat ??
+          existingChatUser?.notifications_internal_chat ??
+          true,
+        notifications_internal_chat_direct:
+          input.notifications_internal_chat_direct ??
+          existingChatUser?.notifications_internal_chat_direct ??
+          true,
+        notifications_internal_chat_group:
+          input.notifications_internal_chat_group ??
+          existingChatUser?.notifications_internal_chat_group ??
+          true,
+        notifications_internal_chat_sound:
+          input.notifications_internal_chat_sound ??
+          existingChatUser?.notifications_internal_chat_sound ??
+          true,
+        notifications_internal_chat_toast:
+          input.notifications_internal_chat_toast ??
+          existingChatUser?.notifications_internal_chat_toast ??
+          true,
+        notifications_internal_chat_browser:
+          input.notifications_internal_chat_browser ??
+          existingChatUser?.notifications_internal_chat_browser ??
+          true,
+        notifications_internal_chat_push:
+          input.notifications_internal_chat_push ??
+          existingChatUser?.notifications_internal_chat_push ??
+          true,
+        sort_by_chat_order:
+          input.sort_by_chat_order ?? existingChatUser?.sort_by_chat_order,
+        sort_in_chat_order:
+          input.sort_in_chat_order ?? existingChatUser?.sort_in_chat_order,
+        sort_by_my_chats_order:
+          input.sort_by_my_chats_order ??
+          existingChatUser?.sort_by_my_chats_order,
+        sort_my_chats_order:
+          input.sort_my_chats_order ?? existingChatUser?.sort_my_chats_order,
+        sort_by_queue_order:
+          input.sort_by_queue_order ?? existingChatUser?.sort_by_queue_order,
+        sort_queue_order:
+          input.sort_queue_order ?? existingChatUser?.sort_queue_order,
+        sort_by_chatbot_order:
+          input.sort_by_chatbot_order ??
+          existingChatUser?.sort_by_chatbot_order,
+        sort_chatbot_order:
+          input.sort_chatbot_order ?? existingChatUser?.sort_chatbot_order,
+      } as NonNullable<AuthUserResponse['chat_user']>;
+
+      this.user = {
+        ...this.user,
+        chat_user: chatUser,
+      };
+      setUser(this.user);
     },
     updateUser() {
       this.user = getUser();
@@ -2318,43 +2437,7 @@ export const useChatStore = defineStore('chat', {
         return;
       }
 
-      const existingChatUser = this.user?.chat_user ?? undefined;
-      const chatUserUpdate = {
-        ...(existingChatUser ?? {}),
-        chat_user_id: existingChatUser?.chat_user_id ?? '',
-        status: existingChatUser?.status as EChatUserStatus,
-        about: existingChatUser?.about ?? '',
-        notifications: existingChatUser?.notifications ?? false,
-        notifications_sound: existingChatUser?.notifications_sound ?? true,
-        notifications_toast: existingChatUser?.notifications_toast ?? true,
-        notifications_browser: existingChatUser?.notifications_browser ?? true,
-        notifications_push: existingChatUser?.notifications_push ?? true,
-        notifications_status_update:
-          existingChatUser?.notifications_status_update ?? true,
-        notifications_status_queue:
-          existingChatUser?.notifications_status_queue ?? false,
-        notifications_status_in_chat:
-          existingChatUser?.notifications_status_in_chat ?? true,
-        notifications_status_chatbot:
-          existingChatUser?.notifications_status_chatbot ?? false,
-        notifications_internal_chat:
-          existingChatUser?.notifications_internal_chat ?? true,
-        notifications_internal_chat_direct:
-          existingChatUser?.notifications_internal_chat_direct ?? true,
-        notifications_internal_chat_group:
-          existingChatUser?.notifications_internal_chat_group ?? true,
-        notifications_internal_chat_sound:
-          existingChatUser?.notifications_internal_chat_sound ?? true,
-        notifications_internal_chat_toast:
-          existingChatUser?.notifications_internal_chat_toast ?? true,
-        notifications_internal_chat_browser:
-          existingChatUser?.notifications_internal_chat_browser ?? true,
-        notifications_internal_chat_push:
-          existingChatUser?.notifications_internal_chat_push ?? true,
-      };
-
-      setUser({ ...this.user, chat_user: chatUserUpdate });
-      this.user.chat_user = chatUserUpdate as AuthUserResponse['chat_user'];
+      this.patchChatUser(this.user?.chat_user ?? {});
     },
 
     async updateChatUserDebounce() {
@@ -2366,7 +2449,7 @@ export const useChatStore = defineStore('chat', {
         chat_user_id: this.user?.chat_user?.chat_user_id ?? '',
         status: this.user?.chat_user?.status as EChatUserStatus,
         about: this.user?.chat_user?.about ?? '',
-        notifications: this.user?.chat_user?.notifications ?? false,
+        notifications: this.user?.chat_user?.notifications ?? true,
         notifications_sound: this.user?.chat_user?.notifications_sound ?? true,
         notifications_toast: this.user?.chat_user?.notifications_toast ?? true,
         notifications_browser:
@@ -2380,6 +2463,14 @@ export const useChatStore = defineStore('chat', {
           this.user?.chat_user?.notifications_status_in_chat ?? true,
         notifications_status_chatbot:
           this.user?.chat_user?.notifications_status_chatbot ?? false,
+        notifications_message_queue:
+          this.user?.chat_user?.notifications_message_queue ?? false,
+        notifications_message_in_chat:
+          this.user?.chat_user?.notifications_message_in_chat ?? true,
+        notifications_message_chatbot:
+          this.user?.chat_user?.notifications_message_chatbot ?? false,
+        notifications_transfer:
+          this.user?.chat_user?.notifications_transfer ?? true,
         notifications_internal_chat:
           this.user?.chat_user?.notifications_internal_chat ?? true,
         notifications_internal_chat_direct:
@@ -2410,6 +2501,12 @@ export const useChatStore = defineStore('chat', {
           chatUserUpdate.notifications_status_in_chat,
         notifications_status_chatbot:
           chatUserUpdate.notifications_status_chatbot,
+        notifications_message_queue: chatUserUpdate.notifications_message_queue,
+        notifications_message_in_chat:
+          chatUserUpdate.notifications_message_in_chat,
+        notifications_message_chatbot:
+          chatUserUpdate.notifications_message_chatbot,
+        notifications_transfer: chatUserUpdate.notifications_transfer,
       });
     },
 
@@ -3355,71 +3452,9 @@ export const useChatStore = defineStore('chat', {
           return;
         }
 
-        if (this.user?.chat_user) {
-          const updatedChatUser = {
-            ...this.user.chat_user,
-            notifications:
-              input.notifications ?? this.user.chat_user.notifications,
-            notifications_sound:
-              input.notifications_sound ??
-              this.user.chat_user.notifications_sound ??
-              true,
-            notifications_toast:
-              input.notifications_toast ??
-              this.user.chat_user.notifications_toast ??
-              true,
-            notifications_browser:
-              input.notifications_browser ??
-              this.user.chat_user.notifications_browser ??
-              true,
-            notifications_push:
-              input.notifications_push ??
-              this.user.chat_user.notifications_push ??
-              true,
-            notifications_status_update:
-              input.notifications_status_update ??
-              this.user.chat_user.notifications_status_update ??
-              true,
-            notifications_status_queue:
-              input.notifications_status_queue ??
-              this.user.chat_user.notifications_status_queue ??
-              false,
-            notifications_status_in_chat:
-              input.notifications_status_in_chat ??
-              this.user.chat_user.notifications_status_in_chat ??
-              true,
-            notifications_status_chatbot:
-              input.notifications_status_chatbot ??
-              this.user.chat_user.notifications_status_chatbot ??
-              false,
-            sort_by_chat_order:
-              input.sort_by_chat_order ??
-              this.user.chat_user.sort_by_chat_order,
-            sort_in_chat_order:
-              input.sort_in_chat_order ??
-              this.user.chat_user.sort_in_chat_order,
-            sort_by_my_chats_order:
-              input.sort_by_my_chats_order ??
-              this.user.chat_user.sort_by_my_chats_order,
-            sort_my_chats_order:
-              input.sort_my_chats_order ??
-              this.user.chat_user.sort_my_chats_order,
-            sort_by_queue_order:
-              input.sort_by_queue_order ??
-              this.user.chat_user.sort_by_queue_order,
-            sort_queue_order:
-              input.sort_queue_order ?? this.user.chat_user.sort_queue_order,
-            sort_by_chatbot_order:
-              input.sort_by_chatbot_order ??
-              this.user.chat_user.sort_by_chatbot_order,
-            sort_chatbot_order:
-              input.sort_chatbot_order ??
-              this.user.chat_user.sort_chatbot_order,
-          };
-          this.user.chat_user =
-            updatedChatUser as AuthUserResponse['chat_user'];
-          setUser({ ...this.user, chat_user: updatedChatUser });
-        }
+        this.patchChatUser(
+          input as Partial<NonNullable<AuthUserResponse['chat_user']>>
+        );
       } catch {
         this.loading = false;
 
@@ -3427,6 +3462,60 @@ export const useChatStore = defineStore('chat', {
           this.i18n.global.t('chat_config_update_error'),
           EColor.error
         );
+      }
+    },
+
+    async viewNotificationSettings(): Promise<ChatNotificationSettingsData | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<ChatNotificationSettingsResponse['data']>
+        >('/chat/notification-settings');
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          return null;
+        }
+
+        this.patchChatUser(data.data);
+        return data.data;
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('chat_notification_load_error'),
+          EColor.error
+        );
+        return null;
+      }
+    },
+
+    async updateNotificationSettings(
+      input: ChatNotificationSettingsRequest
+    ): Promise<ChatNotificationSettingsData | null> {
+      try {
+        const response = await axios.put<
+          IApiResponse<ChatNotificationSettingsResponse['data']>
+        >('/chat/notification-settings', input);
+
+        const data = response?.data;
+        if (!data?.status || !data.data) {
+          this.showSnackbar(
+            data?.message || this.i18n.global.t('chat_notification_save_error'),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.patchChatUser(data.data);
+        this.showSnackbar(
+          this.i18n.global.t('chat_notification_save_success'),
+          EColor.success
+        );
+        return data.data;
+      } catch {
+        this.showSnackbar(
+          this.i18n.global.t('chat_notification_save_error'),
+          EColor.error
+        );
+        return null;
       }
     },
 

@@ -2,6 +2,8 @@ import { injectable } from 'tsyringe';
 import { listChats } from './methods/listChats';
 import { listKanban } from './methods/listKanban';
 import { updateChatsUser } from './methods/updateChatsUser';
+import { viewNotificationSettings } from './methods/viewNotificationSettings';
+import { updateNotificationSettings } from './methods/updateNotificationSettings';
 import { listMessageChats } from './methods/listMessageChats';
 import { createMessageChats } from './methods/createMessageChats';
 import { viewChatLinkPreview } from './methods/viewChatLinkPreview';
@@ -58,6 +60,8 @@ class ChatController {
   public listKanban = listKanban;
   public listMessageChats = listMessageChats;
   public updateChatsUser = updateChatsUser;
+  public viewNotificationSettings = viewNotificationSettings;
+  public updateNotificationSettings = updateNotificationSettings;
   public createMessageChats = createMessageChats;
   public viewChatLinkPreview = viewChatLinkPreview;
   public reactMessage = reactMessage;

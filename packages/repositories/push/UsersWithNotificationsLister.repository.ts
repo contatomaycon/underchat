@@ -13,7 +13,13 @@ export type ChatNotificationPreferences = {
   notifications_status_queue?: boolean | null;
   notifications_status_in_chat?: boolean | null;
   notifications_status_chatbot?: boolean | null;
+  notifications_message_queue?: boolean | null;
+  notifications_message_in_chat?: boolean | null;
+  notifications_message_chatbot?: boolean | null;
+  notifications_transfer?: boolean | null;
 };
+
+export type ChatNotificationScope = 'message' | 'status';
 
 export type InternalChatNotificationPreferences = {
   notifications_internal_chat?: boolean | null;
@@ -34,7 +40,7 @@ export function isChatbotNotificationStatus(status?: EChatStatus): boolean {
 export function canReceivePushForChatStatus(
   preferences: ChatNotificationPreferences,
   status?: EChatStatus,
-  requireStatusUpdateToggle = false
+  scope: ChatNotificationScope = 'message'
 ): boolean {
   if (preferences.notifications !== true) {
     return false;
@@ -44,23 +50,36 @@ export function canReceivePushForChatStatus(
     return false;
   }
 
-  if (
-    requireStatusUpdateToggle &&
-    preferences.notifications_status_update !== true
-  ) {
-    return false;
+  if (scope === 'status') {
+    if (preferences.notifications_status_update !== true) {
+      return false;
+    }
+
+    if (status === EChatStatus.queue) {
+      return preferences.notifications_status_queue === true;
+    }
+
+    if (status === EChatStatus.in_chat) {
+      return preferences.notifications_status_in_chat === true;
+    }
+
+    if (isChatbotNotificationStatus(status)) {
+      return preferences.notifications_status_chatbot === true;
+    }
+
+    return true;
   }
 
   if (status === EChatStatus.queue) {
-    return preferences.notifications_status_queue === true;
+    return preferences.notifications_message_queue === true;
   }
 
   if (status === EChatStatus.in_chat) {
-    return preferences.notifications_status_in_chat === true;
+    return preferences.notifications_message_in_chat === true;
   }
 
   if (isChatbotNotificationStatus(status)) {
-    return preferences.notifications_status_chatbot === true;
+    return preferences.notifications_message_chatbot === true;
   }
 
   return true;
@@ -75,8 +94,17 @@ export class UsersWithNotificationsListerRepository {
   listUsersWithNotifications = async (
     accountId: string,
     status?: EChatStatus,
-    requireStatusUpdateToggle = false
+    scopeOrRequireStatusUpdateToggle:
+      | ChatNotificationScope
+      | boolean = 'message'
   ): Promise<string[]> => {
+    const scope: ChatNotificationScope =
+      scopeOrRequireStatusUpdateToggle === true
+        ? 'status'
+        : scopeOrRequireStatusUpdateToggle === false
+          ? 'message'
+          : scopeOrRequireStatusUpdateToggle;
+
     let whereClause = and(
       eq(user.account_id, accountId),
       eq(chatUser.notifications, true),
@@ -85,33 +113,36 @@ export class UsersWithNotificationsListerRepository {
     );
 
     if (status === EChatStatus.queue) {
-      whereClause = requireStatusUpdateToggle
-        ? and(
-            whereClause,
-            eq(chatUser.notifications_status_update, true),
-            eq(chatUser.notifications_status_queue, true)
-          )
-        : and(whereClause, eq(chatUser.notifications_status_queue, true));
+      whereClause =
+        scope === 'status'
+          ? and(
+              whereClause,
+              eq(chatUser.notifications_status_update, true),
+              eq(chatUser.notifications_status_queue, true)
+            )
+          : and(whereClause, eq(chatUser.notifications_message_queue, true));
     }
 
     if (status === EChatStatus.in_chat) {
-      whereClause = requireStatusUpdateToggle
-        ? and(
-            whereClause,
-            eq(chatUser.notifications_status_update, true),
-            eq(chatUser.notifications_status_in_chat, true)
-          )
-        : and(whereClause, eq(chatUser.notifications_status_in_chat, true));
+      whereClause =
+        scope === 'status'
+          ? and(
+              whereClause,
+              eq(chatUser.notifications_status_update, true),
+              eq(chatUser.notifications_status_in_chat, true)
+            )
+          : and(whereClause, eq(chatUser.notifications_message_in_chat, true));
     }
 
     if (isChatbotNotificationStatus(status)) {
-      whereClause = requireStatusUpdateToggle
-        ? and(
-            whereClause,
-            eq(chatUser.notifications_status_update, true),
-            eq(chatUser.notifications_status_chatbot, true)
-          )
-        : and(whereClause, eq(chatUser.notifications_status_chatbot, true));
+      whereClause =
+        scope === 'status'
+          ? and(
+              whereClause,
+              eq(chatUser.notifications_status_update, true),
+              eq(chatUser.notifications_status_chatbot, true)
+            )
+          : and(whereClause, eq(chatUser.notifications_message_chatbot, true));
     }
 
     const result = await this.dbRo
@@ -126,6 +157,35 @@ export class UsersWithNotificationsListerRepository {
     if (!result?.length) {
       return [];
     }
+
+    return result.map((row) => row.user_id);
+  };
+
+  listUsersWithTransferNotifications = async (
+    accountId: string,
+    candidateUserIds: string[]
+  ): Promise<string[]> => {
+    if (candidateUserIds.length === 0) {
+      return [];
+    }
+
+    const result = await this.dbRo
+      .select({
+        user_id: user.user_id,
+      })
+      .from(user)
+      .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
+      .where(
+        and(
+          eq(user.account_id, accountId),
+          inArray(user.user_id, candidateUserIds),
+          eq(chatUser.notifications, true),
+          eq(chatUser.notifications_push, true),
+          eq(chatUser.notifications_transfer, true),
+          isNull(user.deleted_at)
+        )
+      )
+      .execute();
 
     return result.map((row) => row.user_id);
   };

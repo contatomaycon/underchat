@@ -16,6 +16,11 @@ export type ChatNotificationToastPayload =
     }
   | {
       id: string;
+      type: 'transfer';
+      chat: IChat;
+    }
+  | {
+      id: string;
       type: 'internal-message';
       message: ListMessagesResponse['data']['results'][number];
     };
@@ -39,6 +44,14 @@ export function useChatNotificationToast() {
     };
   }
 
+  function showTransferToast(chat: IChat) {
+    activeNotification.value = {
+      id: `${chat.chat_id}-transfer`,
+      type: 'transfer',
+      chat,
+    };
+  }
+
   function showInternalMessageToast(
     message: ListMessagesResponse['data']['results'][number]
   ) {
@@ -57,6 +70,7 @@ export function useChatNotificationToast() {
     activeNotification,
     showMessageToast,
     showStatusToast,
+    showTransferToast,
     showInternalMessageToast,
     hideToast,
   };

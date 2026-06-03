@@ -35,6 +35,10 @@ export class ChatUserViewerRepository {
         notifications_status_queue: chatUser.notifications_status_queue,
         notifications_status_in_chat: chatUser.notifications_status_in_chat,
         notifications_status_chatbot: chatUser.notifications_status_chatbot,
+        notifications_message_queue: chatUser.notifications_message_queue,
+        notifications_message_in_chat: chatUser.notifications_message_in_chat,
+        notifications_message_chatbot: chatUser.notifications_message_chatbot,
+        notifications_transfer: chatUser.notifications_transfer,
         notifications_internal_chat: chatUser.notifications_internal_chat,
         notifications_internal_chat_direct:
           chatUser.notifications_internal_chat_direct,

@@ -579,8 +579,7 @@ export class ChatStatusUpdaterUseCase {
     status: EChatStatus,
     t: TFunction<'translation', undefined>,
     accountId: string,
-    chatId: string,
-    originalChat: IChat
+    chatId: string
   ): Promise<IChat> {
     let protocol: string | null = null;
     if (status === EChatStatus.in_chat) {
@@ -848,8 +847,7 @@ export class ChatStatusUpdaterUseCase {
       finalStatus,
       t,
       accountId,
-      params.chat_id,
-      chat
+      params.chat_id
     );
 
     if (
@@ -879,7 +877,8 @@ export class ChatStatusUpdaterUseCase {
     }
 
     if (finalStatus === EChatStatus.closed) {
-      const closureExecutorData = await this.userService.viewUserNamePhoto(userId);
+      const closureExecutorData =
+        await this.userService.viewUserNamePhoto(userId);
 
       const closureActor: IChat['user'] | null = closureExecutorData
         ? {
@@ -954,7 +953,11 @@ export class ChatStatusUpdaterUseCase {
     if (
       hasStatusTransition &&
       (chatWithProtocol.status === EChatStatus.queue ||
-        chatWithProtocol.status === EChatStatus.in_chat)
+        chatWithProtocol.status === EChatStatus.in_chat ||
+        chatWithProtocol.status === EChatStatus.ura ||
+        chatWithProtocol.status === EChatStatus.ura_output ||
+        chatWithProtocol.status === EChatStatus.ura_schedule ||
+        chatWithProtocol.status === EChatStatus.ura_webhook)
     ) {
       await this.pushNotificationService
         .sendNotificationForChatStatusChange(chatWithProtocol)
