@@ -95,6 +95,10 @@ export function isMessageLifecycleDebugEnabled(): boolean {
   return process.env.MESSAGE_LIFECYCLE_DEBUG_ENABLED === 'true';
 }
 
+function isOutboundLifecycleSuccessEnabled(): boolean {
+  return process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED !== 'false';
+}
+
 export function getMessageLifecycleContext():
   | MessageLifecycleContext
   | undefined {
@@ -344,6 +348,14 @@ function shouldRecordLifecycleEvent(event: MessageLifecycleEvent): boolean {
 
   const outcome = normalizeToken(event.outcome);
   if (outcome && EXCEPTION_OUTCOMES.has(outcome)) return true;
+
+  if (
+    isOutboundLifecycleSuccessEnabled() &&
+    (event.stage.startsWith('service.outgoing.') ||
+      event.stage.startsWith('whatsmeow.outgoing.'))
+  ) {
+    return true;
+  }
 
   return eventHasErrorField(event);
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	otellog "go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -96,11 +97,32 @@ func extractIncomingConnectionLifecycleContext(ctx context.Context, cfg Config, 
 
 func startConnectionLifecycleSpan(ctx context.Context, cfg Config, lifecycle connectionLifecycleContext) (context.Context, func(error)) {
 	ctx = contextWithConnectionLifecycle(ctx, lifecycle)
-	return ctx, func(error) {}
+	tracer := otel.Tracer("connection-lifecycle")
+	ctx, span := tracer.Start(
+		ctx,
+		"connection_lifecycle.operation",
+		trace.WithAttributes(
+			attribute.String("connection_lifecycle_id", lifecycle.ConnectionLifecycleID),
+			attribute.String("account_id", lifecycle.AccountID),
+			attribute.String("worker_id", lifecycle.WorkerID),
+			attribute.String("channel_id", lifecycle.ChannelID),
+			attribute.String("worker_type", lifecycle.WorkerType),
+			attribute.String("source_provider", lifecycle.SourceProvider),
+			attribute.String("connection_type", lifecycle.ConnectionType),
+			attribute.String("connection_action", lifecycle.ConnectionAction),
+		),
+	)
+	return ctx, func(err error) {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}
 }
 
 func recordConnectionLifecycle(ctx context.Context, cfg Config, event map[string]any) {
-	if !cfg.ConnectionLifecycleDebugEnabled || !shouldRecordLifecycleDebugEvent(event) {
+	if !cfg.ConnectionLifecycleDebugEnabled || !shouldRecordConnectionLifecycleEvent(event) {
 		return
 	}
 
@@ -125,6 +147,16 @@ func recordConnectionLifecycle(ctx context.Context, cfg Config, event map[string
 	record.SetBody(otellog.StringValue(firstNonEmpty(stringValue(payload["message"]), "Connection lifecycle event")))
 	record.AddAttributes(messageLifecycleAttributes(payload)...)
 	logger.Emit(ctx, record)
+}
+
+func shouldRecordConnectionLifecycleEvent(event map[string]any) bool {
+	if shouldRecordLifecycleDebugEvent(event) {
+		return true
+	}
+	stage := lifecycleToken(event["stage"])
+	return strings.HasPrefix(stage, "connection.whatsmeow.event.keepalive_") ||
+		strings.HasPrefix(stage, "connection.whatsmeow.reconnect.") ||
+		stage == "connection.whatsmeow.client.connect_success"
 }
 
 func normalizeConnectionLifecyclePayload(ctx context.Context, cfg Config, event map[string]any) map[string]any {

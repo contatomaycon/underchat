@@ -170,13 +170,67 @@ func messageLifecycleFromUpsert(cfg Config, upsert *UpsertMessage) messageLifecy
 	}
 }
 
+func messageLifecycleFromChatMessage(cfg Config, data ChatMessage) messageLifecycleContext {
+	accountID := firstNonEmpty(stringValue(data.Account["id"]), cfg.AccountID)
+	workerID := firstNonEmpty(stringValue(data.Worker["id"]), cfg.WorkerID)
+	remoteJID := strings.ToLower(strings.TrimSpace(data.ChatID))
+	remoteJIDAlt := ""
+	messageKeyID := strings.TrimSpace(data.MessageID)
+	if data.MessageKey != nil {
+		remoteJID = strings.ToLower(firstNonEmpty(data.MessageKey.Remote(), remoteJID))
+		remoteJIDAlt = strings.ToLower(firstNonEmpty(data.MessageKey.RemoteJIDAlt, data.MessageKey.RemoteJIDAltC))
+		messageKeyID = firstNonEmpty(strings.TrimSpace(data.MessageKey.ID), messageKeyID)
+	}
+	return messageLifecycleContext{
+		MessageLifecycleID: stableLifecycleID(
+			accountID,
+			workerID,
+			remoteJID,
+			remoteJIDAlt,
+			"1",
+			firstNonEmpty(messageKeyID, data.Hash),
+		),
+		AccountID:      accountID,
+		WorkerID:       workerID,
+		ChannelID:      workerID,
+		SourceProvider: messageLifecycleProvider,
+		MessageKeyID:   messageKeyID,
+		Phone:          firstNonEmpty(lifecyclePhoneFromJID(remoteJID), strings.TrimSpace(data.Phone)),
+		JID:            firstNonLID(remoteJID, remoteJIDAlt),
+		LID:            firstLID(remoteJID, remoteJIDAlt),
+		RemoteJID:      remoteJID,
+		RemoteJIDAlt:   remoteJIDAlt,
+	}
+}
+
 func contextWithMessageLifecycle(ctx context.Context, lifecycle messageLifecycleContext) context.Context {
 	return context.WithValue(ctx, messageLifecycleContextKey{}, lifecycle)
 }
 
 func startMessageLifecycleSpan(ctx context.Context, cfg Config, lifecycle messageLifecycleContext) (context.Context, func(error)) {
 	ctx = contextWithMessageLifecycle(ctx, lifecycle)
-	return ctx, func(error) {}
+	tracer := otel.Tracer("message-lifecycle")
+	ctx, span := tracer.Start(
+		ctx,
+		"message_lifecycle.operation",
+		trace.WithAttributes(
+			attribute.String("message_lifecycle_id", lifecycle.MessageLifecycleID),
+			attribute.String("account_id", lifecycle.AccountID),
+			attribute.String("worker_id", lifecycle.WorkerID),
+			attribute.String("channel_id", lifecycle.ChannelID),
+			attribute.String("source_provider", lifecycle.SourceProvider),
+			attribute.String("message_key_id", lifecycle.MessageKeyID),
+			attribute.String("remote_jid", lifecycle.RemoteJID),
+			attribute.String("remote_jid_alt", lifecycle.RemoteJIDAlt),
+		),
+	)
+	return ctx, func(err error) {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}
 }
 
 func messageLifecycleFromContext(ctx context.Context) (messageLifecycleContext, bool) {
@@ -185,7 +239,7 @@ func messageLifecycleFromContext(ctx context.Context) (messageLifecycleContext, 
 }
 
 func recordMessageLifecycle(ctx context.Context, cfg Config, event map[string]any) {
-	if !cfg.MessageLifecycleDebugEnabled || !shouldRecordLifecycleDebugEvent(event) {
+	if !cfg.MessageLifecycleDebugEnabled || !shouldRecordMessageLifecycleEvent(cfg, event) {
 		return
 	}
 	payload := normalizeMessageLifecyclePayload(ctx, cfg, event)
@@ -209,6 +263,20 @@ func recordMessageLifecycle(ctx context.Context, cfg Config, event map[string]an
 	record.SetBody(otellog.StringValue(firstNonEmpty(stringValue(payload["message"]), "Message lifecycle event")))
 	record.AddAttributes(messageLifecycleAttributes(payload)...)
 	logger.Emit(ctx, record)
+}
+
+func shouldRecordMessageLifecycleEvent(cfg Config, event map[string]any) bool {
+	if shouldRecordLifecycleDebugEvent(event) {
+		return true
+	}
+	if !cfg.MessageLifecycleOutboundSuccessEnabled {
+		return false
+	}
+	stage := lifecycleToken(event["stage"])
+	if strings.HasPrefix(stage, "whatsmeow.outgoing.") || strings.HasPrefix(stage, "service.outgoing.") {
+		return true
+	}
+	return false
 }
 
 func normalizeMessageLifecyclePayload(ctx context.Context, cfg Config, event map[string]any) map[string]any {

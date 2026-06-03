@@ -126,11 +126,12 @@ func (w *Worker) startHTTP() error {
 		writeJSON(resp, http.StatusOK, map[string]any{"status": "ok", "provider": "whatsmeow"})
 	})
 	mux.HandleFunc("/v1/connection/health/check", func(resp http.ResponseWriter, req *http.Request) {
-		if w.whatsapp.IsConnected() {
-			writeJSON(resp, http.StatusOK, map[string]any{"status": "connected"})
+		health := w.whatsapp.ConnectionHealth()
+		if ready, _ := health["ready"].(bool); ready {
+			writeJSON(resp, http.StatusOK, health)
 			return
 		}
-		writeJSON(resp, http.StatusServiceUnavailable, map[string]any{"status": "disconnected"})
+		writeJSON(resp, http.StatusServiceUnavailable, health)
 	})
 	w.httpServer = &http.Server{
 		Addr:              w.cfg.HTTPAddr,
@@ -156,6 +157,7 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 	workerID := w.cfg.WorkerID
 	topics := []string{
 		topicWorkerSendMessage(workerID),
+		topicWorkerSendMessageDLQ(workerID),
 		topicWorkerScheduleSend(workerID),
 		topicWorkerValidatePhone(workerID),
 		topicWorkerNotification(workerID),
@@ -194,7 +196,7 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 	return nil
 }
 
-func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error {
+func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err error) {
 	if statusDelete, ok, err := mapToProfileStatusDeleteMessage(msg.Value); err != nil {
 		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
@@ -221,13 +223,51 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error
 		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
 		return nil
 	}
-	if ok := w.claimMessage(ctx, chatMessageClaimID(data)); !ok {
+
+	lifecycle := messageLifecycleFromChatMessage(w.cfg, data)
+	ctx, finishLifecycleSpan := startMessageLifecycleSpan(ctx, w.cfg, lifecycle)
+	defer func() {
+		finishLifecycleSpan(err)
+	}()
+
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.kafka.received",
+		"decision":     "consume_send_message",
+		"outcome":      "received",
+		"topic":        msg.Topic,
+		"partition":    msg.Partition,
+		"offset":       msg.Offset,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+		"kafka_key":    string(msg.Key),
+	})
+
+	claim, err := w.claimOutboundMessage(ctx, chatMessageClaimID(data), data, msg)
+	if err != nil {
+		return err
+	}
+	if !claim.Acquired {
+		if claim.State == sendIdempotencyStateSucceeded && len(claim.Result) > 0 {
+			return w.publishRecoveredOutboundUpdate(ctx, data, claim, msg)
+		}
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":        "whatsmeow.outgoing.claim.duplicate",
+			"decision":     "claim_message",
+			"outcome":      "skipped",
+			"reason":       "duplicate_message",
+			"claim_id":     claim.ID,
+			"claim_state":  claim.State,
+			"message_id":   data.MessageID,
+			"chat_id":      data.ChatID,
+			"message_type": chatMessageType(data),
+		})
 		return nil
 	}
 	startedAt := time.Now()
 	result, err := w.whatsapp.SendChatMessage(ctx, data)
 	if err != nil {
-		return w.markSendAsNotSent(ctx, data.MessageID, data.ChatID, stringValue(data.Account["id"]), err, sendFailureLogContext{
+		statusErr := w.markSendAsNotSent(ctx, data.MessageID, data.ChatID, stringValue(data.Account["id"]), err, sendFailureLogContext{
 			Topic:        msg.Topic,
 			Partition:    msg.Partition,
 			Offset:       msg.Offset,
@@ -236,7 +276,24 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error
 			SendTimeout:  w.cfg.SendTimeout,
 			HandlerScope: "send_message",
 		})
+		if statusErr != nil {
+			w.completeOutboundClaim(ctx, claim, sendIdempotencyStateAmbiguous, nil, statusErr)
+			_ = w.publishSendDLQ(ctx, msg, data, "status_publish_failed", statusErr)
+			return statusErr
+		}
+		w.completeOutboundClaim(ctx, claim, sendIdempotencyStateFailed, nil, err)
+		return nil
 	}
+	w.completeOutboundClaim(ctx, claim, sendIdempotencyStateSucceeded, result, nil)
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.update.publish.start",
+		"decision":     "publish_update_message",
+		"outcome":      "started",
+		"topic":        topicUpdateMessage,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: result, Data: data}); err != nil {
 		log.Printf(
 			"whatsmeow send update publish failed worker_id=%s source_topic=%s partition=%d offset=%d message_id=%s chat_id=%s message_type=%s topic=%s error=%v",
@@ -250,8 +307,41 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) error
 			topicUpdateMessage,
 			err,
 		)
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":        "whatsmeow.outgoing.update.publish.error",
+			"decision":     "publish_update_message",
+			"outcome":      "error",
+			"reason":       "producer_send_failed",
+			"level":        "error",
+			"topic":        topicUpdateMessage,
+			"message_id":   data.MessageID,
+			"chat_id":      data.ChatID,
+			"message_type": chatMessageType(data),
+			"error":        err.Error(),
+		})
+		_ = w.publishSendDLQ(ctx, msg, data, "update_publish_failed_after_send_ack", err)
 		return err
 	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.update.publish.success",
+		"decision":     "publish_update_message",
+		"outcome":      "success",
+		"topic":        topicUpdateMessage,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.kafka.commit.ready",
+		"decision":     "commit_send_message",
+		"outcome":      "success",
+		"topic":        msg.Topic,
+		"partition":    msg.Partition,
+		"offset":       msg.Offset,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
 	return nil
 }
 
@@ -604,6 +694,295 @@ func (w *Worker) claimMessage(ctx context.Context, messageID string) bool {
 	return acquired
 }
 
+const (
+	sendIdempotencyStateInProgress = "in_progress"
+	sendIdempotencyStateSucceeded  = "succeeded"
+	sendIdempotencyStateFailed     = "failed"
+	sendIdempotencyStateAmbiguous  = "ambiguous"
+)
+
+type outboundSendClaim struct {
+	ID       string
+	Key      string
+	Acquired bool
+	State    string
+	Attempts int
+	Result   map[string]any
+}
+
+type outboundSendClaimRecord struct {
+	State     string         `json:"state"`
+	Attempts  int            `json:"attempts"`
+	Result    map[string]any `json:"result,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	UpdatedAt string         `json:"updated_at"`
+}
+
+func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data ChatMessage, msg kafka.Message) (outboundSendClaim, error) {
+	claimID = strings.TrimSpace(claimID)
+	if claimID == "" || w.redis == nil {
+		return outboundSendClaim{ID: claimID, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: 1}, nil
+	}
+	key := "message-send:idempotency:v2:whatsmeow:" + claimID
+	record := outboundSendClaimRecord{
+		State:     sendIdempotencyStateInProgress,
+		Attempts:  1,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	payload, _ := json.Marshal(record)
+	acquired, err := w.redis.SetNX(ctx, key, payload, w.cfg.SendIdempotencyInProgressTTL).Result()
+	if err != nil {
+		log.Printf("idempotency claim failed: %v", err)
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":      "whatsmeow.outgoing.claim.error",
+			"decision":   "claim_message",
+			"outcome":    "error",
+			"level":      "warn",
+			"reason":     "redis_setnx_failed",
+			"claim_id":   claimID,
+			"message_id": data.MessageID,
+			"chat_id":    data.ChatID,
+			"error":      err.Error(),
+		})
+		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: 1}, nil
+	}
+	if acquired {
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":        "whatsmeow.outgoing.claim.acquired",
+			"decision":     "claim_message",
+			"outcome":      "success",
+			"claim_id":     claimID,
+			"claim_state":  sendIdempotencyStateInProgress,
+			"message_id":   data.MessageID,
+			"chat_id":      data.ChatID,
+			"message_type": chatMessageType(data),
+			"topic":        msg.Topic,
+			"partition":    msg.Partition,
+			"offset":       msg.Offset,
+		})
+		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: 1}, nil
+	}
+
+	raw, err := w.redis.Get(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		_ = w.redis.Set(ctx, key, payload, w.cfg.SendIdempotencyInProgressTTL).Err()
+		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: 1}, nil
+	}
+	if err != nil {
+		log.Printf("idempotency claim read failed: %v", err)
+		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: 1}, nil
+	}
+
+	existing := parseOutboundSendClaimRecord(raw)
+	if existing.State == sendIdempotencyStateFailed {
+		existing.State = sendIdempotencyStateInProgress
+		existing.Attempts++
+		existing.Result = nil
+		existing.Error = ""
+		existing.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		nextPayload, _ := json.Marshal(existing)
+		if err := w.redis.Set(ctx, key, nextPayload, w.cfg.SendIdempotencyInProgressTTL).Err(); err != nil {
+			return outboundSendClaim{}, err
+		}
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":        "whatsmeow.outgoing.claim.reacquired",
+			"decision":     "claim_message",
+			"outcome":      "retrying",
+			"claim_id":     claimID,
+			"claim_state":  existing.State,
+			"attempts":     existing.Attempts,
+			"message_id":   data.MessageID,
+			"chat_id":      data.ChatID,
+			"message_type": chatMessageType(data),
+		})
+		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: existing.Attempts}, nil
+	}
+
+	claim := outboundSendClaim{
+		ID:       claimID,
+		Key:      key,
+		Acquired: false,
+		State:    existing.State,
+		Attempts: existing.Attempts,
+		Result:   existing.Result,
+	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.claim.duplicate",
+		"decision":     "claim_message",
+		"outcome":      "skipped",
+		"reason":       "claim_exists",
+		"claim_id":     claimID,
+		"claim_state":  existing.State,
+		"attempts":     existing.Attempts,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	if existing.State == sendIdempotencyStateSucceeded {
+		return claim, nil
+	}
+	return claim, fmt.Errorf("message send claim is still %s for %s", existing.State, claimID)
+}
+
+func parseOutboundSendClaimRecord(raw string) outboundSendClaimRecord {
+	var record outboundSendClaimRecord
+	if err := json.Unmarshal([]byte(raw), &record); err == nil && record.State != "" {
+		return record
+	}
+	return outboundSendClaimRecord{
+		State:     strings.TrimSpace(raw),
+		Attempts:  1,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func (w *Worker) completeOutboundClaim(ctx context.Context, claim outboundSendClaim, state string, result map[string]any, cause error) {
+	if claim.Key == "" || w.redis == nil {
+		return
+	}
+	record := outboundSendClaimRecord{
+		State:     state,
+		Attempts:  claim.Attempts,
+		Result:    result,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if record.Attempts <= 0 {
+		record.Attempts = 1
+	}
+	if cause != nil {
+		record.Error = cause.Error()
+	}
+	ttl := w.cfg.SendIdempotencyFinalTTL
+	if state == sendIdempotencyStateInProgress || state == sendIdempotencyStateAmbiguous {
+		ttl = w.cfg.SendIdempotencyInProgressTTL
+	}
+	payload, _ := json.Marshal(record)
+	if err := w.redis.Set(ctx, claim.Key, payload, ttl).Err(); err != nil {
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":       "whatsmeow.outgoing.claim.update.error",
+			"decision":    "complete_claim",
+			"outcome":     "error",
+			"level":       "warn",
+			"claim_id":    claim.ID,
+			"claim_state": state,
+			"error":       err.Error(),
+		})
+		return
+	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":       "whatsmeow.outgoing.claim.update.success",
+		"decision":    "complete_claim",
+		"outcome":     "success",
+		"claim_id":    claim.ID,
+		"claim_state": state,
+		"ttl_ms":      ttl.Milliseconds(),
+	})
+}
+
+func (w *Worker) publishRecoveredOutboundUpdate(ctx context.Context, data ChatMessage, claim outboundSendClaim, msg kafka.Message) error {
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.update.recover.start",
+		"decision":     "publish_update_message",
+		"outcome":      "started",
+		"reason":       "idempotent_success_replay",
+		"claim_id":     claim.ID,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: claim.Result, Data: data}); err != nil {
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":        "whatsmeow.outgoing.update.recover.error",
+			"decision":     "publish_update_message",
+			"outcome":      "error",
+			"reason":       "producer_send_failed",
+			"level":        "error",
+			"claim_id":     claim.ID,
+			"message_id":   data.MessageID,
+			"chat_id":      data.ChatID,
+			"message_type": chatMessageType(data),
+			"error":        err.Error(),
+		})
+		return err
+	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.update.recover.success",
+		"decision":     "publish_update_message",
+		"outcome":      "success",
+		"claim_id":     claim.ID,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.kafka.commit.ready",
+		"decision":     "commit_send_message",
+		"outcome":      "success",
+		"topic":        msg.Topic,
+		"partition":    msg.Partition,
+		"offset":       msg.Offset,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	return nil
+}
+
+func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data ChatMessage, reason string, cause error) error {
+	topic := topicWorkerSendMessageDLQ(w.cfg.WorkerID)
+	payload := map[string]any{
+		"worker_id":        w.cfg.WorkerID,
+		"account_id":       firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID),
+		"message_id":       data.MessageID,
+		"chat_id":          data.ChatID,
+		"message_type":     chatMessageType(data),
+		"reason":           reason,
+		"error":            cause.Error(),
+		"source_topic":     msg.Topic,
+		"source_partition": msg.Partition,
+		"source_offset":    msg.Offset,
+		"kafka_key":        string(msg.Key),
+		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
+		"payload":          json.RawMessage(msg.Value),
+	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.dlq.publish.start",
+		"decision":     "publish_dlq",
+		"outcome":      "started",
+		"topic":        topic,
+		"reason":       reason,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	if err := w.kafka.SendJSON(ctx, topic, data.MessageID, payload); err != nil {
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":        "whatsmeow.outgoing.dlq.publish.error",
+			"decision":     "publish_dlq",
+			"outcome":      "error",
+			"reason":       "producer_send_failed",
+			"level":        "error",
+			"topic":        topic,
+			"message_id":   data.MessageID,
+			"chat_id":      data.ChatID,
+			"message_type": chatMessageType(data),
+			"error":        err.Error(),
+		})
+		return err
+	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.dlq.publish.success",
+		"decision":     "publish_dlq",
+		"outcome":      "success",
+		"topic":        topic,
+		"reason":       reason,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	return nil
+}
+
 func chatMessageClaimID(data ChatMessage) string {
 	if hash := strings.TrimSpace(data.Hash); hash != "" {
 		return "hash:" + hash
@@ -666,10 +1045,40 @@ func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accou
 	if strings.TrimSpace(chatID) != "" {
 		update.Key["remoteJid"] = chatID
 	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":      "whatsmeow.outgoing.status_failed.publish.start",
+		"decision":   "publish_failed_status",
+		"outcome":    "started",
+		"topic":      topicUpdateMessageStatus,
+		"message_id": messageID,
+		"chat_id":    chatID,
+		"account_id": accountID,
+	})
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessageStatus, accountID+":"+messageID, update); err != nil {
 		log.Printf("whatsmeow send status publish failed worker_id=%s message_id=%s chat_id=%s account_id=%s topic=%s error=%v", w.cfg.WorkerID, messageID, chatID, accountID, topicUpdateMessageStatus, err)
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":      "whatsmeow.outgoing.status_failed.publish.error",
+			"decision":   "publish_failed_status",
+			"outcome":    "error",
+			"reason":     "producer_send_failed",
+			"level":      "error",
+			"topic":      topicUpdateMessageStatus,
+			"message_id": messageID,
+			"chat_id":    chatID,
+			"account_id": accountID,
+			"error":      err.Error(),
+		})
 		return err
 	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":      "whatsmeow.outgoing.status_failed.publish.success",
+		"decision":   "publish_failed_status",
+		"outcome":    "success",
+		"topic":      topicUpdateMessageStatus,
+		"message_id": messageID,
+		"chat_id":    chatID,
+		"account_id": accountID,
+	})
 	return nil
 }
 

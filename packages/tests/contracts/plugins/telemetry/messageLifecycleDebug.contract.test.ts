@@ -21,12 +21,15 @@ describe('messageLifecycleDebug', () => {
   const previousEnabled = process.env.MESSAGE_LIFECYCLE_DEBUG_ENABLED;
   const previousBodyLimit = process.env.MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT;
   const previousRawLimit = process.env.MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT;
+  const previousOutboundSuccess =
+    process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED;
 
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.MESSAGE_LIFECYCLE_DEBUG_ENABLED;
     delete process.env.MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT;
     delete process.env.MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT;
+    delete process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED;
   });
 
   afterAll(() => {
@@ -44,6 +47,12 @@ describe('messageLifecycleDebug', () => {
       delete process.env.MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT;
     } else {
       process.env.MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT = previousRawLimit;
+    }
+    if (previousOutboundSuccess === undefined) {
+      delete process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED;
+    } else {
+      process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED =
+        previousOutboundSuccess;
     }
   });
 
@@ -127,6 +136,29 @@ describe('messageLifecycleDebug', () => {
       stage: 'test.published',
       decision: 'drop',
       outcome: 'published',
+    });
+
+    expect(mockedLogger.info).not.toHaveBeenCalled();
+  });
+
+  it('emits outbound success events by default and allows disabling them', () => {
+    process.env.MESSAGE_LIFECYCLE_DEBUG_ENABLED = 'true';
+
+    recordMessageLifecycle({
+      stage: 'service.outgoing.kafka.publish.success',
+      decision: 'publish_worker_send_message',
+      outcome: 'success',
+    });
+
+    expect(mockedLogger.info).toHaveBeenCalledTimes(1);
+
+    jest.clearAllMocks();
+    process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED = 'false';
+
+    recordMessageLifecycle({
+      stage: 'service.outgoing.kafka.publish.success',
+      decision: 'publish_worker_send_message',
+      outcome: 'success',
     });
 
     expect(mockedLogger.info).not.toHaveBeenCalled();

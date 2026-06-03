@@ -77,6 +77,32 @@ func TestConnectionLifecycleConfigEnvParse(t *testing.T) {
 	}
 }
 
+func TestOutboundReliabilityConfigDefaults(t *testing.T) {
+	t.Setenv("WORKER_ID", "worker-1")
+	t.Setenv("ACCOUNT_ID", "account-1")
+	t.Setenv("KAFKA_BROKER", "localhost:9092")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.OutboundFailureReconnectThreshold != 3 {
+		t.Fatalf("unexpected reconnect threshold %d", cfg.OutboundFailureReconnectThreshold)
+	}
+	if cfg.OutboundFailureReconnectCooldown.String() != "2m0s" {
+		t.Fatalf("unexpected reconnect cooldown %s", cfg.OutboundFailureReconnectCooldown)
+	}
+	if cfg.SendIdempotencyInProgressTTL.String() != "10m0s" {
+		t.Fatalf("unexpected in-progress ttl %s", cfg.SendIdempotencyInProgressTTL)
+	}
+	if cfg.SendIdempotencyFinalTTL.String() != "24h0m0s" {
+		t.Fatalf("unexpected final ttl %s", cfg.SendIdempotencyFinalTTL)
+	}
+	if !cfg.MessageLifecycleOutboundSuccessEnabled {
+		t.Fatal("expected outbound success lifecycle to be enabled by default")
+	}
+}
+
 func TestLifecycleDebugFiltersOnlyExceptionEvents(t *testing.T) {
 	if shouldRecordLifecycleDebugEvent(map[string]any{
 		"stage":   "test.success",
@@ -109,6 +135,44 @@ func TestLifecycleDebugFiltersOnlyExceptionEvents(t *testing.T) {
 		"error":   "forced error",
 	}) {
 		t.Fatal("expected explicit error lifecycle event to be emitted")
+	}
+}
+
+func TestOutboundLifecycleSuccessFilter(t *testing.T) {
+	cfg := Config{MessageLifecycleOutboundSuccessEnabled: true}
+	if !shouldRecordMessageLifecycleEvent(cfg, map[string]any{
+		"stage":   "whatsmeow.outgoing.send.ack.success",
+		"outcome": "success",
+	}) {
+		t.Fatal("expected outbound success event to be emitted")
+	}
+
+	cfg.MessageLifecycleOutboundSuccessEnabled = false
+	if shouldRecordMessageLifecycleEvent(cfg, map[string]any{
+		"stage":   "whatsmeow.outgoing.send.ack.success",
+		"outcome": "success",
+	}) {
+		t.Fatal("expected outbound success event to be dropped when disabled")
+	}
+}
+
+func TestConnectionHealthReportsDegradedClientMismatch(t *testing.T) {
+	manager := &WhatsAppManager{
+		cfg:       Config{WorkerID: "worker-1", AccountID: "account-1"},
+		connected: true,
+		status:    "connected",
+		code:      CodeConnectionEstablished,
+	}
+
+	health := manager.ConnectionHealth()
+	if health["ready"] != false {
+		t.Fatalf("expected health not ready, got %#v", health)
+	}
+	if health["status"] != "degraded" {
+		t.Fatalf("expected degraded status, got %#v", health["status"])
+	}
+	if health["degraded_reason"] != "client_socket_disconnected" {
+		t.Fatalf("unexpected degraded reason %#v", health["degraded_reason"])
 	}
 }
 

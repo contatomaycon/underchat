@@ -203,10 +203,46 @@ func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, 
 
 			if err := handler(messageCtx, msg); err != nil {
 				log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
+				if isWorkerSendTopic(topic) {
+					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+						"stage":     "whatsmeow.outgoing.kafka.commit.skipped",
+						"decision":  "commit_message",
+						"outcome":   "error",
+						"reason":    "handler_failed",
+						"level":     "error",
+						"topic":     topic,
+						"partition": msg.Partition,
+						"offset":    msg.Offset,
+						"error":     err.Error(),
+					})
+				}
+				continue
 			}
 
 			if err := reader.CommitMessages(ctx, msg); err != nil {
 				log.Printf("kafka commit error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
+				if isWorkerSendTopic(topic) {
+					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+						"stage":     "whatsmeow.outgoing.kafka.commit.error",
+						"decision":  "commit_message",
+						"outcome":   "error",
+						"reason":    "commit_failed",
+						"level":     "error",
+						"topic":     topic,
+						"partition": msg.Partition,
+						"offset":    msg.Offset,
+						"error":     err.Error(),
+					})
+				}
+			} else if isWorkerSendTopic(topic) {
+				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+					"stage":     "whatsmeow.outgoing.kafka.commit.success",
+					"decision":  "commit_message",
+					"outcome":   "success",
+					"topic":     topic,
+					"partition": msg.Partition,
+					"offset":    msg.Offset,
+				})
 			}
 		}
 	}()
@@ -214,8 +250,16 @@ func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, 
 	return nil
 }
 
+func isWorkerSendTopic(topic string) bool {
+	return strings.HasSuffix(topic, ".send.message")
+}
+
 func topicWorkerSendMessage(workerID string) string {
 	return "worker." + workerID + ".send.message"
+}
+
+func topicWorkerSendMessageDLQ(workerID string) string {
+	return "worker." + workerID + ".send.message.dlq"
 }
 
 func topicWorkerScheduleSend(workerID string) string {

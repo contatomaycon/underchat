@@ -46,6 +46,15 @@ type WhatsAppManager struct {
 	code        int
 	rejectCalls bool
 
+	lastKeepAliveAt         time.Time
+	keepAliveFailures       int
+	lastSendAttemptAt       time.Time
+	lastSendSuccessAt       time.Time
+	lastSendErrorAt         time.Time
+	consecutiveSendFailures int
+	degradedReason          string
+	lastOutboundReconnectAt time.Time
+
 	pendingFreshLogin   *freshLoginRequest
 	currentQRCode       string
 	currentPairingCode  string
@@ -145,6 +154,10 @@ func (m *WhatsAppManager) Bootstrap(ctx context.Context) {
 		m.connected = true
 		m.status = "connected"
 		m.code = CodeConnectionEstablished
+		m.lastKeepAliveAt = time.Now()
+		m.keepAliveFailures = 0
+		m.consecutiveSendFailures = 0
+		m.degradedReason = ""
 		m.mu.Unlock()
 		go m.markPresenceAvailable(context.Background(), "bootstrap-already-authenticated")
 		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
@@ -214,6 +227,276 @@ func (m *WhatsAppManager) IsConnected() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.connected
+}
+
+func (m *WhatsAppManager) ConnectionHealth() map[string]any {
+	client := m.getClient()
+	clientConnected := client != nil && client.IsConnected()
+	loggedIn := client != nil && client.IsLoggedIn()
+	hasStoreID := client != nil && client.Store != nil && client.Store.ID != nil
+
+	m.mu.RLock()
+	connectedEvent := m.connected
+	status := m.status
+	lastKeepAliveAt := m.lastKeepAliveAt
+	keepAliveFailures := m.keepAliveFailures
+	lastSendAttemptAt := m.lastSendAttemptAt
+	lastSendSuccessAt := m.lastSendSuccessAt
+	lastSendErrorAt := m.lastSendErrorAt
+	consecutiveSendFailures := m.consecutiveSendFailures
+	degradedReason := m.degradedReason
+	m.mu.RUnlock()
+
+	if degradedReason == "" {
+		switch {
+		case !connectedEvent:
+			degradedReason = "connection_event_disconnected"
+		case !clientConnected:
+			degradedReason = "client_socket_disconnected"
+		case !loggedIn:
+			degradedReason = "client_not_logged_in"
+		case keepAliveFailures > 0:
+			degradedReason = "keepalive_timeout"
+		case consecutiveSendFailures > 0:
+			degradedReason = "outbound_failures"
+		}
+	}
+
+	ready := connectedEvent && clientConnected && loggedIn && keepAliveFailures == 0 && degradedReason == ""
+	healthStatus := "connected"
+	if !ready {
+		if connectedEvent || clientConnected || loggedIn {
+			healthStatus = "degraded"
+		} else {
+			healthStatus = "disconnected"
+		}
+	}
+
+	return map[string]any{
+		"status":                    healthStatus,
+		"ready":                     ready,
+		"connected_event":           connectedEvent,
+		"client_connected":          clientConnected,
+		"logged_in":                 loggedIn,
+		"has_store_id":              hasStoreID,
+		"manager_status":            status,
+		"last_keepalive_at":         healthTime(lastKeepAliveAt),
+		"keepalive_failures":        keepAliveFailures,
+		"last_send_attempt_at":      healthTime(lastSendAttemptAt),
+		"last_send_success_at":      healthTime(lastSendSuccessAt),
+		"last_send_error_at":        healthTime(lastSendErrorAt),
+		"consecutive_send_failures": consecutiveSendFailures,
+		"degraded_reason":           degradedReason,
+	}
+}
+
+func healthTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func (m *WhatsAppManager) recordOutboundAttempt(ctx context.Context, data ChatMessage) {
+	now := time.Now()
+	m.mu.Lock()
+	m.lastSendAttemptAt = now
+	m.mu.Unlock()
+	recordMessageLifecycle(ctx, m.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.send.start",
+		"decision":     "send_chat_message",
+		"outcome":      "started",
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+		"timeout_ms":   m.cfg.SendTimeout.Milliseconds(),
+	})
+}
+
+func (m *WhatsAppManager) recordOutboundSuccess(ctx context.Context, data ChatMessage, elapsed time.Duration, externalID string) {
+	now := time.Now()
+	m.mu.Lock()
+	m.lastSendSuccessAt = now
+	m.consecutiveSendFailures = 0
+	if m.keepAliveFailures == 0 {
+		m.degradedReason = ""
+	}
+	m.mu.Unlock()
+	recordMessageLifecycle(ctx, m.cfg, map[string]any{
+		"stage":               "whatsmeow.outgoing.send.ack.success",
+		"decision":            "send_chat_message",
+		"outcome":             "success",
+		"message_id":          data.MessageID,
+		"chat_id":             data.ChatID,
+		"message_type":        chatMessageType(data),
+		"external_message_id": externalID,
+		"elapsed_ms":          elapsed.Milliseconds(),
+	})
+}
+
+func (m *WhatsAppManager) recordOutboundFailure(ctx context.Context, data ChatMessage, elapsed time.Duration, err error) {
+	now := time.Now()
+	m.mu.Lock()
+	m.lastSendErrorAt = now
+	m.consecutiveSendFailures++
+	failures := m.consecutiveSendFailures
+	m.degradedReason = "outbound_send_failed"
+	m.mu.Unlock()
+
+	recordMessageLifecycle(ctx, m.cfg, map[string]any{
+		"stage":                     "whatsmeow.outgoing.send.error",
+		"decision":                  "send_chat_message",
+		"outcome":                   outboundFailureOutcome(err),
+		"reason":                    "send_message_failed",
+		"level":                     "error",
+		"message_id":                data.MessageID,
+		"chat_id":                   data.ChatID,
+		"message_type":              chatMessageType(data),
+		"elapsed_ms":                elapsed.Milliseconds(),
+		"consecutive_send_failures": failures,
+		"reconnect_threshold":       m.cfg.OutboundFailureReconnectThreshold,
+		"error":                     err.Error(),
+	})
+
+	if failures >= m.cfg.OutboundFailureReconnectThreshold && isOutboundReconnectCandidate(err) {
+		m.triggerConnectionReset(ctx, "outbound_failure_threshold", err)
+	}
+}
+
+func outboundFailureOutcome(err error) string {
+	if err == nil {
+		return "failed"
+	}
+	text := strings.ToLower(err.Error())
+	if strings.Contains(text, "timeout") || strings.Contains(text, "deadline exceeded") {
+		return "timeout"
+	}
+	return "error"
+}
+
+func isOutboundReconnectCandidate(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	for _, token := range []string{
+		"timeout",
+		"deadline exceeded",
+		"disconnected",
+		"not connected",
+		"stream",
+		"websocket",
+		"connection",
+	} {
+		if strings.Contains(text, token) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *WhatsAppManager) recordKeepAliveTimeout(ctx context.Context, event *events.KeepAliveTimeout) {
+	now := time.Now()
+	lastSuccess := event.LastSuccess
+	m.mu.Lock()
+	m.keepAliveFailures = event.ErrorCount
+	m.degradedReason = "keepalive_timeout"
+	m.mu.Unlock()
+	secondsSinceLast := 0
+	if !lastSuccess.IsZero() {
+		secondsSinceLast = int(now.Sub(lastSuccess).Seconds())
+	}
+
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":              "connection.whatsmeow.event.keepalive_timeout",
+		"decision":           "handle_event",
+		"outcome":            "timeout",
+		"level":              "warn",
+		"status":             "degraded",
+		"error_count":        event.ErrorCount,
+		"last_success_at":    healthTime(lastSuccess),
+		"seconds_since_last": secondsSinceLast,
+	})
+
+	if event.ErrorCount >= m.cfg.OutboundFailureReconnectThreshold {
+		m.triggerConnectionReset(ctx, "keepalive_timeout_threshold", fmt.Errorf("keepalive timeout count=%d", event.ErrorCount))
+	}
+}
+
+func (m *WhatsAppManager) recordKeepAliveRestored(ctx context.Context) {
+	now := time.Now()
+	m.mu.Lock()
+	m.keepAliveFailures = 0
+	m.lastKeepAliveAt = now
+	if m.consecutiveSendFailures == 0 {
+		m.degradedReason = ""
+	}
+	m.mu.Unlock()
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":    "connection.whatsmeow.event.keepalive_restored",
+		"decision": "handle_event",
+		"outcome":  "success",
+		"status":   "connected",
+	})
+}
+
+func (m *WhatsAppManager) triggerConnectionReset(ctx context.Context, reason string, cause error) bool {
+	causeMessage := ""
+	if cause != nil {
+		causeMessage = cause.Error()
+	}
+	now := time.Now()
+	m.mu.Lock()
+	if !m.lastOutboundReconnectAt.IsZero() && now.Sub(m.lastOutboundReconnectAt) < m.cfg.OutboundFailureReconnectCooldown {
+		cooldownRemaining := m.cfg.OutboundFailureReconnectCooldown - now.Sub(m.lastOutboundReconnectAt)
+		m.mu.Unlock()
+		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+			"stage":                 "connection.whatsmeow.reconnect.skipped",
+			"decision":              "reset_connection",
+			"outcome":               "skipped",
+			"reason":                "cooldown_active",
+			"trigger":               reason,
+			"cooldown_remaining_ms": cooldownRemaining.Milliseconds(),
+		})
+		return false
+	}
+	m.lastOutboundReconnectAt = now
+	m.degradedReason = reason
+	m.status = "connecting"
+	m.code = CodeAwaitConnection
+	m.mu.Unlock()
+
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":       "connection.whatsmeow.reconnect.start",
+		"decision":    "reset_connection",
+		"outcome":     "started",
+		"level":       "warn",
+		"reason":      reason,
+		"cooldown_ms": m.cfg.OutboundFailureReconnectCooldown.Milliseconds(),
+		"error":       causeMessage,
+	})
+	log.Printf("whatsmeow reconnect requested worker_id=%s reason=%s error=%v", m.cfg.WorkerID, reason, cause)
+	m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
+
+	client := m.getClient()
+	if client == nil {
+		return false
+	}
+	if client.IsConnected() {
+		client.ResetConnection()
+		return true
+	}
+	if client.Store != nil && client.Store.ID != nil {
+		go func() {
+			connectCtx, cancel := context.WithTimeout(context.Background(), m.cfg.WhatsAppConnectTimeout+5*time.Second)
+			defer cancel()
+			if err := m.connectClient(connectCtx, client, "outbound-watchdog"); err != nil {
+				log.Printf("whatsmeow watchdog reconnect failed worker_id=%s error=%v", m.cfg.WorkerID, err)
+			}
+		}()
+		return true
+	}
+	return false
 }
 
 func (m *WhatsAppManager) currentConnectionState() ConnectionState {
@@ -559,6 +842,10 @@ func (m *WhatsAppManager) publishConnectedIfAuthenticated(ctx context.Context, r
 	m.connected = true
 	m.status = "connected"
 	m.code = CodeConnectionEstablished
+	m.lastKeepAliveAt = time.Now()
+	m.keepAliveFailures = 0
+	m.consecutiveSendFailures = 0
+	m.degradedReason = ""
 	m.mu.Unlock()
 	go m.markPresenceAvailable(context.Background(), reason)
 	m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
@@ -1282,6 +1569,10 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.connected = true
 		m.status = "connected"
 		m.code = CodeConnectionEstablished
+		m.lastKeepAliveAt = time.Now()
+		m.keepAliveFailures = 0
+		m.consecutiveSendFailures = 0
+		m.degradedReason = ""
 		m.mu.Unlock()
 		go m.markPresenceAvailable(context.Background(), "connected-event")
 		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
@@ -1309,6 +1600,7 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.connected = false
 		m.status = "disconnected"
 		m.code = CodeConnectionLost
+		m.degradedReason = "disconnected_event"
 		m.mu.Unlock()
 		m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
 	case *events.LoggedOut:
@@ -1330,6 +1622,7 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.connected = false
 		m.status = "disconnected"
 		m.code = CodeLoggedOut
+		m.degradedReason = "logged_out"
 		m.mu.Unlock()
 		m.publishStateDisconnectedByUser(context.Background(), CodeLoggedOut, WorkerStatusDisponible)
 	case *events.ConnectFailure:
@@ -1362,6 +1655,10 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.clearLoginArtifacts()
 		m.clearFreshLoginFallback()
 		m.publishState(context.Background(), "disconnected", CodeConnectionReplaced, WorkerStatusOffline, "", "", false)
+	case *events.KeepAliveTimeout:
+		m.recordKeepAliveTimeout(context.Background(), event)
+	case *events.KeepAliveRestored:
+		m.recordKeepAliveRestored(context.Background())
 	case *events.Message:
 		go m.handleIncomingMessage(context.Background(), event)
 	case *events.HistorySync:

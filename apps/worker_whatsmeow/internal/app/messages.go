@@ -36,7 +36,15 @@ func (e UnsupportedFeatureError) Error() string {
 	return "unsupported_whatsmeow_feature:" + e.Feature
 }
 
-func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage) (map[string]any, error) {
+func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage) (result map[string]any, err error) {
+	startedAt := time.Now()
+	m.recordOutboundAttempt(ctx, data)
+	defer func() {
+		if err != nil {
+			m.recordOutboundFailure(ctx, data, time.Since(startedAt), err)
+		}
+	}()
+
 	opCtx, cancel := m.sendOperationContext(ctx)
 	defer cancel()
 
@@ -59,10 +67,12 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	if err != nil {
 		return nil, err
 	}
+	externalID := string(resp.ID)
+	m.recordOutboundSuccess(ctx, data, time.Since(startedAt), externalID)
 	m.markChatAsReadAppState(opCtx, client, sentChatReadMessageKey(data, target, string(resp.ID)), target, time.Now())
 	return map[string]any{
 		"key": map[string]any{
-			"id":        string(resp.ID),
+			"id":        externalID,
 			"remoteJid": target.String(),
 			"fromMe":    true,
 		},

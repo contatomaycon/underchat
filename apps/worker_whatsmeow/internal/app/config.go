@@ -60,13 +60,19 @@ type Config struct {
 	WhatsAppConnectTimeout time.Duration
 	KafkaPollInterval      time.Duration
 
+	OutboundFailureReconnectThreshold int
+	OutboundFailureReconnectCooldown  time.Duration
+	SendIdempotencyInProgressTTL      time.Duration
+	SendIdempotencyFinalTTL           time.Duration
+
 	HistoryReconciliationEnabled      bool
 	HistoryReconciliationMessageLimit int
 	HistoryReconciliationMaxAge       time.Duration
 
-	MessageLifecycleDebugEnabled   bool
-	MessageLifecycleDebugBodyLimit int
-	MessageLifecycleDebugRawLimit  int
+	MessageLifecycleDebugEnabled           bool
+	MessageLifecycleDebugBodyLimit         int
+	MessageLifecycleDebugRawLimit          int
+	MessageLifecycleOutboundSuccessEnabled bool
 
 	ConnectionLifecycleDebugEnabled    bool
 	ConnectionLifecycleDebugValueLimit int
@@ -117,14 +123,19 @@ func LoadConfig() (Config, error) {
 			"WORKER_WHATSAPP_CONNECT_TIMEOUT",
 			45*time.Second,
 		),
-		KafkaPollInterval:                 250 * time.Millisecond,
-		HistoryReconciliationEnabled:      envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
-		HistoryReconciliationMessageLimit: envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
-		HistoryReconciliationMaxAge:       envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
-		MessageLifecycleDebugEnabled:      envBoolDefault("MESSAGE_LIFECYCLE_DEBUG_ENABLED", false),
-		MessageLifecycleDebugBodyLimit:    envIntDefault("MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT", 500),
-		MessageLifecycleDebugRawLimit:     envIntDefault("MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT", 4000),
-		ConnectionLifecycleDebugEnabled:   envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
+		KafkaPollInterval:                      250 * time.Millisecond,
+		OutboundFailureReconnectThreshold:      envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
+		OutboundFailureReconnectCooldown:       envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
+		SendIdempotencyInProgressTTL:           envDurationDefault("WORKER_SEND_IDEMPOTENCY_IN_PROGRESS_TTL", 10*time.Minute),
+		SendIdempotencyFinalTTL:                envDurationDefault("WORKER_SEND_IDEMPOTENCY_FINAL_TTL", 24*time.Hour),
+		HistoryReconciliationEnabled:           envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
+		HistoryReconciliationMessageLimit:      envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
+		HistoryReconciliationMaxAge:            envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
+		MessageLifecycleDebugEnabled:           envBoolDefault("MESSAGE_LIFECYCLE_DEBUG_ENABLED", false),
+		MessageLifecycleDebugBodyLimit:         envIntDefault("MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT", 500),
+		MessageLifecycleDebugRawLimit:          envIntDefault("MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT", 4000),
+		MessageLifecycleOutboundSuccessEnabled: envBoolDefault("MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED", true),
+		ConnectionLifecycleDebugEnabled:        envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
 		ConnectionLifecycleDebugValueLimit: envIntDefault(
 			"CONNECTION_LIFECYCLE_DEBUG_VALUE_LIMIT",
 			500,
@@ -152,6 +163,18 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.HistoryReconciliationMessageLimit <= 0 {
 		cfg.HistoryReconciliationMessageLimit = 100
+	}
+	if cfg.OutboundFailureReconnectThreshold <= 0 {
+		cfg.OutboundFailureReconnectThreshold = 3
+	}
+	if cfg.OutboundFailureReconnectCooldown <= 0 {
+		cfg.OutboundFailureReconnectCooldown = 2 * time.Minute
+	}
+	if cfg.SendIdempotencyInProgressTTL <= 0 {
+		cfg.SendIdempotencyInProgressTTL = 10 * time.Minute
+	}
+	if cfg.SendIdempotencyFinalTTL <= 0 {
+		cfg.SendIdempotencyFinalTTL = 24 * time.Hour
 	}
 	if cfg.MessageLifecycleDebugBodyLimit <= 0 {
 		cfg.MessageLifecycleDebugBodyLimit = 500
