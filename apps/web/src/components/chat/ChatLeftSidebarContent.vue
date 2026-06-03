@@ -40,6 +40,7 @@ import type { ChatNotificationSettingsRequest } from '@core/schema/chat/notifica
 
 type OpenChatOptions = {
   skipClearSummary?: boolean;
+  fallbackChat?: ListChatsResult;
 };
 
 const emit = defineEmits<{
@@ -876,7 +877,7 @@ const handleDefaultChatClick = (chat: ListChatsResult) => {
     return;
   }
 
-  emit('openChat', chat.chat_id);
+  emit('openChat', chat.chat_id, { fallbackChat: chat });
 };
 
 const handleQueueCardClick = (chat: ListChatsResult, index: number): void => {
@@ -885,7 +886,7 @@ const handleQueueCardClick = (chat: ListChatsResult, index: number): void => {
     return;
   }
 
-  handleQueueClick(chat.chat_id, index);
+  handleQueueClick(chat, index);
 };
 
 const resetBulkTransferForm = () => {
@@ -1133,15 +1134,12 @@ const isQueueChatSelectable = (index: number): boolean => {
   return index === 0;
 };
 
-const handleQueueClick = (
-  chatId: ListChatsResult['chat_id'],
-  index: number
-): void => {
+const handleQueueClick = (chat: ListChatsResult, index: number): void => {
   if (!isQueueChatSelectable(index)) {
     return;
   }
 
-  emit('openChat', chatId);
+  emit('openChat', chat.chat_id, { fallbackChat: chat });
 };
 
 const handleFilterClick = (filter: FilterType) => {
@@ -3302,7 +3300,10 @@ const handleOpenConversation = async () => {
     expandedFilter.value = 'in_chat';
     await loadChatsByFilter();
 
-    emit('openChat', chat.chat_id, { skipClearSummary: true });
+    emit('openChat', chat.chat_id, {
+      skipClearSummary: true,
+      fallbackChat: chat,
+    });
   } catch (error: any) {
     console.error('Error starting chat with contact:', error);
   }

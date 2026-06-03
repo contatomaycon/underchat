@@ -2988,6 +2988,7 @@ const sendMessage = async () => {
 type OpenChatOptions = {
   skipClearSummary?: boolean;
   forceReload?: boolean;
+  fallbackChat?: ListChatsResult;
 };
 
 const resolveRouteChatId = (): string | null => {
@@ -3022,7 +3023,7 @@ const openChat = async (
   }
 
   if (!isSameChat || !chatStore.activeChat) {
-    chatStore.setActiveChat(chatId);
+    chatStore.setActiveChat(chatId, options?.fallbackChat);
   }
 
   if (chatStore.activeChat?.chat_id !== chatId) {
@@ -6069,8 +6070,8 @@ onBeforeUnmount(() => {
     </VNavigationDrawer>
 
     <VMain class="chat-content-container">
-      <template>
-        <div v-if="chatStore.activeChat" class="d-flex flex-column h-100">
+      <div class="chat-main-shell">
+        <div v-if="chatStore.activeChat" class="chat-main-content">
           <div
             class="active-chat-header d-flex align-center text-medium-emphasis bg-surface"
           >
@@ -7252,8 +7253,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          v-if="!chatStore.activeChat"
-          class="d-flex h-100 align-center justify-center flex-column"
+          v-else
+          class="chat-empty-state d-flex align-center justify-center flex-column"
         >
           <VAvatar size="98" variant="tonal" color="primary" class="mb-4">
             <VIcon size="50" class="rounded-0" icon="tabler-message-2" />
@@ -7274,7 +7275,7 @@ onBeforeUnmount(() => {
             {{ $t('select_a_contact') }}
           </p>
         </div>
-      </template>
+      </div>
     </VMain>
   </VLayout>
 
@@ -8046,6 +8047,9 @@ $chat-app-header-height: 76px;
 
 .chat-app-layout {
   border-radius: vuetify.$card-border-radius;
+  block-size: 100%;
+  min-block-size: 100%;
+  overflow: hidden;
   @include mixins.elevation(vuetify.$card-elevation);
   $sel-chat-app-layout: &;
 
@@ -8145,7 +8149,29 @@ $chat-app-header-height: 76px;
 }
 
 .chat-content-container {
+  block-size: 100%;
   background-color: v-bind(chatContentContainerBg);
+  min-block-size: 0;
+
+  .chat-main-shell {
+    display: flex;
+    flex-direction: column;
+    inline-size: 100%;
+    block-size: 100%;
+    min-block-size: 0;
+  }
+
+  .chat-main-content {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+  }
+
+  .chat-empty-state {
+    block-size: 100%;
+    min-block-size: 360px;
+  }
 
   .chat-composer-divider {
     flex: 0 0 auto;
