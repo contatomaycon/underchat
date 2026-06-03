@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableWithoutFeedback,
@@ -39,6 +40,13 @@ import {
 import { teardownMobileSession } from '../utils/sessionTeardown';
 import { useChannelStatus } from '../context/ChannelStatusContext';
 import { addSessionUpdatedListener } from '../utils/appResumeBus';
+import {
+  disableBiometricLogin,
+  enableBiometricLogin,
+  getBiometricCapability,
+  isBiometricLoginEnabled,
+  type BiometricCapability,
+} from '../utils/biometricAuth';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb' | 'away' | 'offline';
 type PhotoPickerSource = 'camera' | 'gallery';
@@ -154,6 +162,32 @@ function readUserProfile(user: unknown): {
     about: readString(chatUser.about) ?? '',
     status: normalizeStatus(chatUser.status),
   };
+}
+
+function getBiometricSettingsDescription(
+  capability: BiometricCapability | null
+): string {
+  if (!capability) {
+    return pt.biometric_login_description;
+  }
+
+  if (capability.available) {
+    return `Use ${capability.label} para desbloquear sua sessão salva.`;
+  }
+
+  if (capability.reason === 'not_enrolled') {
+    return 'Cadastre Face ID, Touch ID ou fingerprint no aparelho para ativar.';
+  }
+
+  if (capability.reason === 'no_hardware') {
+    return 'Este aparelho não possui biometria disponível.';
+  }
+
+  if (capability.reason === 'unsupported_platform') {
+    return 'Disponível apenas no app Android ou iOS.';
+  }
+
+  return 'Biometria indisponível neste aparelho.';
 }
 
 const CHANNEL_STATUS_COLORS: Record<string, string> = {
@@ -366,6 +400,10 @@ export function UserSidebar({
   const [photoLoading, setPhotoLoading] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [photoModalVisible, setPhotoModalVisible] = useState(false);
+  const [biometricCapability, setBiometricCapability] =
+    useState<BiometricCapability | null>(null);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
 
   const lastSyncedAboutRef = useRef('');
   const aboutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -386,6 +424,20 @@ export function UserSidebar({
     const selected = STATUS_OPTIONS.find((item) => item.value === status);
     return selected?.label ?? pt.online;
   }, [status]);
+  const biometricDescription = useMemo(
+    () => getBiometricSettingsDescription(biometricCapability),
+    [biometricCapability]
+  );
+  const biometricAvailable = biometricCapability?.available === true;
+
+  const loadBiometricSettings = useCallback(async (): Promise<void> => {
+    const [capability, enabled] = await Promise.all([
+      getBiometricCapability(),
+      isBiometricLoginEnabled(),
+    ]);
+    setBiometricCapability(capability);
+    setBiometricEnabled(enabled);
+  }, []);
 
   const persistProfile = useCallback(
     async (input?: {
@@ -438,6 +490,7 @@ export function UserSidebar({
       setStatusSaving(false);
       setAboutSaving(false);
       setPhotoLoading(false);
+      setBiometricLoading(false);
       if (aboutTimerRef.current) {
         clearTimeout(aboutTimerRef.current);
         aboutTimerRef.current = null;
@@ -447,6 +500,10 @@ export function UserSidebar({
 
     let cancelled = false;
     setLoadingProfile(true);
+    void loadBiometricSettings().catch(() => {
+      setBiometricCapability(null);
+      setBiometricEnabled(false);
+    });
 
     const loadProfile = async () => {
       const permissions = await getPermissions();
@@ -486,7 +543,7 @@ export function UserSidebar({
         aboutTimerRef.current = null;
       }
     };
-  }, [visible]);
+  }, [loadBiometricSettings, visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -685,6 +742,38 @@ export function UserSidebar({
     }
   }, [onProfileUpdated, photo, userId]);
 
+  const handleBiometricToggle = useCallback(
+    async (nextEnabled: boolean) => {
+      if (biometricLoading) {
+        return;
+      }
+
+      setBiometricLoading(true);
+
+      try {
+        if (nextEnabled) {
+          const result = await enableBiometricLogin();
+          if (!result.success) {
+            Alert.alert(pt.error_title, result.message);
+            await loadBiometricSettings();
+            return;
+          }
+
+          setBiometricEnabled(true);
+          Alert.alert(pt.success_title, pt.biometric_login_enabled);
+          return;
+        }
+
+        await disableBiometricLogin();
+        setBiometricEnabled(false);
+        Alert.alert(pt.success_title, pt.biometric_login_disabled);
+      } finally {
+        setBiometricLoading(false);
+      }
+    },
+    [biometricLoading, loadBiometricSettings]
+  );
+
   const handleLogout = useCallback(async () => {
     setLogoutLoading(true);
     await teardownMobileSession({
@@ -867,6 +956,55 @@ export function UserSidebar({
                           ) : null}
                         </View>
                       ) : null}
+
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>{pt.settings}</Text>
+                        <View
+                          style={[
+                            styles.settingRow,
+                            !biometricAvailable &&
+                              !biometricEnabled &&
+                              styles.settingRowDisabled,
+                          ]}
+                        >
+                          <View style={styles.settingIcon}>
+                            <Ionicons
+                              name="finger-print-outline"
+                              size={22}
+                              color={
+                                biometricAvailable
+                                  ? colors.primary
+                                  : colors.grey500
+                              }
+                            />
+                          </View>
+                          <View style={styles.settingText}>
+                            <Text style={styles.settingTitle}>
+                              {pt.biometric_login}
+                            </Text>
+                            <Text style={styles.settingDescription}>
+                              {biometricDescription}
+                            </Text>
+                          </View>
+                          {biometricLoading ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.primary}
+                            />
+                          ) : (
+                            <Switch
+                              value={biometricEnabled}
+                              onValueChange={handleBiometricToggle}
+                              disabled={!biometricAvailable && !biometricEnabled}
+                              trackColor={{
+                                false: colors.grey300,
+                                true: colors.primary,
+                              }}
+                              thumbColor={colors.surface}
+                            />
+                          )}
+                        </View>
+                      </View>
 
                       <ChannelStatusSection />
                     </ScrollView>
@@ -1164,6 +1302,43 @@ const styles = StyleSheet.create({
   inlineLoader: {
     marginTop: 8,
     alignSelf: 'flex-start',
+  },
+  settingRow: {
+    minHeight: 70,
+    borderWidth: 1,
+    borderColor: colors.grey200,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingRowDisabled: {
+    opacity: 0.65,
+  },
+  settingIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.grey100,
+  },
+  settingText: {
+    flex: 1,
+  },
+  settingTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  settingDescription: {
+    marginTop: 2,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.grey600,
   },
   footer: {
     padding: 16,

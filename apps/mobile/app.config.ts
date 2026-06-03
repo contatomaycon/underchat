@@ -8,6 +8,18 @@ function readMapLibreStyleUrl(): string {
   return 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 }
 
+function hasPlugin(
+  plugins: NonNullable<ExpoConfig['plugins']>,
+  pluginName: string
+): boolean {
+  return plugins.some((plugin) => {
+    if (typeof plugin === 'string') {
+      return plugin === pluginName;
+    }
+    return Array.isArray(plugin) && plugin[0] === pluginName;
+  });
+}
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const mapLibreStyleUrl = readMapLibreStyleUrl();
   const baseConfig: ExpoConfig = {
@@ -22,6 +34,25 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     : [];
   if (!plugins.includes('expo-image')) {
     plugins.push('expo-image');
+  }
+  if (!hasPlugin(plugins, 'expo-local-authentication')) {
+    plugins.push([
+      'expo-local-authentication',
+      {
+        faceIDPermission:
+          'O Underchat usa Face ID para desbloquear sua sessão no app.',
+      },
+    ]);
+  }
+  if (!hasPlugin(plugins, 'expo-secure-store')) {
+    plugins.push([
+      'expo-secure-store',
+      {
+        configureAndroidBackup: true,
+        faceIDPermission:
+          'O Underchat usa Face ID para proteger sua sessão salva.',
+      },
+    ]);
   }
   const videoTrimSupportPlugin = './plugins/withVideoTrimSupportModule';
   const hasVideoTrimSupportPlugin = plugins.some((plugin) => {

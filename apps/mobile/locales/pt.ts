@@ -169,6 +169,21 @@ export const pt = {
   notification_enable_error:
     'Não foi possível ativar as notificações neste dispositivo.',
   notification_disable_error: 'Não foi possível desativar as notificações.',
+  biometric_login: 'Login por biometria',
+  biometric_login_description:
+    'Use Face ID, Touch ID ou fingerprint para desbloquear sua sessão salva.',
+  biometric_login_enable_title: 'Ativar login por biometria?',
+  biometric_login_enable_description:
+    'Depois do próximo acesso, você poderá desbloquear o Underchat com a biometria do aparelho.',
+  biometric_login_enable: 'Ativar',
+  biometric_login_not_now: 'Agora não',
+  biometric_login_enabled: 'Login por biometria ativado.',
+  biometric_login_disabled: 'Login por biometria desativado.',
+  biometric_unlock_title: 'Desbloquear Underchat',
+  biometric_unlock_description:
+    'Confirme sua biometria para acessar a sessão salva neste aparelho.',
+  biometric_unlock: 'Desbloquear',
+  biometric_use_password: 'Entrar com email e senha',
   channel_status: 'Status dos Canais',
   channel_online: 'Online',
   channel_offline: 'Offline',

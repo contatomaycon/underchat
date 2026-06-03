@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 import { LoginScreen } from './screens/LoginScreen';
+import { BiometricLockScreen } from './screens/BiometricLockScreen';
 import {
   getToken,
   getPermissions,
@@ -32,7 +33,10 @@ import {
   addAttendanceBlockedListener,
   addAuthUnauthorizedListener,
 } from './utils/authEvents';
-import { teardownMobileSessionOnUnauthorized } from './utils/sessionTeardown';
+import {
+  teardownMobileSession,
+  teardownMobileSessionOnUnauthorized,
+} from './utils/sessionTeardown';
 import {
   cleanupChatSocket,
   initializeChatSocket,
@@ -78,6 +82,7 @@ import {
   getCurrentUserPresenceStatusSnapshot,
 } from './utils/currentUserPresence';
 import type { ChatUserStatus } from './api/chatApi';
+import { unlockBiometricSession } from './utils/biometricAuth';
 
 function getUserAccountId(user: unknown): string | null {
   if (!user || typeof user !== 'object') return null;
@@ -167,6 +172,12 @@ export default function App() {
     string | null
   >(null);
   const [batteryModalVisible, setBatteryModalVisible] = useState(false);
+  const [biometricLocked, setBiometricLocked] = useState(false);
+  const [biometricUnlockError, setBiometricUnlockError] = useState<
+    string | null
+  >(null);
+  const [biometricUnlockLoading, setBiometricUnlockLoading] = useState(false);
+  const [biometricRetryKey, setBiometricRetryKey] = useState(0);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const attendanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attendanceOffsetMsRef = useRef(0);
@@ -191,6 +202,31 @@ export default function App() {
     setCanViewInternalChatTab(false);
     canUpdateOwnStatusRef.current = false;
   }, []);
+
+  const retryBiometricUnlock = useCallback((): void => {
+    setBiometricUnlockLoading(true);
+    setReady(false);
+    setBiometricRetryKey((value) => value + 1);
+  }, []);
+
+  const usePasswordLogin = useCallback((): void => {
+    setBiometricUnlockLoading(true);
+    void teardownMobileSession({
+      notifyPushServer: false,
+      notifyServerLogout: false,
+      emitUnauthorized: true,
+    })
+      .catch(() => {
+        // ignore
+      })
+      .finally(() => {
+        resetAuthAccessState();
+        setBiometricLocked(false);
+        setBiometricUnlockError(null);
+        setBiometricUnlockLoading(false);
+        setReady(true);
+      });
+  }, [resetAuthAccessState]);
 
   const applyAuthAccessState = useCallback(
     (
@@ -436,11 +472,32 @@ export default function App() {
       const token = await getToken();
       if (!token) {
         if (!cancelled) {
+          setBiometricLocked(false);
+          setBiometricUnlockError(null);
+          setBiometricUnlockLoading(false);
           resetAuthAccessState();
           setReady(true);
         }
         return;
       }
+
+      const biometricUnlock = await unlockBiometricSession();
+      if (cancelled) {
+        return;
+      }
+
+      if (!biometricUnlock.success) {
+        resetAuthAccessState();
+        setBiometricLocked(true);
+        setBiometricUnlockError(biometricUnlock.message);
+        setBiometricUnlockLoading(false);
+        setReady(true);
+        return;
+      }
+
+      setBiometricLocked(false);
+      setBiometricUnlockError(null);
+      setBiometricUnlockLoading(false);
 
       const refreshResult = await refreshSessionWithSingleFlight();
 
@@ -507,6 +564,9 @@ export default function App() {
 
     bootstrapSession().catch(() => {
       if (cancelled) return;
+      setBiometricLocked(false);
+      setBiometricUnlockError(null);
+      setBiometricUnlockLoading(false);
       resetAuthAccessState();
       setReady(true);
     });
@@ -514,7 +574,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyAuthAccessState, resetAuthAccessState]);
+  }, [applyAuthAccessState, biometricRetryKey, resetAuthAccessState]);
 
   useEffect(() => {
     authenticatedRef.current = authenticated;
@@ -1062,6 +1122,17 @@ export default function App() {
 
   if (!ready) {
     return null;
+  }
+
+  if (biometricLocked) {
+    return (
+      <BiometricLockScreen
+        error={biometricUnlockError}
+        loading={biometricUnlockLoading}
+        onUnlock={retryBiometricUnlock}
+        onUsePassword={usePasswordLogin}
+      />
+    );
   }
 
   if (!authenticated) {

@@ -1,7 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import type { AuthLoginResponse } from '../api/authApi';
+import { clearBiometricLoginState } from '../utils/biometricAuth';
 
-const TOKEN_KEY = '@underchat_token';
+const LEGACY_TOKEN_KEY = '@underchat_token';
+const SECURE_TOKEN_KEY = 'underchat.auth.token';
 const USER_KEY = '@underchat_user';
 const PERMISSIONS_KEY = '@underchat_permissions';
 const SECTORS_KEY = '@underchat_sectors';
@@ -49,12 +53,73 @@ function normalizeChannels(value: unknown): UserChannel[] {
   return normalized;
 }
 
+function shouldUseSecureTokenStorage(): boolean {
+  return Platform.OS === 'android' || Platform.OS === 'ios';
+}
+
+async function isSecureTokenStorageAvailable(): Promise<boolean> {
+  if (!shouldUseSecureTokenStorage()) {
+    return false;
+  }
+
+  try {
+    return await SecureStore.isAvailableAsync();
+  } catch {
+    return false;
+  }
+}
+
+async function removeSecureToken(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(SECURE_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export async function getToken(): Promise<string | null> {
-  return AsyncStorage.getItem(TOKEN_KEY);
+  const secureStorageAvailable = await isSecureTokenStorageAvailable();
+
+  if (secureStorageAvailable) {
+    const secureToken = await SecureStore.getItemAsync(SECURE_TOKEN_KEY).catch(
+      () => null
+    );
+    if (secureToken) {
+      return secureToken;
+    }
+
+    const legacyToken = await AsyncStorage.getItem(LEGACY_TOKEN_KEY);
+    if (legacyToken) {
+      let migrated = false;
+      try {
+        await SecureStore.setItemAsync(SECURE_TOKEN_KEY, legacyToken);
+        migrated = true;
+      } catch {
+        // Keep the legacy token if secure migration fails.
+      }
+
+      if (migrated) {
+        await AsyncStorage.removeItem(LEGACY_TOKEN_KEY).catch(() => undefined);
+      }
+      return legacyToken;
+    }
+
+    return null;
+  }
+
+  return AsyncStorage.getItem(LEGACY_TOKEN_KEY);
 }
 
 export async function setToken(token: string): Promise<void> {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
+  const secureStorageAvailable = await isSecureTokenStorageAvailable();
+
+  if (secureStorageAvailable) {
+    await SecureStore.setItemAsync(SECURE_TOKEN_KEY, token);
+    await AsyncStorage.removeItem(LEGACY_TOKEN_KEY).catch(() => undefined);
+    return;
+  }
+
+  await AsyncStorage.setItem(LEGACY_TOKEN_KEY, token);
 }
 
 export async function getUser(): Promise<AuthLoginResponse['user'] | null> {
@@ -180,11 +245,13 @@ export async function persistAuthSession(
 
 export async function clearAuth(): Promise<void> {
   await Promise.all([
-    AsyncStorage.removeItem(TOKEN_KEY),
+    removeSecureToken(),
+    AsyncStorage.removeItem(LEGACY_TOKEN_KEY),
     AsyncStorage.removeItem(USER_KEY),
     AsyncStorage.removeItem(PERMISSIONS_KEY),
     AsyncStorage.removeItem(SECTORS_KEY),
     AsyncStorage.removeItem(CHANNELS_KEY),
     AsyncStorage.removeItem(PLAN_PRODUCTS_KEY),
+    clearBiometricLoginState(),
   ]);
 }

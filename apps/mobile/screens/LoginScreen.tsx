@@ -10,6 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableWithoutFeedback,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +24,11 @@ import {
   dismissKeyboardAnd,
   keyboardAvoidingBehavior,
 } from '../utils/keyboard';
+import {
+  enableBiometricLogin,
+  setBiometricPromptDismissed,
+  shouldOfferBiometricLogin,
+} from '../utils/biometricAuth';
 
 const APP_TITLE = pt.app_title;
 
@@ -45,6 +51,43 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
     if (!initialError) return;
     setError(initialError);
   }, [initialError]);
+
+  const offerBiometricLogin = async () => {
+    const shouldOffer = await shouldOfferBiometricLogin().catch(() => false);
+    if (!shouldOffer) {
+      return;
+    }
+
+    Alert.alert(
+      pt.biometric_login_enable_title,
+      pt.biometric_login_enable_description,
+      [
+        {
+          text: pt.biometric_login_not_now,
+          style: 'cancel',
+          onPress: () => {
+            void setBiometricPromptDismissed(true);
+          },
+        },
+        {
+          text: pt.biometric_login_enable,
+          onPress: () => {
+            void enableBiometricLogin().then((result) => {
+              if (!result.success) {
+                Alert.alert(pt.error_title, result.message);
+              }
+            });
+          },
+        },
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => {
+          void setBiometricPromptDismissed(true);
+        },
+      }
+    );
+  };
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -90,6 +133,7 @@ export function LoginScreen({ onLoginSuccess, initialError = null }: Props) {
         channels,
         plan_products: planProducts,
       });
+      void offerBiometricLogin();
       onLoginSuccess();
       return;
     }

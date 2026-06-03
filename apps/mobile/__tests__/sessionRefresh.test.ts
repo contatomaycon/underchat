@@ -6,7 +6,27 @@ const mockStorage = {
   removeItem: jest.fn(),
 };
 
+const mockSecureStore = {
+  isAvailableAsync: jest.fn(),
+  getItemAsync: jest.fn(),
+  setItemAsync: jest.fn(),
+  deleteItemAsync: jest.fn(),
+  canUseBiometricAuthentication: jest.fn(),
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
+};
+
 jest.mock('@react-native-async-storage/async-storage', () => mockStorage);
+jest.mock('expo-secure-store', () => mockSecureStore);
+jest.mock('expo-local-authentication', () => ({
+  AuthenticationType: {
+    FINGERPRINT: 1,
+    FACIAL_RECOGNITION: 2,
+    IRIS: 3,
+  },
+}));
+jest.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+}));
 jest.mock('../config', () => ({ BACKEND_URL: 'https://api.test' }));
 
 const fetchMock = jest.fn();
@@ -54,11 +74,21 @@ describe('mobile sessionRefresh', () => {
     mockStorage.getItem.mockReset();
     mockStorage.setItem.mockReset();
     mockStorage.removeItem.mockReset();
+    mockStorage.setItem.mockResolvedValue(undefined as never);
+    mockStorage.removeItem.mockResolvedValue(undefined as never);
+    mockSecureStore.isAvailableAsync.mockReset();
+    mockSecureStore.getItemAsync.mockReset();
+    mockSecureStore.setItemAsync.mockReset();
+    mockSecureStore.deleteItemAsync.mockReset();
+    mockSecureStore.canUseBiometricAuthentication.mockReset();
+    mockSecureStore.isAvailableAsync.mockResolvedValue(true as never);
+    mockSecureStore.getItemAsync.mockResolvedValue('old-token' as never);
+    mockSecureStore.setItemAsync.mockResolvedValue(undefined as never);
+    mockSecureStore.deleteItemAsync.mockResolvedValue(undefined as never);
     fetchMock.mockReset();
   });
 
   it('persists the complete refreshed session snapshot', async () => {
-    mockStorage.getItem.mockResolvedValue('old-token' as never);
     fetchMock.mockResolvedValue(
       response(200, {
         status: true,
@@ -82,8 +112,8 @@ describe('mobile sessionRefresh', () => {
         }),
       })
     );
-    expect(mockStorage.setItem).toHaveBeenCalledWith(
-      '@underchat_token',
+    expect(mockSecureStore.setItemAsync).toHaveBeenCalledWith(
+      'underchat.auth.token',
       'new-token'
     );
     expect(mockStorage.setItem).toHaveBeenCalledWith(
@@ -101,7 +131,6 @@ describe('mobile sessionRefresh', () => {
   });
 
   it('returns unauthorized without persisting on 401', async () => {
-    mockStorage.getItem.mockResolvedValue('old-token' as never);
     fetchMock.mockResolvedValue(
       response(401, {
         status: false,
@@ -124,7 +153,6 @@ describe('mobile sessionRefresh', () => {
   });
 
   it('returns network_error without clearing the cached session', async () => {
-    mockStorage.getItem.mockResolvedValue('old-token' as never);
     fetchMock.mockRejectedValue(new Error('offline') as never);
 
     const { refreshSessionWithSingleFlight } =
