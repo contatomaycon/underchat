@@ -6591,7 +6591,8 @@ onBeforeUnmount(async () => {
                           />
                           <UploadProgressBadge
                             v-if="shouldShowUploadProgressBadge(message)"
-                            class="internal-chat-upload-progress-overlay"
+                            class="internal-chat-upload-progress-overlay internal-chat-upload-progress-overlay--video"
+                            :size="22"
                             :progress="resolveMessageUploadProgress(message)"
                             :status="resolveMessageUploadStatus(message)"
                           />
@@ -6740,6 +6741,7 @@ onBeforeUnmount(async () => {
                           <UploadProgressBadge
                             v-if="shouldShowUploadProgressBadge(message)"
                             class="internal-chat-upload-progress-overlay internal-chat-upload-progress-overlay--audio"
+                            :size="22"
                             :progress="resolveMessageUploadProgress(message)"
                             :status="resolveMessageUploadStatus(message)"
                           />
@@ -6830,6 +6832,7 @@ onBeforeUnmount(async () => {
                             <UploadProgressBadge
                               v-if="shouldShowUploadProgressBadge(message)"
                               class="internal-chat-upload-progress-overlay internal-chat-upload-progress-overlay--document"
+                              :size="22"
                               :progress="resolveMessageUploadProgress(message)"
                               :status="resolveMessageUploadStatus(message)"
                             />
@@ -7203,6 +7206,7 @@ onBeforeUnmount(async () => {
                             <UploadProgressBadge
                               v-if="shouldShowUploadProgressBadge(mediaMessage)"
                               class="internal-chat-upload-progress-overlay internal-chat-upload-progress-overlay--group"
+                              :size="22"
                               :progress="
                                 resolveMessageUploadProgress(mediaMessage)
                               "
@@ -10439,8 +10443,8 @@ onBeforeUnmount(async () => {
 
 .internal-chat-upload-progress-overlay {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 7px;
+  bottom: 7px;
   z-index: 5;
 }
 
@@ -10449,10 +10453,15 @@ onBeforeUnmount(async () => {
   bottom: 6px;
 }
 
+.internal-chat-upload-progress-overlay--video {
+  right: 7px;
+  bottom: 7px;
+}
+
 .internal-chat-upload-progress-overlay--document,
 .internal-chat-upload-progress-overlay--group {
-  right: 8px;
-  bottom: 8px;
+  right: 6px;
+  bottom: 6px;
 }
 
 .internal-chat-document-bubble--left {

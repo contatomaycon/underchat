@@ -1448,11 +1448,13 @@ type InternalAudioCtrl = InternalChatAudioController['actions'];
 function InternalVideoMessagePreview({
   sourceUri,
   thumbnailUri,
+  uploadOverlay,
   onPress,
   onLongPress,
 }: {
   sourceUri: string;
   thumbnailUri: string | null;
+  uploadOverlay?: ReactElement | null;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
@@ -1531,6 +1533,7 @@ function InternalVideoMessagePreview({
       <View style={styles.videoOverlay}>
         <Ionicons name="play-circle" size={48} color="#fff" />
       </View>
+      {uploadOverlay}
     </Pressable>
   );
 }
@@ -1982,11 +1985,15 @@ function InternalMessageContent({
       </View>
     );
   };
-  const renderUploadBadge = (badgeStyle?: StyleProp<ViewStyle>) =>
+  const renderUploadBadge = (
+    badgeStyle?: StyleProp<ViewStyle>,
+    size?: number
+  ) =>
     uploadState ? (
       <UploadProgressBadge
         progress={uploadState.progress}
         status={uploadState.status}
+        size={size}
         style={[styles.uploadProgressBadge, badgeStyle]}
       />
     ) : null;
@@ -2021,17 +2028,20 @@ function InternalMessageContent({
           styles.uploadProgressHost,
         ]}
       >
-        <Pressable
-          onPress={() => onOpenImage(msg)}
-          onLongPress={() => onOpenActions(msg)}
-          delayLongPress={220}
-        >
-          <ExpoImage
-            source={{ uri: imageUri }}
-            style={styles.imageThumb}
-            contentFit="cover"
-          />
-        </Pressable>
+        <View style={styles.uploadProgressHost}>
+          <Pressable
+            onPress={() => onOpenImage(msg)}
+            onLongPress={() => onOpenActions(msg)}
+            delayLongPress={220}
+          >
+            <ExpoImage
+              source={{ uri: imageUri }}
+              style={styles.imageThumb}
+              contentFit="cover"
+            />
+          </Pressable>
+          {renderUploadBadge()}
+        </View>
         {cap ? (
           <WhatsAppFormattedText
             text={cap}
@@ -2039,7 +2049,6 @@ function InternalMessageContent({
             onLinkLongPress={() => onOpenActions(msg)}
           />
         ) : null}
-        {renderUploadBadge()}
       </View>
     );
   }
@@ -2056,6 +2065,7 @@ function InternalMessageContent({
         <InternalVideoMessagePreview
           sourceUri={videoUri}
           thumbnailUri={thumbUri}
+          uploadOverlay={renderUploadBadge(styles.uploadProgressBadgeVideo, 22)}
           onPress={() => onOpenVideo(msg)}
           onLongPress={() => onOpenActions(msg)}
         />
@@ -2067,7 +2077,6 @@ function InternalMessageContent({
             onLinkLongPress={() => onOpenActions(msg)}
           />
         ) : null}
-        {renderUploadBadge()}
       </View>
     );
   }
@@ -2220,7 +2229,7 @@ function InternalMessageContent({
             onLinkLongPress={() => onOpenActions(msg)}
           />
         ) : null}
-        {renderUploadBadge(styles.uploadProgressBadgeAudio)}
+        {renderUploadBadge(styles.uploadProgressBadgeAudio, 22)}
       </View>
     );
   }
@@ -2293,7 +2302,7 @@ function InternalMessageContent({
               color={colors.primary}
             />
           </Pressable>
-          {renderUploadBadge(styles.uploadProgressBadgeDocument)}
+          {renderUploadBadge(styles.uploadProgressBadgeDocument, 22)}
         </View>
         {cap ? (
           <WhatsAppFormattedText
@@ -5260,7 +5269,7 @@ export function InternalChatRoomScreen() {
       >
         {showRecordingComposer ? (
           <View style={styles.recordingComposerWrap}>
-            {isRecordingLocked ? (
+            {isRecordingLocked || !isMicPressActive ? (
               <>
                 <Pressable
                   onPress={() => {
@@ -6751,17 +6760,21 @@ const styles = StyleSheet.create({
   },
   uploadProgressBadge: {
     position: 'absolute',
-    right: 8,
-    bottom: 8,
+    right: 7,
+    bottom: 7,
     zIndex: 20,
   },
   uploadProgressBadgeAudio: {
     right: 6,
     bottom: 6,
   },
+  uploadProgressBadgeVideo: {
+    right: 7,
+    bottom: 7,
+  },
   uploadProgressBadgeDocument: {
-    right: 8,
-    bottom: 8,
+    right: 6,
+    bottom: 6,
   },
   mediaBubbleImage: {
     maxWidth: 210,

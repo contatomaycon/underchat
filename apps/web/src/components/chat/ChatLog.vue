@@ -3850,19 +3850,28 @@ onUnmounted(() => {
                     ]"
                     @click="openImage(item.message)"
                   >
-                    <VImg
-                      :src="item.message.content.image.url"
-                      :aspect-ratio="
-                        item.message.content.image.width &&
-                        item.message.content.image.height
-                          ? item.message.content.image.width /
-                            item.message.content.image.height
-                          : undefined
-                      "
-                      class="image-thumb"
-                      width="120"
-                      cover
-                    />
+                    <div class="image-thumb-frame">
+                      <VImg
+                        :src="item.message.content.image.url"
+                        :aspect-ratio="
+                          item.message.content.image.width &&
+                          item.message.content.image.height
+                            ? item.message.content.image.width /
+                              item.message.content.image.height
+                            : undefined
+                        "
+                        class="image-thumb"
+                        width="120"
+                        cover
+                      />
+                      <UploadProgressBadge
+                        v-if="shouldShowUploadProgressBadge(item.message)"
+                        class="upload-progress-overlay upload-progress-overlay--video"
+                        :size="22"
+                        :progress="getMessageUploadProgress(item.message)"
+                        :status="getMessageUploadStatus(item.message)"
+                      />
+                    </div>
 
                     <div
                       v-if="
@@ -3900,12 +3909,6 @@ onUnmounted(() => {
                         tabler-pin
                       </VIcon>
                     </div>
-                    <UploadProgressBadge
-                      v-if="shouldShowUploadProgressBadge(item.message)"
-                      class="upload-progress-overlay"
-                      :progress="getMessageUploadProgress(item.message)"
-                      :status="getMessageUploadStatus(item.message)"
-                    />
                   </div>
 
                   <div
@@ -3935,6 +3938,13 @@ onUnmounted(() => {
                       <div class="video-play-overlay">
                         <VIcon size="28">tabler-player-play</VIcon>
                       </div>
+                      <UploadProgressBadge
+                        v-if="shouldShowUploadProgressBadge(item.message)"
+                        class="upload-progress-overlay upload-progress-overlay--video"
+                        :size="22"
+                        :progress="getMessageUploadProgress(item.message)"
+                        :status="getMessageUploadStatus(item.message)"
+                      />
                     </div>
                     <div class="video-details">
                       <span class="video-meta text-caption text-disabled">
@@ -3977,12 +3987,6 @@ onUnmounted(() => {
                         tabler-pin
                       </VIcon>
                     </div>
-                    <UploadProgressBadge
-                      v-if="shouldShowUploadProgressBadge(item.message)"
-                      class="upload-progress-overlay"
-                      :progress="getMessageUploadProgress(item.message)"
-                      :status="getMessageUploadStatus(item.message)"
-                    />
                   </div>
 
                   <div
@@ -4012,6 +4016,12 @@ onUnmounted(() => {
                       <div class="video-play-overlay">
                         <VIcon size="28">tabler-player-play</VIcon>
                       </div>
+                      <UploadProgressBadge
+                        v-if="shouldShowUploadProgressBadge(item.message)"
+                        class="upload-progress-overlay"
+                        :progress="getMessageUploadProgress(item.message)"
+                        :status="getMessageUploadStatus(item.message)"
+                      />
                     </div>
                     <div class="video-note-details">
                       <span class="video-meta text-caption text-disabled">
@@ -4054,12 +4064,6 @@ onUnmounted(() => {
                         tabler-pin
                       </VIcon>
                     </div>
-                    <UploadProgressBadge
-                      v-if="shouldShowUploadProgressBadge(item.message)"
-                      class="upload-progress-overlay"
-                      :progress="getMessageUploadProgress(item.message)"
-                      :status="getMessageUploadStatus(item.message)"
-                    />
                   </div>
 
                   <div
@@ -4349,6 +4353,7 @@ onUnmounted(() => {
                     <UploadProgressBadge
                       v-if="shouldShowUploadProgressBadge(item.message)"
                       class="upload-progress-overlay upload-progress-overlay--audio"
+                      :size="22"
                       :progress="getMessageUploadProgress(item.message)"
                       :status="getMessageUploadStatus(item.message)"
                     />
@@ -4753,6 +4758,7 @@ onUnmounted(() => {
                     <UploadProgressBadge
                       v-if="shouldShowUploadProgressBadge(item.message)"
                       class="upload-progress-overlay upload-progress-overlay--document"
+                      :size="22"
                       :progress="getMessageUploadProgress(item.message)"
                       :status="getMessageUploadStatus(item.message)"
                     />
@@ -6134,6 +6140,12 @@ onUnmounted(() => {
         cursor: zoom-in;
         position: relative;
 
+        .image-thumb-frame {
+          position: relative;
+          inline-size: 100%;
+          max-inline-size: 260px;
+        }
+
         .image-thumb {
           border-radius: 8px;
           inline-size: 100%;
@@ -6592,8 +6604,8 @@ onUnmounted(() => {
 
       .upload-progress-overlay {
         position: absolute;
-        right: 8px;
-        bottom: 8px;
+        right: 7px;
+        bottom: 7px;
         z-index: 4;
       }
 
@@ -6602,9 +6614,14 @@ onUnmounted(() => {
         bottom: 6px;
       }
 
+      .upload-progress-overlay--video {
+        right: 7px;
+        bottom: 7px;
+      }
+
       .upload-progress-overlay--document {
-        right: 8px;
-        bottom: 8px;
+        right: 6px;
+        bottom: 6px;
       }
 
       .document-bubble--left {

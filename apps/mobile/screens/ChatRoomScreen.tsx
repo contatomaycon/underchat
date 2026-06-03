@@ -3937,12 +3937,14 @@ function VideoMessagePreview({
   sourceUri,
   thumbnailUri,
   isVideoNote,
+  uploadOverlay,
   onPress,
   onLongPress,
 }: {
   sourceUri: string;
   thumbnailUri: string | null;
   isVideoNote: boolean;
+  uploadOverlay?: ReactElement | null;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
@@ -4031,6 +4033,7 @@ function VideoMessagePreview({
       <View style={styles.videoOverlay}>
         <Ionicons name="play-circle" size={48} color="#fff" />
       </View>
+      {uploadOverlay}
     </Pressable>
   );
 }
@@ -4584,11 +4587,15 @@ function BubbleContent({
       </View>
     );
   };
-  const renderUploadBadge = (badgeStyle?: StyleProp<ViewStyle>) =>
+  const renderUploadBadge = (
+    badgeStyle?: StyleProp<ViewStyle>,
+    size?: number
+  ) =>
     uploadState ? (
       <UploadProgressBadge
         progress={uploadState.progress}
         status={uploadState.status}
+        size={size}
         style={[styles.uploadProgressBadge, badgeStyle]}
       />
     ) : null;
@@ -4670,17 +4677,20 @@ function BubbleContent({
           styles.uploadProgressHost,
         ]}
       >
-        <Pressable
-          onPress={() => onOpenImage(msg, 0)}
-          onLongPress={() => onOpenActions?.(msg)}
-          delayLongPress={220}
-        >
-          <Image
-            source={{ uri: imageUri }}
-            style={styles.imageThumb}
-            resizeMode="cover"
-          />
-        </Pressable>
+        <View style={styles.uploadProgressHost}>
+          <Pressable
+            onPress={() => onOpenImage(msg, 0)}
+            onLongPress={() => onOpenActions?.(msg)}
+            delayLongPress={220}
+          >
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.imageThumb}
+              resizeMode="cover"
+            />
+          </Pressable>
+          {renderUploadBadge()}
+        </View>
         {cap ? (
           <WhatsAppFormattedText
             text={cap}
@@ -4688,7 +4698,6 @@ function BubbleContent({
             onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
-        {renderUploadBadge()}
       </View>
     );
   }
@@ -4713,6 +4722,7 @@ function BubbleContent({
           sourceUri={videoUri}
           thumbnailUri={thumbUri}
           isVideoNote={isVideoNote}
+          uploadOverlay={renderUploadBadge(styles.uploadProgressBadgeVideo, 22)}
           onPress={() => onOpenVideo(msg)}
           onLongPress={() => onOpenActions?.(msg)}
         />
@@ -4724,7 +4734,6 @@ function BubbleContent({
             onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
-        {renderUploadBadge()}
       </View>
     );
   }
@@ -4803,7 +4812,7 @@ function BubbleContent({
               onLinkLongPress={() => onOpenActions?.(msg)}
             />
           ) : null}
-          {renderUploadBadge(styles.uploadProgressBadgeAudio)}
+          {renderUploadBadge(styles.uploadProgressBadgeAudio, 22)}
         </View>
       );
     }
@@ -4948,7 +4957,7 @@ function BubbleContent({
             onLinkLongPress={() => onOpenActions?.(msg)}
           />
         ) : null}
-        {renderUploadBadge(styles.uploadProgressBadgeAudio)}
+        {renderUploadBadge(styles.uploadProgressBadgeAudio, 22)}
       </View>
     );
   }
@@ -5019,7 +5028,7 @@ function BubbleContent({
               color={colors.primary}
             />
           </Pressable>
-          {renderUploadBadge(styles.uploadProgressBadgeDocument)}
+          {renderUploadBadge(styles.uploadProgressBadgeDocument, 22)}
         </View>
         {cap ? (
           <WhatsAppFormattedText
@@ -13800,7 +13809,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         (!canComposeInChat || sending);
       const uploadHash = readNonEmptyString(message.hash);
       const uploadState = uploadHash
-        ? uploadProgressByHash[uploadHash] ?? null
+        ? (uploadProgressByHash[uploadHash] ?? null)
         : null;
 
       return (
@@ -14608,7 +14617,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             >
               {showRecordingComposer ? (
                 <View style={styles.recordingComposerWrap}>
-                  {isRecordingLocked ? (
+                  {isRecordingLocked || !isMicPressActive ? (
                     <>
                       <Pressable
                         style={styles.recordActionBtn}
@@ -17796,17 +17805,21 @@ const styles = StyleSheet.create({
   },
   uploadProgressBadge: {
     position: 'absolute',
-    right: 8,
-    bottom: 8,
+    right: 7,
+    bottom: 7,
     zIndex: 20,
   },
   uploadProgressBadgeAudio: {
     right: 6,
     bottom: 6,
   },
+  uploadProgressBadgeVideo: {
+    right: 7,
+    bottom: 7,
+  },
   uploadProgressBadgeDocument: {
-    right: 8,
-    bottom: 8,
+    right: 6,
+    bottom: 6,
   },
   mediaBubbleImage: {
     maxWidth: 210,

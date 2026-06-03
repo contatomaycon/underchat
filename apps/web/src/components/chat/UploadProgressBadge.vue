@@ -10,7 +10,7 @@ const props = withDefaults(
   {
     progress: 0,
     status: 'uploading',
-    size: 38,
+    size: 24,
   }
 );
 
@@ -23,6 +23,20 @@ const badgeStyle = computed(() => ({
   inlineSize: `${props.size}px`,
   blockSize: `${props.size}px`,
 }));
+
+const strokeWidth = computed(() => (props.size <= 24 ? 2 : 2.25));
+const center = computed(() => props.size / 2);
+const radius = computed(() =>
+  Math.max(0, (props.size - strokeWidth.value - 1) / 2)
+);
+const circumference = computed(() => 2 * Math.PI * radius.value);
+const strokeDashoffset = computed(
+  () =>
+    circumference.value - (normalizedProgress.value / 100) * circumference.value
+);
+const ringTransform = computed(
+  () => `rotate(-90 ${center.value} ${center.value})`
+);
 </script>
 
 <template>
@@ -32,19 +46,37 @@ const badgeStyle = computed(() => ({
     :style="badgeStyle"
     aria-live="polite"
   >
-    <VProgressCircular
-      v-if="status !== 'error'"
-      :model-value="normalizedProgress"
-      :size="size"
-      :width="3"
-      color="primary"
-      bg-color="rgba(255, 255, 255, 0.42)"
+    <svg
+      class="upload-progress-badge__ring"
+      :width="size"
+      :height="size"
+      :viewBox="`0 0 ${size} ${size}`"
+      aria-hidden="true"
     >
-      <span class="upload-progress-badge__label">
-        {{ normalizedProgress }}%
-      </span>
-    </VProgressCircular>
-    <VIcon v-else size="18" color="white">tabler-alert-circle</VIcon>
+      <circle
+        class="upload-progress-badge__track"
+        :class="{ 'upload-progress-badge__track--error': status === 'error' }"
+        :cx="center"
+        :cy="center"
+        :r="radius"
+        :stroke-width="strokeWidth"
+      />
+      <circle
+        class="upload-progress-badge__value"
+        :class="{ 'upload-progress-badge__value--error': status === 'error' }"
+        :cx="center"
+        :cy="center"
+        :r="radius"
+        :stroke-width="strokeWidth"
+        :stroke-dasharray="`${circumference} ${circumference}`"
+        :stroke-dashoffset="status === 'error' ? 0 : strokeDashoffset"
+        :transform="ringTransform"
+      />
+    </svg>
+    <span v-if="status !== 'error'" class="upload-progress-badge__label">
+      {{ normalizedProgress }}%
+    </span>
+    <VIcon v-else size="14" color="error">tabler-alert-circle</VIcon>
   </div>
 </template>
 
@@ -53,23 +85,60 @@ const badgeStyle = computed(() => ({
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  position: relative;
   border-radius: 50%;
-  background: rgba(47, 43, 61, 0.72);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-  color: #fff;
+  background: rgba(var(--v-theme-surface), 0.95);
+  box-shadow: 0 1px 5px rgba(var(--v-theme-on-surface), 0.12);
+  color: rgb(var(--v-theme-primary));
+  overflow: hidden;
   pointer-events: none;
 }
 
 .upload-progress-badge--error {
-  background: rgb(var(--v-theme-error));
+  background: rgba(var(--v-theme-surface), 0.96);
+  color: rgb(var(--v-theme-error));
 }
 
 .upload-progress-badge__label {
-  color: #fff;
-  font-size: 0.625rem;
+  position: relative;
+  z-index: 1;
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.47rem;
   font-weight: 800;
+  letter-spacing: 0;
   line-height: 1;
   text-align: center;
+}
+
+.upload-progress-badge--error .upload-progress-badge__label {
+  color: rgb(var(--v-theme-error));
+}
+
+.upload-progress-badge__ring {
+  position: absolute;
+  inset: 0;
+}
+
+.upload-progress-badge__track,
+.upload-progress-badge__value {
+  fill: none;
+}
+
+.upload-progress-badge__track {
+  stroke: rgba(var(--v-theme-primary), 0.18);
+}
+
+.upload-progress-badge__track--error {
+  stroke: rgba(var(--v-theme-error), 0.2);
+}
+
+.upload-progress-badge__value {
+  stroke: rgb(var(--v-theme-primary));
+  stroke-linecap: round;
+  transition: stroke-dashoffset 160ms ease;
+}
+
+.upload-progress-badge__value--error {
+  stroke: rgb(var(--v-theme-error));
 }
 </style>
