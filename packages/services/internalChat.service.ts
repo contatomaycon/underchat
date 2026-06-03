@@ -1015,6 +1015,21 @@ export class InternalChatService {
     };
   }
 
+  async viewUnreadSummary(
+    accountId: string,
+    userId: string
+  ): Promise<{ unread_count: number }> {
+    const unreadCount =
+      await this.conversationRepository.sumUnreadOpenConversationsForUser(
+        accountId,
+        userId
+      );
+
+    return {
+      unread_count: Math.max(0, Math.trunc(unreadCount)),
+    };
+  }
+
   async listUsers(
     accountId: string,
     userId: string,

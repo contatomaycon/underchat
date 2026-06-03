@@ -14,6 +14,7 @@ import {
   internalChatWritePermissions,
 } from '@/permissions';
 import { listConversationsSchema } from '@core/schema/internalChat/listConversations';
+import { viewInternalChatUnreadSummarySchema } from '@core/schema/internalChat/unreadSummary';
 import { listUsersSchema } from '@core/schema/internalChat/listUsers';
 import { listInternalChatContactsSchema } from '@core/schema/internalChat/listContacts';
 import { openDirectSchema } from '@core/schema/internalChat/openDirect';
@@ -136,6 +137,18 @@ export default function internalChatRoutes(server: FastifyInstance) {
   server.get('/internal-chat/notification-settings', {
     schema: viewInternalChatNotificationSettingsSchema,
     handler: controller.viewNotificationSettings,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, internalChatReadPermissions),
+      planGuard,
+      internalChatProductGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/internal-chat/unread-summary', {
+    schema: viewInternalChatUnreadSummarySchema,
+    handler: controller.viewUnreadSummary,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, internalChatReadPermissions),

@@ -9,6 +9,8 @@ import { useChatSocket } from '@/composables/useChatSocket';
 import { useInternalChatSocket } from '@/composables/useInternalChatSocket';
 import { useInternalChatNotifications } from '@/composables/useInternalChatNotifications';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { useInternalChatStore } from '@/@webcore/stores/internalChat';
+import { useAuthStore } from '@/@webcore/stores/auth';
 import ChatNotificationToast from '@/components/chat/ChatNotificationToast.vue';
 import { useChatNotificationToast } from '@/composables/useChatNotificationToast';
 import { useAttendanceGuardStore } from '@/@webcore/stores/attendanceGuard';
@@ -31,6 +33,8 @@ const configStore = useConfigStore();
 const chatSocket = useChatSocket();
 const internalChatSocket = useInternalChatSocket();
 const chatStore = useChatStore();
+const internalChatStore = useInternalChatStore();
+const authStore = useAuthStore();
 const { activeNotification, hideToast } = useChatNotificationToast();
 const attendanceGuardStore = useAttendanceGuardStore();
 useInternalChatNotifications();
@@ -86,18 +90,21 @@ const hasInternalChatRealtimeAccess = (): boolean => {
 };
 
 watch(
-  () => chatStore.user?.account_id,
-  async (accountId) => {
+  () => [chatStore.user?.account_id, authStore.planIsActive] as const,
+  async ([accountId]) => {
     if (!accountId) {
+      chatStore.resetUnreadSummary();
       await chatSocket.cleanup();
       return;
     }
 
-    if (!hasChatRealtimeAccess()) {
+    if (!authStore.planIsActive || !hasChatRealtimeAccess()) {
+      chatStore.resetUnreadSummary();
       await chatSocket.cleanup();
       return;
     }
 
+    void chatStore.viewUnreadSummary();
     void presenceOnline().catch(() => {});
 
     if (!chatSocket.isInitialized()) {
@@ -108,17 +115,26 @@ watch(
 );
 
 watch(
-  () => chatStore.user?.account_id,
-  async (accountId) => {
+  () =>
+    [
+      chatStore.user?.account_id,
+      authStore.planIsActive,
+      authStore.planProducts.join('|'),
+    ] as const,
+  async ([accountId]) => {
     if (!accountId) {
+      internalChatStore.resetUnreadSummary();
       await internalChatSocket.cleanup();
       return;
     }
 
-    if (!hasInternalChatRealtimeAccess()) {
+    if (!authStore.planIsActive || !hasInternalChatRealtimeAccess()) {
+      internalChatStore.resetUnreadSummary();
       await internalChatSocket.cleanup();
       return;
     }
+
+    void internalChatStore.viewUnreadSummary();
 
     if (!internalChatSocket.isInitialized()) {
       await internalChatSocket.initializeSocket();
@@ -130,21 +146,35 @@ watch(
 onMounted(async () => {
   await attendanceGuardStore.bootstrap();
 
-  if (chatStore.user?.account_id && hasChatRealtimeAccess()) {
+  if (
+    chatStore.user?.account_id &&
+    authStore.planIsActive &&
+    hasChatRealtimeAccess()
+  ) {
+    void chatStore.viewUnreadSummary();
     await chatSocket.initializeSocket();
   } else {
+    chatStore.resetUnreadSummary();
     await chatSocket.cleanup();
   }
 
-  if (chatStore.user?.account_id && hasInternalChatRealtimeAccess()) {
+  if (
+    chatStore.user?.account_id &&
+    authStore.planIsActive &&
+    hasInternalChatRealtimeAccess()
+  ) {
+    void internalChatStore.viewUnreadSummary();
     await internalChatSocket.initializeSocket();
   } else {
+    internalChatStore.resetUnreadSummary();
     await internalChatSocket.cleanup();
   }
 });
 
 onUnmounted(async () => {
   attendanceGuardStore.shutdown();
+  chatStore.resetUnreadSummary();
+  internalChatStore.resetUnreadSummary();
   await chatSocket.cleanup();
   await internalChatSocket.cleanup();
 });

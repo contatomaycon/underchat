@@ -12,16 +12,26 @@ import { HorizontalNavLayout } from '@layouts';
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer';
 import { useLayoutConfigStore } from '@layouts/stores/config';
 import { useAuthStore } from '@/@webcore/stores/auth';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { useInternalChatStore } from '@/@webcore/stores/internalChat';
+import { decorateNavItemsWithUnreadBadges } from '@/navigation/unreadBadges';
 
 const configStore = useLayoutConfigStore();
 const authStore = useAuthStore();
+const chatStore = useChatStore();
+const internalChatStore = useInternalChatStore();
 
 const computedNavItems = computed(() => {
-  return filterNavItemsByPlan(
+  const visibleNavItems = filterNavItemsByPlan(
     navItems,
     authStore.planIsActive,
     authStore.planProducts
   );
+
+  return decorateNavItemsWithUnreadBadges(visibleNavItems, {
+    chat: chatStore.unreadSummaryCount,
+    internalChat: internalChatStore.unreadSummaryCount,
+  });
 });
 </script>
 

@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import { listKanbanSchema } from '@core/schema/chat/listKanban';
+import { viewChatUnreadSummarySchema } from '@core/schema/chat/unreadSummary';
 import ChatController from '@/controllers/chat';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
@@ -118,6 +119,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/notification-settings', {
     schema: viewChatNotificationSettingsSchema,
     handler: chatController.viewNotificationSettings,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/unread-summary', {
+    schema: viewChatUnreadSummarySchema,
+    handler: chatController.viewUnreadSummary,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatReadPermissions),

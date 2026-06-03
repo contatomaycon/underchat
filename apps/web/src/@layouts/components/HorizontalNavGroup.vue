@@ -73,6 +73,13 @@ watch(
       >
         {{ item.title }}
       </Component>
+      <span
+        v-if="item.badgeContent"
+        class="nav-item-badge"
+        :class="item.badgeClass"
+      >
+        {{ item.badgeContent }}
+      </span>
       <Component
         v-bind="layoutConfig.icons.chevronDown"
         :is="layoutConfig.app.iconRenderer || 'div'"

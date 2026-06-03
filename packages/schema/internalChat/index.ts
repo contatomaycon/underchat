@@ -20,6 +20,7 @@ export * from './removeGroupMember';
 export * from './searchMessages';
 export * from './transferLeader';
 export * from './updateGroup';
+export * from './unreadSummary';
 export * from './viewContactPhone';
 export * from './viewConversation';
 export * from './viewLinkPreview';

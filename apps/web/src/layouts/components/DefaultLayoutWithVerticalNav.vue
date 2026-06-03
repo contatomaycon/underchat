@@ -10,15 +10,25 @@ import ChannelStatusBanner from '@/components/ChannelStatusBanner.vue';
 import { VerticalNavLayout } from '@layouts';
 import { useAuthStore } from '@/@webcore/stores/auth';
 import { filterNavItemsByPlan } from '@/navigation/filterByPlan';
+import { decorateNavItemsWithUnreadBadges } from '@/navigation/unreadBadges';
+import { useChatStore } from '@/@webcore/stores/chat';
+import { useInternalChatStore } from '@/@webcore/stores/internalChat';
 
 const authStore = useAuthStore();
+const chatStore = useChatStore();
+const internalChatStore = useInternalChatStore();
 
 const computedNavItems = computed(() => {
-  return filterNavItemsByPlan(
+  const visibleNavItems = filterNavItemsByPlan(
     navItems,
     authStore.planIsActive,
     authStore.planProducts
   );
+
+  return decorateNavItemsWithUnreadBadges(visibleNavItems, {
+    chat: chatStore.unreadSummaryCount,
+    internalChat: internalChatStore.unreadSummaryCount,
+  });
 });
 </script>
 

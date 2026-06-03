@@ -133,6 +133,7 @@ const makeService = (options?: {
     getConversationById: jest.fn().mockResolvedValue(conversation),
     updateConversationLastMessage: jest.fn().mockResolvedValue(undefined),
     applyUnreadOnNewMessage: jest.fn().mockResolvedValue(undefined),
+    sumUnreadOpenConversationsForUser: jest.fn().mockResolvedValue(0),
     listParticipantIds: jest
       .fn()
       .mockResolvedValue(
@@ -230,6 +231,24 @@ const makeService = (options?: {
 describe('InternalChatService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('views unread summary from open conversations for the current user', async () => {
+    const { service, conversationRepository } = makeService();
+
+    conversationRepository.sumUnreadOpenConversationsForUser.mockResolvedValue(
+      9
+    );
+
+    await expect(
+      service.viewUnreadSummary(accountId, memberUserId)
+    ).resolves.toEqual({
+      unread_count: 9,
+    });
+
+    expect(
+      conversationRepository.sumUnreadOpenConversationsForUser
+    ).toHaveBeenCalledWith(accountId, memberUserId);
   });
 
   it('allows the author to edit a text message and publishes a sanitized payload', async () => {

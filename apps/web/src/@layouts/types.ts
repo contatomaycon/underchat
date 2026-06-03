@@ -93,8 +93,8 @@ export interface NavLink
   extends NavLinkProps, Partial<AclProperties>, Partial<PlanProductProperties> {
   title: string;
   icon?: unknown;
-  badgeContent?: string;
-  badgeClass?: string;
+  badgeContent?: string | null;
+  badgeClass?: string | null;
   disable?: boolean;
   exactActive?: boolean;
 }
@@ -104,8 +104,8 @@ export interface NavGroup
   extends Partial<AclProperties>, Partial<PlanProductProperties> {
   title: string;
   icon?: unknown;
-  badgeContent?: string;
-  badgeClass?: string;
+  badgeContent?: string | null;
+  badgeClass?: string | null;
   children: (NavLink | NavGroup)[];
   disable?: boolean;
 }

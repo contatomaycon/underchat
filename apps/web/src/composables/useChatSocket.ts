@@ -272,6 +272,8 @@ const createChatSocket = () => {
       pending.push(...chatMessages);
       evictPendingMessages(chatId, pending);
     }
+
+    chatStore.scheduleUnreadSummaryRefresh();
   };
 
   const flushChatUpdateBatch = (shouldScheduleKanbanRefresh = true) => {
@@ -348,6 +350,8 @@ const createChatSocket = () => {
       pendingUpdates.push(chatData);
       evictPendingChatUpdates(chatId, pendingUpdates);
     }
+
+    chatStore.scheduleUnreadSummaryRefresh();
 
     if (shouldScheduleKanbanRefresh) {
       scheduleKanbanFilteredRefresh();
@@ -513,6 +517,7 @@ const createChatSocket = () => {
               chatStore.activeChat?.chat_id === data.chat_id;
 
             chatStore.addChat(data);
+            chatStore.scheduleUnreadSummaryRefresh();
             scheduleKanbanFilteredRefresh();
 
             if (

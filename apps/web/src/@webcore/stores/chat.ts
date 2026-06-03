@@ -21,6 +21,7 @@ import type {
   ChatNotificationSettingsData,
   ChatNotificationSettingsResponse,
 } from '@core/schema/chat/notificationSettings/response.schema';
+import type { ChatUnreadSummaryData } from '@core/schema/chat/unreadSummary/response.schema';
 import {
   getUser,
   setUser,
@@ -261,6 +262,9 @@ export const useChatStore = defineStore('chat', {
     i18n: getI18n(),
     loading: false,
     loadingChats: false,
+    loadingUnreadSummary: false,
+    unreadSummaryCount: 0,
+    unreadSummaryRefreshTimer: null as ReturnType<typeof setTimeout> | null,
     skipChatStatusEventsUntil: {} as Record<string, number>,
     loadingMoreMessages: false,
     pendingStatusUpdateChatId: null as string | null,
@@ -366,6 +370,59 @@ export const useChatStore = defineStore('chat', {
     },
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+    setUnreadSummaryCount(count: number): void {
+      const normalizedCount = Number.isFinite(count)
+        ? Math.max(0, Math.trunc(count))
+        : 0;
+
+      this.unreadSummaryCount = normalizedCount;
+    },
+    adjustUnreadSummaryCount(delta: number): void {
+      if (!Number.isFinite(delta) || delta === 0) {
+        return;
+      }
+
+      this.setUnreadSummaryCount(this.unreadSummaryCount + delta);
+    },
+    resetUnreadSummary(): void {
+      if (this.unreadSummaryRefreshTimer) {
+        clearTimeout(this.unreadSummaryRefreshTimer);
+        this.unreadSummaryRefreshTimer = null;
+      }
+
+      this.unreadSummaryCount = 0;
+      this.loadingUnreadSummary = false;
+    },
+    scheduleUnreadSummaryRefresh(delayMs = 700): void {
+      if (this.unreadSummaryRefreshTimer) {
+        return;
+      }
+
+      this.unreadSummaryRefreshTimer = setTimeout(() => {
+        this.unreadSummaryRefreshTimer = null;
+        void this.viewUnreadSummary();
+      }, delayMs);
+    },
+    async viewUnreadSummary(): Promise<number> {
+      if (this.loadingUnreadSummary) {
+        return this.unreadSummaryCount;
+      }
+
+      this.loadingUnreadSummary = true;
+
+      try {
+        const response = await axios.get<IApiResponse<ChatUnreadSummaryData>>(
+          '/chat/unread-summary'
+        );
+        this.setUnreadSummaryCount(response.data?.data?.unread_count ?? 0);
+      } catch {
+        // The menu badge is opportunistic; navigation must not be blocked by it.
+      } finally {
+        this.loadingUnreadSummary = false;
+      }
+
+      return this.unreadSummaryCount;
     },
     patchChatUser(input: Partial<NonNullable<AuthUserResponse['chat_user']>>) {
       if (!this.user) return;
@@ -4434,6 +4491,7 @@ export const useChatStore = defineStore('chat', {
       }
 
       const chatId = this.activeChat.chat_id;
+      const previousUnreadCount = this.activeChat.summary?.unread_count ?? 0;
 
       if (this.activeChat.summary) {
         this.activeChat.summary = {
@@ -4456,6 +4514,10 @@ export const useChatStore = defineStore('chat', {
           ...chatInList.summary,
           unread_count: 0,
         };
+      }
+
+      if (previousUnreadCount > 0) {
+        this.adjustUnreadSummaryCount(-previousUnreadCount);
       }
     },
 
@@ -4465,6 +4527,7 @@ export const useChatStore = defineStore('chat', {
       }
 
       const chatId = this.activeChat.chat_id;
+      const previousUnreadCount = this.activeChat.summary?.unread_count ?? 0;
 
       if (this.activeChat.summary) {
         this.activeChat.summary = {
@@ -4487,6 +4550,10 @@ export const useChatStore = defineStore('chat', {
           ...chatInList.summary,
           unread_count: 0,
         };
+      }
+
+      if (previousUnreadCount > 0) {
+        this.adjustUnreadSummaryCount(-previousUnreadCount);
       }
     },
 

@@ -142,17 +142,15 @@ watch(configStore.isVerticalNavMini(isVerticalNavHovered), (val) => {
             {{ item.title }}
           </Component>
 
-          <Component
-            :is="layoutConfig.app.i18n.enable ? 'i18n-t' : 'span'"
-            v-bind="getDynamicI18nProps(item.badgeContent, 'span')"
-            v-show="!hideTitleAndBadge"
+          <span
             v-if="item.badgeContent"
+            v-show="!hideTitleAndBadge"
             key="badge"
             class="nav-item-badge"
             :class="item.badgeClass"
           >
             {{ item.badgeContent }}
-          </Component>
+          </span>
           <Component
             :is="layoutConfig.app.iconRenderer || 'div'"
             v-show="!hideTitleAndBadge"
@@ -161,6 +159,13 @@ watch(configStore.isVerticalNavMini(isVerticalNavHovered), (val) => {
             class="nav-group-arrow"
           />
         </Component>
+        <span
+          v-if="item.badgeContent"
+          v-show="hideTitleAndBadge"
+          class="nav-item-badge nav-item-badge--collapsed-dot"
+          :class="item.badgeClass"
+          aria-hidden="true"
+        />
       </div>
       <TransitionExpand>
         <ul v-show="isGroupOpen" class="nav-group-children">

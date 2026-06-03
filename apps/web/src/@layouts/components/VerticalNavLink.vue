@@ -58,18 +58,23 @@ const hideTitleAndBadge = configStore.isVerticalNavMini();
             {{ item.title }}
           </Component>
 
-          <Component
-            :is="layoutConfig.app.i18n.enable ? 'i18n-t' : 'span'"
+          <span
             v-if="item.badgeContent"
             v-show="!hideTitleAndBadge"
             key="badge"
             class="nav-item-badge"
             :class="item.badgeClass"
-            v-bind="getDynamicI18nProps(item.badgeContent, 'span')"
           >
             {{ item.badgeContent }}
-          </Component>
+          </span>
         </TransitionGroup>
+        <span
+          v-if="item.badgeContent"
+          v-show="hideTitleAndBadge"
+          class="nav-item-badge nav-item-badge--collapsed-dot"
+          :class="item.badgeClass"
+          aria-hidden="true"
+        />
       </Component>
     </li>
   </ul>

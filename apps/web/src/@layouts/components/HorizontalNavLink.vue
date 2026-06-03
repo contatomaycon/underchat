@@ -61,6 +61,13 @@ const props = withDefaults(defineProps<Props>(), {
           >
             {{ item.title }}
           </Component>
+          <span
+            v-if="item.badgeContent"
+            class="nav-item-badge"
+            :class="item.badgeClass"
+          >
+            {{ item.badgeContent }}
+          </span>
         </Component>
       </li>
     </ul>
@@ -106,6 +113,13 @@ const props = withDefaults(defineProps<Props>(), {
         >
           {{ item.title }}
         </Component>
+        <span
+          v-if="item.badgeContent"
+          class="nav-item-badge"
+          :class="item.badgeClass"
+        >
+          {{ item.badgeContent }}
+        </span>
       </Component>
     </li>
   </ul>

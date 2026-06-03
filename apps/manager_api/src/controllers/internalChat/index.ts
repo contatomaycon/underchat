@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
 import { listConversations } from './methods/listConversations';
+import { viewUnreadSummary } from './methods/viewUnreadSummary';
 import { listUsers } from './methods/listUsers';
 import { listContacts } from './methods/listContacts';
 import { openDirect } from './methods/openDirect';
@@ -29,6 +30,7 @@ import { updateNotificationSettings } from './methods/updateNotificationSettings
 @injectable()
 class InternalChatController {
   public listConversations = listConversations;
+  public viewUnreadSummary = viewUnreadSummary;
   public listUsers = listUsers;
   public listContacts = listContacts;
   public openDirect = openDirect;

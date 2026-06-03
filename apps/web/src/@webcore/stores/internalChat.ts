@@ -27,6 +27,7 @@ import type {
   InternalChatNotificationSettingsData,
   InternalChatNotificationSettingsResponse,
 } from '@core/schema/internalChat/notificationSettings/response.schema';
+import type { InternalChatUnreadSummaryData } from '@core/schema/internalChat/unreadSummary/response.schema';
 import { EInternalChatActivityState } from '@core/common/enums/internalChat/EInternalChatActivityState';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
@@ -125,6 +126,8 @@ export const useInternalChatStore = defineStore('internalChat', {
     loadingConversations: false,
     loadingUsers: false,
     loadingMessages: false,
+    loadingUnreadSummary: false,
+    unreadSummaryCount: 0,
     loadingGroupMembers: false,
     sendingMessage: false,
     conversationSearch: '',
@@ -141,6 +144,7 @@ export const useInternalChatStore = defineStore('internalChat', {
     remoteActivities: {} as Record<string, RemoteActivity>,
     localMessageState: {} as Record<string, LocalMessageState>,
     refreshConversationsTimer: null as ReturnType<typeof setTimeout> | null,
+    unreadSummaryRefreshTimer: null as ReturnType<typeof setTimeout> | null,
   }),
   getters: {
     currentUserId: (state): string | null => state.user?.user_id ?? null,
@@ -156,6 +160,64 @@ export const useInternalChatStore = defineStore('internalChat', {
 
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+
+    setUnreadSummaryCount(count: number): void {
+      const normalizedCount = Number.isFinite(count)
+        ? Math.max(0, Math.trunc(count))
+        : 0;
+
+      this.unreadSummaryCount = normalizedCount;
+    },
+
+    adjustUnreadSummaryCount(delta: number): void {
+      if (!Number.isFinite(delta) || delta === 0) {
+        return;
+      }
+
+      this.setUnreadSummaryCount(this.unreadSummaryCount + delta);
+    },
+
+    resetUnreadSummary(): void {
+      if (this.unreadSummaryRefreshTimer) {
+        clearTimeout(this.unreadSummaryRefreshTimer);
+        this.unreadSummaryRefreshTimer = null;
+      }
+
+      this.unreadSummaryCount = 0;
+      this.loadingUnreadSummary = false;
+    },
+
+    scheduleUnreadSummaryRefresh(delayMs = 700): void {
+      if (this.unreadSummaryRefreshTimer) {
+        return;
+      }
+
+      this.unreadSummaryRefreshTimer = setTimeout(() => {
+        this.unreadSummaryRefreshTimer = null;
+        void this.viewUnreadSummary();
+      }, delayMs);
+    },
+
+    async viewUnreadSummary(): Promise<number> {
+      if (this.loadingUnreadSummary) {
+        return this.unreadSummaryCount;
+      }
+
+      this.loadingUnreadSummary = true;
+
+      try {
+        const response = await axios.get<
+          IApiResponse<InternalChatUnreadSummaryData>
+        >('/internal-chat/unread-summary');
+        this.setUnreadSummaryCount(response.data?.data?.unread_count ?? 0);
+      } catch {
+        // The menu badge is opportunistic; navigation must not be blocked by it.
+      } finally {
+        this.loadingUnreadSummary = false;
+      }
+
+      return this.unreadSummaryCount;
     },
 
     patchChatUser(input: Partial<NonNullable<AuthUserResponse['chat_user']>>) {
@@ -795,6 +857,11 @@ export const useInternalChatStore = defineStore('internalChat', {
           return false;
         }
 
+        const closedConversation = this.conversations.find(
+          (item) => item.conversation_id === conversationId
+        );
+        const closedUnreadCount = closedConversation?.unread_count ?? 0;
+
         this.conversations = this.conversations.filter(
           (item) => item.conversation_id !== conversationId
         );
@@ -802,6 +869,10 @@ export const useInternalChatStore = defineStore('internalChat', {
         if (this.activeConversation?.conversation_id === conversationId) {
           this.activeConversation = null;
           this.messages = [];
+        }
+
+        if (closedUnreadCount > 0) {
+          this.adjustUnreadSummaryCount(-closedUnreadCount);
         }
 
         return true;
@@ -835,12 +906,16 @@ export const useInternalChatStore = defineStore('internalChat', {
         const conversation = this.conversations.find(
           (item) => item.conversation_id === conversationId
         );
+        const previousUnreadCount = conversation?.unread_count ?? 0;
 
         if (conversation) {
           conversation.unread_count = 0;
         }
         if (this.activeConversation?.conversation_id === conversationId) {
           this.activeConversation.unread_count = 0;
+        }
+        if (previousUnreadCount > 0) {
+          this.adjustUnreadSummaryCount(-previousUnreadCount);
         }
 
         return true;
@@ -1452,10 +1527,12 @@ export const useInternalChatStore = defineStore('internalChat', {
         const isMessageSync = data.reason === 'message';
 
         if (isMessageSync) {
+          this.scheduleUnreadSummaryRefresh();
           return null;
         }
 
         this.scheduleRefreshConversations();
+        this.scheduleUnreadSummaryRefresh();
         return null;
       }
 
@@ -1507,14 +1584,20 @@ export const useInternalChatStore = defineStore('internalChat', {
         const fromMe =
           !!this.currentUserId && message.user?.id === this.currentUserId;
         if (isActive || fromMe) {
+          const previousUnreadCount = conversation.unread_count ?? 0;
           conversation.unread_count = 0;
+          if (previousUnreadCount > 0) {
+            this.adjustUnreadSummaryCount(-previousUnreadCount);
+          }
         } else {
           conversation.unread_count += 1;
+          this.adjustUnreadSummaryCount(1);
         }
 
         this.sortConversations();
       } else {
         this.scheduleRefreshConversations();
+        this.scheduleUnreadSummaryRefresh();
       }
 
       if (
@@ -1525,6 +1608,7 @@ export const useInternalChatStore = defineStore('internalChat', {
         this.activeConversation.last_message_preview =
           normalizeMessagePreview(message);
         this.activeConversation.is_closed_for_me = false;
+        this.activeConversation.unread_count = 0;
       }
 
       return message;

@@ -966,6 +966,38 @@ export class InternalChatConversationRepository {
     return Number(rows[0]?.total ?? 0);
   }
 
+  async sumUnreadOpenConversationsForUser(
+    accountId: string,
+    userId: string
+  ): Promise<number> {
+    const rows = await this.dbRo
+      .select({
+        unread_count: sql<number>`coalesce(sum(${internalChatConversationParticipant.unread_count}), 0)`,
+      })
+      .from(internalChatConversationParticipant)
+      .innerJoin(
+        internalChatConversation,
+        eq(
+          internalChatConversation.internal_chat_conversation_id,
+          internalChatConversationParticipant.internal_chat_conversation_id
+        )
+      )
+      .where(
+        and(
+          eq(internalChatConversationParticipant.account_id, accountId),
+          eq(internalChatConversationParticipant.user_id, userId),
+          eq(internalChatConversationParticipant.is_active, true),
+          isNull(internalChatConversationParticipant.closed_at),
+          isNull(internalChatConversationParticipant.deleted_at),
+          eq(internalChatConversation.account_id, accountId),
+          isNull(internalChatConversation.deleted_at)
+        )
+      )
+      .execute();
+
+    return Number(rows[0]?.unread_count ?? 0);
+  }
+
   private buildOpenConversationFilters(
     input: IInternalChatListOpenConversationsForUserInput
   ): SQLWrapper[] {
