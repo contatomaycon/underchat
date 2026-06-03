@@ -5623,7 +5623,9 @@ defineExpose({
 }
 
 .chat-section-label {
+  inline-size: 100%;
   min-height: 40px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5649,6 +5651,11 @@ defineExpose({
 }
 
 .chat-list-header {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  min-block-size: auto !important;
+
   .d-flex {
     width: 100%;
   }
