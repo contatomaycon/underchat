@@ -49,6 +49,14 @@ export class PushSubscriptionRegistrarUseCase {
       return { ok: false, reason: 'invalid_payload' };
     }
 
+    if (provider === 'fcm' && input.platform !== 'android') {
+      return { ok: false, reason: 'invalid_payload' };
+    }
+
+    if (provider === 'apns' && input.platform !== 'ios') {
+      return { ok: false, reason: 'invalid_payload' };
+    }
+
     const publicKey =
       provider === 'webpush'
         ? this.pushSubscriptionService.getPublicKey()

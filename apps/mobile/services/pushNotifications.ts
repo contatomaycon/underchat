@@ -10,8 +10,9 @@ import type { ListChatsResult } from '../types/chat';
 import { getToken } from '../storage/authStorage';
 import {
   clearStoredPushSubscription,
-  getStoredPushSubscription,
-  setStoredPushSubscription,
+  getStoredPushSubscriptions,
+  setStoredPushSubscriptions,
+  type StoredPushSubscription,
 } from '../storage/pushStorage';
 
 type PushEnableResult = {
@@ -243,6 +244,37 @@ async function getExpoPushToken(): Promise<string | null> {
   }
 }
 
+function getMobilePushPlatform(): 'ios' | 'android' | null {
+  if (Platform.OS === 'ios' || Platform.OS === 'android') {
+    return Platform.OS;
+  }
+
+  return null;
+}
+
+async function getNativeDevicePushSubscription(): Promise<StoredPushSubscription | null> {
+  const platform = getMobilePushPlatform();
+  if (!platform) {
+    return null;
+  }
+
+  try {
+    const token = await Notifications.getDevicePushTokenAsync();
+    const endpoint = readString(token.data);
+    if (!endpoint) {
+      return null;
+    }
+
+    return {
+      endpoint,
+      provider: platform === 'ios' ? 'apns' : 'fcm',
+    };
+  } catch (err) {
+    console.warn('[Push] Falha ao obter token nativo do dispositivo:', err);
+    return null;
+  }
+}
+
 async function requestPushPermission(): Promise<boolean> {
   const settings = await Notifications.getPermissionsAsync();
   let status = settings.status;
@@ -261,29 +293,37 @@ async function requestPushPermission(): Promise<boolean> {
   return status === 'granted';
 }
 
-async function resolveSubscriptionForDelete(): Promise<{
-  endpoint: string;
-  provider: 'expo';
-} | null> {
-  const stored = await getStoredPushSubscription();
-  if (stored) {
+async function resolveSubscriptionsForDelete(): Promise<
+  StoredPushSubscription[]
+> {
+  const stored = await getStoredPushSubscriptions();
+  if (stored.length > 0) {
     return stored;
   }
 
-  const token = await getExpoPushToken();
-  if (!token) {
-    return null;
+  const [expoToken, nativeSubscription] = await Promise.all([
+    getExpoPushToken(),
+    getNativeDevicePushSubscription(),
+  ]);
+  const subscriptions: StoredPushSubscription[] = [];
+
+  if (expoToken) {
+    subscriptions.push({
+      endpoint: expoToken,
+      provider: 'expo',
+    });
   }
 
-  return {
-    endpoint: token,
-    provider: 'expo',
-  };
+  if (nativeSubscription) {
+    subscriptions.push(nativeSubscription);
+  }
+
+  return subscriptions;
 }
 
 async function deletePushSubscriptionDirect(payload: {
   endpoint: string;
-  provider: 'expo';
+  provider: StoredPushSubscription['provider'];
 }): Promise<boolean> {
   if (!BACKEND_URL) {
     return false;
@@ -387,40 +427,73 @@ export async function enableMobilePushNotifications(): Promise<PushEnableResult>
 
   await ensureAndroidChannel();
 
-  const token = await getExpoPushToken();
-  if (!token) {
+  const platform = getMobilePushPlatform();
+  if (!platform) {
     return { ok: false, reason: 'token_unavailable' };
   }
 
-  const ok = await registerPushSubscription({
-    provider: 'expo',
-    platform: Platform.OS === 'ios' ? 'ios' : 'android',
-    endpoint: token,
-    user_agent: Platform.OS,
-  });
+  const [expoToken, nativeSubscription] = await Promise.all([
+    getExpoPushToken(),
+    getNativeDevicePushSubscription(),
+  ]);
+  const subscriptionsToRegister: StoredPushSubscription[] = [];
 
-  if (!ok) {
+  if (expoToken) {
+    subscriptionsToRegister.push({
+      provider: 'expo',
+      endpoint: expoToken,
+    });
+  }
+
+  if (nativeSubscription) {
+    subscriptionsToRegister.push(nativeSubscription);
+  }
+
+  if (subscriptionsToRegister.length === 0) {
+    return { ok: false, reason: 'token_unavailable' };
+  }
+
+  const registeredSubscriptions = (
+    await Promise.all(
+      subscriptionsToRegister.map(async (subscription) => {
+        const ok = await registerPushSubscription({
+          provider: subscription.provider,
+          platform,
+          endpoint: subscription.endpoint,
+          user_agent: Platform.OS,
+        });
+
+        return ok ? subscription : null;
+      })
+    )
+  ).filter(
+    (subscription): subscription is StoredPushSubscription => !!subscription
+  );
+
+  if (registeredSubscriptions.length === 0) {
     return { ok: false, reason: 'server_error' };
   }
 
-  await setStoredPushSubscription({
-    endpoint: token,
-    provider: 'expo',
-  });
+  await setStoredPushSubscriptions(registeredSubscriptions);
 
   return { ok: true, reason: null };
 }
 
 export async function disableMobilePushNotifications(): Promise<boolean> {
-  const subscription = await resolveSubscriptionForDelete();
-  if (!subscription) {
+  const subscriptions = await resolveSubscriptionsForDelete();
+  if (subscriptions.length === 0) {
     return false;
   }
 
-  const ok = await deletePushSubscription({
-    endpoint: subscription.endpoint,
-    provider: subscription.provider,
-  });
+  const results = await Promise.all(
+    subscriptions.map((subscription) =>
+      deletePushSubscription({
+        endpoint: subscription.endpoint,
+        provider: subscription.provider,
+      })
+    )
+  );
+  const ok = results.some(Boolean);
 
   if (ok) {
     await clearStoredPushSubscription();
@@ -430,16 +503,20 @@ export async function disableMobilePushNotifications(): Promise<boolean> {
 }
 
 export async function unsubscribeMobilePushOnLogout(): Promise<void> {
-  const subscription = await resolveSubscriptionForDelete();
-  if (!subscription) {
+  const subscriptions = await resolveSubscriptionsForDelete();
+  if (subscriptions.length === 0) {
     await clearStoredPushSubscription();
     return;
   }
 
-  await deletePushSubscriptionDirect({
-    endpoint: subscription.endpoint,
-    provider: subscription.provider,
-  }).catch(() => false);
+  await Promise.allSettled(
+    subscriptions.map((subscription) =>
+      deletePushSubscriptionDirect({
+        endpoint: subscription.endpoint,
+        provider: subscription.provider,
+      })
+    )
+  );
 
   await clearStoredPushSubscription();
 }

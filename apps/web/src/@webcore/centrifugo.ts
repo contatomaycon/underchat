@@ -17,6 +17,7 @@ import { recordException, recordMessage } from './observability';
 export type { Subscription };
 
 let centrifugeClient: Centrifuge | null = null;
+let connectionPromise: Promise<Centrifuge> | null = null;
 let tokenGenerationPromise: Promise<AuthTokenResponse> | null = null;
 let cachedToken: { token: string; url: string; expiresAt: number } | null =
   null;
@@ -351,6 +352,96 @@ const resubscribeActiveChannels = (client: Centrifuge): void => {
   }
 };
 
+const createConnection = async (): Promise<Centrifuge> => {
+  const { token, url: wsUrl } = await generateTokenAndUrl();
+  const client = new Centrifuge(`${wsUrl}/connection/websocket`, {
+    websocket: WebSocket,
+    token,
+    getToken: async () => {
+      try {
+        return await generateToken();
+      } catch (error) {
+        telemetry.trackError('token_refresh', error);
+        throw error;
+      }
+    },
+    timeout: 30000,
+    maxServerPingDelay: 60000,
+    minReconnectDelay: 1000,
+    maxReconnectDelay: 10000,
+  });
+
+  centrifugeClient = client;
+
+  client.on('connected', () => {
+    telemetry.trackConnectionState('connected');
+  });
+
+  client.on('disconnected', (ctx) => {
+    telemetry.trackConnectionState('disconnected', ctx.reason, ctx.code);
+    if (isTokenExpiredSignal(ctx.code, ctx.reason)) {
+      clearCachedToken();
+    }
+
+    if (ctx.reason !== 'clean' && ctx.code !== 1000) {
+      setTimeout(() => {
+        if (
+          centrifugeClient === client &&
+          client.state === State.Disconnected
+        ) {
+          client.connect();
+        }
+      }, 1000);
+    }
+  });
+
+  client.on('error', (error) => {
+    telemetry.trackConnectionState('error', String(error));
+    recordException(error, {
+      source: 'centrifugo.client.error',
+    });
+
+    if (!error || typeof error !== 'object') {
+      return;
+    }
+
+    const payload = error as { code?: unknown; message?: unknown };
+    const code =
+      typeof payload.code === 'number' && Number.isFinite(payload.code)
+        ? payload.code
+        : 0;
+    const reason =
+      typeof payload.message === 'string' ? payload.message : 'unknown';
+
+    if (isTokenExpiredSignal(code, reason)) {
+      clearCachedToken();
+    }
+  });
+
+  client.connect();
+
+  try {
+    await waitForConnected(client);
+  } catch (error) {
+    telemetry.trackError('initial_connection', error);
+    try {
+      client.disconnect();
+    } catch (disconnectError) {
+      telemetry.trackError('disconnect_after_init_fail', disconnectError);
+    }
+
+    if (centrifugeClient === client) {
+      centrifugeClient = null;
+    }
+
+    throw error;
+  }
+
+  resubscribeActiveChannels(client);
+
+  return client;
+};
+
 const getConnection = async (): Promise<Centrifuge> => {
   if (centrifugeClient) {
     const state = centrifugeClient.state;
@@ -386,86 +477,13 @@ const getConnection = async (): Promise<Centrifuge> => {
     }
   }
 
-  const { token, url: wsUrl } = await generateTokenAndUrl();
-
-  centrifugeClient = new Centrifuge(`${wsUrl}/connection/websocket`, {
-    websocket: WebSocket,
-    token,
-    getToken: async () => {
-      try {
-        return await generateToken();
-      } catch (error) {
-        telemetry.trackError('token_refresh', error);
-        throw error;
-      }
-    },
-    timeout: 30000,
-    maxServerPingDelay: 60000,
-    minReconnectDelay: 1000,
-    maxReconnectDelay: 10000,
-  });
-
-  centrifugeClient.on('connected', () => {
-    telemetry.trackConnectionState('connected');
-  });
-
-  centrifugeClient.on('disconnected', (ctx) => {
-    telemetry.trackConnectionState('disconnected', ctx.reason, ctx.code);
-    if (isTokenExpiredSignal(ctx.code, ctx.reason)) {
-      clearCachedToken();
-    }
-
-    if (ctx.reason !== 'clean' && ctx.code !== 1000) {
-      setTimeout(() => {
-        if (centrifugeClient && centrifugeClient.state === State.Disconnected) {
-          centrifugeClient.connect();
-        }
-      }, 1000);
-    }
-  });
-
-  centrifugeClient.on('error', (error) => {
-    telemetry.trackConnectionState('error', String(error));
-    recordException(error, {
-      source: 'centrifugo.client.error',
+  if (!connectionPromise) {
+    connectionPromise = createConnection().finally(() => {
+      connectionPromise = null;
     });
-
-    if (!error || typeof error !== 'object') {
-      return;
-    }
-
-    const payload = error as { code?: unknown; message?: unknown };
-    const code =
-      typeof payload.code === 'number' && Number.isFinite(payload.code)
-        ? payload.code
-        : 0;
-    const reason =
-      typeof payload.message === 'string' ? payload.message : 'unknown';
-
-    if (isTokenExpiredSignal(code, reason)) {
-      clearCachedToken();
-    }
-  });
-
-  centrifugeClient.connect();
-
-  try {
-    await waitForConnected(centrifugeClient);
-  } catch (error) {
-    telemetry.trackError('initial_connection', error);
-    try {
-      centrifugeClient.disconnect();
-    } catch (disconnectError) {
-      telemetry.trackError('disconnect_after_init_fail', disconnectError);
-    }
-    centrifugeClient = null;
-    throw error;
   }
 
-  // BUG 4 FIX: Re-subscribe channels that had handlers on previous connection
-  resubscribeActiveChannels(centrifugeClient);
-
-  return centrifugeClient;
+  return connectionPromise;
 };
 
 export const onMessage = async (
@@ -584,6 +602,7 @@ export const resetConnection = (): void => {
     }
     centrifugeClient = null;
   }
+  connectionPromise = null;
   tokenGenerationPromise = null;
   cachedToken = null;
   channelHandlers.clear();

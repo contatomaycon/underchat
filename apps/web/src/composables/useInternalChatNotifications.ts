@@ -512,12 +512,15 @@ export const useInternalChatNotifications = () => {
   });
 
   watch(
-    () => [
-      internalChatStore.user?.chat_user?.notifications_internal_chat,
-      internalChatStore.user?.chat_user?.notifications_internal_chat_push,
-      internalChatStore.user?.chat_user?.notifications_internal_chat_browser,
-      internalChatStore.user?.chat_user?.notifications_internal_chat_direct,
-      internalChatStore.user?.chat_user?.notifications_internal_chat_group,
+    [
+      () => internalChatStore.user?.chat_user?.notifications_internal_chat,
+      () => internalChatStore.user?.chat_user?.notifications_internal_chat_push,
+      () =>
+        internalChatStore.user?.chat_user?.notifications_internal_chat_browser,
+      () =>
+        internalChatStore.user?.chat_user?.notifications_internal_chat_direct,
+      () =>
+        internalChatStore.user?.chat_user?.notifications_internal_chat_group,
     ],
     async () => {
       await runNotificationSettingsSync();

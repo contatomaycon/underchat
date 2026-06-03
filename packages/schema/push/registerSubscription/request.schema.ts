@@ -2,10 +2,18 @@ import { Type, Static } from '@sinclair/typebox';
 
 export const registerPushSubscriptionRequestSchema = Type.Object({
   provider: Type.Optional(
-    Type.Union([Type.Literal('webpush'), Type.Literal('expo')], {
-      description: 'Provider da subscription',
-      default: 'webpush',
-    })
+    Type.Union(
+      [
+        Type.Literal('webpush'),
+        Type.Literal('expo'),
+        Type.Literal('fcm'),
+        Type.Literal('apns'),
+      ],
+      {
+        description: 'Provider da subscription',
+        default: 'webpush',
+      }
+    )
   ),
   platform: Type.Optional(
     Type.Union(

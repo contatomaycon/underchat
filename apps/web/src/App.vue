@@ -90,15 +90,15 @@ const hasInternalChatRealtimeAccess = (): boolean => {
 };
 
 watch(
-  () => [chatStore.user?.account_id, authStore.planIsActive] as const,
-  async ([accountId]) => {
+  [() => chatStore.user?.account_id, () => authStore.planIsActive] as const,
+  async ([accountId, planIsActive]) => {
     if (!accountId) {
       chatStore.resetUnreadSummary();
       await chatSocket.cleanup();
       return;
     }
 
-    if (!authStore.planIsActive || !hasChatRealtimeAccess()) {
+    if (!planIsActive || !hasChatRealtimeAccess()) {
       chatStore.resetUnreadSummary();
       await chatSocket.cleanup();
       return;
@@ -115,20 +115,19 @@ watch(
 );
 
 watch(
-  () =>
-    [
-      chatStore.user?.account_id,
-      authStore.planIsActive,
-      authStore.planProducts.join('|'),
-    ] as const,
-  async ([accountId]) => {
+  [
+    () => chatStore.user?.account_id,
+    () => authStore.planIsActive,
+    () => authStore.planProducts.join('|'),
+  ] as const,
+  async ([accountId, planIsActive]) => {
     if (!accountId) {
       internalChatStore.resetUnreadSummary();
       await internalChatSocket.cleanup();
       return;
     }
 
-    if (!authStore.planIsActive || !hasInternalChatRealtimeAccess()) {
+    if (!planIsActive || !hasInternalChatRealtimeAccess()) {
       internalChatStore.resetUnreadSummary();
       await internalChatSocket.cleanup();
       return;
@@ -145,30 +144,6 @@ watch(
 
 onMounted(async () => {
   await attendanceGuardStore.bootstrap();
-
-  if (
-    chatStore.user?.account_id &&
-    authStore.planIsActive &&
-    hasChatRealtimeAccess()
-  ) {
-    void chatStore.viewUnreadSummary();
-    await chatSocket.initializeSocket();
-  } else {
-    chatStore.resetUnreadSummary();
-    await chatSocket.cleanup();
-  }
-
-  if (
-    chatStore.user?.account_id &&
-    authStore.planIsActive &&
-    hasInternalChatRealtimeAccess()
-  ) {
-    void internalChatStore.viewUnreadSummary();
-    await internalChatSocket.initializeSocket();
-  } else {
-    internalChatStore.resetUnreadSummary();
-    await internalChatSocket.cleanup();
-  }
 });
 
 onUnmounted(async () => {

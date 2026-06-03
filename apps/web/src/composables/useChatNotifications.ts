@@ -956,22 +956,22 @@ export const useChatNotifications = () => {
   });
 
   watch(
-    () => [
-      chatStore.user?.chat_user?.notifications,
-      chatStore.user?.chat_user?.notifications_sound,
-      chatStore.user?.chat_user?.notifications_toast,
-      chatStore.user?.chat_user?.notifications_push,
-      chatStore.user?.chat_user?.notifications_browser,
-      chatStore.user?.chat_user?.notifications_status_update,
-      chatStore.user?.chat_user?.notifications_status_queue,
-      chatStore.user?.chat_user?.notifications_status_in_chat,
-      chatStore.user?.chat_user?.notifications_status_chatbot,
-      chatStore.user?.chat_user?.notifications_message_queue,
-      chatStore.user?.chat_user?.notifications_message_in_chat,
-      chatStore.user?.chat_user?.notifications_message_chatbot,
-      chatStore.user?.chat_user?.notifications_transfer,
-      chatStore.user?.chat_user?.notifications_internal_chat,
-      chatStore.user?.chat_user?.notifications_internal_chat_push,
+    [
+      () => chatStore.user?.chat_user?.notifications,
+      () => chatStore.user?.chat_user?.notifications_sound,
+      () => chatStore.user?.chat_user?.notifications_toast,
+      () => chatStore.user?.chat_user?.notifications_push,
+      () => chatStore.user?.chat_user?.notifications_browser,
+      () => chatStore.user?.chat_user?.notifications_status_update,
+      () => chatStore.user?.chat_user?.notifications_status_queue,
+      () => chatStore.user?.chat_user?.notifications_status_in_chat,
+      () => chatStore.user?.chat_user?.notifications_status_chatbot,
+      () => chatStore.user?.chat_user?.notifications_message_queue,
+      () => chatStore.user?.chat_user?.notifications_message_in_chat,
+      () => chatStore.user?.chat_user?.notifications_message_chatbot,
+      () => chatStore.user?.chat_user?.notifications_transfer,
+      () => chatStore.user?.chat_user?.notifications_internal_chat,
+      () => chatStore.user?.chat_user?.notifications_internal_chat_push,
     ],
     async () => {
       await runNotificationSettingsSync();

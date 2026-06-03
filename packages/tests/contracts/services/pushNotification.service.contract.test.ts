@@ -20,6 +20,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { IChat } from '@core/common/interfaces/IChat';
 import { IInternalChatMessage } from '@core/common/interfaces/internalChat/IInternalChatMessage';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import webPush from 'web-push';
 
 const accountId = 'account-1';
 const conversationId = 'conversation-1';
@@ -138,7 +139,7 @@ function makeService(eligibleUserIds: string[] = [memberUserId]) {
 
   const sendNotificationToUser = jest
     .spyOn(service, 'sendNotificationToUser')
-    .mockResolvedValue({ sent: 1, failed: 0 });
+    .mockResolvedValue({ sent: 1, failed: 0, queued: 0 });
 
   return {
     service,
@@ -222,6 +223,137 @@ describe('PushNotificationService internal chat notifications', () => {
       usersWithNotificationsListerRepository.listInternalChatUsersWithNotifications
     ).not.toHaveBeenCalled();
     expect(sendNotificationToUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('PushNotificationService delivery routing', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  function makeRoutingService(input: {
+    subscriptions: unknown[];
+    nativeConfigured?: boolean;
+  }) {
+    const queue = {
+      enqueue: jest.fn(async () => 'job-1'),
+      isProviderConfigured: jest.fn((provider: string) =>
+        provider === 'fcm' || provider === 'apns'
+          ? input.nativeConfigured === true
+          : true
+      ),
+    };
+
+    const service = new PushNotificationService(
+      {
+        listByUserId: jest.fn().mockResolvedValue(input.subscriptions),
+      } as never,
+      { deleteByEndpoint: jest.fn() } as never,
+      {
+        listInternalChatUsersWithNotifications: jest.fn().mockResolvedValue([]),
+        listUsersWithTransferNotifications: jest.fn().mockResolvedValue([]),
+        listUsersWithNotifications: jest.fn().mockResolvedValue([]),
+      } as never,
+      { listUserSectors: jest.fn() } as never,
+      { listChannelsWithNamesByUserAndAccount: jest.fn() } as never,
+      { viewPermissionByUserId: jest.fn().mockResolvedValue([]) } as never,
+      queue as never
+    );
+
+    return { service, queue };
+  }
+
+  it('prefers fcm over expo for android when native provider is configured', async () => {
+    const { service, queue } = makeRoutingService({
+      nativeConfigured: true,
+      subscriptions: [
+        {
+          provider: 'expo',
+          platform: 'android',
+          endpoint: 'ExpoPushToken[android]',
+        },
+        {
+          provider: 'fcm',
+          platform: 'android',
+          endpoint: 'fcm-token',
+        },
+      ],
+    });
+
+    await expect(
+      service.sendNotificationToUser('user-1', {
+        title: 'Title',
+        body: 'Body',
+      })
+    ).resolves.toEqual({ sent: 0, failed: 0, queued: 1 });
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'fcm',
+        endpoint: 'fcm-token',
+        fallbackExpoEndpoint: 'ExpoPushToken[android]',
+      })
+    );
+  });
+
+  it('falls back to expo when native provider is not configured', async () => {
+    const { service, queue } = makeRoutingService({
+      nativeConfigured: false,
+      subscriptions: [
+        {
+          provider: 'expo',
+          platform: 'ios',
+          endpoint: 'ExpoPushToken[ios]',
+        },
+        {
+          provider: 'apns',
+          platform: 'ios',
+          endpoint: 'apns-token',
+        },
+      ],
+    });
+
+    await expect(
+      service.sendNotificationToUser('user-1', {
+        title: 'Title',
+        body: 'Body',
+      })
+    ).resolves.toEqual({ sent: 0, failed: 0, queued: 1 });
+
+    expect(queue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'expo',
+        endpoint: 'ExpoPushToken[ios]',
+      })
+    );
+  });
+
+  it('sends webpush directly without queueing it', async () => {
+    const { service, queue } = makeRoutingService({
+      subscriptions: [
+        {
+          provider: 'webpush',
+          endpoint: 'https://push.endpoint',
+          p256dh: 'p256dh',
+          auth: 'auth',
+        },
+      ],
+    });
+    (service as unknown as { vapidKeys: unknown }).vapidKeys = {
+      publicKey: 'public',
+      privateKey: 'private',
+    };
+    (webPush.sendNotification as jest.Mock).mockResolvedValue(undefined);
+
+    await expect(
+      service.sendNotificationToUser('user-1', {
+        title: 'Title',
+        body: 'Body',
+      })
+    ).resolves.toEqual({ sent: 1, failed: 0, queued: 0 });
+
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(webPush.sendNotification).toHaveBeenCalledTimes(1);
   });
 });
 

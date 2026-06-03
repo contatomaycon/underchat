@@ -58,6 +58,7 @@ const updateLocalPresenceStatus = (status: EChatUserStatus): void => {
   const currentUser = chatStore.user;
 
   if (!currentUser) return;
+  if (currentUser.chat_user?.status === status) return;
 
   const updatedChatUser = currentUser.chat_user
     ? {

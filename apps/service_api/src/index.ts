@@ -14,6 +14,7 @@ import centrifugoPlugin from '@core/plugins/centrifugo';
 import kafkaStreamsPlugin from '@core/plugins/kafkaStreams';
 import redisPlugin from '@core/plugins/redis';
 import s3Plugin from '@core/plugins/s3';
+import pushDeliveryPlugin from '@core/plugins/pushDelivery';
 import schedulePlugin from '@core/plugins/schedule';
 import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
@@ -39,6 +40,7 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 server.register(safePlugin(dbConnector, 'database'));
 server.register(safePlugin(redisPlugin, 'redis'));
 server.register(safePlugin(s3Plugin, 's3'));
+server.register(safePlugin(pushDeliveryPlugin, 'pushDelivery'));
 server.register(safePlugin(authenticateKeyApi, 'authenticateKeyApi'));
 server.register(safePlugin(i18nextPlugin, 'i18next'));
 server.register(safePlugin(corsPlugin, 'cors'));

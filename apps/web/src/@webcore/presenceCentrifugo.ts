@@ -29,6 +29,7 @@ export const initUserPresenceSubscription = async (
   const updateCurrentUserStatus = (status: EChatUserStatus): void => {
     const currentUser = chatStore.user;
     if (!currentUser) return;
+    if (currentUser.chat_user?.status === status) return;
 
     const updatedChatUser = currentUser.chat_user
       ? {
@@ -69,6 +70,7 @@ export const initUserPresenceSubscription = async (
 
     const existing = usersStore.list[index];
     if (!existing.chat_user) return;
+    if (existing.chat_user.status === status) return;
 
     usersStore.list[index] = {
       ...existing,

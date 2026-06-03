@@ -184,7 +184,7 @@ export interface MessageForwardResponse {
   results: MessageForwardResultItem[];
 }
 
-export type PushSubscriptionProvider = 'webpush' | 'expo';
+export type PushSubscriptionProvider = 'webpush' | 'expo' | 'fcm' | 'apns';
 export type PushSubscriptionPlatform = 'web' | 'ios' | 'android';
 
 export type RegisterPushSubscriptionPayload = {

@@ -102,7 +102,53 @@ describe('PushSubscriptionRegistrarUseCase', () => {
     });
   });
 
-  it('registers non-webpush provider and returns null public key', async () => {
+  it('returns invalid_payload when fcm is not android', async () => {
+    const pushSubscriptionService = {
+      registerSubscription: jest.fn(),
+      getPublicKey: jest.fn(),
+    };
+    const useCase = new PushSubscriptionRegistrarUseCase(
+      pushSubscriptionService as never
+    );
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        endpoint: 'fcm-token',
+        provider: 'fcm',
+        platform: 'ios',
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'invalid_payload',
+    });
+    expect(pushSubscriptionService.registerSubscription).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid_payload when apns is not ios', async () => {
+    const pushSubscriptionService = {
+      registerSubscription: jest.fn(),
+      getPublicKey: jest.fn(),
+    };
+    const useCase = new PushSubscriptionRegistrarUseCase(
+      pushSubscriptionService as never
+    );
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        endpoint: 'apns-token',
+        provider: 'apns',
+        platform: 'android',
+      })
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'invalid_payload',
+    });
+    expect(pushSubscriptionService.registerSubscription).not.toHaveBeenCalled();
+  });
+
+  it('registers fcm provider and returns null public key', async () => {
     const pushSubscriptionService = {
       registerSubscription: jest.fn(async () => ({
         push_subscription_id: 'sub-2',
@@ -116,9 +162,10 @@ describe('PushSubscriptionRegistrarUseCase', () => {
     await expect(
       useCase.execute({
         userId: 'user-1',
-        endpoint: 'https://push.endpoint',
-        provider: 'onesignal',
-      } as never)
+        endpoint: 'fcm-token',
+        provider: 'fcm',
+        platform: 'android',
+      })
     ).resolves.toEqual({
       ok: true,
       data: {
@@ -128,9 +175,9 @@ describe('PushSubscriptionRegistrarUseCase', () => {
     });
     expect(pushSubscriptionService.registerSubscription).toHaveBeenCalledWith({
       user_id: 'user-1',
-      provider: 'onesignal',
-      platform: undefined,
-      endpoint: 'https://push.endpoint',
+      provider: 'fcm',
+      platform: 'android',
+      endpoint: 'fcm-token',
       p256dh: null,
       auth: null,
       user_agent: undefined,

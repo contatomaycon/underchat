@@ -18,9 +18,27 @@ import { IInternalChatMessage } from '@core/common/interfaces/internalChat/IInte
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
 import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 import { vapidEnvironment } from '@core/config/environments';
+import { PushDeliveryQueueService } from './pushDeliveryQueue.service';
+import {
+  MobilePushSubscriptionProvider,
+  IPushDeliveryInput,
+} from '@core/common/interfaces/IPushDelivery';
 
-const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
-const CHAT_NOTIFICATION_ANDROID_CHANNEL = 'underchat-messages';
+type ListedPushSubscription = {
+  push_subscription_id?: string | null;
+  user_id?: string | null;
+  provider: string;
+  platform?: string | null;
+  endpoint: string;
+  p256dh?: string | null;
+  auth?: string | null;
+};
+
+type PushNotificationSendResult = {
+  sent: number;
+  failed: number;
+  queued: number;
+};
 
 @injectable()
 export class PushNotificationService {
@@ -41,7 +59,9 @@ export class PushNotificationService {
     @inject(UserChannelChannelsListerRepository)
     private readonly userChannelChannelsListerRepository: UserChannelChannelsListerRepository,
     @inject(PermissionService)
-    private readonly permissionService: PermissionService
+    private readonly permissionService: PermissionService,
+    @inject(PushDeliveryQueueService)
+    private readonly pushDeliveryQueueService?: PushDeliveryQueueService
   ) {
     this.initializeVapidKeys();
   }
@@ -75,13 +95,13 @@ export class PushNotificationService {
   async sendNotificationToUser(
     userId: string,
     payload: IPushNotificationPayload
-  ): Promise<{ sent: number; failed: number }> {
+  ): Promise<PushNotificationSendResult> {
     const subscriptions = this.dedupeSubscriptionsByEndpoint(
       await this.pushSubscriptionListerRepository.listByUserId(userId)
-    );
+    ) as ListedPushSubscription[];
 
     if (subscriptions.length === 0) {
-      return { sent: 0, failed: 0 };
+      return { sent: 0, failed: 0, queued: 0 };
     }
 
     const notificationPayload = JSON.stringify({
@@ -96,18 +116,18 @@ export class PushNotificationService {
     });
     let sent = 0;
     let failed = 0;
+    let queued = 0;
 
-    const promises = subscriptions.map(async (subscription) => {
-      const sentOk =
-        subscription.provider === 'expo'
-          ? await this.sendExpoNotification(subscription.endpoint, payload)
-          : await this.sendWebPushNotification(
-              subscription.endpoint,
-              notificationPayload,
-              subscription.p256dh,
-              subscription.auth
-            );
-
+    const webPushSubscriptions = subscriptions.filter(
+      (subscription) => subscription.provider === 'webpush'
+    );
+    const webPushPromises = webPushSubscriptions.map(async (subscription) => {
+      const sentOk = await this.sendWebPushNotification(
+        subscription.endpoint,
+        notificationPayload,
+        subscription.p256dh ?? null,
+        subscription.auth ?? null
+      );
       if (sentOk) {
         sent++;
       } else {
@@ -115,9 +135,32 @@ export class PushNotificationService {
       }
     });
 
-    await Promise.all(promises);
+    await Promise.all(webPushPromises);
 
-    return { sent, failed };
+    const mobileDeliveries = this.selectMobileDeliveries(
+      userId,
+      subscriptions,
+      payload
+    );
+
+    const pushDeliveryQueueService = this.pushDeliveryQueueService;
+    if (!pushDeliveryQueueService) {
+      failed += mobileDeliveries.length;
+      return { sent, failed, queued };
+    }
+
+    await Promise.all(
+      mobileDeliveries.map(async (delivery) => {
+        try {
+          await pushDeliveryQueueService.enqueue(delivery);
+          queued++;
+        } catch {
+          failed++;
+        }
+      })
+    );
+
+    return { sent, failed, queued };
   }
 
   getPublicKey(): string | null {
@@ -542,6 +585,107 @@ export class PushNotificationService {
     return Array.from(deduped.values());
   }
 
+  private selectMobileDeliveries(
+    userId: string,
+    subscriptions: ListedPushSubscription[],
+    payload: IPushNotificationPayload
+  ): IPushDeliveryInput[] {
+    const mobileSubscriptions = subscriptions.filter((subscription) =>
+      this.isMobileProvider(subscription.provider)
+    );
+
+    if (mobileSubscriptions.length === 0) {
+      return [];
+    }
+
+    const byPlatform = new Map<string, ListedPushSubscription[]>();
+    for (const subscription of mobileSubscriptions) {
+      const platform = this.normalizeMobilePlatform(subscription.platform);
+      const current = byPlatform.get(platform) ?? [];
+      current.push(subscription);
+      byPlatform.set(platform, current);
+    }
+
+    const deliveries: IPushDeliveryInput[] = [];
+    for (const [platform, platformSubscriptions] of byPlatform.entries()) {
+      const expoSubscriptions = platformSubscriptions.filter(
+        (subscription) => subscription.provider === 'expo'
+      );
+      const fallbackExpoEndpoint = expoSubscriptions[0]?.endpoint;
+
+      if (platform === 'android' && this.isNativeProviderAvailable('fcm')) {
+        const fcmSubscriptions = platformSubscriptions.filter(
+          (subscription) => subscription.provider === 'fcm'
+        );
+
+        if (fcmSubscriptions.length > 0) {
+          deliveries.push(
+            ...fcmSubscriptions.map((subscription) => ({
+              userId,
+              provider: 'fcm' as const,
+              endpoint: subscription.endpoint,
+              payload,
+              fallbackExpoEndpoint,
+            }))
+          );
+          continue;
+        }
+      }
+
+      if (platform === 'ios' && this.isNativeProviderAvailable('apns')) {
+        const apnsSubscriptions = platformSubscriptions.filter(
+          (subscription) => subscription.provider === 'apns'
+        );
+
+        if (apnsSubscriptions.length > 0) {
+          deliveries.push(
+            ...apnsSubscriptions.map((subscription) => ({
+              userId,
+              provider: 'apns' as const,
+              endpoint: subscription.endpoint,
+              payload,
+              fallbackExpoEndpoint,
+            }))
+          );
+          continue;
+        }
+      }
+
+      deliveries.push(
+        ...expoSubscriptions.map((subscription) => ({
+          userId,
+          provider: 'expo' as const,
+          endpoint: subscription.endpoint,
+          payload,
+        }))
+      );
+    }
+
+    return deliveries;
+  }
+
+  private isMobileProvider(
+    provider: string
+  ): provider is MobilePushSubscriptionProvider {
+    return provider === 'expo' || provider === 'fcm' || provider === 'apns';
+  }
+
+  private normalizeMobilePlatform(platform?: string | null): string {
+    if (platform === 'ios' || platform === 'android') {
+      return platform;
+    }
+
+    return 'unknown';
+  }
+
+  private isNativeProviderAvailable(
+    provider: MobilePushSubscriptionProvider
+  ): boolean {
+    return (
+      this.pushDeliveryQueueService?.isProviderConfigured(provider) === true
+    );
+  }
+
   private buildChatSnapshot(chat: IChat): Record<string, unknown> {
     return {
       chat_id: chat.chat_id,
@@ -600,69 +744,6 @@ export class PushNotificationService {
           'webpush'
         );
       }
-      return false;
-    }
-  }
-
-  private async sendExpoNotification(
-    token: string,
-    payload: IPushNotificationPayload
-  ): Promise<boolean> {
-    if (
-      !token.startsWith('ExponentPushToken[') &&
-      !token.startsWith('ExpoPushToken[')
-    ) {
-      return false;
-    }
-
-    try {
-      const response = await fetch(EXPO_PUSH_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          to: token,
-          title: payload.title,
-          body: payload.body,
-          sound: 'default',
-          priority: 'high',
-          channelId: CHAT_NOTIFICATION_ANDROID_CHANNEL,
-          data: payload.data ?? {},
-        }),
-      });
-
-      const body = (await response.json().catch(() => null)) as {
-        data?:
-          | {
-              status?: 'ok' | 'error';
-              details?: { error?: string };
-            }
-          | Array<{
-              status?: 'ok' | 'error';
-              details?: { error?: string };
-            }>;
-      } | null;
-
-      if (!response.ok || !body?.data) {
-        return false;
-      }
-
-      const tickets = Array.isArray(body.data) ? body.data : [body.data];
-      const hasDeviceNotRegistered = tickets.some(
-        (ticket) => ticket?.details?.error === 'DeviceNotRegistered'
-      );
-
-      if (hasDeviceNotRegistered) {
-        await this.pushSubscriptionDeleterRepository.deleteByEndpoint(
-          token,
-          'expo'
-        );
-      }
-
-      return tickets.some((ticket) => ticket?.status === 'ok');
-    } catch {
       return false;
     }
   }
