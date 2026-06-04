@@ -59,6 +59,10 @@ type Config struct {
 	SendTimeout            time.Duration
 	WhatsAppConnectTimeout time.Duration
 	KafkaPollInterval      time.Duration
+	OutboundReadyTimeout   time.Duration
+
+	KafkaSendConsumerIdleRecreateInterval time.Duration
+	KafkaHandlerErrorBackoff              time.Duration
 
 	OutboundFailureReconnectThreshold int
 	OutboundFailureReconnectCooldown  time.Duration
@@ -124,6 +128,9 @@ func LoadConfig() (Config, error) {
 			45*time.Second,
 		),
 		KafkaPollInterval:                      250 * time.Millisecond,
+		OutboundReadyTimeout:                   envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
+		KafkaSendConsumerIdleRecreateInterval:  envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 2*time.Minute),
+		KafkaHandlerErrorBackoff:               envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
 		OutboundFailureReconnectThreshold:      envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
 		OutboundFailureReconnectCooldown:       envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
 		SendIdempotencyInProgressTTL:           envDurationDefault("WORKER_SEND_IDEMPOTENCY_IN_PROGRESS_TTL", 10*time.Minute),
@@ -169,6 +176,15 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.OutboundFailureReconnectCooldown <= 0 {
 		cfg.OutboundFailureReconnectCooldown = 2 * time.Minute
+	}
+	if cfg.OutboundReadyTimeout <= 0 {
+		cfg.OutboundReadyTimeout = 60 * time.Second
+	}
+	if cfg.KafkaSendConsumerIdleRecreateInterval <= 0 {
+		cfg.KafkaSendConsumerIdleRecreateInterval = 2 * time.Minute
+	}
+	if cfg.KafkaHandlerErrorBackoff <= 0 {
+		cfg.KafkaHandlerErrorBackoff = time.Second
 	}
 	if cfg.SendIdempotencyInProgressTTL <= 0 {
 		cfg.SendIdempotencyInProgressTTL = 10 * time.Minute

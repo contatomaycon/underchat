@@ -160,8 +160,15 @@ func (k *KafkaClient) SendJSON(ctx context.Context, topic string, key string, va
 
 type KafkaMessageHandler func(ctx context.Context, msg kafka.Message) error
 
+var errKafkaConsumerIdleRecreate = errors.New("kafka consumer idle recreate")
+
 func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, handler KafkaMessageHandler) error {
-	reader := kafka.NewReader(kafka.ReaderConfig{
+	go k.runConsumer(ctx, topic, groupID, handler)
+	return nil
+}
+
+func (k *KafkaClient) newReader(topic, groupID string) *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
 		Brokers:        k.cfg.KafkaBrokers,
 		GroupID:        groupID,
 		Topic:          topic,
@@ -177,81 +184,175 @@ func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, 
 			TLS:           k.transport.TLS,
 		},
 	})
+}
 
+func (k *KafkaClient) addReader(reader *kafka.Reader) {
 	k.mu.Lock()
 	k.readers = append(k.readers, reader)
 	k.mu.Unlock()
+}
 
-	go func() {
-		defer reader.Close()
-		for {
-			msg, err := reader.FetchMessage(ctx)
-			if err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return
-				}
-				log.Printf("kafka fetch error topic=%s group=%s: %v", topic, groupID, err)
-				time.Sleep(time.Second)
-				continue
+func (k *KafkaClient) removeReader(reader *kafka.Reader) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	for index, existing := range k.readers {
+		if existing == reader {
+			k.readers = append(k.readers[:index], k.readers[index+1:]...)
+			return
+		}
+	}
+}
+
+func (k *KafkaClient) runConsumer(ctx context.Context, topic, groupID string, handler KafkaMessageHandler) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		reader := k.newReader(topic, groupID)
+		k.addReader(reader)
+		err := k.consumeReader(ctx, reader, topic, groupID, handler)
+		k.removeReader(reader)
+		if closeErr := reader.Close(); closeErr != nil && ctx.Err() == nil {
+			log.Printf("kafka reader close error topic=%s group=%s: %v", topic, groupID, closeErr)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		log.Printf("kafka consumer restarting topic=%s group=%s reason=%v", topic, groupID, err)
+		time.Sleep(k.consumerRestartBackoff())
+	}
+}
+
+func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, handler KafkaMessageHandler) error {
+	idleRecreateInterval := k.consumerIdleRecreateInterval(topic)
+	for {
+		msg, err := k.fetchMessage(ctx, reader, idleRecreateInterval)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
-
-			carrier := propagation.MapCarrier{}
-			for _, header := range msg.Headers {
-				carrier.Set(header.Key, string(header.Value))
+			if errors.Is(err, errKafkaConsumerIdleRecreate) {
+				recordMessageLifecycle(ctx, k.cfg, map[string]any{
+					"stage":       "whatsmeow.outgoing.kafka.consumer.recreate",
+					"decision":    "recreate_consumer",
+					"outcome":     "retrying",
+					"reason":      "fetch_idle_timeout",
+					"level":       "warn",
+					"topic":       topic,
+					"group_id":    groupID,
+					"idle_ms":     idleRecreateInterval.Milliseconds(),
+					"worker_id":   k.cfg.WorkerID,
+					"account_id":  k.cfg.AccountID,
+					"worker_type": "whatsmeow",
+				})
+				return err
 			}
-			messageCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
-
-			if err := handler(messageCtx, msg); err != nil {
-				log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
-				if isWorkerSendTopic(topic) {
-					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-						"stage":     "whatsmeow.outgoing.kafka.commit.skipped",
-						"decision":  "commit_message",
-						"outcome":   "error",
-						"reason":    "handler_failed",
-						"level":     "error",
-						"topic":     topic,
-						"partition": msg.Partition,
-						"offset":    msg.Offset,
-						"error":     err.Error(),
-					})
-				}
-				continue
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return err
 			}
+			log.Printf("kafka fetch error topic=%s group=%s: %v", topic, groupID, err)
+			time.Sleep(k.fetchErrorBackoff())
+			continue
+		}
 
-			if err := reader.CommitMessages(ctx, msg); err != nil {
-				log.Printf("kafka commit error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
-				if isWorkerSendTopic(topic) {
-					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-						"stage":     "whatsmeow.outgoing.kafka.commit.error",
-						"decision":  "commit_message",
-						"outcome":   "error",
-						"reason":    "commit_failed",
-						"level":     "error",
-						"topic":     topic,
-						"partition": msg.Partition,
-						"offset":    msg.Offset,
-						"error":     err.Error(),
-					})
-				}
-			} else if isWorkerSendTopic(topic) {
+		carrier := propagation.MapCarrier{}
+		for _, header := range msg.Headers {
+			carrier.Set(header.Key, string(header.Value))
+		}
+		messageCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
+
+		if err := handler(messageCtx, msg); err != nil {
+			log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
+			if isWorkerSendTopic(topic) {
 				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-					"stage":     "whatsmeow.outgoing.kafka.commit.success",
+					"stage":     "whatsmeow.outgoing.kafka.commit.skipped",
 					"decision":  "commit_message",
-					"outcome":   "success",
+					"outcome":   "error",
+					"reason":    "handler_failed",
+					"level":     "error",
 					"topic":     topic,
 					"partition": msg.Partition,
 					"offset":    msg.Offset,
+					"error":     err.Error(),
+				})
+				return fmt.Errorf("kafka handler failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err)
+			}
+			time.Sleep(k.handlerErrorBackoff())
+			continue
+		}
+
+		if err := reader.CommitMessages(ctx, msg); err != nil {
+			log.Printf("kafka commit error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
+			if isWorkerSendTopic(topic) {
+				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+					"stage":     "whatsmeow.outgoing.kafka.commit.error",
+					"decision":  "commit_message",
+					"outcome":   "error",
+					"reason":    "commit_failed",
+					"level":     "error",
+					"topic":     topic,
+					"partition": msg.Partition,
+					"offset":    msg.Offset,
+					"error":     err.Error(),
 				})
 			}
+		} else if isWorkerSendTopic(topic) {
+			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+				"stage":     "whatsmeow.outgoing.kafka.commit.success",
+				"decision":  "commit_message",
+				"outcome":   "success",
+				"topic":     topic,
+				"partition": msg.Partition,
+				"offset":    msg.Offset,
+			})
 		}
-	}()
+	}
+}
 
-	return nil
+func (k *KafkaClient) fetchMessage(ctx context.Context, reader *kafka.Reader, idleRecreateInterval time.Duration) (kafka.Message, error) {
+	if idleRecreateInterval <= 0 {
+		return reader.FetchMessage(ctx)
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, idleRecreateInterval)
+	defer cancel()
+	msg, err := reader.FetchMessage(fetchCtx)
+	if err != nil && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+		return kafka.Message{}, errKafkaConsumerIdleRecreate
+	}
+	return msg, err
+}
+
+func (k *KafkaClient) consumerIdleRecreateInterval(topic string) time.Duration {
+	if !isWorkerSendTopic(topic) {
+		return 0
+	}
+	if k.cfg.KafkaSendConsumerIdleRecreateInterval <= 0 {
+		return 2 * time.Minute
+	}
+	return k.cfg.KafkaSendConsumerIdleRecreateInterval
+}
+
+func (k *KafkaClient) consumerRestartBackoff() time.Duration {
+	return k.handlerErrorBackoff()
+}
+
+func (k *KafkaClient) fetchErrorBackoff() time.Duration {
+	if k.cfg.KafkaPollInterval > 0 {
+		return k.cfg.KafkaPollInterval
+	}
+	return time.Second
+}
+
+func (k *KafkaClient) handlerErrorBackoff() time.Duration {
+	if k.cfg.KafkaHandlerErrorBackoff <= 0 {
+		return time.Second
+	}
+	return k.cfg.KafkaHandlerErrorBackoff
 }
 
 func isWorkerSendTopic(topic string) bool {
-	return strings.HasSuffix(topic, ".send.message")
+	parts := strings.Split(topic, ".")
+	return len(parts) == 4 && parts[0] == "worker" && parts[1] != "" && parts[2] == "send" && parts[3] == "message"
 }
 
 func topicWorkerSendMessage(workerID string) string {

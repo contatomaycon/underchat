@@ -88,6 +88,8 @@ type historySyncCandidate struct {
 	timestamp uint64
 }
 
+var ErrWhatsAppNotReady = errors.New("whatsmeow connection is not ready")
+
 func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient, redisClient *redis.Client) (*WhatsAppManager, error) {
 	manager := &WhatsAppManager{
 		cfg:        cfg,
@@ -227,6 +229,60 @@ func (m *WhatsAppManager) IsConnected() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.connected
+}
+
+func (m *WhatsAppManager) IsReady() bool {
+	return m.outboundReadinessReason() == ""
+}
+
+func (m *WhatsAppManager) WaitUntilReady(ctx context.Context, timeout time.Duration) error {
+	if m.IsReady() {
+		return nil
+	}
+	if timeout <= 0 {
+		return fmt.Errorf("%w: %s", ErrWhatsAppNotReady, m.outboundReadinessReason())
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("%w after %s: %s: %w", ErrWhatsAppNotReady, timeout, m.outboundReadinessReason(), waitCtx.Err())
+		case <-ticker.C:
+			if m.IsReady() {
+				return nil
+			}
+		}
+	}
+}
+
+func (m *WhatsAppManager) outboundReadinessReason() string {
+	client := m.getClient()
+	if client == nil {
+		return "client_not_initialized"
+	}
+	if !client.IsConnected() {
+		return "client_socket_disconnected"
+	}
+	if !client.IsLoggedIn() {
+		return "client_not_logged_in"
+	}
+
+	m.mu.RLock()
+	connectedEvent := m.connected
+	keepAliveFailures := m.keepAliveFailures
+	m.mu.RUnlock()
+
+	if !connectedEvent {
+		return "connection_event_disconnected"
+	}
+	if keepAliveFailures > 0 {
+		return "keepalive_timeout"
+	}
+	return ""
 }
 
 func (m *WhatsAppManager) ConnectionHealth() map[string]any {

@@ -35,6 +35,20 @@ export class KafkaBaileysQueueService {
     ];
   };
 
+  deletable = (workerId: string): string[] => {
+    const scheduleSendMessage = this.workerScheduleSendMessage(workerId);
+    const validatePhone = this.workerValidatePhone(workerId);
+    const notificationMessage = this.workerNotificationMessage(workerId);
+    const webhookIntegration = this.workerWebhookIntegration(workerId);
+
+    return [
+      scheduleSendMessage,
+      validatePhone,
+      notificationMessage,
+      webhookIntegration,
+    ];
+  };
+
   ensure = async (workerId: string): Promise<void> => {
     const allTopics = this.all(workerId);
 
@@ -46,7 +60,7 @@ export class KafkaBaileysQueueService {
   };
 
   delete = (workerId: string): Promise<void> => {
-    const allTopics = this.all(workerId);
+    const allTopics = this.deletable(workerId);
 
     return this.kafkaService.deleteTopics(allTopics);
   };

@@ -81,10 +81,10 @@ func (w *Worker) Run(ctx context.Context) error {
 	if err := w.grpcServer.Start(); err != nil {
 		return err
 	}
+	w.whatsapp.Bootstrap(runCtx)
 	if err := w.startConsumers(runCtx); err != nil {
 		return err
 	}
-	w.whatsapp.Bootstrap(runCtx)
 	log.Printf("worker run ready worker_id=%s", w.cfg.WorkerID)
 
 	<-runCtx.Done()
@@ -243,6 +243,10 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		"kafka_key":    string(msg.Key),
 	})
 
+	if err := w.waitOutboundReady(ctx, data, msg); err != nil {
+		return err
+	}
+
 	claim, err := w.claimOutboundMessage(ctx, chatMessageClaimID(data), data, msg)
 	if err != nil {
 		return err
@@ -267,6 +271,10 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 	startedAt := time.Now()
 	result, err := w.whatsapp.SendChatMessage(ctx, data)
 	if err != nil {
+		if errors.Is(err, ErrWhatsAppNotReady) {
+			w.releaseOutboundClaim(ctx, claim, "connection_not_ready_after_claim", err)
+			return err
+		}
 		statusErr := w.markSendAsNotSent(ctx, data.MessageID, data.ChatID, stringValue(data.Account["id"]), err, sendFailureLogContext{
 			Topic:        msg.Topic,
 			Partition:    msg.Partition,
@@ -334,6 +342,39 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 	recordMessageLifecycle(ctx, w.cfg, map[string]any{
 		"stage":        "whatsmeow.outgoing.kafka.commit.ready",
 		"decision":     "commit_send_message",
+		"outcome":      "success",
+		"topic":        msg.Topic,
+		"partition":    msg.Partition,
+		"offset":       msg.Offset,
+		"message_id":   data.MessageID,
+		"chat_id":      data.ChatID,
+		"message_type": chatMessageType(data),
+	})
+	return nil
+}
+
+func (w *Worker) waitOutboundReady(ctx context.Context, data ChatMessage, msg kafka.Message) error {
+	if err := w.whatsapp.WaitUntilReady(ctx, w.cfg.OutboundReadyTimeout); err != nil {
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":        "whatsmeow.outgoing.connection.wait",
+			"decision":     "wait_connection_ready",
+			"outcome":      "retrying",
+			"reason":       "connection_not_ready",
+			"level":        "warn",
+			"topic":        msg.Topic,
+			"partition":    msg.Partition,
+			"offset":       msg.Offset,
+			"message_id":   data.MessageID,
+			"chat_id":      data.ChatID,
+			"message_type": chatMessageType(data),
+			"timeout_ms":   w.cfg.OutboundReadyTimeout.Milliseconds(),
+			"error":        err.Error(),
+		})
+		return err
+	}
+	recordMessageLifecycle(ctx, w.cfg, map[string]any{
+		"stage":        "whatsmeow.outgoing.connection.ready",
+		"decision":     "wait_connection_ready",
 		"outcome":      "success",
 		"topic":        msg.Topic,
 		"partition":    msg.Partition,
@@ -877,6 +918,37 @@ func (w *Worker) completeOutboundClaim(ctx context.Context, claim outboundSendCl
 		"claim_state": state,
 		"ttl_ms":      ttl.Milliseconds(),
 	})
+}
+
+func (w *Worker) releaseOutboundClaim(ctx context.Context, claim outboundSendClaim, reason string, cause error) {
+	if claim.Key == "" || w.redis == nil {
+		return
+	}
+	if err := w.redis.Del(ctx, claim.Key).Err(); err != nil {
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":       "whatsmeow.outgoing.claim.release.error",
+			"decision":    "release_claim",
+			"outcome":     "error",
+			"level":       "warn",
+			"claim_id":    claim.ID,
+			"claim_state": claim.State,
+			"reason":      reason,
+			"error":       err.Error(),
+		})
+		return
+	}
+	payload := map[string]any{
+		"stage":       "whatsmeow.outgoing.claim.release.success",
+		"decision":    "release_claim",
+		"outcome":     "retrying",
+		"claim_id":    claim.ID,
+		"claim_state": claim.State,
+		"reason":      reason,
+	}
+	if cause != nil {
+		payload["error"] = cause.Error()
+	}
+	recordMessageLifecycle(ctx, w.cfg, payload)
 }
 
 func (w *Worker) publishRecoveredOutboundUpdate(ctx context.Context, data ChatMessage, claim outboundSendClaim, msg kafka.Message) error {

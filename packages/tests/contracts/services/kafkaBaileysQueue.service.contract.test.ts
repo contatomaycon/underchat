@@ -22,13 +22,24 @@ describe('KafkaBaileysQueueService', () => {
       'worker.w1.notification.message',
       'worker.w1.webhook.integration',
     ]);
+    expect(service.deletable('w1')).toEqual([
+      'worker.w1.schedule.send.message',
+      'worker.w1.validate.phone',
+      'worker.w1.notification.message',
+      'worker.w1.webhook.integration',
+    ]);
     expect(service.userPhoneJidUpdate()).toBe('user.phone.jid.update');
 
     await expect(service.ensure('w1')).resolves.toBeUndefined();
     expect(createTopics).toHaveBeenCalledWith(topics, 1, 2);
 
     await expect(service.delete('w1')).resolves.toBeUndefined();
-    expect(deleteTopics).toHaveBeenCalledWith(topics);
+    expect(deleteTopics).toHaveBeenCalledWith([
+      'worker.w1.schedule.send.message',
+      'worker.w1.validate.phone',
+      'worker.w1.notification.message',
+      'worker.w1.webhook.integration',
+    ]);
 
     await expect(service.close()).resolves.toBeUndefined();
   });

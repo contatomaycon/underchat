@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
@@ -100,6 +101,39 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	}
 	if !cfg.MessageLifecycleOutboundSuccessEnabled {
 		t.Fatal("expected outbound success lifecycle to be enabled by default")
+	}
+	if cfg.OutboundReadyTimeout != time.Minute {
+		t.Fatalf("unexpected outbound ready timeout %s", cfg.OutboundReadyTimeout)
+	}
+	if cfg.KafkaSendConsumerIdleRecreateInterval != 2*time.Minute {
+		t.Fatalf("unexpected kafka send idle recreate interval %s", cfg.KafkaSendConsumerIdleRecreateInterval)
+	}
+	if cfg.KafkaHandlerErrorBackoff != time.Second {
+		t.Fatalf("unexpected kafka handler error backoff %s", cfg.KafkaHandlerErrorBackoff)
+	}
+}
+
+func TestWorkerSendTopicDetectionIsExact(t *testing.T) {
+	if !isWorkerSendTopic("worker.019b7f05-d392-7410-9e58-f3b8e97da892.send.message") {
+		t.Fatal("expected direct worker send topic")
+	}
+	if isWorkerSendTopic("worker.019b7f05-d392-7410-9e58-f3b8e97da892.schedule.send.message") {
+		t.Fatal("expected schedule send topic to be excluded")
+	}
+	if isWorkerSendTopic("update.message") {
+		t.Fatal("expected global topic to be excluded")
+	}
+}
+
+func TestWaitUntilReadyReturnsTransientNotReady(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	err := manager.WaitUntilReady(context.Background(), time.Millisecond)
+	if err == nil {
+		t.Fatal("expected readiness wait to fail")
+	}
+	if !errors.Is(err, ErrWhatsAppNotReady) {
+		t.Fatalf("expected ErrWhatsAppNotReady, got %v", err)
 	}
 }
 

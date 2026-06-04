@@ -48,6 +48,10 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	opCtx, cancel := m.sendOperationContext(ctx)
 	defer cancel()
 
+	if !m.IsReady() {
+		return nil, fmt.Errorf("%w: %s", ErrWhatsAppNotReady, m.outboundReadinessReason())
+	}
+
 	client := m.getClient()
 	if client == nil {
 		return nil, fmt.Errorf("client is not initialized")
