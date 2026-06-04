@@ -444,6 +444,12 @@ export class WorkerCommandHandlerService {
       'request_qrcode',
       async () => {
         if (shouldReturnCached && cachedState) {
+          if (
+            cachedState.qr_pending === true &&
+            !this.qrConnectionRequestPayloads.has(payload.worker_id)
+          ) {
+            void this.resumePendingQrAttempt(payload, cachedState, accountId);
+          }
           return cachedState;
         }
 
@@ -1336,6 +1342,51 @@ export class WorkerCommandHandlerService {
     });
     this.qrConnectionRequestAttempts.set(payload.worker_id, 0);
     this.scheduleNextQrConnectionAttempt(payload.worker_id);
+  }
+
+  private async resumePendingQrAttempt(
+    payload: StatusConnectionWorkerRequest,
+    cachedState: IBaileysConnectionState,
+    accountId?: string
+  ): Promise<void> {
+    try {
+      const workerData = await this.resolveWorkerDataForContainer(
+        payload.worker_id,
+        accountId ?? cachedState.account_id
+      );
+
+      if (!workerData) {
+        recordConnectionQrSummary({
+          event: 'balancer_qrcode_pending_resume_skipped',
+          ...summarizeConnectionQrState(cachedState),
+          reason: 'worker_data_not_found',
+          level: 'warn',
+        });
+        return;
+      }
+
+      this.startQrConnectionAttemptRetry(
+        payload,
+        accountId || cachedState.account_id || workerData.accountIdResolved,
+        workerData
+      );
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_pending_resume_scheduled',
+        ...summarizeConnectionQrState(cachedState),
+        worker_type: workerData.workerTypeId,
+        reason: 'active_pending_without_in_memory_retry',
+        publish_source: 'qr_pending_resume',
+        level: 'warn',
+      });
+    } catch (err) {
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_pending_resume_error',
+        ...summarizeConnectionQrState(cachedState),
+        reason: 'resume_pending_retry_failed',
+        error: getErrorMessage(err),
+        level: 'error',
+      });
+    }
   }
 
   private stopQrConnectionAttemptRetry(workerId: string): void {

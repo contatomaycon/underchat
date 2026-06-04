@@ -784,6 +784,50 @@ describe('WorkerCommandHandlerService connection', () => {
     }
   });
 
+  it('resumes async retry when Redis has a pending attempt but memory timers were lost', async () => {
+    jest.useFakeTimers();
+    const deps = buildHandler();
+    deps.redisStore.set(
+      'connection:qrcode:worker-1:attempt',
+      JSON.stringify({
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-cached',
+        qr_pending: true,
+      })
+    );
+
+    try {
+      const response = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(response).toEqual(
+        expect.objectContaining({
+          connection_attempt_id: 'attempt-cached',
+          qr_pending: true,
+        })
+      );
+      expect(response.qrcode).toBeUndefined();
+      expect(
+        deps.workerBaileysGrpcClientService.requestConnectionQrCode
+      ).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(1);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   it('publishes and caches QR with the same attempt when it arrives after the HTTP response', async () => {
     jest.useFakeTimers();
     const deps = buildHandler();
