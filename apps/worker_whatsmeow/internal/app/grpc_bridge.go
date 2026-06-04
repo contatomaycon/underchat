@@ -152,6 +152,10 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicInt32(out, "max_attempts", int32(state.MaxAttempts))
 	setDynamicString(out, "connection_attempt_id", state.ConnectionAttemptID)
 	setDynamicBool(out, "qr_pending", state.QRPending)
+	setDynamicString(out, "proxy_status", state.ProxyStatus)
+	setDynamicString(out, "proxy_error_code", state.ProxyErrorCode)
+	setDynamicString(out, "proxy_fallback", state.ProxyFallback)
+	setDynamicBool(out, "proxy_bypassed", state.ProxyBypassed)
 }
 
 func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
@@ -274,6 +278,7 @@ func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state Connec
 	setDynamicString(req, "worker_status_id", state.WorkerStatusID)
 	setDynamicString(req, "phone", state.Phone)
 	setDynamicBool(req, "disconnected_user", state.DisconnectedUser)
+	setDynamicString(req, "connection_attempt_id", state.ConnectionAttemptID)
 
 	recordConnectionLifecycle(ctx, c.cfg, map[string]any{
 		"stage":             "connection.whatsmeow.balance.notify_start",

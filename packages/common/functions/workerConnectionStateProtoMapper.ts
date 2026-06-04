@@ -45,6 +45,20 @@ export function protoToConnectionState(
   if (proto.qr_pending === true) {
     state.qr_pending = true;
   }
+  if (proto.proxy_status) {
+    state.proxy_status =
+      proto.proxy_status as IBaileysConnectionState['proxy_status'];
+  }
+  if (proto.proxy_error_code) {
+    state.proxy_error_code = proto.proxy_error_code;
+  }
+  if (proto.proxy_fallback) {
+    state.proxy_fallback =
+      proto.proxy_fallback as IBaileysConnectionState['proxy_fallback'];
+  }
+  if (proto.proxy_bypassed === true) {
+    state.proxy_bypassed = true;
+  }
 
   const time = optionalNumber(proto.time);
   const secondsUntilNextAttempt = optionalNumber(
@@ -83,5 +97,9 @@ export function connectionStateToProto(
     max_attempts: state.max_attempts ?? 0,
     connection_attempt_id: state.connection_attempt_id ?? '',
     qr_pending: state.qr_pending ?? false,
+    proxy_status: state.proxy_status ?? '',
+    proxy_error_code: state.proxy_error_code ?? '',
+    proxy_fallback: state.proxy_fallback ?? '',
+    proxy_bypassed: state.proxy_bypassed ?? false,
   };
 }

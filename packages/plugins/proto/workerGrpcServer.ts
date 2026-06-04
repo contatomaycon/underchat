@@ -290,6 +290,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         outcome: 'received',
         grpc_method: 'NotifyWorkerStatus',
         worker_status_id: req.worker_status_id,
+        connection_attempt_id: req.connection_attempt_id,
         has_phone: Boolean(req.phone),
         disconnected_user: req.disconnected_user === true,
       });
@@ -304,6 +305,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
             outcome: 'success',
             grpc_method: 'NotifyWorkerStatus',
             worker_status_id: req.worker_status_id,
+            connection_attempt_id: req.connection_attempt_id,
           });
           callback(null, {});
         })

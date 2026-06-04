@@ -15,4 +15,8 @@ export interface IWorkerConnectionStateProto {
   max_attempts?: number;
   connection_attempt_id?: string;
   qr_pending?: boolean;
+  proxy_status?: string;
+  proxy_error_code?: string;
+  proxy_fallback?: string;
+  proxy_bypassed?: boolean;
 }

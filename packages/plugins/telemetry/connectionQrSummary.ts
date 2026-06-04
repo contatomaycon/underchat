@@ -26,6 +26,12 @@ export interface ConnectionQrSummaryInput {
   server_id?: string;
   worker_status_id?: string;
   time_to_first_qr_ms?: number;
+  publish_source?: string;
+  ignored_stale?: boolean;
+  proxy_status?: string;
+  proxy_error_code?: string;
+  proxy_fallback?: string;
+  proxy_bypassed?: boolean;
 }
 
 function hashSensitive(value: string | undefined): string | undefined {
@@ -50,6 +56,10 @@ export function summarizeConnectionQrState(
   | 'attempt'
   | 'max_attempts'
   | 'worker_status_id'
+  | 'proxy_status'
+  | 'proxy_error_code'
+  | 'proxy_fallback'
+  | 'proxy_bypassed'
 > {
   return {
     worker_id: state.worker_id,
@@ -62,6 +72,10 @@ export function summarizeConnectionQrState(
     attempt: state.attempt,
     max_attempts: state.max_attempts,
     worker_status_id: state.worker_status_id,
+    proxy_status: state.proxy_status,
+    proxy_error_code: state.proxy_error_code,
+    proxy_fallback: state.proxy_fallback,
+    proxy_bypassed: state.proxy_bypassed,
   };
 }
 
@@ -92,6 +106,12 @@ export function recordConnectionQrSummary(
     attempt: input.attempt,
     max_attempts: input.max_attempts,
     time_to_first_qr_ms: input.time_to_first_qr_ms,
+    publish_source: input.publish_source,
+    ignored_stale: input.ignored_stale === true,
+    proxy_status: input.proxy_status,
+    proxy_error_code: input.proxy_error_code,
+    proxy_fallback: input.proxy_fallback,
+    proxy_bypassed: input.proxy_bypassed === true,
   };
 
   logger[level](payload, 'Connection QR summary');

@@ -65,6 +65,10 @@ import {
   summarizeConnectionQrState,
 } from '@core/plugins/telemetry/connectionQrSummary';
 import { WorkerLifecycleLockService } from '@core/services/workerLifecycleLock.service';
+import {
+  ProxyConnectivityResult,
+  ProxyConnectivityService,
+} from '@core/services/proxyConnectivity.service';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -96,6 +100,19 @@ interface QrConnectionAttemptRetryContext {
   accountId: string;
   workerData: ResolvedWorkerDataForContainer;
   startedAtMs: number;
+}
+
+interface QrProxyDecision {
+  proxy: ResolvedWorkerProxyConfig | undefined;
+  fallbackDirect: boolean;
+  status: 'healthy' | 'unhealthy' | 'disabled';
+  errorCode?: string;
+}
+
+interface CreateWorkerOptions {
+  healthOptions?: ContainerHealthCheckOptions;
+  proxyOverride?: ResolvedWorkerProxyConfig | null;
+  proxyMode?: 'proxy' | 'direct' | 'direct_fallback';
 }
 
 class WorkerCreateAttemptError extends Error {
@@ -164,6 +181,8 @@ export class WorkerCommandHandlerService {
     private readonly workerConfigService: WorkerConfigService,
     @inject(WorkerLifecycleLockService)
     private readonly workerLifecycleLockService: WorkerLifecycleLockService,
+    @inject(ProxyConnectivityService)
+    private readonly proxyConnectivityService: ProxyConnectivityService,
     @inject('Redis')
     private readonly redis: Redis
   ) {}
@@ -416,19 +435,20 @@ export class WorkerCommandHandlerService {
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
 
-    const payload: StatusConnectionWorkerRequest = {
-      worker_id: input.worker_id,
-      status: EWorkerStatus.online,
-      type: EBaileysConnectionType.qrcode,
-      connection_attempt_id: input.connection_attempt_id ?? uuidv7(),
-    };
+    const { payload, cachedState, shouldReturnCached } =
+      await this.resolveQrRequestPayload(input);
 
     this.stopConnectionRequestRetry(payload.worker_id);
-    this.stopQrConnectionAttemptRetry(payload.worker_id);
     return this.runWithWorkerLifecycleLock(
       payload.worker_id,
       'request_qrcode',
-      () => this.runConnectionQrCodeWorkflow(payload, accountId)
+      async () => {
+        if (shouldReturnCached && cachedState) {
+          return cachedState;
+        }
+
+        return this.runConnectionQrCodeWorkflow(payload, accountId);
+      }
     );
   }
 
@@ -495,6 +515,7 @@ export class WorkerCommandHandlerService {
       decision: 'notify_worker_status',
       outcome: 'received',
       worker_status_id: workerStatusId,
+      connection_attempt_id: input.connection_attempt_id,
       has_phone: Boolean(input.phone),
       disconnected_user: input.disconnected_user === true,
     });
@@ -507,6 +528,7 @@ export class WorkerCommandHandlerService {
         reason: 'missing_required_fields',
         level: 'warn',
         worker_status_id: workerStatusId,
+        connection_attempt_id: input.connection_attempt_id,
       });
       throw new Error(
         'Missing required fields: worker_id, account_id, worker_status_id'
@@ -525,6 +547,7 @@ export class WorkerCommandHandlerService {
       worker_status_id: workerStatusId,
       phone: input.phone ?? undefined,
       disconnected_user: input.disconnected_user ?? undefined,
+      connection_attempt_id: input.connection_attempt_id ?? undefined,
     };
 
     if (isDisponibleWithDisconnectedUser) {
@@ -546,6 +569,7 @@ export class WorkerCommandHandlerService {
         decision: 'notify_worker_status',
         outcome: 'success',
         worker_status_id: workerStatusId,
+        connection_attempt_id: input.connection_attempt_id,
         disconnected_user: true,
       });
 
@@ -596,6 +620,7 @@ export class WorkerCommandHandlerService {
       decision: 'notify_worker_status',
       outcome: 'success',
       worker_status_id: workerStatusId,
+      connection_attempt_id: input.connection_attempt_id,
       has_phone: Boolean(phoneNumber),
     });
   }
@@ -971,6 +996,121 @@ export class WorkerCommandHandlerService {
     return `connection:qrcode:${workerId}:attempt`;
   }
 
+  private async getCachedQrAttemptState(
+    workerId: string
+  ): Promise<IBaileysConnectionState | undefined> {
+    try {
+      const raw = await this.redis.get(this.qrAttemptCacheKey(workerId));
+      if (!raw) {
+        return undefined;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<IBaileysConnectionState>;
+      if (!parsed.worker_id || parsed.worker_id !== workerId) {
+        return undefined;
+      }
+
+      return parsed as IBaileysConnectionState;
+    } catch (err) {
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_cache_read_error',
+        worker_id: workerId,
+        reason: 'redis_cache_read_failed',
+        error: getErrorMessage(err),
+        level: 'warn',
+      });
+      return undefined;
+    }
+  }
+
+  private isQrAttemptTerminalState(
+    state: Partial<IBaileysConnectionState>
+  ): boolean {
+    return (
+      state.status === EBaileysConnectionStatus.connected ||
+      state.status === EBaileysConnectionStatus.disconnected ||
+      state.disconnected_user === true ||
+      state.worker_status_id === EWorkerStatus.online ||
+      state.worker_status_id === EWorkerStatus.error ||
+      state.worker_status_id === EWorkerStatus.delete ||
+      state.code === ECodeMessage.connectionEstablished ||
+      state.code === ECodeMessage.logoutInProgress ||
+      state.code === ECodeMessage.loggedOut ||
+      state.code === ECodeMessage.connectionLost ||
+      state.code === ECodeMessage.connectionClosed ||
+      state.code === ECodeMessage.connectionReplaced ||
+      state.code === ECodeMessage.badSession ||
+      state.code === ECodeMessage.multideviceMismatch ||
+      state.code === ECodeMessage.phoneNotAvailable
+    );
+  }
+
+  private isActiveQrAttemptState(
+    state: IBaileysConnectionState | undefined
+  ): state is IBaileysConnectionState {
+    return state !== undefined && !this.isQrAttemptTerminalState(state);
+  }
+
+  private async resolveQrRequestPayload(
+    input: StatusConnectionWorkerRequest
+  ): Promise<{
+    payload: StatusConnectionWorkerRequest;
+    cachedState?: IBaileysConnectionState;
+    shouldReturnCached: boolean;
+  }> {
+    const cached = await this.getCachedQrAttemptState(input.worker_id);
+    const activeCached = this.isActiveQrAttemptState(cached)
+      ? cached
+      : undefined;
+    const activeRetry = this.qrConnectionRequestPayloads.has(input.worker_id);
+    const connectionAttemptId =
+      activeCached?.connection_attempt_id ??
+      input.connection_attempt_id ??
+      uuidv7();
+
+    const payload: StatusConnectionWorkerRequest = {
+      worker_id: input.worker_id,
+      status: EWorkerStatus.online,
+      type: EBaileysConnectionType.qrcode,
+      connection_attempt_id: connectionAttemptId,
+    };
+
+    if (!activeCached) {
+      return { payload, shouldReturnCached: false };
+    }
+
+    if (
+      activeCached.qrcode ||
+      activeCached.qr_pending === true ||
+      activeRetry
+    ) {
+      const pendingReason = activeRetry
+        ? 'active_retry_in_progress'
+        : 'active_attempt_pending';
+
+      recordConnectionQrSummary({
+        event: activeCached.qrcode
+          ? 'balancer_qrcode_active_attempt_cache_hit'
+          : 'balancer_qrcode_active_attempt_pending',
+        ...summarizeConnectionQrState(activeCached),
+        reason: activeCached.qrcode ? 'active_attempt_has_qr' : pendingReason,
+        level: activeCached.qrcode ? 'info' : 'warn',
+      });
+
+      return {
+        payload,
+        cachedState: activeCached,
+        shouldReturnCached: true,
+      };
+    }
+
+    return {
+      payload,
+      cachedState: activeCached,
+      shouldReturnCached: false,
+    };
+  }
+
   private ensureQrConnectionAttemptId(
     payload: StatusConnectionWorkerRequest
   ): string {
@@ -1034,6 +1174,20 @@ export class WorkerCommandHandlerService {
     return normalized;
   }
 
+  private applyProxyDecisionToState(
+    state: IBaileysConnectionState,
+    proxyDecision: QrProxyDecision
+  ): void {
+    state.proxy_status = proxyDecision.status;
+    if (proxyDecision.errorCode) {
+      state.proxy_error_code = proxyDecision.errorCode;
+    }
+    if (proxyDecision.fallbackDirect) {
+      state.proxy_fallback = 'direct';
+      state.proxy_bypassed = true;
+    }
+  }
+
   private async cacheQrAttemptState(
     state: IBaileysConnectionState
   ): Promise<void> {
@@ -1042,6 +1196,38 @@ export class WorkerCommandHandlerService {
       this.qrAttemptTtlSeconds,
       JSON.stringify(state)
     );
+  }
+
+  private async shouldIgnoreQrAttemptState(
+    state: IBaileysConnectionState
+  ): Promise<{ ignored: boolean; reason?: string }> {
+    if (this.isQrAttemptTerminalState(state)) {
+      return { ignored: false };
+    }
+
+    const cached = await this.getCachedQrAttemptState(state.worker_id);
+    if (!this.isActiveQrAttemptState(cached)) {
+      return { ignored: false };
+    }
+
+    const cachedAttempt = cached.connection_attempt_id;
+    const incomingAttempt = state.connection_attempt_id;
+
+    if (cachedAttempt && incomingAttempt && cachedAttempt !== incomingAttempt) {
+      return {
+        ignored: true,
+        reason: 'active_attempt_mismatch',
+      };
+    }
+
+    if (cached.qrcode && !state.qrcode) {
+      return {
+        ignored: true,
+        reason: 'cached_qr_wins_over_without_qr',
+      };
+    }
+
+    return { ignored: false };
   }
 
   private async cacheAndPublishQrAttemptState(
@@ -1053,9 +1239,24 @@ export class WorkerCommandHandlerService {
       error?: string;
       recreateReason?: string;
       timeToFirstQrMs?: number;
+      publishSource?: string;
       level?: 'info' | 'warn' | 'error';
     }
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const stale = await this.shouldIgnoreQrAttemptState(state);
+    if (stale.ignored) {
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_state_ignored_stale',
+        ...summarizeConnectionQrState(state),
+        worker_type: options.workerType,
+        reason: stale.reason,
+        publish_source: options.publishSource ?? options.event,
+        ignored_stale: true,
+        level: 'warn',
+      });
+      return false;
+    }
+
     try {
       await this.cacheQrAttemptState(state);
     } catch (err) {
@@ -1077,6 +1278,7 @@ export class WorkerCommandHandlerService {
       error: options.error,
       recreate_reason: options.recreateReason,
       time_to_first_qr_ms: options.timeToFirstQrMs,
+      publish_source: options.publishSource ?? options.event,
       level: options.level,
     });
 
@@ -1090,10 +1292,13 @@ export class WorkerCommandHandlerService {
           worker_type: options.workerType,
           reason: 'centrifugo_publish_failed',
           error: getErrorMessage(err),
+          publish_source: options.publishSource ?? options.event,
           level: 'error',
         });
       }
     }
+
+    return true;
   }
 
   private isRetryableQrRequestError(error: unknown): boolean {
@@ -1172,18 +1377,24 @@ export class WorkerCommandHandlerService {
         event: 'balancer_qrcode_retry_exhausted',
         workerType: context.workerData.workerTypeId,
         reason: 'retry_exhausted',
+        publishSource: 'qr_retry',
         level: 'warn',
       });
       this.stopQrConnectionAttemptRetry(workerId);
       return;
     }
 
+    let proxyDecision: QrProxyDecision | undefined;
+
     try {
       await this.runWithWorkerLifecycleLock(
         workerId,
         'request_qrcode_retry',
         async () => {
-          await this.ensureQrContainerReady(workerId, context.workerData);
+          proxyDecision = await this.ensureQrContainerReady(
+            workerId,
+            context.workerData
+          );
 
           if (context.workerData.lifecycleOperationId) {
             const current = await this.isLifecycleOperationCurrent(
@@ -1224,24 +1435,29 @@ export class WorkerCommandHandlerService {
             context.payload,
             context.accountId
           );
+          this.applyProxyDecisionToState(normalized, proxyDecision);
           normalized.attempt ??= attempt;
           normalized.max_attempts ??= this.qrRetryMaxAttempts;
 
-          await this.cacheAndPublishQrAttemptState(normalized, {
-            event: normalized.qrcode
-              ? 'balancer_qrcode_retry_success'
-              : 'balancer_qrcode_retry_pending',
-            workerType: context.workerData.workerTypeId,
-            reason: normalized.qrcode
-              ? undefined
-              : 'worker_response_without_qr',
-            timeToFirstQrMs: normalized.qrcode
-              ? Date.now() - context.startedAtMs
-              : undefined,
-            level: normalized.qrcode ? 'info' : 'warn',
-          });
+          const accepted = await this.cacheAndPublishQrAttemptState(
+            normalized,
+            {
+              event: normalized.qrcode
+                ? 'balancer_qrcode_retry_success'
+                : 'balancer_qrcode_retry_pending',
+              workerType: context.workerData.workerTypeId,
+              reason: normalized.qrcode
+                ? undefined
+                : 'worker_response_without_qr',
+              timeToFirstQrMs: normalized.qrcode
+                ? Date.now() - context.startedAtMs
+                : undefined,
+              publishSource: 'qr_retry',
+              level: normalized.qrcode ? 'info' : 'warn',
+            }
+          );
 
-          if (normalized.qrcode) {
+          if (normalized.qrcode && accepted) {
             this.stopQrConnectionAttemptRetry(workerId);
           }
         }
@@ -1256,6 +1472,9 @@ export class WorkerCommandHandlerService {
           maxAttempts: this.qrRetryMaxAttempts,
         }
       );
+      if (proxyDecision) {
+        this.applyProxyDecisionToState(pending, proxyDecision);
+      }
       await this.cacheAndPublishQrAttemptState(pending, {
         event: retryable
           ? 'balancer_qrcode_retry_error_pending'
@@ -1265,6 +1484,7 @@ export class WorkerCommandHandlerService {
           ? 'retryable_worker_error'
           : 'non_retryable_worker_error',
         error: getErrorMessage(err),
+        publishSource: 'qr_retry_error',
         level: retryable ? 'warn' : 'error',
       });
 
@@ -1325,7 +1545,10 @@ export class WorkerCommandHandlerService {
       lifecycle_operation_id: workerData.lifecycleOperationId,
     });
 
-    await this.ensureQrContainerReady(workerId, workerData);
+    const proxyDecision = await this.ensureQrContainerReady(
+      workerId,
+      workerData
+    );
 
     if (workerData.lifecycleOperationId) {
       const current = await this.isLifecycleOperationCurrent(
@@ -1393,11 +1616,13 @@ export class WorkerCommandHandlerService {
         payload,
         workerData.accountIdResolved
       );
+      this.applyProxyDecisionToState(pending, proxyDecision);
       await this.cacheAndPublishQrAttemptState(pending, {
         event: 'balancer_qrcode_initial_error_pending',
         workerType: workerData.workerTypeId,
         reason: 'retryable_worker_error',
         error: getErrorMessage(err),
+        publishSource: 'qr_initial_error',
         level: 'warn',
       });
       this.startQrConnectionAttemptRetry(
@@ -1413,6 +1638,7 @@ export class WorkerCommandHandlerService {
       payload,
       workerData.accountIdResolved
     );
+    this.applyProxyDecisionToState(normalized, proxyDecision);
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_new_worker_success',
       decision: 'request_worker_qrcode',
@@ -1435,6 +1661,7 @@ export class WorkerCommandHandlerService {
       workerType: workerData.workerTypeId,
       reason: normalized.qrcode ? undefined : 'worker_response_without_qr',
       timeToFirstQrMs: normalized.qrcode ? 0 : undefined,
+      publishSource: 'qr_initial',
       level: normalized.qrcode ? 'info' : 'warn',
     });
 
@@ -1452,10 +1679,16 @@ export class WorkerCommandHandlerService {
   private async ensureQrContainerReady(
     workerId: string,
     workerData: ResolvedWorkerDataForContainer
-  ): Promise<void> {
+  ): Promise<QrProxyDecision> {
+    const proxyDecision = await this.resolveQrProxyDecision(
+      workerId,
+      workerData
+    );
+
     if (
-      workerData.workerStatusId === EWorkerStatus.creating ||
-      workerData.workerStatusId === EWorkerStatus.recreating
+      !proxyDecision.fallbackDirect &&
+      (workerData.workerStatusId === EWorkerStatus.creating ||
+        workerData.workerStatusId === EWorkerStatus.recreating)
     ) {
       const ready = await this.waitForExistingQrContainerReady(
         workerId,
@@ -1463,7 +1696,7 @@ export class WorkerCommandHandlerService {
         { maxAttempts: 10, delayMs: 2000, grpcReadyTimeoutMs: 2000 }
       );
       if (ready) {
-        return;
+        return proxyDecision;
       }
     }
 
@@ -1497,6 +1730,25 @@ export class WorkerCommandHandlerService {
           ),
           ...this.lifecycleFieldsFromInspection(inspection),
         });
+      } else if (
+        proxyDecision.fallbackDirect &&
+        this.containerHasProxy(inspection)
+      ) {
+        recreateReason = 'proxy_unhealthy_direct_fallback';
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.qrcode_container_proxy_unhealthy',
+          decision: 'validate_existing_container_proxy',
+          outcome: 'unhealthy',
+          reason: recreateReason,
+          recreate_reason: recreateReason,
+          level: 'warn',
+          worker_type: workerData.workerTypeId,
+          proxy_status: proxyDecision.status,
+          proxy_error_code: proxyDecision.errorCode,
+          proxy_fallback: 'direct',
+          ...this.lifecycleFieldsFromInspection(inspection),
+        });
       } else {
         const containerId = inspection.container_id ?? workerId;
         const healthy = await this.isExistingContainerHealthy(containerId, {
@@ -1523,7 +1775,7 @@ export class WorkerCommandHandlerService {
               workerId,
               workerData.workerTypeId
             );
-            return;
+            return proxyDecision;
           } catch (err) {
             recordConnectionLifecycle({
               stage:
@@ -1588,9 +1840,17 @@ export class WorkerCommandHandlerService {
     });
 
     await this.createWorkerWithPayload(workerId, workerData, undefined, {
-      maxAttempts: 30,
-      delayMs: 1000,
-      requiredConsecutiveSuccesses: 3,
+      healthOptions: {
+        maxAttempts: 30,
+        delayMs: 1000,
+        requiredConsecutiveSuccesses: 3,
+      },
+      proxyOverride: proxyDecision.fallbackDirect ? null : proxyDecision.proxy,
+      proxyMode: proxyDecision.fallbackDirect
+        ? 'direct_fallback'
+        : proxyDecision.proxy
+          ? 'proxy'
+          : 'direct',
     });
 
     const createdInspection = await this.inspectWorkerContainerForQr(
@@ -1606,6 +1866,8 @@ export class WorkerCommandHandlerService {
       worker_status_id: workerData.workerStatusId,
       ...this.lifecycleFieldsFromInspection(createdInspection),
     });
+
+    return proxyDecision;
   }
 
   private shouldResetQrVolumeForRecreateReason(
@@ -2275,7 +2537,7 @@ export class WorkerCommandHandlerService {
     workerId: string,
     workerData: ResolvedWorkerDataForContainer,
     connectionRequest?: StatusConnectionWorkerRequest,
-    healthOptions?: ContainerHealthCheckOptions
+    options: CreateWorkerOptions = {}
   ): Promise<void> {
     const createPayload: IWorkerPayload = {
       action: EWorkerAction.create,
@@ -2288,7 +2550,7 @@ export class WorkerCommandHandlerService {
         : {}),
     };
 
-    await this.createWorker(createPayload, connectionRequest, healthOptions);
+    await this.createWorker(createPayload, connectionRequest, options);
   }
 
   private startConnectionRequestRetry(
@@ -2409,6 +2671,87 @@ export class WorkerCommandHandlerService {
     }
   }
 
+  private async resolveQrProxyDecision(
+    workerId: string,
+    workerData: ResolvedWorkerDataForContainer
+  ): Promise<QrProxyDecision> {
+    const proxy = await this.resolveWorkerProxyConfig(
+      workerId,
+      workerData.serverId
+    );
+
+    if (!proxy) {
+      return {
+        proxy: undefined,
+        fallbackDirect: false,
+        status: 'disabled',
+      };
+    }
+
+    let result: ProxyConnectivityResult;
+    try {
+      result = await this.proxyConnectivityService.check(proxy);
+    } catch (err) {
+      result = {
+        status: 'unhealthy',
+        error_code: getErrorMessage(err),
+      };
+    }
+
+    recordConnectionQrSummary({
+      event:
+        result.status === 'healthy'
+          ? 'balancer_qrcode_proxy_healthy'
+          : 'balancer_qrcode_proxy_unhealthy',
+      worker_id: workerId,
+      account_id: workerData.accountIdResolved,
+      worker_type: workerData.workerTypeId,
+      proxy_status: result.status,
+      proxy_error_code: result.error_code,
+      reason:
+        result.status === 'healthy'
+          ? 'proxy_connectivity_ok'
+          : 'proxy_connectivity_failed',
+      level: result.status === 'healthy' ? 'info' : 'warn',
+    });
+
+    if (result.status === 'healthy') {
+      return {
+        proxy,
+        fallbackDirect: false,
+        status: 'healthy',
+      };
+    }
+
+    recordConnectionQrSummary({
+      event: 'balancer_qrcode_proxy_fallback_direct',
+      worker_id: workerId,
+      account_id: workerData.accountIdResolved,
+      worker_type: workerData.workerTypeId,
+      proxy_status: 'unhealthy',
+      proxy_error_code: result.error_code,
+      proxy_fallback: 'direct',
+      proxy_bypassed: true,
+      reason: 'proxy_unhealthy',
+      level: 'warn',
+    });
+
+    return {
+      proxy: undefined,
+      fallbackDirect: true,
+      status: 'unhealthy',
+      errorCode: result.error_code,
+    };
+  }
+
+  private containerHasProxy(inspection: WorkerContainerInspection): boolean {
+    return Boolean(
+      inspection.container_env?.PROXY_HOST ||
+      inspection.container_env?.PROXY_PORT ||
+      inspection.container_labels?.['underchat.proxy_mode'] === 'proxy'
+    );
+  }
+
   private async resolveChannelProxyConfig(workerId: string): Promise<
     | {
         protocol: EProxyProtocol;
@@ -2522,6 +2865,19 @@ export class WorkerCommandHandlerService {
     dataPublish: IBaileysConnectionState
   ): Promise<PublishResult> {
     const channel = workerCentrifugoQueue(dataPublish.account_id);
+    const stale = await this.shouldIgnoreQrAttemptState(dataPublish);
+    if (stale.ignored) {
+      recordConnectionQrSummary({
+        event: 'balancer_centrifugo_publish_ignored_stale',
+        ...summarizeConnectionQrState(dataPublish),
+        reason: stale.reason,
+        publish_source: 'centrifugo_publish',
+        ignored_stale: true,
+        level: 'warn',
+      });
+      return {} as PublishResult;
+    }
+
     recordConnectionLifecycle({
       stage: 'connection.balancer.centrifugo.publish_start',
       decision: 'publish_connection_state',
@@ -2530,6 +2886,7 @@ export class WorkerCommandHandlerService {
       status: dataPublish.status,
       code: dataPublish.code,
       worker_status_id: dataPublish.worker_status_id,
+      connection_attempt_id: dataPublish.connection_attempt_id,
       qrcode: dataPublish.qrcode,
       pairing_code: dataPublish.pairing_code,
       has_qr: Boolean(dataPublish.qrcode),
@@ -2550,6 +2907,7 @@ export class WorkerCommandHandlerService {
         status: dataPublish.status,
         code: dataPublish.code,
         worker_status_id: dataPublish.worker_status_id,
+        connection_attempt_id: dataPublish.connection_attempt_id,
         qrcode: dataPublish.qrcode,
         pairing_code: dataPublish.pairing_code,
         has_qr: Boolean(dataPublish.qrcode),
@@ -2569,6 +2927,7 @@ export class WorkerCommandHandlerService {
         status: dataPublish.status,
         code: dataPublish.code,
         worker_status_id: dataPublish.worker_status_id,
+        connection_attempt_id: dataPublish.connection_attempt_id,
         error: getErrorMessage(err),
       });
       throw err;
@@ -3253,7 +3612,7 @@ export class WorkerCommandHandlerService {
   private async createWorker(
     data: IWorkerPayload,
     connectionRequest?: StatusConnectionWorkerRequest,
-    healthOptions: ContainerHealthCheckOptions = {}
+    options: CreateWorkerOptions = {}
   ): Promise<PublishResult> {
     if (!data?.worker_type_id) {
       await this.updateWorkerErrorStatus(
@@ -3284,8 +3643,9 @@ export class WorkerCommandHandlerService {
     }
 
     const createMaxAttempts = 2;
-    const resolvedHealthOptions =
-      this.buildNewContainerHealthOptions(healthOptions);
+    const resolvedHealthOptions = this.buildNewContainerHealthOptions(
+      options.healthOptions
+    );
 
     const inputUpdateCreating: IUpdateWorker = {
       worker_id: data.worker_id,
@@ -3327,10 +3687,10 @@ export class WorkerCommandHandlerService {
       });
     }
 
-    const proxy = await this.resolveWorkerProxyConfig(
-      data.worker_id,
-      data.server_id
-    );
+    const proxy =
+      options.proxyOverride === undefined
+        ? await this.resolveWorkerProxyConfig(data.worker_id, data.server_id)
+        : (options.proxyOverride ?? undefined);
 
     let containerId: string | undefined;
     let lastError: unknown;
@@ -3346,6 +3706,7 @@ export class WorkerCommandHandlerService {
           workerType,
           imageName,
           proxy,
+          options.proxyMode,
           resolvedHealthOptions,
           createAttempt,
           createMaxAttempts
@@ -3509,6 +3870,7 @@ export class WorkerCommandHandlerService {
     workerType: EWorkerType,
     imageName: ReturnType<typeof getImageWorker>,
     proxy: ResolvedWorkerProxyConfig | undefined,
+    proxyMode: 'proxy' | 'direct' | 'direct_fallback' | undefined,
     healthOptions: ContainerHealthCheckOptions,
     createAttempt: number,
     createMaxAttempts: number
@@ -3520,6 +3882,8 @@ export class WorkerCommandHandlerService {
       worker_type: workerType,
       create_attempt: createAttempt,
       create_max_attempts: createMaxAttempts,
+      proxy_status: proxy ? 'configured' : 'disabled',
+      proxy_fallback: proxyMode === 'direct_fallback' ? 'direct' : undefined,
     });
 
     if (
@@ -3560,6 +3924,7 @@ export class WorkerCommandHandlerService {
           {
             workerTypeId: workerType,
             workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
+            proxyMode: proxyMode ?? (proxy ? 'proxy' : 'direct'),
           }
         ),
       (r) => !r

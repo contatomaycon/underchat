@@ -39,6 +39,10 @@ message ChangeConnectionStatusRequest {
   bool remove_session = 6;
   string connection_attempt_id = 7;
   bool qr_pending = 8;
+  string proxy_status = 9;
+  string proxy_error_code = 10;
+  string proxy_fallback = 11;
+  bool proxy_bypassed = 12;
 }
 
 message NotifyWorkerStatusRequest {
@@ -47,6 +51,7 @@ message NotifyWorkerStatusRequest {
   string worker_status_id = 3;
   string phone = 4;
   bool disconnected_user = 5;
+  string connection_attempt_id = 6;
 }
 
 message WorkerConnectionState {
@@ -66,6 +71,10 @@ message WorkerConnectionState {
   int32 max_attempts = 14;
   string connection_attempt_id = 15;
   bool qr_pending = 16;
+  string proxy_status = 17;
+  string proxy_error_code = 18;
+  string proxy_fallback = 19;
+  bool proxy_bypassed = 20;
 }
 
 message ResolveIncomingCallActionRequest {

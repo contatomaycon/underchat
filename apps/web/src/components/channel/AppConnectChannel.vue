@@ -344,14 +344,28 @@ function startNextAttemptCountdown() {
   }, 1000);
 }
 
-function prepareConnectionStart() {
+function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
+  const shouldPreserveQr = options.preserveQr === true && Boolean(qrcode.value);
+  const currentQrCode = qrcode.value;
+  const currentConnectionAttemptId = connectionAttemptId.value;
+  const currentQrPending = qrPending.value;
+  const currentQrAttempt = qrAttempt.value;
+  const currentQrMaxAttempts = qrMaxAttempts.value;
+
   isResetting.value = false;
   statusConnection.value = EBaileysConnectionStatus.connecting;
   statusCode.value = ECodeMessage.awaitConnection;
-  qrcode.value = undefined;
-  connectionAttemptId.value = undefined;
-  qrPending.value = true;
-  resetQrAttempts();
+  qrcode.value = shouldPreserveQr ? currentQrCode : undefined;
+  connectionAttemptId.value = shouldPreserveQr
+    ? currentConnectionAttemptId
+    : undefined;
+  qrPending.value = shouldPreserveQr ? currentQrPending : true;
+  if (shouldPreserveQr) {
+    qrAttempt.value = currentQrAttempt;
+    qrMaxAttempts.value = currentQrMaxAttempts;
+  } else {
+    resetQrAttempts();
+  }
   disconnectedByUser.value = false;
   phoneNumber.value = null;
   secondsNextAttempt.value = 0;
@@ -388,7 +402,7 @@ function prepareInitialModalState() {
 async function reconnectChannel() {
   if (!channelId.value) return;
 
-  prepareConnectionStart();
+  prepareConnectionStart({ preserveQr: true });
 
   const state = await channelStore.requestConnectionQrCode(channelId.value);
   if (state) {

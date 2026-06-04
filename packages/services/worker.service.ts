@@ -78,6 +78,7 @@ export interface WorkerContainerInspection {
 export interface WorkerContainerMetadata {
   workerTypeId?: string;
   workerGrpcPort?: number;
+  proxyMode?: 'proxy' | 'direct' | 'direct_fallback';
 }
 
 function dockerErrorMessage(error: unknown): string {
@@ -107,6 +108,9 @@ export class WorkerService {
     'BALANCER_GRPC_HOST',
     'BALANCER_GRPC_PORT',
     'OTEL_SERVICE_NAME',
+    'PROXY_PROTOCOL',
+    'PROXY_HOST',
+    'PROXY_PORT',
   ]);
   private readonly inspectedLabelKeys = new Set<string>([
     'underchat.worker_id',
@@ -114,6 +118,7 @@ export class WorkerService {
     'underchat.worker_type_id',
     'underchat.worker_image',
     'underchat.worker_grpc_port',
+    'underchat.proxy_mode',
   ]);
 
   constructor(
@@ -228,6 +233,9 @@ export class WorkerService {
         ? {
             'underchat.worker_grpc_port': String(input.metadata.workerGrpcPort),
           }
+        : {}),
+      ...(input.metadata?.proxyMode
+        ? { 'underchat.proxy_mode': input.metadata.proxyMode }
         : {}),
     };
   }
@@ -598,6 +606,9 @@ export class WorkerService {
       worker_type: imageName,
       worker_type_id: metadata?.workerTypeId,
       worker_grpc_port: metadata?.workerGrpcPort,
+      proxy_status: proxy ? 'configured' : 'disabled',
+      proxy_fallback:
+        metadata?.proxyMode === 'direct_fallback' ? 'direct' : undefined,
       grpc_address:
         grpcHost !== undefined && grpcPort !== undefined
           ? `${grpcHost}:${grpcPort}`

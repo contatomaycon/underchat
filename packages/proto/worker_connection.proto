@@ -33,6 +33,10 @@ message WorkerConnectionResponse {
   int32 max_attempts = 14;
   string connection_attempt_id = 15;
   bool qr_pending = 16;
+  string proxy_status = 17;
+  string proxy_error_code = 18;
+  string proxy_fallback = 19;
+  bool proxy_bypassed = 20;
 }
 
 message PhoneValidationRequest {

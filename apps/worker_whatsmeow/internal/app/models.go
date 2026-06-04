@@ -67,6 +67,10 @@ type ConnectionState struct {
 	MaxAttempts             int    `json:"max_attempts,omitempty"`
 	ConnectionAttemptID     string `json:"connection_attempt_id,omitempty"`
 	QRPending               bool   `json:"qr_pending,omitempty"`
+	ProxyStatus             string `json:"proxy_status,omitempty"`
+	ProxyErrorCode          string `json:"proxy_error_code,omitempty"`
+	ProxyFallback           string `json:"proxy_fallback,omitempty"`
+	ProxyBypassed           bool   `json:"proxy_bypassed,omitempty"`
 }
 
 type StatusConnectionRequest struct {

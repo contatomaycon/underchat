@@ -107,6 +107,20 @@ export function protoToStatusConnectionRequest(
   if (proto.qr_pending === true) {
     payload.qr_pending = true;
   }
+  if (proto.proxy_status) {
+    payload.proxy_status =
+      proto.proxy_status as StatusConnectionWorkerRequest['proxy_status'];
+  }
+  if (proto.proxy_error_code) {
+    payload.proxy_error_code = proto.proxy_error_code;
+  }
+  if (proto.proxy_fallback) {
+    payload.proxy_fallback =
+      proto.proxy_fallback as StatusConnectionWorkerRequest['proxy_fallback'];
+  }
+  if (proto.proxy_bypassed === true) {
+    payload.proxy_bypassed = true;
+  }
 
   return payload;
 }
@@ -131,6 +145,18 @@ export function statusConnectionRequestToProto(
   }
   if (payload.qr_pending === true) {
     proto.qr_pending = true;
+  }
+  if (payload.proxy_status) {
+    proto.proxy_status = payload.proxy_status;
+  }
+  if (payload.proxy_error_code) {
+    proto.proxy_error_code = payload.proxy_error_code;
+  }
+  if (payload.proxy_fallback) {
+    proto.proxy_fallback = payload.proxy_fallback;
+  }
+  if (payload.proxy_bypassed === true) {
+    proto.proxy_bypassed = true;
   }
   if (accountId) {
     proto.account_id = accountId;

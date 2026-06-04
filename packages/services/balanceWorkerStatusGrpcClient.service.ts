@@ -67,6 +67,7 @@ export class BalanceWorkerStatusGrpcClientService {
       worker_status_id: workerStatusId,
       phone: payload.phone ?? '',
       disconnected_user: payload.disconnected_user ?? false,
+      connection_attempt_id: payload.connection_attempt_id ?? '',
     };
 
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
@@ -87,6 +88,7 @@ export class BalanceWorkerStatusGrpcClientService {
       code: payload.code,
       has_qr: Boolean(payload.qrcode),
       has_pairing_code: Boolean(payload.pairing_code),
+      connection_attempt_id: payload.connection_attempt_id,
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -109,6 +111,7 @@ export class BalanceWorkerStatusGrpcClientService {
               account_id: accountId,
               worker_id: workerId,
               worker_status_id: workerStatusId,
+              connection_attempt_id: payload.connection_attempt_id,
               error: err.message,
             });
             reject(err);
@@ -124,6 +127,7 @@ export class BalanceWorkerStatusGrpcClientService {
             account_id: accountId,
             worker_id: workerId,
             worker_status_id: workerStatusId,
+            connection_attempt_id: payload.connection_attempt_id,
           });
           resolve();
         }

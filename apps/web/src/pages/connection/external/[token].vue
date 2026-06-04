@@ -390,11 +390,13 @@ async function requestQrCode() {
 
   isRequestingQr.value = true;
   statusConnection.value = EBaileysConnectionStatus.connecting;
-  statusCode.value = ECodeMessage.awaitConnection;
-  qrcode.value = undefined;
-  qrPending.value = true;
-  connectionAttemptId.value = undefined;
-  resetQrAttempts();
+  if (!qrcode.value) {
+    statusCode.value = ECodeMessage.awaitConnection;
+    qrPending.value = true;
+  }
+  if (!connectionAttemptId.value) {
+    resetQrAttempts();
+  }
 
   const state = await channelStore.requestExternalConnectionQrCode(token.value);
 

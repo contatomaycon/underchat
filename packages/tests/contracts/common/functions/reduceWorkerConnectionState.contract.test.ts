@@ -62,4 +62,25 @@ describe('reduceWorkerConnectionState', () => {
     expect(result.state.qrcode).toBe('data:image/png;base64,new');
     expect(result.state.connection_attempt_id).toBe('attempt-2');
   });
+
+  it('keeps an existing QR when a non-terminal event arrives without QR', () => {
+    const current = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      qrcode: 'data:image/png;base64,qr',
+      connection_attempt_id: 'attempt-1',
+    };
+
+    const result = reduceWorkerConnectionState(current, {
+      status: EBaileysConnectionStatus.info,
+      code: ECodeMessage.info,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      connection_attempt_id: 'attempt-1',
+    });
+
+    expect(result.ignored).toBe(false);
+    expect(result.state.qrcode).toBe(current.qrcode);
+    expect(result.state.connection_attempt_id).toBe('attempt-1');
+  });
 });

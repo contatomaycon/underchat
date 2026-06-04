@@ -3,8 +3,11 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
+import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import type { ContainerHealthResult } from '@core/services/containerHealth.service';
 import { WorkerCommandHandlerService } from '@core/services/workerCommandHandler.service';
@@ -55,6 +58,10 @@ jest.mock('@core/services/s3BackupUpload.service', () => ({
 
 jest.mock('@core/services/workerConfig.service', () => ({
   WorkerConfigService: class WorkerConfigService {},
+}));
+
+jest.mock('@core/services/proxyConnectivity.service', () => ({
+  ProxyConnectivityService: class ProxyConnectivityService {},
 }));
 
 jest.mock('uuid', () => ({
@@ -216,7 +223,10 @@ function buildHandler(
     viewServerSshById: jest.fn(async () => null),
   };
   const workerConfigViewerRepository = {
-    fetchConfigValueByType: jest.fn(async () => ({
+    fetchConfigValueByType: jest.fn<
+      Promise<{ statusId: string | null; value: string | null }>,
+      [string, EWorkerConfigType]
+    >(async () => ({
       statusId: null,
       value: null,
     })),
@@ -238,8 +248,19 @@ function buildHandler(
       ) => callback()
     ),
   };
+  const redisStore = new Map<string, string>();
   const redis = {
-    setex: jest.fn(async () => 'OK'),
+    get: jest.fn(async (key: string) => redisStore.get(key) ?? null),
+    setex: jest.fn(async (key: string, _ttl: number, value: string) => {
+      redisStore.set(key, value);
+      return 'OK';
+    }),
+  };
+  const proxyConnectivityService = {
+    check: jest.fn<
+      Promise<{ status: 'healthy' | 'unhealthy'; error_code?: string }>,
+      [unknown]
+    >(async () => ({ status: 'healthy' })),
   };
 
   const handler = new WorkerCommandHandlerService(
@@ -255,6 +276,7 @@ function buildHandler(
     s3BackupUploadService as never,
     workerConfigService as never,
     workerLifecycleLockService as never,
+    proxyConnectivityService as never,
     redis as never
   );
 
@@ -266,7 +288,10 @@ function buildHandler(
     kafkaBaileysQueueService,
     workerBaileysGrpcClientService,
     workerLifecycleLockService,
+    workerConfigViewerRepository,
+    proxyConnectivityService,
     redis,
+    redisStore,
   };
 }
 
@@ -491,6 +516,34 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
+  it('returns cached QR for repeated requests without creating a new attempt', async () => {
+    const deps = buildHandler();
+
+    const first = await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+    const second = await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(second).toEqual(first);
+    expect(second.connection_attempt_id).toBe('uuid-v7');
+    expect(second.qrcode).toBe('data:image/png;base64,qr');
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalledTimes(1);
+  });
+
   it('recreates an existing unhealthy container before requesting QR', async () => {
     const deps = buildHandler();
     deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
@@ -694,6 +747,43 @@ describe('WorkerCommandHandlerService connection', () => {
     }
   });
 
+  it('returns the active pending attempt for repeated requests while async retry is running', async () => {
+    jest.useFakeTimers();
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
+      Object.assign(new Error('4 DEADLINE_EXCEEDED'), { code: 4 })
+    );
+
+    try {
+      const first = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
+      const second = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
+
+      expect(first.qr_pending).toBe(true);
+      expect(second).toEqual(first);
+      expect(second.connection_attempt_id).toBe('uuid-v7');
+      expect(
+        deps.workerBaileysGrpcClientService.requestConnectionQrCode
+      ).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   it('publishes and caches QR with the same attempt when it arrives after the HTTP response', async () => {
     jest.useFakeTimers();
     const deps = buildHandler();
@@ -758,6 +848,152 @@ describe('WorkerCommandHandlerService connection', () => {
       jest.clearAllTimers();
       jest.useRealTimers();
     }
+  });
+
+  it('does not publish a stale no-QR state after a QR is cached for the active attempt', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    const setexCalls = deps.redis.setex.mock.calls.length;
+    const publishCalls = deps.centrifugoService.publishSub.mock.calls.length;
+    const accepted = await (
+      deps.handler as unknown as {
+        cacheAndPublishQrAttemptState(
+          state: IBaileysConnectionState,
+          options: { event: string; publishSource?: string }
+        ): Promise<boolean>;
+      }
+    ).cacheAndPublishQrAttemptState(
+      {
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'uuid-v7',
+        qr_pending: true,
+      },
+      {
+        event: 'test_stale_without_qr',
+        publishSource: 'test',
+      }
+    );
+
+    expect(accepted).toBe(false);
+    expect(deps.redis.setex).toHaveBeenCalledTimes(setexCalls);
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledTimes(
+      publishCalls
+    );
+  });
+
+  it('falls back to a direct WWebJS container when the QR proxy is unhealthy', async () => {
+    const deps = buildHandler();
+    const proxyConfig = new Map<
+      string,
+      { statusId: string | null; value: string | null }
+    >([
+      [
+        EWorkerConfigType.proxy_enabled,
+        { statusId: EWorkerConfigStatus.active, value: 'true' },
+      ],
+      [
+        EWorkerConfigType.proxy_protocol,
+        { statusId: EWorkerConfigStatus.active, value: EProxyProtocol.http },
+      ],
+      [
+        EWorkerConfigType.proxy_host,
+        { statusId: EWorkerConfigStatus.active, value: 'proxy.example.test' },
+      ],
+      [
+        EWorkerConfigType.proxy_port,
+        { statusId: EWorkerConfigStatus.active, value: '12484' },
+      ],
+      [
+        EWorkerConfigType.proxy_username,
+        { statusId: EWorkerConfigStatus.active, value: 'user' },
+      ],
+      [
+        EWorkerConfigType.proxy_password,
+        { statusId: EWorkerConfigStatus.active, value: 'password' },
+      ],
+    ]);
+    deps.workerConfigViewerRepository.fetchConfigValueByType.mockImplementation(
+      async (_workerId: string, type: EWorkerConfigType) =>
+        proxyConfig.get(type) ?? { statusId: null, value: null }
+    );
+    deps.proxyConnectivityService.check.mockResolvedValueOnce({
+      status: 'unhealthy',
+      error_code: 'connect_refused',
+    });
+    deps.workerService.inspectContainerWorkerById.mockResolvedValueOnce(
+      buildWorkerContainerInspection({
+        container_env: {
+          WORKER_ID: 'worker-1',
+          ACCOUNT_ID: 'account-1',
+          WORKER_TYPE_ID: EWorkerType.wwebjs,
+          WORKER_IMAGE: 'under-worker-wwebjs:latest',
+          WORKER_GRPC_PORT: '50053',
+          PROXY_HOST: 'proxy.example.test',
+          PROXY_PORT: '12484',
+          PROXY_PROTOCOL: EProxyProtocol.http,
+        },
+        container_labels: {
+          'underchat.worker_id': 'worker-1',
+          'underchat.account_id': 'account-1',
+          'underchat.worker_type_id': EWorkerType.wwebjs,
+          'underchat.worker_image': 'under-worker-wwebjs:latest',
+          'underchat.worker_grpc_port': '50053',
+          'underchat.proxy_mode': 'proxy',
+        },
+      })
+    );
+
+    const response = await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(deps.proxyConnectivityService.check).toHaveBeenCalledWith(
+      expect.objectContaining({
+        protocol: EProxyProtocol.http,
+        host: 'proxy.example.test',
+        port: 12484,
+      })
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
+      expect.any(String),
+      'worker-1',
+      'account-1',
+      true,
+      expect.any(String),
+      expect.any(Number),
+      undefined,
+      expect.objectContaining({
+        workerTypeId: EWorkerType.wwebjs,
+        workerGrpcPort: 50053,
+        proxyMode: 'direct_fallback',
+      })
+    );
+    expect(deps.workerService.cleanupContainerWorker).not.toHaveBeenCalled();
+    expect(response).toEqual(
+      expect.objectContaining({
+        proxy_status: 'unhealthy',
+        proxy_error_code: 'connect_refused',
+        proxy_fallback: 'direct',
+        proxy_bypassed: true,
+      })
+    );
   });
 
   it('marks created workers available only after stable health and gRPC readiness', async () => {

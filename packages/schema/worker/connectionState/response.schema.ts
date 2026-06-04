@@ -26,6 +26,10 @@ export const workerConnectionStateResponseSchema = Type.Object({
   max_attempts: Type.Optional(Type.Number()),
   connection_attempt_id: Type.Optional(Type.String()),
   qr_pending: Type.Optional(Type.Boolean()),
+  proxy_status: Type.Optional(Type.String()),
+  proxy_error_code: Type.Optional(Type.String()),
+  proxy_fallback: Type.Optional(Type.String()),
+  proxy_bypassed: Type.Optional(Type.Boolean()),
 });
 
 export type WorkerConnectionStateResponse = Static<

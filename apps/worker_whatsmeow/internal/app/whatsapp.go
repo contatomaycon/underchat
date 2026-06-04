@@ -58,6 +58,7 @@ type WhatsAppManager struct {
 	pendingFreshLogin   *freshLoginRequest
 	currentQRCode       string
 	currentPairingCode  string
+	connectionAttemptID string
 	qrGenerationCount   int
 	qrReadSessionLocked bool
 	qrHash              string
@@ -559,17 +560,27 @@ func (m *WhatsAppManager) currentConnectionState() ConnectionState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return ConnectionState{
-		Code:        m.code,
-		Status:      m.status,
-		WorkerID:    m.cfg.WorkerID,
-		AccountID:   m.cfg.AccountID,
-		QRCode:      m.currentQRCode,
-		PairingCode: m.currentPairingCode,
-		Time:        time.Now().Unix(),
+		Code:                m.code,
+		Status:              m.status,
+		WorkerID:            m.cfg.WorkerID,
+		AccountID:           m.cfg.AccountID,
+		QRCode:              m.currentQRCode,
+		PairingCode:         m.currentPairingCode,
+		ConnectionAttemptID: m.connectionAttemptID,
+		Time:                time.Now().Unix(),
 	}
 }
 
 func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConnectionRequest) (state ConnectionState, err error) {
+	if req.ConnectionAttemptID != "" {
+		m.setConnectionAttemptID(req.ConnectionAttemptID)
+		defer func() {
+			if state.ConnectionAttemptID == "" {
+				state.ConnectionAttemptID = req.ConnectionAttemptID
+			}
+		}()
+	}
+
 	if _, ok := connectionLifecycleFromContext(ctx); !ok {
 		lifecycle := connectionLifecycleFromRequest(m.cfg, req, "request_connection")
 		var finishLifecycleSpan func(error)
@@ -918,6 +929,24 @@ func (m *WhatsAppManager) getCurrentQRCode() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.currentQRCode
+}
+
+func (m *WhatsAppManager) setConnectionAttemptID(connectionAttemptID string) {
+	m.mu.Lock()
+	m.connectionAttemptID = connectionAttemptID
+	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) getConnectionAttemptID() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.connectionAttemptID
+}
+
+func (m *WhatsAppManager) clearConnectionAttemptID() {
+	m.mu.Lock()
+	m.connectionAttemptID = ""
+	m.mu.Unlock()
 }
 
 func (m *WhatsAppManager) resetQRCodeReadSession(clearQRCode bool) {
@@ -1864,14 +1893,15 @@ func (m *WhatsAppManager) publishState(ctx context.Context, status string, code 
 
 func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status string, code int, workerStatusID, phone, qrOrPair string, isNewLogin bool, attempt int, maxAttempts int) {
 	state := ConnectionState{
-		Code:           code,
-		Status:         status,
-		WorkerID:       m.cfg.WorkerID,
-		AccountID:      m.cfg.AccountID,
-		IsNewLogin:     isNewLogin,
-		Time:           time.Now().Unix(),
-		Phone:          phone,
-		WorkerStatusID: workerStatusID,
+		Code:                code,
+		Status:              status,
+		WorkerID:            m.cfg.WorkerID,
+		AccountID:           m.cfg.AccountID,
+		IsNewLogin:          isNewLogin,
+		Time:                time.Now().Unix(),
+		Phone:               phone,
+		WorkerStatusID:      workerStatusID,
+		ConnectionAttemptID: m.getConnectionAttemptID(),
 	}
 	if attempt > 0 {
 		state.Attempt = attempt
@@ -1886,22 +1916,23 @@ func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status s
 		state.PairingCode = qrOrPair
 	}
 	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-		"stage":             "connection.whatsmeow.publish_state.start",
-		"decision":          "publish_state",
-		"outcome":           "started",
-		"status":            status,
-		"code":              code,
-		"worker_status_id":  workerStatusID,
-		"is_new_login":      isNewLogin,
-		"attempt":           state.Attempt,
-		"max_attempts":      state.MaxAttempts,
-		"qrcode":            state.QRCode,
-		"pairing_code":      state.PairingCode,
-		"has_phone":         phone != "",
-		"disconnected_user": state.DisconnectedUser,
+		"stage":                 "connection.whatsmeow.publish_state.start",
+		"decision":              "publish_state",
+		"outcome":               "started",
+		"status":                status,
+		"code":                  code,
+		"worker_status_id":      workerStatusID,
+		"is_new_login":          isNewLogin,
+		"attempt":               state.Attempt,
+		"max_attempts":          state.MaxAttempts,
+		"connection_attempt_id": state.ConnectionAttemptID,
+		"qrcode":                state.QRCode,
+		"pairing_code":          state.PairingCode,
+		"has_phone":             phone != "",
+		"disconnected_user":     state.DisconnectedUser,
 	})
 	log.Printf(
-		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t is_new_login=%t attempt=%d max_attempts=%d",
+		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t is_new_login=%t attempt=%d max_attempts=%d connection_attempt_id=%s",
 		m.cfg.WorkerID,
 		status,
 		code,
@@ -1911,6 +1942,7 @@ func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status s
 		isNewLogin,
 		state.Attempt,
 		state.MaxAttempts,
+		state.ConnectionAttemptID,
 	)
 	if code != CodeAwaitingReadQRCode {
 		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
@@ -1962,33 +1994,39 @@ func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status s
 			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, status, code, workerStatusID, err)
 		}
 	}
+	if code == CodeConnectionEstablished || code == CodeLoggedOut || code == CodeConnectionClosed {
+		m.clearConnectionAttemptID()
+	}
 }
 
 func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, code int, workerStatusID string) {
 	state := ConnectionState{
-		Code:             code,
-		Status:           "disconnected",
-		WorkerID:         m.cfg.WorkerID,
-		AccountID:        m.cfg.AccountID,
-		DisconnectedUser: true,
-		Time:             time.Now().Unix(),
-		WorkerStatusID:   workerStatusID,
+		Code:                code,
+		Status:              "disconnected",
+		WorkerID:            m.cfg.WorkerID,
+		AccountID:           m.cfg.AccountID,
+		DisconnectedUser:    true,
+		Time:                time.Now().Unix(),
+		WorkerStatusID:      workerStatusID,
+		ConnectionAttemptID: m.getConnectionAttemptID(),
 	}
 	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-		"stage":             "connection.whatsmeow.publish_state.disconnected_user_start",
-		"decision":          "publish_state_disconnected_user",
-		"outcome":           "started",
-		"status":            state.Status,
-		"code":              code,
-		"worker_status_id":  workerStatusID,
-		"disconnected_user": true,
+		"stage":                 "connection.whatsmeow.publish_state.disconnected_user_start",
+		"decision":              "publish_state_disconnected_user",
+		"outcome":               "started",
+		"status":                state.Status,
+		"code":                  code,
+		"worker_status_id":      workerStatusID,
+		"disconnected_user":     true,
+		"connection_attempt_id": state.ConnectionAttemptID,
 	})
 	log.Printf(
-		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false",
+		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false connection_attempt_id=%s",
 		m.cfg.WorkerID,
 		state.Status,
 		code,
 		workerStatusID,
+		state.ConnectionAttemptID,
 	)
 	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
 		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
@@ -2018,6 +2056,7 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, code, workerStatusID, err)
 		}
 	}
+	m.clearConnectionAttemptID()
 }
 
 func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events.Message) {
