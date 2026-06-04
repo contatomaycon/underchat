@@ -282,11 +282,14 @@ export class WorkerUpdaterUseCase {
     }
 
     if (shouldRecreateWorker) {
+      const shouldResetSessionForRecreate =
+        shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
+
       await this.workerRecreatorUseCase.execute(
         t,
         accountId,
         input.worker_id,
-        shouldRecreateOnServerChange
+        shouldResetSessionForRecreate
           ? {
               remove_session: true,
               remove_volume: true,

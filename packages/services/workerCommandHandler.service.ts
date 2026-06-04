@@ -1306,6 +1306,44 @@ export class WorkerCommandHandlerService {
     );
   }
 
+  private async invalidateQrAttemptState(
+    workerId: string,
+    options: {
+      accountId?: string;
+      workerType?: EWorkerType;
+      reason: string;
+      recreateReason?: string;
+    }
+  ): Promise<void> {
+    this.stopQrConnectionAttemptRetry(workerId);
+
+    try {
+      await this.redis.del(this.qrAttemptCacheKey(workerId));
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_attempt_invalidated',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type: options.workerType,
+        reason: options.reason,
+        recreate_reason: options.recreateReason,
+        publish_source: 'recreate_worker',
+        level: 'info',
+      });
+    } catch (err) {
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_attempt_invalidate_error',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type: options.workerType,
+        reason: options.reason,
+        recreate_reason: options.recreateReason,
+        error: getErrorMessage(err),
+        publish_source: 'recreate_worker',
+        level: 'warn',
+      });
+    }
+  }
+
   private async shouldIgnoreQrAttemptState(
     state: IBaileysConnectionState
   ): Promise<{ ignored: boolean; reason?: string }> {
@@ -3211,6 +3249,15 @@ export class WorkerCommandHandlerService {
     ) {
       return {} as PublishResult;
     }
+
+    await this.invalidateQrAttemptState(data.worker_id, {
+      accountId: data.account_id,
+      workerType,
+      reason: 'worker_recreate',
+      recreateReason: shouldRemoveVolume
+        ? 'recreate_with_volume_reset'
+        : 'recreate_container_replaced',
+    });
 
     if (shouldRemoveSession) {
       const disconnectPayload: StatusConnectionWorkerRequest = {

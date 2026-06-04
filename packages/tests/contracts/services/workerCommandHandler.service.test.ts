@@ -255,6 +255,10 @@ function buildHandler(
       redisStore.set(key, value);
       return 'OK';
     }),
+    del: jest.fn(async (key: string) => {
+      const existed = redisStore.delete(key);
+      return existed ? 1 : 0;
+    }),
   };
   const proxyConnectivityService = {
     check: jest.fn<
@@ -1365,6 +1369,9 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
       'worker-1',
       false
+    );
+    expect(deps.redis.del).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:attempt'
     );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
       expect.any(String),

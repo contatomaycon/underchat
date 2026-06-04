@@ -294,6 +294,8 @@ describe('WorkerUpdaterUseCase', () => {
       'account-1',
       'worker-1',
       {
+        remove_session: true,
+        remove_volume: true,
         lifecycle_operation_id: 'uuid-v7',
         previous_worker_status_id: EWorkerStatus.online,
       }
