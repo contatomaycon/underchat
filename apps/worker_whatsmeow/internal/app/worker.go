@@ -155,42 +155,48 @@ func writeJSON(resp http.ResponseWriter, status int, payload any) {
 
 func (w *Worker) startConsumers(ctx context.Context) error {
 	workerID := w.cfg.WorkerID
-	topics := []string{
-		topicWorkerSendMessage(workerID),
-		topicWorkerSendMessageDLQ(workerID),
-		topicWorkerScheduleSend(workerID),
-		topicWorkerValidatePhone(workerID),
-		topicWorkerNotification(workerID),
-		topicWorkerWebhook(workerID),
-		topicMarkMessageRead,
-		topicWorkerConfigUpdate,
+	workerTopicConfig := KafkaTopicConfig{Partitions: 1, ReplicationFactor: 2}
+	globalTopicConfig := KafkaTopicConfig{Partitions: 30, ReplicationFactor: 3}
+	topics := []struct {
+		name   string
+		config KafkaTopicConfig
+	}{
+		{topicWorkerSendMessage(workerID), workerTopicConfig},
+		{topicWorkerSendMessageDLQ(workerID), workerTopicConfig},
+		{topicWorkerScheduleSend(workerID), workerTopicConfig},
+		{topicWorkerValidatePhone(workerID), workerTopicConfig},
+		{topicWorkerNotification(workerID), workerTopicConfig},
+		{topicWorkerWebhook(workerID), workerTopicConfig},
+		{topicMarkMessageRead, globalTopicConfig},
+		{topicWorkerConfigUpdate, globalTopicConfig},
 	}
 	for _, topic := range topics {
-		if err := w.kafka.EnsureTopic(ctx, topic, 1, 2); err != nil {
-			log.Printf("failed to ensure kafka topic %s: %v", topic, err)
+		if err := w.kafka.EnsureTopic(ctx, topic.name, topic.config.Partitions, topic.config.ReplicationFactor); err != nil {
+			log.Printf("failed to ensure kafka topic %s: %v", topic.name, err)
 		} else {
-			log.Printf("kafka topic ready topic=%s", topic)
+			log.Printf("kafka topic ready topic=%s partitions=%d replication_factor=%d", topic.name, topic.config.Partitions, topic.config.ReplicationFactor)
 		}
 	}
 
 	consumers := []struct {
-		topic string
-		group string
-		fn    KafkaMessageHandler
+		topic  string
+		group  string
+		config KafkaTopicConfig
+		fn     KafkaMessageHandler
 	}{
-		{topicWorkerSendMessage(workerID), "group-underchat-whatsmeow-send-" + workerID, w.handleSendMessage},
-		{topicWorkerScheduleSend(workerID), "group-underchat-schedule-message-whatsmeow-" + workerID, w.handleScheduleSend},
-		{topicWorkerValidatePhone(workerID), "group-underchat-whatsmeow-validate-phone-" + workerID, w.handlePhoneValidation},
-		{topicWorkerNotification(workerID), "group-underchat-whatsmeow-notification-send-" + workerID, w.handleNotification},
-		{topicWorkerWebhook(workerID), "group-underchat-webhook-integration-whatsmeow-" + workerID, w.handleWebhookIntegration},
-		{topicMarkMessageRead, "group-underchat-mark-read-whatsmeow-" + workerID, w.handleMarkRead},
-		{topicWorkerConfigUpdate, "group-underchat-worker-config-update-whatsmeow-" + workerID, w.handleWorkerConfigUpdate},
+		{topicWorkerSendMessage(workerID), "group-underchat-whatsmeow-send-" + workerID, workerTopicConfig, w.handleSendMessage},
+		{topicWorkerScheduleSend(workerID), "group-underchat-schedule-message-whatsmeow-" + workerID, workerTopicConfig, w.handleScheduleSend},
+		{topicWorkerValidatePhone(workerID), "group-underchat-whatsmeow-validate-phone-" + workerID, workerTopicConfig, w.handlePhoneValidation},
+		{topicWorkerNotification(workerID), "group-underchat-whatsmeow-notification-send-" + workerID, workerTopicConfig, w.handleNotification},
+		{topicWorkerWebhook(workerID), "group-underchat-webhook-integration-whatsmeow-" + workerID, workerTopicConfig, w.handleWebhookIntegration},
+		{topicMarkMessageRead, "group-underchat-mark-read-whatsmeow-" + workerID, globalTopicConfig, w.handleMarkRead},
+		{topicWorkerConfigUpdate, "group-underchat-worker-config-update-whatsmeow-" + workerID, globalTopicConfig, w.handleWorkerConfigUpdate},
 	}
 	for _, consumer := range consumers {
-		if err := w.kafka.StartConsumer(ctx, consumer.topic, consumer.group, consumer.fn); err != nil {
+		if err := w.kafka.StartConsumer(ctx, consumer.topic, consumer.group, consumer.config, consumer.fn); err != nil {
 			return err
 		}
-		log.Printf("kafka consumer started topic=%s group=%s", consumer.topic, consumer.group)
+		log.Printf("kafka consumer started topic=%s group=%s partitions=%d replication_factor=%d", consumer.topic, consumer.group, consumer.config.Partitions, consumer.config.ReplicationFactor)
 		time.Sleep(500 * time.Millisecond)
 	}
 	return nil

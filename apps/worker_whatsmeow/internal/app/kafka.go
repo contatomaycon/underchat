@@ -160,10 +160,25 @@ func (k *KafkaClient) SendJSON(ctx context.Context, topic string, key string, va
 
 type KafkaMessageHandler func(ctx context.Context, msg kafka.Message) error
 
+type KafkaTopicConfig struct {
+	Partitions        int
+	ReplicationFactor int
+}
+
 var errKafkaConsumerIdleRecreate = errors.New("kafka consumer idle recreate")
 
-func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, handler KafkaMessageHandler) error {
-	go k.runConsumer(ctx, topic, groupID, handler)
+func (c KafkaTopicConfig) normalized() KafkaTopicConfig {
+	if c.Partitions <= 0 {
+		c.Partitions = 1
+	}
+	if c.ReplicationFactor <= 0 {
+		c.ReplicationFactor = 2
+	}
+	return c
+}
+
+func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, handler KafkaMessageHandler) error {
+	go k.runConsumer(ctx, topic, groupID, topicConfig.normalized(), handler)
 	return nil
 }
 
@@ -203,24 +218,78 @@ func (k *KafkaClient) removeReader(reader *kafka.Reader) {
 	}
 }
 
-func (k *KafkaClient) runConsumer(ctx context.Context, topic, groupID string, handler KafkaMessageHandler) {
+func (k *KafkaClient) runConsumer(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, handler KafkaMessageHandler) {
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		reader := k.newReader(topic, groupID)
-		k.addReader(reader)
-		err := k.consumeReader(ctx, reader, topic, groupID, handler)
-		k.removeReader(reader)
-		if closeErr := reader.Close(); closeErr != nil && ctx.Err() == nil {
-			log.Printf("kafka reader close error topic=%s group=%s: %v", topic, groupID, closeErr)
-		}
+		err := k.runConsumerOnce(ctx, topic, groupID, topicConfig, handler)
 		if ctx.Err() != nil {
 			return
 		}
 		log.Printf("kafka consumer restarting topic=%s group=%s reason=%v", topic, groupID, err)
 		time.Sleep(k.consumerRestartBackoff())
 	}
+}
+
+func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, handler KafkaMessageHandler) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("kafka consumer panic topic=%s group=%s: %v", topic, groupID, recovered)
+			log.Printf("%v", err)
+			recordMessageLifecycle(ctx, k.cfg, map[string]any{
+				"stage":      "whatsmeow.outgoing.kafka.consumer.panic",
+				"decision":   "recover_consumer",
+				"outcome":    "retrying",
+				"reason":     "panic",
+				"level":      "error",
+				"topic":      topic,
+				"group_id":   groupID,
+				"error":      fmt.Sprint(recovered),
+				"worker_id":  k.cfg.WorkerID,
+				"account_id": k.cfg.AccountID,
+			})
+		}
+	}()
+
+	if err := k.ensureConsumerTopic(ctx, topic, topicConfig); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+
+	reader := k.newReader(topic, groupID)
+	k.addReader(reader)
+	defer func() {
+		k.removeReader(reader)
+		if closeErr := reader.Close(); closeErr != nil && ctx.Err() == nil {
+			log.Printf("kafka reader close error topic=%s group=%s: %v", topic, groupID, closeErr)
+		}
+	}()
+
+	return k.consumeReader(ctx, reader, topic, groupID, handler)
+}
+
+func (k *KafkaClient) ensureConsumerTopic(ctx context.Context, topic string, topicConfig KafkaTopicConfig) error {
+	if err := k.EnsureTopic(ctx, topic, topicConfig.Partitions, topicConfig.ReplicationFactor); err != nil {
+		log.Printf("kafka consumer topic ensure failed topic=%s partitions=%d replication_factor=%d: %v", topic, topicConfig.Partitions, topicConfig.ReplicationFactor, err)
+		recordMessageLifecycle(ctx, k.cfg, map[string]any{
+			"stage":              "whatsmeow.outgoing.kafka.topic.ensure.error",
+			"decision":           "ensure_topic",
+			"outcome":            "error",
+			"reason":             "topic_ensure_failed",
+			"level":              "error",
+			"topic":              topic,
+			"partitions":         topicConfig.Partitions,
+			"replication_factor": topicConfig.ReplicationFactor,
+			"error":              err.Error(),
+			"worker_id":          k.cfg.WorkerID,
+			"account_id":         k.cfg.AccountID,
+		})
+		return err
+	}
+	return nil
 }
 
 func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, handler KafkaMessageHandler) error {
@@ -295,6 +364,7 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 					"offset":    msg.Offset,
 					"error":     err.Error(),
 				})
+				return fmt.Errorf("kafka commit failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err)
 			}
 		} else if isWorkerSendTopic(topic) {
 			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{

@@ -125,6 +125,17 @@ func TestWorkerSendTopicDetectionIsExact(t *testing.T) {
 	}
 }
 
+func TestKafkaTopicConfigDefaultsToWorkerTopicShape(t *testing.T) {
+	config := (KafkaTopicConfig{}).normalized()
+
+	if config.Partitions != 1 {
+		t.Fatalf("unexpected partitions %d", config.Partitions)
+	}
+	if config.ReplicationFactor != 2 {
+		t.Fatalf("unexpected replication factor %d", config.ReplicationFactor)
+	}
+}
+
 func TestWaitUntilReadyReturnsTransientNotReady(t *testing.T) {
 	manager := &WhatsAppManager{}
 
