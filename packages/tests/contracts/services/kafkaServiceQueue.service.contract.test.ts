@@ -46,6 +46,12 @@ describe('KafkaServiceQueueService', () => {
     expect(service.buildVersionCancelRequest()).toBe(
       'build.version.cancel.request'
     );
+    expect(service.internalChatDirectMessage()).toBe(
+      'internal.chat.direct.message'
+    );
+    expect(service.internalChatGroupMessage()).toBe(
+      'internal.chat.group.message'
+    );
 
     const topics = service.all();
 
@@ -72,6 +78,8 @@ describe('KafkaServiceQueueService', () => {
       'config.channels.recreate.all',
       'build.version.generate.request',
       'build.version.cancel.request',
+      'internal.chat.direct.message',
+      'internal.chat.group.message',
     ]);
 
     await expect(service.delete()).resolves.toBeUndefined();

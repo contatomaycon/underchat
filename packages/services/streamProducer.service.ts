@@ -13,6 +13,12 @@ import {
   isMessageLifecycleDebugEnabled,
   runWithMessageLifecycleContext,
 } from '@core/plugins/telemetry/messageLifecycleDebug';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import {
+  isRecoverableKafkaTopicError,
+  resolveKafkaTopicConfig,
+} from '@core/common/functions/kafkaTopicConfig';
+import { logger } from '@core/plugins/telemetry/logger';
 
 @injectable()
 export class StreamProducerService {
@@ -599,6 +605,31 @@ export class StreamProducerService {
     );
   }
 
+  private async ensureTopicForProduce(
+    topic: string,
+    cause: unknown
+  ): Promise<void> {
+    const topicConfig = resolveKafkaTopicConfig(topic);
+
+    logger.warn(
+      {
+        type: 'kafka.producer.topic_recovery',
+        topic,
+        partitions: topicConfig.numPartitions,
+        replication_factor: topicConfig.replicationFactor,
+        error: getErrorMessage(cause),
+      },
+      `Kafka producer recovering topic ${topic}`
+    );
+
+    await ensureKafkaTopic(
+      this.kafka,
+      topic,
+      topicConfig.numPartitions,
+      topicConfig.replicationFactor
+    );
+  }
+
   private async produceMessage(
     producer: Producer,
     topic: string,
@@ -1177,7 +1208,8 @@ export class StreamProducerService {
     keyBuffer: Buffer | undefined,
     headers: MessageHeader[] | undefined,
     attempt = 0,
-    producer?: Producer
+    producer?: Producer,
+    topicRecoveryAttempted = false
   ): Promise<void> {
     if (this.closing) {
       throw new Error('Producer is closing');
@@ -1204,6 +1236,28 @@ export class StreamProducerService {
       }
 
       const isDisconnected = this.isDisconnectedError(error);
+      const isRecoverableTopicError = isRecoverableKafkaTopicError(error);
+
+      if (isRecoverableTopicError && !topicRecoveryAttempted) {
+        await this.ensureTopicForProduce(topic, error);
+
+        const recoveredProducer = await this.reconnectProducer();
+
+        if (this.closing) {
+          throw new Error('Producer is closing');
+        }
+
+        await this.sendWithRetry(
+          topic,
+          value,
+          keyBuffer,
+          headers,
+          attempt + 1,
+          recoveredProducer,
+          true
+        );
+        return;
+      }
 
       if (!isDisconnected) {
         throw error;
@@ -1236,7 +1290,8 @@ export class StreamProducerService {
         keyBuffer,
         headers,
         attempt + 1,
-        reconnectedProducer
+        reconnectedProducer,
+        topicRecoveryAttempted
       );
     }
   }

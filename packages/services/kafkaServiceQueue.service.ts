@@ -1,10 +1,12 @@
 import { injectable, inject } from 'tsyringe';
 import { KafkaService } from './kafka.service';
+import { KAFKA_GLOBAL_TOPIC_CONFIG } from '@core/common/functions/kafkaTopicConfig';
 
 @injectable()
 export class KafkaServiceQueueService {
-  static readonly NUM_PARTITIONS = 30;
-  static readonly REPLICATION_FACTOR = 3;
+  static readonly NUM_PARTITIONS = KAFKA_GLOBAL_TOPIC_CONFIG.numPartitions;
+  static readonly REPLICATION_FACTOR =
+    KAFKA_GLOBAL_TOPIC_CONFIG.replicationFactor;
 
   constructor(
     @inject(KafkaService)

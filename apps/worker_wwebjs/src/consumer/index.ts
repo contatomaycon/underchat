@@ -10,8 +10,7 @@ import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { WwebjsHealthCheckService } from '@core/services/wwebjs/methods/healthCheck.service';
 import { WwebjsService } from '@core/services/wwebjs';
-
-const consumers: Array<{ close?: () => Promise<void> }> = [];
+import { getWorkerConsumers, registerWorkerConsumer } from './registry';
 
 const CONSUMER_STAGGER_DELAY_MS = 500;
 
@@ -38,7 +37,7 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
 
   for (const start of starters) {
     try {
-      consumers.push(start());
+      registerWorkerConsumer(start());
     } catch (err) {
       server.log.error({ err }, 'Erro ao iniciar consumidor Kafka');
     }
@@ -68,7 +67,7 @@ const wwebjsConsumersOnListenHook = fp(async (fastify) => {
   fastify.addHook('onClose', async () => {
     const wwebjsService = container.resolve(WwebjsService);
     await Promise.allSettled(
-      consumers
+      getWorkerConsumers()
         .map((consumer) => consumer?.close?.() ?? Promise.resolve())
         .concat(wwebjsService.shutdown())
     );

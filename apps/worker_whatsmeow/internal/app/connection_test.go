@@ -136,6 +136,36 @@ func TestKafkaTopicConfigDefaultsToWorkerTopicShape(t *testing.T) {
 	}
 }
 
+func TestKafkaConsumerHealthSnapshotIncludesRegisteredConsumer(t *testing.T) {
+	client := &KafkaClient{
+		consumers: make(map[string]*kafkaConsumerHealthState),
+	}
+
+	state := client.ensureConsumerHealth("worker.w1.send.message", "group-1")
+	client.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+		state.Connected = true
+		state.RestartCount = 2
+		state.LastError = "forced"
+	})
+
+	snapshot := client.ConsumerHealthSnapshot()
+	if len(snapshot) != 1 {
+		t.Fatalf("expected one consumer health item, got %d", len(snapshot))
+	}
+	if snapshot[0]["topic"] != "worker.w1.send.message" {
+		t.Fatalf("unexpected topic %#v", snapshot[0]["topic"])
+	}
+	if snapshot[0]["group_id"] != "group-1" {
+		t.Fatalf("unexpected group %#v", snapshot[0]["group_id"])
+	}
+	if snapshot[0]["connected"] != true {
+		t.Fatalf("expected connected true, got %#v", snapshot[0]["connected"])
+	}
+	if snapshot[0]["restart_count"] != 2 {
+		t.Fatalf("expected restart count 2, got %#v", snapshot[0]["restart_count"])
+	}
+}
+
 func TestWaitUntilReadyReturnsTransientNotReady(t *testing.T) {
 	manager := &WhatsAppManager{}
 

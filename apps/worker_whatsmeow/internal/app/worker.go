@@ -127,6 +127,7 @@ func (w *Worker) startHTTP() error {
 	})
 	mux.HandleFunc("/v1/connection/health/check", func(resp http.ResponseWriter, req *http.Request) {
 		health := w.whatsapp.ConnectionHealth()
+		health["kafka_consumers"] = w.kafka.ConsumerHealthSnapshot()
 		if ready, _ := health["ready"].(bool); ready {
 			writeJSON(resp, http.StatusOK, health)
 			return

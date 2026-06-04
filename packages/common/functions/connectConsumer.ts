@@ -31,10 +31,14 @@ function isTimeoutError(error: unknown): boolean {
   return false;
 }
 
-function createCleanup(consumer: KafkaConsumer) {
+function createCleanup(
+  consumer: KafkaConsumer,
+  readyHandler: () => void,
+  errorHandler: (err: LibrdKafkaError) => void
+) {
   return (): void => {
-    consumer.removeAllListeners('ready');
-    consumer.removeAllListeners('event.error');
+    consumer.removeListener('ready', readyHandler);
+    consumer.removeListener('event.error', errorHandler);
   };
 }
 
@@ -125,7 +129,8 @@ function createReadyHandler(
   timeout: NodeJS.Timeout,
   isResolved: { value: boolean },
   consumer: KafkaConsumer,
-  startTs: number
+  startTs: number,
+  subscribeOnReady = true
 ) {
   return (): void => {
     if (isResolved.value) {
@@ -133,8 +138,10 @@ function createReadyHandler(
     }
 
     try {
-      consumer.subscribe([topic]);
-      consumer.consume();
+      if (subscribeOnReady) {
+        consumer.subscribe([topic]);
+        consumer.consume();
+      }
       logger.info(
         {
           topic,
@@ -380,9 +387,14 @@ function connectInBackground(
     { topic, type: 'kafka_consumer_connect_start', ts: startTs },
     `Kafka consumer connect start for topic ${topic}`
   );
+  const isManagedConsumer = Boolean(
+    (consumer as unknown as { __managedKafkaConsumer?: boolean })
+      .__managedKafkaConsumer
+  );
   const isResolved = { value: false };
   const connectCallbackCalled = { value: false };
-  const cleanup = createCleanup(consumer);
+  const cleanupRef = { current: () => {} };
+  const cleanup = () => cleanupRef.current();
   const timeout = createTimeoutHandler(topic, cleanup, isResolved, startTs);
   const errorHandler = createErrorHandler(topic, cleanup, timeout, isResolved);
   const readyHandler = createReadyHandler(
@@ -392,10 +404,35 @@ function connectInBackground(
     timeout,
     isResolved,
     consumer,
-    startTs
+    startTs,
+    !isManagedConsumer
   );
+  cleanupRef.current = createCleanup(consumer, readyHandler, errorHandler);
 
   setupEventListeners(consumer, readyHandler, errorHandler);
+
+  if (isManagedConsumer) {
+    try {
+      consumer.subscribe([topic]);
+      consumer.consume();
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          topic,
+          type: 'kafka_subscribe_error',
+        },
+        `Error preparing managed Kafka consumer for topic ${topic}`
+      );
+
+      recordException(error, {
+        kafka: {
+          type: 'managed_subscribe_error',
+          topic,
+        },
+      });
+    }
+  }
 
   attemptConnect(
     consumer,
@@ -406,15 +443,17 @@ function connectInBackground(
     connectCallbackCalled
   );
 
-  attemptSubscribeFallback(
-    consumer,
-    topic,
-    onConnected,
-    cleanup,
-    timeout,
-    isResolved,
-    connectCallbackCalled
-  );
+  if (!isManagedConsumer) {
+    attemptSubscribeFallback(
+      consumer,
+      topic,
+      onConnected,
+      cleanup,
+      timeout,
+      isResolved,
+      connectCallbackCalled
+    );
+  }
 }
 
 export async function connectConsumer(

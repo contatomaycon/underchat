@@ -10,8 +10,7 @@ import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
 import { BaileysService } from '@core/services/baileys';
-
-const consumers: Array<{ close?: () => Promise<void> }> = [];
+import { getWorkerConsumers, registerWorkerConsumer } from './registry';
 
 const CONSUMER_STAGGER_DELAY_MS = 500;
 
@@ -38,7 +37,7 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
 
   for (const start of starters) {
     try {
-      consumers.push(start());
+      registerWorkerConsumer(start());
     } catch (err) {
       server.log.error({ err }, 'Erro ao iniciar consumidor Kafka');
     }
@@ -68,7 +67,7 @@ const baileysConsumersOnListenHook = fp(async (fastify) => {
   fastify.addHook('onClose', async () => {
     const baileysService = container.resolve(BaileysService);
     await Promise.allSettled(
-      consumers
+      getWorkerConsumers()
         .map((consumer) => consumer?.close?.() ?? Promise.resolve())
         .concat(baileysService.shutdown())
     );

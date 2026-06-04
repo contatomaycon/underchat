@@ -24,7 +24,19 @@ type KafkaClient struct {
 	transport *kafka.Transport
 	writer    *kafka.Writer
 	readers   []*kafka.Reader
+	consumers map[string]*kafkaConsumerHealthState
 	mu        sync.Mutex
+}
+
+type kafkaConsumerHealthState struct {
+	Topic         string
+	GroupID       string
+	Connected     bool
+	LastMessageAt time.Time
+	LastCommitAt  time.Time
+	LastRestartAt time.Time
+	RestartCount  int
+	LastError     string
 }
 
 func NewKafkaClient(cfg Config) (*KafkaClient, error) {
@@ -48,6 +60,7 @@ func NewKafkaClient(cfg Config) (*KafkaClient, error) {
 		cfg:       cfg,
 		transport: transport,
 		writer:    writer,
+		consumers: make(map[string]*kafkaConsumerHealthState),
 	}, nil
 }
 
@@ -91,6 +104,9 @@ func (k *KafkaClient) Close() error {
 	k.mu.Lock()
 	readers := append([]*kafka.Reader(nil), k.readers...)
 	k.readers = nil
+	for _, state := range k.consumers {
+		state.Connected = false
+	}
 	k.mu.Unlock()
 
 	var closeErr error
@@ -178,8 +194,54 @@ func (c KafkaTopicConfig) normalized() KafkaTopicConfig {
 }
 
 func (k *KafkaClient) StartConsumer(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, handler KafkaMessageHandler) error {
-	go k.runConsumer(ctx, topic, groupID, topicConfig.normalized(), handler)
+	state := k.ensureConsumerHealth(topic, groupID)
+	go k.runConsumer(ctx, topic, groupID, topicConfig.normalized(), state, handler)
 	return nil
+}
+
+func kafkaConsumerHealthKey(topic, groupID string) string {
+	return topic + "\x00" + groupID
+}
+
+func (k *KafkaClient) ensureConsumerHealth(topic, groupID string) *kafkaConsumerHealthState {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	key := kafkaConsumerHealthKey(topic, groupID)
+	if state := k.consumers[key]; state != nil {
+		return state
+	}
+	state := &kafkaConsumerHealthState{Topic: topic, GroupID: groupID}
+	k.consumers[key] = state
+	return state
+}
+
+func (k *KafkaClient) updateConsumerHealth(state *kafkaConsumerHealthState, update func(*kafkaConsumerHealthState)) {
+	if state == nil {
+		return
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	update(state)
+}
+
+func (k *KafkaClient) ConsumerHealthSnapshot() []map[string]any {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	out := make([]map[string]any, 0, len(k.consumers))
+	for _, state := range k.consumers {
+		out = append(out, map[string]any{
+			"topic":           state.Topic,
+			"group_id":        state.GroupID,
+			"connected":       state.Connected,
+			"last_message_at": healthTime(state.LastMessageAt),
+			"last_commit_at":  healthTime(state.LastCommitAt),
+			"last_restart_at": healthTime(state.LastRestartAt),
+			"restart_count":   state.RestartCount,
+			"last_error":      state.LastError,
+		})
+	}
+	return out
 }
 
 func (k *KafkaClient) newReader(topic, groupID string) *kafka.Reader {
@@ -218,21 +280,29 @@ func (k *KafkaClient) removeReader(reader *kafka.Reader) {
 	}
 }
 
-func (k *KafkaClient) runConsumer(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, handler KafkaMessageHandler) {
+func (k *KafkaClient) runConsumer(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, state *kafkaConsumerHealthState, handler KafkaMessageHandler) {
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		err := k.runConsumerOnce(ctx, topic, groupID, topicConfig, handler)
+		err := k.runConsumerOnce(ctx, topic, groupID, topicConfig, state, handler)
 		if ctx.Err() != nil {
 			return
 		}
+		k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+			state.Connected = false
+			state.LastRestartAt = time.Now()
+			state.RestartCount++
+			if err != nil {
+				state.LastError = err.Error()
+			}
+		})
 		log.Printf("kafka consumer restarting topic=%s group=%s reason=%v", topic, groupID, err)
 		time.Sleep(k.consumerRestartBackoff())
 	}
 }
 
-func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, handler KafkaMessageHandler) (err error) {
+func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string, topicConfig KafkaTopicConfig, state *kafkaConsumerHealthState, handler KafkaMessageHandler) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("kafka consumer panic topic=%s group=%s: %v", topic, groupID, recovered)
@@ -256,19 +326,30 @@ func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+			state.Connected = false
+			state.LastError = err.Error()
+		})
 		return err
 	}
 
 	reader := k.newReader(topic, groupID)
 	k.addReader(reader)
+	k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+		state.Connected = true
+		state.LastError = ""
+	})
 	defer func() {
 		k.removeReader(reader)
+		k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+			state.Connected = false
+		})
 		if closeErr := reader.Close(); closeErr != nil && ctx.Err() == nil {
 			log.Printf("kafka reader close error topic=%s group=%s: %v", topic, groupID, closeErr)
 		}
 	}()
 
-	return k.consumeReader(ctx, reader, topic, groupID, handler)
+	return k.consumeReader(ctx, reader, topic, groupID, state, handler)
 }
 
 func (k *KafkaClient) ensureConsumerTopic(ctx context.Context, topic string, topicConfig KafkaTopicConfig) error {
@@ -292,11 +373,14 @@ func (k *KafkaClient) ensureConsumerTopic(ctx context.Context, topic string, top
 	return nil
 }
 
-func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, handler KafkaMessageHandler) error {
+func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, handler KafkaMessageHandler) error {
 	idleRecreateInterval := k.consumerIdleRecreateInterval(topic)
 	for {
 		msg, err := k.fetchMessage(ctx, reader, idleRecreateInterval)
 		if err != nil {
+			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+				state.LastError = err.Error()
+			})
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -323,6 +407,10 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 			time.Sleep(k.fetchErrorBackoff())
 			continue
 		}
+		k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+			state.LastMessageAt = time.Now()
+			state.LastError = ""
+		})
 
 		carrier := propagation.MapCarrier{}
 		for _, header := range msg.Headers {
@@ -331,6 +419,9 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 		messageCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
 
 		if err := handler(messageCtx, msg); err != nil {
+			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+				state.LastError = err.Error()
+			})
 			log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
 			if isWorkerSendTopic(topic) {
 				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
@@ -351,6 +442,9 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 		}
 
 		if err := reader.CommitMessages(ctx, msg); err != nil {
+			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+				state.LastError = err.Error()
+			})
 			log.Printf("kafka commit error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
 			if isWorkerSendTopic(topic) {
 				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
@@ -366,7 +460,13 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 				})
 				return fmt.Errorf("kafka commit failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err)
 			}
-		} else if isWorkerSendTopic(topic) {
+		} else {
+			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+				state.LastCommitAt = time.Now()
+				state.LastError = ""
+			})
+		}
+		if isWorkerSendTopic(topic) {
 			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
 				"stage":     "whatsmeow.outgoing.kafka.commit.success",
 				"decision":  "commit_message",

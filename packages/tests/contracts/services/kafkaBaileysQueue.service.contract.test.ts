@@ -41,6 +41,9 @@ describe('KafkaBaileysQueueService', () => {
       'worker.w1.webhook.integration',
     ]);
 
+    await expect(service.deleteAllIncludingSend('w1')).resolves.toBeUndefined();
+    expect(deleteTopics).toHaveBeenLastCalledWith(topics);
+
     await expect(service.close()).resolves.toBeUndefined();
   });
 });

@@ -1,6 +1,8 @@
 import { Type } from '@sinclair/typebox';
 import { ETagSwagger } from '@core/common/enums/ETagSwagger';
 
+const healthResponseDataSchema = Type.Any();
+
 export const healthCheckSchema = {
   description: 'Verifica a saúde da aplicação',
   tags: [ETagSwagger.health],
@@ -10,7 +12,7 @@ export const healthCheckSchema = {
       {
         status: Type.Boolean(),
         message: Type.String(),
-        data: Type.Null(),
+        data: healthResponseDataSchema,
       },
       { description: 'Successful' }
     ),
@@ -18,7 +20,7 @@ export const healthCheckSchema = {
       {
         status: Type.Boolean(),
         message: Type.String(),
-        data: Type.Null(),
+        data: healthResponseDataSchema,
       },
       { description: 'Service Unavailable' }
     ),
@@ -26,7 +28,7 @@ export const healthCheckSchema = {
       {
         status: Type.Boolean(),
         message: Type.String(),
-        data: Type.Null(),
+        data: healthResponseDataSchema,
       },
       { description: 'Internal Server Error' }
     ),
