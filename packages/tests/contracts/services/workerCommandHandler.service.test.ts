@@ -975,7 +975,7 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
-  it('reuses an already ready container during recreate', async () => {
+  it('always replaces a ready container during recreate and preserves volume by default', async () => {
     const deps = buildHandler();
 
     await deps.handler.handle({
@@ -985,8 +985,23 @@ describe('WorkerCommandHandlerService connection', () => {
       account_id: 'account-1',
     });
 
-    expect(deps.workerService.removeContainerWorker).not.toHaveBeenCalled();
-    expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
+    expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
+      'worker-1',
+      false
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
+      expect.any(String),
+      'worker-1',
+      'account-1',
+      false,
+      expect.any(String),
+      expect.any(Number),
+      undefined,
+      expect.objectContaining({
+        workerTypeId: EWorkerType.wwebjs,
+        workerGrpcPort: 50053,
+      })
+    );
     expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
       'account-1',
       expect.objectContaining({
@@ -995,6 +1010,37 @@ describe('WorkerCommandHandlerService connection', () => {
         container_id: 'container-1',
       })
     );
+  });
+
+  it('removes the volume during recreate only when explicit session reset is requested', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      remove_session: true,
+      remove_volume: true,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.disponible,
+        type: EBaileysConnectionType.qrcode,
+        remove_session: true,
+      }),
+      EWorkerType.wwebjs
+    );
+    expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
+      'worker-1',
+      true
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalled();
   });
 
   it('keeps a previously online worker online after recreate when the worker reconnects', async () => {
