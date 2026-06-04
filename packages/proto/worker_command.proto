@@ -75,6 +75,7 @@ message WorkerConnectionState {
   string proxy_error_code = 18;
   string proxy_fallback = 19;
   bool proxy_bypassed = 20;
+  string qr_generated_at = 21;
 }
 
 message ResolveIncomingCallActionRequest {

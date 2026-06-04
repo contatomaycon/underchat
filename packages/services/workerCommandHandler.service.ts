@@ -135,6 +135,8 @@ export class WorkerCommandHandlerService {
   private readonly connectionRequestRetryIntervalMs = 15_000;
   private readonly connectionRequestMinAttempts = 10;
   private readonly qrAttemptTtlSeconds = 180;
+  private readonly qrCacheTtlSeconds = 115;
+  private readonly qrMaxAgeMs = 120_000;
   private readonly qrRetryIntervalMs = 3_000;
   private readonly qrRetryMaxAttempts = 20;
   private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
@@ -1002,6 +1004,81 @@ export class WorkerCommandHandlerService {
     return `connection:qrcode:${workerId}:attempt`;
   }
 
+  private qrGeneratedAtMs(
+    state: Partial<IBaileysConnectionState>
+  ): number | undefined {
+    if (!state.qr_generated_at) {
+      return undefined;
+    }
+
+    const parsed = Date.parse(state.qr_generated_at);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  private qrAgeMs(state: Partial<IBaileysConnectionState>): number | undefined {
+    const generatedAtMs = this.qrGeneratedAtMs(state);
+    if (generatedAtMs === undefined) {
+      return undefined;
+    }
+
+    return Math.max(0, Date.now() - generatedAtMs);
+  }
+
+  private isQrExpired(state: Partial<IBaileysConnectionState>): boolean {
+    if (!state.qrcode) {
+      return false;
+    }
+
+    const ageMs = this.qrAgeMs(state);
+    return ageMs === undefined || ageMs >= this.qrMaxAgeMs;
+  }
+
+  private qrCacheTtlForState(state: IBaileysConnectionState): number {
+    if (!state.qrcode) {
+      return this.qrAttemptTtlSeconds;
+    }
+
+    const ageMs = this.qrAgeMs(state) ?? 0;
+    const remainingSeconds = Math.max(
+      1,
+      Math.floor((this.qrMaxAgeMs - ageMs) / 1000)
+    );
+
+    return Math.min(this.qrCacheTtlSeconds, remainingSeconds);
+  }
+
+  private buildPendingStateFromExpiredQr(
+    state: IBaileysConnectionState
+  ): IBaileysConnectionState {
+    const pending: IBaileysConnectionState = {
+      ...state,
+      code: ECodeMessage.awaitingReadQrCode,
+      status: EBaileysConnectionStatus.connecting,
+      qr_pending: true,
+    };
+    delete pending.qrcode;
+    delete pending.qr_generated_at;
+    return pending;
+  }
+
+  private normalizeQrFreshness(
+    state: IBaileysConnectionState
+  ): IBaileysConnectionState {
+    if (!state.qrcode) {
+      return state;
+    }
+
+    const normalized: IBaileysConnectionState = { ...state };
+    normalized.qr_generated_at ??= new Date().toISOString();
+
+    if (!this.isQrExpired(normalized)) {
+      normalized.qr_pending = false;
+      return normalized;
+    }
+
+    return this.buildPendingStateFromExpiredQr(normalized);
+  }
+
   private async getCachedQrAttemptState(
     workerId: string
   ): Promise<IBaileysConnectionState | undefined> {
@@ -1016,7 +1093,28 @@ export class WorkerCommandHandlerService {
         return undefined;
       }
 
-      return parsed as IBaileysConnectionState;
+      const state = parsed as IBaileysConnectionState;
+      if (this.isQrExpired(state)) {
+        const pending = this.buildPendingStateFromExpiredQr(state);
+        const ttlSeconds = this.qrCacheTtlForState(pending);
+        await this.redis.setex(
+          this.qrAttemptCacheKey(workerId),
+          ttlSeconds,
+          JSON.stringify(pending)
+        );
+        recordConnectionQrSummary({
+          event: 'balancer_qrcode_cache_expired',
+          ...summarizeConnectionQrState(state),
+          reason: 'qr_cache_age_exceeded',
+          qr_age_ms: this.qrAgeMs(state),
+          qr_cache_ttl_seconds: ttlSeconds,
+          qr_expired: true,
+          level: 'warn',
+        });
+        return pending;
+      }
+
+      return state;
     } catch (err) {
       recordConnectionQrSummary({
         event: 'balancer_qrcode_cache_read_error',
@@ -1100,6 +1198,9 @@ export class WorkerCommandHandlerService {
           : 'balancer_qrcode_active_attempt_pending',
         ...summarizeConnectionQrState(activeCached),
         reason: activeCached.qrcode ? 'active_attempt_has_qr' : pendingReason,
+        qr_age_ms: this.qrAgeMs(activeCached),
+        qr_cache_ttl_seconds: this.qrCacheTtlForState(activeCached),
+        qr_expired: this.isQrExpired(activeCached),
         level: activeCached.qrcode ? 'info' : 'warn',
       });
 
@@ -1197,9 +1298,10 @@ export class WorkerCommandHandlerService {
   private async cacheQrAttemptState(
     state: IBaileysConnectionState
   ): Promise<void> {
+    const ttlSeconds = this.qrCacheTtlForState(state);
     await this.redis.setex(
       this.qrAttemptCacheKey(state.worker_id),
-      this.qrAttemptTtlSeconds,
+      ttlSeconds,
       JSON.stringify(state)
     );
   }
@@ -1249,56 +1351,70 @@ export class WorkerCommandHandlerService {
       level?: 'info' | 'warn' | 'error';
     }
   ): Promise<boolean> {
-    const stale = await this.shouldIgnoreQrAttemptState(state);
+    const normalizedState = this.normalizeQrFreshness(state);
+    const ttlSeconds = this.qrCacheTtlForState(normalizedState);
+    const stale = await this.shouldIgnoreQrAttemptState(normalizedState);
     if (stale.ignored) {
       recordConnectionQrSummary({
         event: 'balancer_qrcode_state_ignored_stale',
-        ...summarizeConnectionQrState(state),
+        ...summarizeConnectionQrState(normalizedState),
         worker_type: options.workerType,
         reason: stale.reason,
         publish_source: options.publishSource ?? options.event,
         ignored_stale: true,
+        qr_age_ms: this.qrAgeMs(normalizedState),
+        qr_cache_ttl_seconds: ttlSeconds,
+        qr_expired: this.isQrExpired(normalizedState),
         level: 'warn',
       });
       return false;
     }
 
     try {
-      await this.cacheQrAttemptState(state);
+      await this.cacheQrAttemptState(normalizedState);
     } catch (err) {
       recordConnectionQrSummary({
         event: 'balancer_qrcode_cache_error',
-        ...summarizeConnectionQrState(state),
+        ...summarizeConnectionQrState(normalizedState),
         worker_type: options.workerType,
         reason: 'redis_cache_failed',
         error: getErrorMessage(err),
+        qr_age_ms: this.qrAgeMs(normalizedState),
+        qr_cache_ttl_seconds: ttlSeconds,
+        qr_expired: this.isQrExpired(normalizedState),
         level: 'error',
       });
     }
 
     recordConnectionQrSummary({
       event: options.event,
-      ...summarizeConnectionQrState(state),
+      ...summarizeConnectionQrState(normalizedState),
       worker_type: options.workerType,
       reason: options.reason,
       error: options.error,
       recreate_reason: options.recreateReason,
       time_to_first_qr_ms: options.timeToFirstQrMs,
+      qr_age_ms: this.qrAgeMs(normalizedState),
+      qr_cache_ttl_seconds: ttlSeconds,
+      qr_expired: this.isQrExpired(normalizedState),
       publish_source: options.publishSource ?? options.event,
       level: options.level,
     });
 
-    if (state.account_id) {
+    if (normalizedState.account_id) {
       try {
-        await this.centrifugoPublish(state);
+        await this.centrifugoPublish(normalizedState);
       } catch (err) {
         recordConnectionQrSummary({
           event: 'balancer_qrcode_publish_error',
-          ...summarizeConnectionQrState(state),
+          ...summarizeConnectionQrState(normalizedState),
           worker_type: options.workerType,
           reason: 'centrifugo_publish_failed',
           error: getErrorMessage(err),
           publish_source: options.publishSource ?? options.event,
+          qr_age_ms: this.qrAgeMs(normalizedState),
+          qr_cache_ttl_seconds: ttlSeconds,
+          qr_expired: this.isQrExpired(normalizedState),
           level: 'error',
         });
       }
@@ -1481,10 +1597,12 @@ export class WorkerCommandHandlerService {
               context.payload,
               context.workerData.workerTypeId
             );
-          const normalized = this.normalizeQrWorkerResponse(
-            response,
-            context.payload,
-            context.accountId
+          const normalized = this.normalizeQrFreshness(
+            this.normalizeQrWorkerResponse(
+              response,
+              context.payload,
+              context.accountId
+            )
           );
           this.applyProxyDecisionToState(normalized, proxyDecision);
           normalized.attempt ??= attempt;
@@ -1684,10 +1802,12 @@ export class WorkerCommandHandlerService {
       return pending;
     }
 
-    const normalized = this.normalizeQrWorkerResponse(
-      response,
-      payload,
-      workerData.accountIdResolved
+    const normalized = this.normalizeQrFreshness(
+      this.normalizeQrWorkerResponse(
+        response,
+        payload,
+        workerData.accountIdResolved
+      )
     );
     this.applyProxyDecisionToState(normalized, proxyDecision);
     recordConnectionLifecycle({

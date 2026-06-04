@@ -26,6 +26,9 @@ export interface ConnectionQrSummaryInput {
   server_id?: string;
   worker_status_id?: string;
   time_to_first_qr_ms?: number;
+  qr_age_ms?: number;
+  qr_cache_ttl_seconds?: number;
+  qr_expired?: boolean;
   publish_source?: string;
   ignored_stale?: boolean;
   proxy_status?: string;
@@ -106,6 +109,9 @@ export function recordConnectionQrSummary(
     attempt: input.attempt,
     max_attempts: input.max_attempts,
     time_to_first_qr_ms: input.time_to_first_qr_ms,
+    qr_age_ms: input.qr_age_ms,
+    qr_cache_ttl_seconds: input.qr_cache_ttl_seconds,
+    qr_expired: input.qr_expired === true,
     publish_source: input.publish_source,
     ignored_stale: input.ignored_stale === true,
     proxy_status: input.proxy_status,

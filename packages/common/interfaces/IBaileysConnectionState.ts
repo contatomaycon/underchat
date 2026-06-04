@@ -19,6 +19,7 @@ export interface IBaileysConnectionState {
   max_attempts?: number;
   connection_attempt_id?: string;
   qr_pending?: boolean;
+  qr_generated_at?: string;
   proxy_status?: 'healthy' | 'unhealthy' | 'disabled';
   proxy_error_code?: string;
   proxy_fallback?: 'direct';

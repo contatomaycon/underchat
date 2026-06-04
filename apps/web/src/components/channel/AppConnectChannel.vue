@@ -8,11 +8,13 @@ import {
   watch,
 } from 'vue';
 import {
+  fetchHistoryAndProcess,
   fetchRecentHistoryAndProcess,
   onMessage,
   unsubscribe,
 } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
+import { useQrPendingRecovery } from '@/composables/useQrPendingRecovery';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -45,6 +47,9 @@ const isVisible = computed({
 
 const channelId = toRef(props, 'channelId');
 const accountId = toRef(props, 'accountId');
+const workerConnectionChannel = computed(() =>
+  accountId.value ? workerCentrifugoQueue(accountId.value) : ''
+);
 
 const MIN_PAIRING_STAGE_MS = 900;
 
@@ -111,6 +116,28 @@ const isActionLocked = computed(
     isBlockingOperation.value ||
     isConnectionPreparing.value
 );
+const shouldRecoverPendingQr = () =>
+  Boolean(
+    isVisible.value &&
+    channelId.value &&
+    qrPending.value &&
+    !qrcode.value &&
+    !isConnected.value &&
+    !isBlockingOperation.value
+  );
+const qrPendingRecovery = useQrPendingRecovery({
+  shouldContinue: shouldRecoverPendingQr,
+  requestState: async () =>
+    channelId.value
+      ? channelStore.requestConnectionQrCode(channelId.value, { silent: true })
+      : null,
+  applyState: (state) => applyDirectConnectionResponse(state),
+  onError: (error) => {
+    if (import.meta.env.DEV) {
+      console.warn('QR pending recovery failed', error);
+    }
+  },
+});
 
 const formattedTime = computed(() => {
   const m = Math.floor(secondsNextAttempt.value / 60)
@@ -408,6 +435,7 @@ async function reconnectChannel() {
   if (state) {
     applyDirectConnectionResponse(state);
   }
+  syncQrPendingRecovery();
 }
 
 async function restartQrCodeAttempt() {
@@ -417,6 +445,7 @@ async function restartQrCodeAttempt() {
 async function recreateChannelWithFullCleanup() {
   if (!channelId.value) return;
 
+  qrPendingRecovery.stop();
   statusConnection.value = EBaileysConnectionStatus.connecting;
   statusCode.value = ECodeMessage.logoutInProgress;
   disconnectedByUser.value = true;
@@ -464,6 +493,7 @@ function scheduleConnectedState(data: IBaileysConnectionState) {
 }
 
 function applyConnectedState(data: IBaileysConnectionState) {
+  qrPendingRecovery.stop();
   isResetting.value = false;
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
@@ -579,10 +609,47 @@ function applyReducedConnectionState(data: IBaileysConnectionState) {
     secondsNextAttempt.value = next.seconds_until_next_attempt;
     startNextAttemptCountdown();
   }
+
+  syncQrPendingRecovery();
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
   applyReducedConnectionState(data);
+}
+
+function syncQrPendingRecovery() {
+  if (shouldRecoverPendingQr()) {
+    qrPendingRecovery.start();
+    return;
+  }
+
+  qrPendingRecovery.stop();
+}
+
+async function recoverQrAfterCentrifugoRecoveryFailure() {
+  if (!channelId.value || !workerConnectionChannel.value) {
+    return;
+  }
+
+  await fetchHistoryAndProcess(workerConnectionChannel.value);
+
+  const state = await channelStore.requestConnectionQrCode(channelId.value, {
+    silent: true,
+  });
+  if (state) {
+    applyDirectConnectionResponse(state);
+  }
+
+  syncQrPendingRecovery();
+}
+
+function handleCentrifugoRecoveryFailed(event: Event) {
+  const detail = (event as CustomEvent<{ channel?: string }>).detail;
+  if (detail?.channel !== workerConnectionChannel.value) {
+    return;
+  }
+
+  void recoverQrAfterCentrifugoRecoveryFailure();
 }
 
 function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
@@ -591,6 +658,7 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
   }
 
   if (data.worker_status_id === EWorkerStatus.recreating) {
+    qrPendingRecovery.stop();
     isResetting.value = true;
     statusConnection.value = EBaileysConnectionStatus.connecting;
     statusCode.value = ECodeMessage.awaitConnection;
@@ -618,12 +686,14 @@ onMounted(async () => {
   prepareInitialModalState();
   await loadExternalConnectionLink();
 
-  await onMessage(
-    workerCentrifugoQueue(accountId.value),
-    handleWorkerConnectionMessage
+  globalThis.addEventListener(
+    'centrifugo-recovery-failed',
+    handleCentrifugoRecoveryFailed as EventListener
   );
+
+  await onMessage(workerConnectionChannel.value, handleWorkerConnectionMessage);
   await fetchRecentHistoryAndProcess(
-    workerCentrifugoQueue(accountId.value),
+    workerConnectionChannel.value,
     handleWorkerConnectionMessage
   );
 
@@ -631,10 +701,12 @@ onMounted(async () => {
   if (state) {
     applyDirectConnectionResponse(state);
   }
+  syncQrPendingRecovery();
 });
 
 watch(isVisible, (visible) => {
   if (!visible) {
+    qrPendingRecovery.stop();
     return;
   }
 
@@ -645,12 +717,18 @@ watch(isVisible, (visible) => {
 });
 
 onUnmounted(() => {
+  qrPendingRecovery.stop();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
 
+  globalThis.removeEventListener(
+    'centrifugo-recovery-failed',
+    handleCentrifugoRecoveryFailed as EventListener
+  );
+
   if (accountId.value) {
     void unsubscribe(
-      workerCentrifugoQueue(accountId.value),
+      workerConnectionChannel.value,
       handleWorkerConnectionMessage
     );
   }

@@ -17,6 +17,7 @@ import { reduceWorkerConnectionState } from '@core/common/functions/reduceWorker
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { subscribeExternalConnection } from '@/@webcore/centrifugoExternalConnection';
+import { useQrPendingRecovery } from '@/composables/useQrPendingRecovery';
 
 definePage({
   meta: {
@@ -85,6 +86,30 @@ const canRetryQrCode = computed(
     modalState.value === 'disconnected' &&
     isQrAttemptsExpired.value
 );
+const shouldRecoverPendingQr = () =>
+  Boolean(
+    !isExpired.value &&
+    !isInvalid.value &&
+    token.value &&
+    externalConnection.value &&
+    qrPending.value &&
+    !qrcode.value &&
+    !isConnected.value &&
+    !isRequestingQr.value
+  );
+const qrPendingRecovery = useQrPendingRecovery({
+  shouldContinue: shouldRecoverPendingQr,
+  requestState: async () =>
+    token.value
+      ? channelStore.requestExternalConnectionQrCode(token.value)
+      : null,
+  applyState: (state) => applyDirectConnectionResponse(state),
+  onError: (error) => {
+    if (import.meta.env.DEV) {
+      console.warn('External QR pending recovery failed', error);
+    }
+  },
+});
 
 const expiresAtFormatted = computed(() => {
   if (!externalConnection.value?.expires_at) {
@@ -223,6 +248,7 @@ function clearExpiryTimeout() {
 }
 
 function markExpired() {
+  qrPendingRecovery.stop();
   isExpired.value = true;
   qrcode.value = undefined;
   isRequestingQr.value = false;
@@ -290,6 +316,7 @@ function setInitialStateFromWorker(data: WorkerExternalConnectionViewResponse) {
 }
 
 function applyConnectedState(data: IBaileysConnectionState) {
+  qrPendingRecovery.stop();
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
   qrcode.value = undefined;
@@ -373,10 +400,20 @@ function applyConnectionState(data: IBaileysConnectionState) {
   }
 
   isRequestingQr.value = false;
+  syncQrPendingRecovery();
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
   applyConnectionState(data);
+}
+
+function syncQrPendingRecovery() {
+  if (shouldRecoverPendingQr()) {
+    qrPendingRecovery.start();
+    return;
+  }
+
+  qrPendingRecovery.stop();
 }
 
 function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
@@ -403,10 +440,12 @@ async function requestQrCode() {
   if (!state) {
     isRequestingQr.value = false;
     await loadExternalConnection(false);
+    syncQrPendingRecovery();
     return;
   }
 
   applyDirectConnectionResponse(state);
+  syncQrPendingRecovery();
 }
 
 async function subscribeToExternalConnection(
@@ -472,6 +511,7 @@ async function loadExternalConnection(requestQr = true) {
   if (requestQr && !isConnected.value && !isExpired.value) {
     await requestQrCode();
   }
+  syncQrPendingRecovery();
 }
 
 onMounted(async () => {
@@ -485,6 +525,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  qrPendingRecovery.stop();
   clearExpiryTimeout();
 
   if (unsubscribeExternalConnection) {

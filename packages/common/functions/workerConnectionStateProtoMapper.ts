@@ -45,6 +45,9 @@ export function protoToConnectionState(
   if (proto.qr_pending === true) {
     state.qr_pending = true;
   }
+  if (proto.qr_generated_at) {
+    state.qr_generated_at = proto.qr_generated_at;
+  }
   if (proto.proxy_status) {
     state.proxy_status =
       proto.proxy_status as IBaileysConnectionState['proxy_status'];
@@ -97,6 +100,7 @@ export function connectionStateToProto(
     max_attempts: state.max_attempts ?? 0,
     connection_attempt_id: state.connection_attempt_id ?? '',
     qr_pending: state.qr_pending ?? false,
+    qr_generated_at: state.qr_generated_at ?? '',
     proxy_status: state.proxy_status ?? '',
     proxy_error_code: state.proxy_error_code ?? '',
     proxy_fallback: state.proxy_fallback ?? '',

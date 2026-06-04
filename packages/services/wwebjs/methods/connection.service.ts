@@ -1006,6 +1006,7 @@ export class WwebjsConnectionService {
         this.qrHash = hash;
         this.qrGenerationCount += 1;
         this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
+        const qrGeneratedAt = new Date().toISOString();
         this.logConnectionEvent('qr_generated', {
           attempt_id: attemptId,
           attempt: this.qrGenerationCount,
@@ -1029,6 +1030,7 @@ export class WwebjsConnectionService {
           max_attempts: MAX_QR_GENERATIONS,
           worker_status_id: EWorkerStatus.disponible,
           connection_attempt_id: this.connectionAttemptId,
+          qr_generated_at: qrGeneratedAt,
         };
 
         void this.notifyWorkerStatusSafely(payload, 'qr');
@@ -1043,7 +1045,7 @@ export class WwebjsConnectionService {
           });
         }
 
-        this.pendingResolve?.(this.state(img));
+        this.pendingResolve?.(this.state(img, qrGeneratedAt));
         this.pendingResolve = undefined;
       });
 
@@ -1991,7 +1993,7 @@ export class WwebjsConnectionService {
     }
   }
 
-  private state(qr?: string): IBaileysConnectionState {
+  private state(qr?: string, qrGeneratedAt?: string): IBaileysConnectionState {
     const result: IBaileysConnectionState = {
       status: this.status,
       worker_id: WORKER,
@@ -2000,6 +2002,9 @@ export class WwebjsConnectionService {
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
     };
+    if (qr && qrGeneratedAt) {
+      result.qr_generated_at = qrGeneratedAt;
+    }
     if (this.status === Status.connecting) {
       result.attempt = this.retryCount > 0 ? this.retryCount : 1;
       result.max_attempts = MAX_RETRIES;

@@ -328,6 +328,7 @@ declare global {
   const usePreferredReducedTransparency: typeof import('@vueuse/core').usePreferredReducedTransparency
   const usePrevious: typeof import('@vueuse/core').usePrevious
   const useProjection: typeof import('@vueuse/math').useProjection
+  const useQrPendingRecovery: typeof import('./src/composables/useQrPendingRecovery').useQrPendingRecovery
   const useRafFn: typeof import('@vueuse/core').useRafFn
   const useRefHistory: typeof import('@vueuse/core').useRefHistory
   const useRegisterStatesAndCities: typeof import('./src/composables/useRegisterStatesAndCities').useRegisterStatesAndCities
@@ -740,6 +741,7 @@ declare module 'vue' {
     readonly usePreferredReducedMotion: UnwrapRef<typeof import('@vueuse/core')['usePreferredReducedMotion']>
     readonly usePrevious: UnwrapRef<typeof import('@vueuse/core')['usePrevious']>
     readonly useProjection: UnwrapRef<typeof import('@vueuse/math')['useProjection']>
+    readonly useQrPendingRecovery: UnwrapRef<typeof import('./src/composables/useQrPendingRecovery')['useQrPendingRecovery']>
     readonly useRafFn: UnwrapRef<typeof import('@vueuse/core')['useRafFn']>
     readonly useRefHistory: UnwrapRef<typeof import('@vueuse/core')['useRefHistory']>
     readonly useRegisterStatesAndCities: UnwrapRef<typeof import('./src/composables/useRegisterStatesAndCities')['useRegisterStatesAndCities']>

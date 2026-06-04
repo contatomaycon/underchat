@@ -344,16 +344,21 @@ export const useChannelsStore = defineStore('channels', {
     },
 
     async requestConnectionQrCode(
-      workerId: string
+      workerId: string,
+      options: { silent?: boolean } = {}
     ): Promise<IBaileysConnectionState | null> {
       try {
-        this.loading = true;
+        if (!options.silent) {
+          this.loading = true;
+        }
 
         const response = await axios.post<
           IApiResponse<IBaileysConnectionState>
         >(`/worker/${workerId}/connection/qrcode`, {});
 
-        this.loading = false;
+        if (!options.silent) {
+          this.loading = false;
+        }
 
         const data = response?.data;
 
@@ -361,7 +366,9 @@ export const useChannelsStore = defineStore('channels', {
           const message =
             data?.message ?? this.i18n.global.t('worker_status_update_error');
 
-          this.showSnackbar(message, EColor.error);
+          if (!options.silent) {
+            this.showSnackbar(message, EColor.error);
+          }
 
           return null;
         }
@@ -373,9 +380,13 @@ export const useChannelsStore = defineStore('channels', {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
 
-        this.showSnackbar(errorMessage, EColor.error);
+        if (!options.silent) {
+          this.showSnackbar(errorMessage, EColor.error);
+        }
 
-        this.loading = false;
+        if (!options.silent) {
+          this.loading = false;
+        }
 
         return null;
       }

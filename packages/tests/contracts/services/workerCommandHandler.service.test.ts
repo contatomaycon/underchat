@@ -471,6 +471,7 @@ describe('WorkerCommandHandlerService connection', () => {
         qrcode: 'data:image/png;base64,qr',
         connection_attempt_id: 'uuid-v7',
         qr_pending: false,
+        qr_generated_at: expect.any(String),
       })
     );
     expect(
@@ -501,7 +502,7 @@ describe('WorkerCommandHandlerService connection', () => {
     );
     expect(deps.redis.setex).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:attempt',
-      expect.any(Number),
+      115,
       expect.stringContaining('"connection_attempt_id":"uuid-v7"')
     );
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
@@ -512,6 +513,7 @@ describe('WorkerCommandHandlerService connection', () => {
         qrcode: 'data:image/png;base64,qr',
         connection_attempt_id: 'uuid-v7',
         qr_pending: false,
+        qr_generated_at: expect.any(String),
       })
     );
   });
@@ -542,6 +544,100 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
     ).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a fresh cached QR younger than the WhatsApp QR lifetime', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-04T13:45:00.000Z'));
+    const deps = buildHandler();
+    deps.redisStore.set(
+      'connection:qrcode:worker-1:attempt',
+      JSON.stringify({
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-fresh',
+        qrcode: 'data:image/png;base64,qr-fresh',
+        qr_pending: false,
+        qr_generated_at: '2026-06-04T13:44:00.000Z',
+      })
+    );
+
+    try {
+      const response = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
+
+      expect(response).toEqual(
+        expect.objectContaining({
+          connection_attempt_id: 'attempt-fresh',
+          qrcode: 'data:image/png;base64,qr-fresh',
+          qr_generated_at: '2026-06-04T13:44:00.000Z',
+        })
+      );
+      expect(
+        deps.workerBaileysGrpcClientService.requestConnectionQrCode
+      ).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not return a cached QR older than the WhatsApp QR lifetime', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-04T13:45:00.000Z'));
+    const deps = buildHandler();
+    deps.redisStore.set(
+      'connection:qrcode:worker-1:attempt',
+      JSON.stringify({
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-expired',
+        qrcode: 'data:image/png;base64,qr-expired',
+        qr_pending: false,
+        qr_generated_at: '2026-06-04T13:42:59.000Z',
+      })
+    );
+
+    try {
+      const response = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(response).toEqual(
+        expect.objectContaining({
+          connection_attempt_id: 'attempt-expired',
+          qr_pending: true,
+        })
+      );
+      expect(response.qrcode).toBeUndefined();
+      expect(response.qr_generated_at).toBeUndefined();
+      expect(deps.redis.setex).toHaveBeenCalledWith(
+        'connection:qrcode:worker-1:attempt',
+        180,
+        expect.not.stringContaining('qr-expired')
+      );
+      expect(
+        deps.workerBaileysGrpcClientService.requestConnectionQrCode
+      ).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(1);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   });
 
   it('recreates an existing unhealthy container before requesting QR', async () => {
@@ -875,7 +971,7 @@ describe('WorkerCommandHandlerService connection', () => {
       ).toHaveBeenCalledTimes(2);
       expect(deps.redis.setex).toHaveBeenLastCalledWith(
         'connection:qrcode:worker-1:attempt',
-        expect.any(Number),
+        115,
         expect.stringContaining('"qrcode":"data:image/png;base64,qr-async"')
       );
       expect(deps.centrifugoService.publishSub).toHaveBeenLastCalledWith(
@@ -886,6 +982,7 @@ describe('WorkerCommandHandlerService connection', () => {
           qrcode: 'data:image/png;base64,qr-async',
           connection_attempt_id: 'uuid-v7',
           qr_pending: false,
+          qr_generated_at: expect.any(String),
         })
       );
     } finally {
