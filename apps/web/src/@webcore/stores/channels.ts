@@ -345,16 +345,20 @@ export const useChannelsStore = defineStore('channels', {
 
     async requestConnectionQrCode(
       workerId: string,
-      options: { silent?: boolean } = {}
+      options: { silent?: boolean; timeoutMs?: number } = {}
     ): Promise<IBaileysConnectionState | null> {
       try {
         if (!options.silent) {
           this.loading = true;
         }
 
+        const config: AxiosRequestConfig | undefined = options.timeoutMs
+          ? { timeout: options.timeoutMs }
+          : undefined;
+
         const response = await axios.post<
           IApiResponse<IBaileysConnectionState>
-        >(`/worker/${workerId}/connection/qrcode`, {});
+        >(`/worker/${workerId}/connection/qrcode`, {}, config);
 
         if (!options.silent) {
           this.loading = false;
@@ -495,14 +499,20 @@ export const useChannelsStore = defineStore('channels', {
     },
 
     async requestExternalConnectionQrCode(
-      token: string
+      token: string,
+      options: { timeoutMs?: number } = {}
     ): Promise<IBaileysConnectionState | null> {
       try {
+        const config: AxiosRequestConfig | undefined = options.timeoutMs
+          ? { timeout: options.timeoutMs }
+          : undefined;
+
         const response = await axios.post<
           IApiResponse<IBaileysConnectionState>
         >(
           `/worker/external-connection/${encodeURIComponent(token)}/qrcode`,
-          {}
+          {},
+          config
         );
 
         return response?.data?.status ? (response.data.data ?? null) : null;

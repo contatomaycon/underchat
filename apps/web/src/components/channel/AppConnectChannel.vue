@@ -129,7 +129,10 @@ const qrPendingRecovery = useQrPendingRecovery({
   shouldContinue: shouldRecoverPendingQr,
   requestState: async () =>
     channelId.value
-      ? channelStore.requestConnectionQrCode(channelId.value, { silent: true })
+      ? channelStore.requestConnectionQrCode(channelId.value, {
+          silent: true,
+          timeoutMs: 20_000,
+        })
       : null,
   applyState: (state) => applyDirectConnectionResponse(state),
   onError: (error) => {
@@ -430,6 +433,7 @@ async function reconnectChannel() {
   if (!channelId.value) return;
 
   prepareConnectionStart({ preserveQr: true });
+  syncQrPendingRecovery();
 
   const state = await channelStore.requestConnectionQrCode(channelId.value);
   if (state) {
@@ -635,6 +639,7 @@ async function recoverQrAfterCentrifugoRecoveryFailure() {
 
   const state = await channelStore.requestConnectionQrCode(channelId.value, {
     silent: true,
+    timeoutMs: 20_000,
   });
   if (state) {
     applyDirectConnectionResponse(state);
@@ -684,6 +689,7 @@ onMounted(async () => {
   }
 
   prepareInitialModalState();
+  syncQrPendingRecovery();
   await loadExternalConnectionLink();
 
   globalThis.addEventListener(

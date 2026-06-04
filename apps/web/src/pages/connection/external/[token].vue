@@ -94,14 +94,15 @@ const shouldRecoverPendingQr = () =>
     externalConnection.value &&
     qrPending.value &&
     !qrcode.value &&
-    !isConnected.value &&
-    !isRequestingQr.value
+    !isConnected.value
   );
 const qrPendingRecovery = useQrPendingRecovery({
   shouldContinue: shouldRecoverPendingQr,
   requestState: async () =>
     token.value
-      ? channelStore.requestExternalConnectionQrCode(token.value)
+      ? channelStore.requestExternalConnectionQrCode(token.value, {
+          timeoutMs: 20_000,
+        })
       : null,
   applyState: (state) => applyDirectConnectionResponse(state),
   onError: (error) => {
@@ -435,6 +436,7 @@ async function requestQrCode() {
     resetQrAttempts();
   }
 
+  syncQrPendingRecovery();
   const state = await channelStore.requestExternalConnectionQrCode(token.value);
 
   if (!state) {
