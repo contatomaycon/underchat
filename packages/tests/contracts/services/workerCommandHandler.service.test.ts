@@ -565,6 +565,79 @@ describe('WorkerCommandHandlerService connection', () => {
     ).toHaveBeenCalledTimes(1);
   });
 
+  it('serializes concurrent QR requests so repeated posts reuse the active attempt', async () => {
+    const deps = buildHandler();
+    let lockTail = Promise.resolve();
+    deps.workerLifecycleLockService.withLock.mockImplementation(
+      async (
+        _workerId: string,
+        _operation: string,
+        callback: () => Promise<unknown>
+      ) => {
+        const previous = lockTail;
+        let release!: () => void;
+        lockTail = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+
+        await previous;
+        try {
+          return await callback();
+        } finally {
+          release();
+        }
+      }
+    );
+
+    let resolveQr!: (state: IBaileysConnectionState) => void;
+    deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockReturnValueOnce(
+      new Promise<IBaileysConnectionState>((resolve) => {
+        resolveQr = resolve;
+      })
+    );
+
+    const first = deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+    await flushPromises();
+
+    const second = deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+    await flushPromises();
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalledTimes(1);
+
+    resolveQr({
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      qrcode: 'data:image/png;base64,qr',
+    });
+
+    const [firstResponse, secondResponse] = await Promise.all([first, second]);
+
+    expect(firstResponse.connection_attempt_id).toBe('uuid-v7');
+    expect(secondResponse.connection_attempt_id).toBe('uuid-v7');
+    expect(secondResponse.qrcode).toBe(firstResponse.qrcode);
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalledTimes(1);
+  });
+
   it('returns a fresh cached QR younger than the WhatsApp QR lifetime', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-06-04T13:45:00.000Z'));
     const deps = buildHandler();
@@ -659,7 +732,7 @@ describe('WorkerCommandHandlerService connection', () => {
     }
   });
 
-  it('recreates an existing unhealthy container before requesting QR', async () => {
+  it('reuses a compatible container when HTTP health fails but gRPC is ready', async () => {
     const deps = buildHandler();
     deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
       buildContainerHealthResult({
@@ -672,6 +745,41 @@ describe('WorkerCommandHandlerService connection', () => {
         health_duration_ms: 3000,
       })
     );
+
+    await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady
+    ).toHaveBeenCalledWith('worker-1', EWorkerType.wwebjs, 5_000);
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalled();
+  });
+
+  it('recreates an existing unhealthy container before requesting QR when gRPC is not ready', async () => {
+    const deps = buildHandler();
+    deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
+      buildContainerHealthResult({
+        healthy: false,
+        health_attempt: 2,
+        health_max_attempts: 2,
+        health_delay_ms: 1000,
+        health_status_code: '500',
+        consecutive_successes: 0,
+        health_duration_ms: 3000,
+      })
+    );
+    deps.workerBaileysGrpcClientService.waitForReady
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockResolvedValueOnce('worker-1:50053');
 
     await deps.handler.handleRequestConnectionQrCode(
       {

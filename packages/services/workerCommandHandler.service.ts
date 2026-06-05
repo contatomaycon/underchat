@@ -741,14 +741,14 @@ export class WorkerCommandHandlerService {
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
 
-    const { payload, cachedState, shouldReturnCached } =
-      await this.resolveQrRequestPayload(input);
-
-    this.stopConnectionRequestRetry(payload.worker_id);
+    this.stopConnectionRequestRetry(input.worker_id);
     return this.runWithWorkerLifecycleLock(
-      payload.worker_id,
+      input.worker_id,
       'request_qrcode',
       async () => {
+        const { payload, cachedState, shouldReturnCached } =
+          await this.resolveQrRequestPayload(input);
+
         if (shouldReturnCached && cachedState) {
           if (
             cachedState.qr_pending === true &&
@@ -2305,6 +2305,25 @@ export class WorkerCommandHandlerService {
             recreateReason = 'container_grpc_not_ready';
           }
         } else {
+          const grpcReadyAfterHealthFailure =
+            await this.tryExistingWorkerGrpcReady(workerId, workerData, {
+              timeoutMs: 5_000,
+              reason: 'existing_container_health_failed',
+            });
+
+          if (grpcReadyAfterHealthFailure) {
+            recordConnectionLifecycle({
+              stage:
+                'connection.balancer.command_handler.qrcode_existing_container_grpc_ready_after_health_failure',
+              decision: 'reuse_existing_container',
+              outcome: 'ready',
+              reason: 'grpc_ready_after_http_health_failed',
+              worker_type: workerData.workerTypeId,
+              ...this.lifecycleFieldsFromInspection(inspection),
+            });
+            return proxyDecision;
+          }
+
           recreateReason = 'existing_container_health_failed';
         }
       }
@@ -2477,6 +2496,61 @@ export class WorkerCommandHandlerService {
     });
 
     return false;
+  }
+
+  private async tryExistingWorkerGrpcReady(
+    workerId: string,
+    workerData: ResolvedWorkerDataForContainer,
+    options: { timeoutMs: number; reason: string }
+  ): Promise<boolean> {
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.qrcode_existing_container_grpc_probe_start',
+      decision: 'wait_worker_grpc_ready',
+      outcome: 'started',
+      reason: options.reason,
+      worker_type: workerData.workerTypeId,
+      worker_status_id: workerData.workerStatusId,
+      deadline_ms: options.timeoutMs,
+    });
+
+    try {
+      const grpcAddress =
+        await this.workerBaileysGrpcClientService.waitForReady(
+          workerId,
+          workerData.workerTypeId,
+          options.timeoutMs
+        );
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.qrcode_existing_container_grpc_probe_success',
+        decision: 'wait_worker_grpc_ready',
+        outcome: 'ready',
+        reason: options.reason,
+        worker_type: workerData.workerTypeId,
+        worker_status_id: workerData.workerStatusId,
+        grpc_address: grpcAddress,
+        grpc_probe_address: grpcAddress,
+        grpc_ready: true,
+        deadline_ms: options.timeoutMs,
+      });
+      return true;
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.qrcode_existing_container_grpc_probe_error',
+        decision: 'wait_worker_grpc_ready',
+        outcome: 'not_ready',
+        reason: options.reason,
+        level: 'warn',
+        worker_type: workerData.workerTypeId,
+        worker_status_id: workerData.workerStatusId,
+        grpc_ready: false,
+        deadline_ms: options.timeoutMs,
+        error: getErrorMessage(err),
+      });
+      return false;
+    }
   }
 
   private async inspectWorkerContainerForQr(
