@@ -549,6 +549,10 @@ func topicWorkerWebhook(workerID string) string {
 	return "worker." + workerID + ".webhook.integration"
 }
 
+func topicWorkerConnectionQRCode(workerID string) string {
+	return "worker." + workerID + ".connection.qrcode"
+}
+
 const (
 	topicUpdateMessage                 = "update.message"
 	topicUpsertMessage                 = "upsert.message"

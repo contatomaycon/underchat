@@ -26,10 +26,23 @@ export const requestConnectionQrCode = async (
 
     return sendResponse(reply, {
       message: t('worker_external_connection_qrcode_success'),
-      httpStatusCode: EHTTPStatusCode.ok,
+      httpStatusCode: EHTTPStatusCode.accepted,
       data: response,
     });
   } catch (error) {
+    if (error instanceof Error) {
+      const statusCodeByMessage: Record<string, EHTTPStatusCode> = {
+        [t('worker_not_found')]: EHTTPStatusCode.not_found,
+        [t('worker_qrcode_not_ready')]: EHTTPStatusCode.service_unavailable,
+      };
+      const httpStatusCode = statusCodeByMessage[error.message];
+      if (httpStatusCode) {
+        return sendResponse(reply, {
+          message: error.message,
+          httpStatusCode,
+        });
+      }
+    }
     handleControllerError(error, reply, t);
   }
 };

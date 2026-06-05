@@ -120,6 +120,12 @@ func TestWorkerSendTopicDetectionIsExact(t *testing.T) {
 	if isWorkerSendTopic("worker.019b7f05-d392-7410-9e58-f3b8e97da892.schedule.send.message") {
 		t.Fatal("expected schedule send topic to be excluded")
 	}
+	if isWorkerSendTopic(topicWorkerConnectionQRCode("019b7f05-d392-7410-9e58-f3b8e97da892")) {
+		t.Fatal("expected connection QR topic to be excluded")
+	}
+	if topicWorkerConnectionQRCode("w1") != "worker.w1.connection.qrcode" {
+		t.Fatalf("unexpected connection QR topic %s", topicWorkerConnectionQRCode("w1"))
+	}
 	if isWorkerSendTopic("update.message") {
 		t.Fatal("expected global topic to be excluded")
 	}

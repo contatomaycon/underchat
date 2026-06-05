@@ -31,18 +31,19 @@ export const workerConnectionQrCodeSchema = {
   }),
   params: workerConnectionQrCodeRequestSchema,
   response: {
-    200: Type.Object(
+    202: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
         data: workerConnectionStateResponseSchema,
       },
-      { description: 'Successful' }
+      { description: 'Accepted' }
     ),
     401: errorResponseSchema,
     403: errorResponseSchema,
     404: errorResponseSchema,
+    503: errorResponseSchema,
     500: errorResponseSchema,
   },
 };

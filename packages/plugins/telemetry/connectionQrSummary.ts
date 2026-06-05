@@ -7,6 +7,7 @@ import {
   incrementCounter,
   recordHistogram,
 } from '@core/plugins/telemetry/observability';
+import { isConnectionLifecycleDebugEnabled } from './connectionLifecycleDebug';
 
 type QrSummaryLevel = 'info' | 'warn' | 'error';
 
@@ -93,6 +94,10 @@ export function summarizeConnectionQrState(
 export function recordConnectionQrSummary(
   input: ConnectionQrSummaryInput
 ): void {
+  if (!isConnectionLifecycleDebugEnabled()) {
+    return;
+  }
+
   const level = input.level ?? (input.error ? 'error' : 'info');
   const hasQr = Boolean(input.qrcode);
   const payload = {

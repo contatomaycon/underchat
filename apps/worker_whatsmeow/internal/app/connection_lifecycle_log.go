@@ -150,13 +150,7 @@ func recordConnectionLifecycle(ctx context.Context, cfg Config, event map[string
 }
 
 func shouldRecordConnectionLifecycleEvent(event map[string]any) bool {
-	if shouldRecordLifecycleDebugEvent(event) {
-		return true
-	}
-	stage := lifecycleToken(event["stage"])
-	return strings.HasPrefix(stage, "connection.whatsmeow.event.keepalive_") ||
-		strings.HasPrefix(stage, "connection.whatsmeow.reconnect.") ||
-		stage == "connection.whatsmeow.client.connect_success"
+	return lifecycleToken(event["stage"]) != ""
 }
 
 func normalizeConnectionLifecyclePayload(ctx context.Context, cfg Config, event map[string]any) map[string]any {

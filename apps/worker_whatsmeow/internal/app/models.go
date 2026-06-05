@@ -94,6 +94,17 @@ type StatusConnectionRequest struct {
 	WarmPoolID            string `json:"warm_pool_id"`
 }
 
+type WorkerConnectionQRCodeQueueMessage struct {
+	RequestID             string `json:"request_id"`
+	ConnectionAttemptID   string `json:"connection_attempt_id"`
+	ConnectionLifecycleID string `json:"connection_lifecycle_id"`
+	WorkerID              string `json:"worker_id"`
+	AccountID             string `json:"account_id"`
+	WorkerTypeID          string `json:"worker_type_id"`
+	Source                string `json:"source"`
+	RequestedAt           string `json:"requested_at"`
+}
+
 type PhoneValidationRequest struct {
 	RequestID string `json:"request_id"`
 	AccountID string `json:"account_id"`

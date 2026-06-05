@@ -6,6 +6,7 @@ import { startNotificationMessageSendWwebjsConsume } from './notificationMessage
 import { startScheduleMessageWwebjsConsume } from './scheduleMessage.consume';
 import { startWorkerConfigUpdateWwebjsConsume } from './workerConfigUpdate.consume';
 import { startWebhookIntegrationWwebjsConsume } from './webhookIntegration.consume';
+import { startConnectionQrCodeWwebjsConsume } from './connectionQrCode.consume';
 import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { WwebjsHealthCheckService } from '@core/services/wwebjs/methods/healthCheck.service';
@@ -27,6 +28,7 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
   }
 
   const starters = [
+    () => startConnectionQrCodeWwebjsConsume(server),
     () => startSendMessageWwebjsConsume(server),
     () => startMarkMessageReadWwebjsConsume(server),
     () => startPhoneValidationWwebjsConsume(server),

@@ -27,6 +27,7 @@ export class KafkaBaileysQueueService {
     const validatePhone = this.workerValidatePhone(workerId);
     const notificationMessage = this.workerNotificationMessage(workerId);
     const webhookIntegration = this.workerWebhookIntegration(workerId);
+    const connectionQrCode = this.workerConnectionQrCode(workerId);
 
     return [
       sendMessage,
@@ -34,6 +35,7 @@ export class KafkaBaileysQueueService {
       validatePhone,
       notificationMessage,
       webhookIntegration,
+      connectionQrCode,
     ];
   };
 
@@ -42,12 +44,14 @@ export class KafkaBaileysQueueService {
     const validatePhone = this.workerValidatePhone(workerId);
     const notificationMessage = this.workerNotificationMessage(workerId);
     const webhookIntegration = this.workerWebhookIntegration(workerId);
+    const connectionQrCode = this.workerConnectionQrCode(workerId);
 
     return [
       scheduleSendMessage,
       validatePhone,
       notificationMessage,
       webhookIntegration,
+      connectionQrCode,
     ];
   };
 
@@ -95,6 +99,10 @@ export class KafkaBaileysQueueService {
 
   workerWebhookIntegration = (workerId: string) => {
     return `worker.${workerId}.webhook.integration`;
+  };
+
+  workerConnectionQrCode = (workerId: string) => {
+    return `worker.${workerId}.connection.qrcode`;
   };
 
   userPhoneJidUpdate = () => {

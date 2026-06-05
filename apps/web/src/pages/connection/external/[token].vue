@@ -17,7 +17,6 @@ import { reduceWorkerConnectionState } from '@core/common/functions/reduceWorker
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { subscribeExternalConnection } from '@/@webcore/centrifugoExternalConnection';
-import { useQrPendingRecovery } from '@/composables/useQrPendingRecovery';
 
 definePage({
   meta: {
@@ -40,6 +39,7 @@ const isLoading = shallowRef(true);
 const isInvalid = shallowRef(false);
 const isExpired = shallowRef(false);
 const isRequestingQr = shallowRef(false);
+const workerStatusId = shallowRef<string | null>(null);
 const statusConnection = shallowRef<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.connecting
 );
@@ -83,34 +83,10 @@ const canRetryQrCode = computed(
     !isInvalid.value &&
     !isConnected.value &&
     !isRequestingQr.value &&
+    workerStatusId.value === EWorkerStatus.disponible &&
     modalState.value === 'disconnected' &&
     isQrAttemptsExpired.value
 );
-const shouldRecoverPendingQr = () =>
-  Boolean(
-    !isExpired.value &&
-    !isInvalid.value &&
-    token.value &&
-    externalConnection.value &&
-    qrPending.value &&
-    !qrcode.value &&
-    !isConnected.value
-  );
-const qrPendingRecovery = useQrPendingRecovery({
-  shouldContinue: shouldRecoverPendingQr,
-  requestState: async () =>
-    token.value
-      ? channelStore.requestExternalConnectionQrCode(token.value, {
-          timeoutMs: 20_000,
-        })
-      : null,
-  applyState: (state) => applyDirectConnectionResponse(state),
-  onError: (error) => {
-    if (import.meta.env.DEV) {
-      console.warn('External QR pending recovery failed', error);
-    }
-  },
-});
 
 const expiresAtFormatted = computed(() => {
   if (!externalConnection.value?.expires_at) {
@@ -249,7 +225,6 @@ function clearExpiryTimeout() {
 }
 
 function markExpired() {
-  qrPendingRecovery.stop();
   isExpired.value = true;
   qrcode.value = undefined;
   isRequestingQr.value = false;
@@ -299,6 +274,7 @@ function applyQrAttempts(data: Partial<IBaileysConnectionState>) {
 }
 
 function setInitialStateFromWorker(data: WorkerExternalConnectionViewResponse) {
+  workerStatusId.value = data.status?.id ?? null;
   phoneNumber.value = data.number ? formatPhoneBR(data.number) : null;
   resetQrAttempts();
   connectionAttemptId.value = undefined;
@@ -317,7 +293,7 @@ function setInitialStateFromWorker(data: WorkerExternalConnectionViewResponse) {
 }
 
 function applyConnectedState(data: IBaileysConnectionState) {
-  qrPendingRecovery.stop();
+  workerStatusId.value = EWorkerStatus.online;
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
   qrcode.value = undefined;
@@ -344,6 +320,10 @@ function applyConnectionState(data: IBaileysConnectionState) {
   const reduced = reduceWorkerConnectionState(connectionState.value, data);
   if (reduced.ignored) {
     return;
+  }
+
+  if (data.worker_status_id) {
+    workerStatusId.value = data.worker_status_id;
   }
 
   const next = reduced.state;
@@ -401,28 +381,34 @@ function applyConnectionState(data: IBaileysConnectionState) {
   }
 
   isRequestingQr.value = false;
-  syncQrPendingRecovery();
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
   applyConnectionState(data);
 }
 
-function syncQrPendingRecovery() {
-  if (shouldRecoverPendingQr()) {
-    qrPendingRecovery.start();
+function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+  applyConnectionState(data);
+
+  if (data.worker_status_id === EWorkerStatus.disponible) {
+    void requestQrCode({ silent: true });
+  }
+}
+
+async function requestQrCode(
+  options: { force?: boolean; silent?: boolean } = {}
+) {
+  if (
+    isExpired.value ||
+    isConnected.value ||
+    !token.value ||
+    workerStatusId.value !== EWorkerStatus.disponible ||
+    isRequestingQr.value
+  ) {
     return;
   }
 
-  qrPendingRecovery.stop();
-}
-
-function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
-  applyConnectionState(data);
-}
-
-async function requestQrCode() {
-  if (isExpired.value || isConnected.value || !token.value) {
+  if (!options.force && qrPending.value && Boolean(connectionAttemptId.value)) {
     return;
   }
 
@@ -436,18 +422,20 @@ async function requestQrCode() {
     resetQrAttempts();
   }
 
-  syncQrPendingRecovery();
-  const state = await channelStore.requestExternalConnectionQrCode(token.value);
+  try {
+    const state = await channelStore.requestExternalConnectionQrCode(
+      token.value
+    );
 
-  if (!state) {
+    if (!state) {
+      await loadExternalConnection(false);
+      return;
+    }
+
+    applyDirectConnectionResponse(state);
+  } finally {
     isRequestingQr.value = false;
-    await loadExternalConnection(false);
-    syncQrPendingRecovery();
-    return;
   }
-
-  applyDirectConnectionResponse(state);
-  syncQrPendingRecovery();
 }
 
 async function subscribeToExternalConnection(
@@ -510,10 +498,14 @@ async function loadExternalConnection(requestQr = true) {
 
   await subscribeToExternalConnection(viewData);
 
-  if (requestQr && !isConnected.value && !isExpired.value) {
+  if (
+    requestQr &&
+    !isConnected.value &&
+    !isExpired.value &&
+    workerStatusId.value === EWorkerStatus.disponible
+  ) {
     await requestQrCode();
   }
-  syncQrPendingRecovery();
 }
 
 onMounted(async () => {
@@ -527,7 +519,6 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  qrPendingRecovery.stop();
   clearExpiryTimeout();
 
   if (unsubscribeExternalConnection) {
@@ -608,7 +599,7 @@ onUnmounted(() => {
               color="primary"
               :loading="isRequestingQr"
               :disabled="isRequestingQr"
-              @click="requestQrCode"
+              @click="requestQrCode({ force: true })"
             >
               <VIcon icon="tabler-refresh" start />
               {{ $t('retry_qrcode') }}

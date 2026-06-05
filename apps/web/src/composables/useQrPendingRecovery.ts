@@ -10,75 +10,18 @@ interface UseQrPendingRecoveryOptions {
 }
 
 export function useQrPendingRecovery(options: UseQrPendingRecoveryOptions) {
-  const intervalMs = options.intervalMs ?? 3000;
-  const timerId = shallowRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = shallowRef(false);
 
-  function clearTimer() {
-    if (timerId.value) {
-      clearTimeout(timerId.value);
-      timerId.value = null;
-    }
-  }
-
   function stop() {
-    clearTimer();
-  }
-
-  async function tick(): Promise<boolean> {
-    if (!options.shouldContinue()) {
-      stop();
-      return false;
-    }
-
-    if (inFlight.value) {
-      return options.shouldContinue();
-    }
-
-    inFlight.value = true;
-    try {
-      const state = await options.requestState();
-      if (state) {
-        options.applyState(state);
-      }
-    } catch (error) {
-      options.onError?.(error);
-    } finally {
-      inFlight.value = false;
-    }
-
-    return options.shouldContinue();
-  }
-
-  function schedule() {
-    if (timerId.value || !options.shouldContinue()) {
-      return;
-    }
-
-    timerId.value = setTimeout(() => {
-      timerId.value = null;
-      void tick().then((shouldContinue) => {
-        if (shouldContinue) {
-          schedule();
-          return;
-        }
-
-        stop();
-      });
-    }, intervalMs);
+    inFlight.value = false;
   }
 
   function start() {
-    if (!options.shouldContinue()) {
-      stop();
-      return;
-    }
-
-    schedule();
+    options.shouldContinue();
+    stop();
   }
 
   function restart() {
-    stop();
     start();
   }
 

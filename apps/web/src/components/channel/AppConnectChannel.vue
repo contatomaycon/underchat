@@ -14,7 +14,6 @@ import {
   unsubscribe,
 } from '@/@webcore/centrifugo';
 import { useChannelsStore } from '@/@webcore/stores/channels';
-import { useQrPendingRecovery } from '@/composables/useQrPendingRecovery';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -62,6 +61,8 @@ const connectionAttemptId = shallowRef<string | undefined>();
 const qrPending = shallowRef(false);
 const qrAttempt = shallowRef(0);
 const qrMaxAttempts = shallowRef(0);
+const workerStatusId = shallowRef<string | null>(props.initialStatusId ?? null);
+const isRequestingQr = shallowRef(false);
 const phoneNumber = shallowRef<string | null>(null);
 const disconnectedByUser = shallowRef(false);
 const isResetting = shallowRef(false);
@@ -110,37 +111,16 @@ const isBlockingOperation = computed(
 const isConnectionPreparing = computed(
   () => modalState.value === 'starting' || modalState.value === 'qrPreparing'
 );
+const isWorkerReadyForQr = computed(
+  () => workerStatusId.value === EWorkerStatus.disponible
+);
 const isActionLocked = computed(
   () =>
     channelStore.loading ||
+    isRequestingQr.value ||
     isBlockingOperation.value ||
     isConnectionPreparing.value
 );
-const shouldRecoverPendingQr = () =>
-  Boolean(
-    isVisible.value &&
-    channelId.value &&
-    qrPending.value &&
-    !qrcode.value &&
-    !isConnected.value &&
-    !isBlockingOperation.value
-  );
-const qrPendingRecovery = useQrPendingRecovery({
-  shouldContinue: shouldRecoverPendingQr,
-  requestState: async () =>
-    channelId.value
-      ? channelStore.requestConnectionQrCode(channelId.value, {
-          silent: true,
-          timeoutMs: 20_000,
-        })
-      : null,
-  applyState: (state) => applyDirectConnectionResponse(state),
-  onError: (error) => {
-    if (import.meta.env.DEV) {
-      console.warn('QR pending recovery failed', error);
-    }
-  },
-});
 
 const formattedTime = computed(() => {
   const m = Math.floor(secondsNextAttempt.value / 60)
@@ -247,11 +227,15 @@ const stageMeta = computed(() => {
 
 const showPrimaryActions = computed(() => modalState.value !== 'pairing');
 const showQrRetryOnly = computed(
-  () => modalState.value === 'disconnected' && isQrAttemptsExpired.value
+  () =>
+    modalState.value === 'disconnected' &&
+    isQrAttemptsExpired.value &&
+    isWorkerReadyForQr.value
 );
 const showReconnectAction = computed(
   () =>
     !isConnected.value &&
+    isWorkerReadyForQr.value &&
     !showQrRetryOnly.value &&
     !isBlockingOperation.value &&
     modalState.value !== 'pairing'
@@ -406,6 +390,8 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
 }
 
 function prepareInitialModalState() {
+  workerStatusId.value = props.initialStatusId ?? null;
+
   if (props.initialStatusId !== EWorkerStatus.online) {
     prepareConnectionStart();
     return;
@@ -429,17 +415,42 @@ function prepareInitialModalState() {
   clearConnectedStateDelay();
 }
 
-async function reconnectChannel() {
+async function requestQrCodeIfReady(
+  options: { force?: boolean; preserveQr?: boolean; silent?: boolean } = {}
+) {
   if (!channelId.value) return;
 
-  prepareConnectionStart({ preserveQr: true });
-  syncQrPendingRecovery();
-
-  const state = await channelStore.requestConnectionQrCode(channelId.value);
-  if (state) {
-    applyDirectConnectionResponse(state);
+  if (
+    !isVisible.value ||
+    !isWorkerReadyForQr.value ||
+    isConnected.value ||
+    isBlockingOperation.value ||
+    isRequestingQr.value
+  ) {
+    return;
   }
-  syncQrPendingRecovery();
+
+  if (!options.force && qrPending.value && Boolean(connectionAttemptId.value)) {
+    return;
+  }
+
+  isRequestingQr.value = true;
+  prepareConnectionStart({ preserveQr: options.preserveQr });
+
+  try {
+    const state = await channelStore.requestConnectionQrCode(channelId.value, {
+      silent: options.silent,
+    });
+    if (state) {
+      applyDirectConnectionResponse(state);
+    }
+  } finally {
+    isRequestingQr.value = false;
+  }
+}
+
+async function reconnectChannel() {
+  await requestQrCodeIfReady({ force: true, preserveQr: true });
 }
 
 async function restartQrCodeAttempt() {
@@ -449,7 +460,6 @@ async function restartQrCodeAttempt() {
 async function recreateChannelWithFullCleanup() {
   if (!channelId.value) return;
 
-  qrPendingRecovery.stop();
   statusConnection.value = EBaileysConnectionStatus.connecting;
   statusCode.value = ECodeMessage.logoutInProgress;
   disconnectedByUser.value = true;
@@ -497,12 +507,13 @@ function scheduleConnectedState(data: IBaileysConnectionState) {
 }
 
 function applyConnectedState(data: IBaileysConnectionState) {
-  qrPendingRecovery.stop();
   isResetting.value = false;
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
   phoneNumber.value = data.phone ? formatPhoneBR(data.phone) : null;
   disconnectedByUser.value = false;
+  workerStatusId.value = EWorkerStatus.online;
+  isRequestingQr.value = false;
   qrcode.value = undefined;
   qrPending.value = false;
   connectionAttemptId.value =
@@ -579,10 +590,16 @@ function applyReducedConnectionState(data: IBaileysConnectionState) {
   if (hasExceededQrAttempts(next)) {
     qrcode.value = undefined;
     qrPending.value = false;
+    isRequestingQr.value = false;
   } else if (next.qrcode) {
     qrcode.value = next.qrcode;
+    isRequestingQr.value = false;
   } else {
     qrcode.value = undefined;
+  }
+
+  if (incomingStatus === EBaileysConnectionStatus.disconnected) {
+    isRequestingQr.value = false;
   }
 
   if (incomingStatus) {
@@ -613,21 +630,10 @@ function applyReducedConnectionState(data: IBaileysConnectionState) {
     secondsNextAttempt.value = next.seconds_until_next_attempt;
     startNextAttemptCountdown();
   }
-
-  syncQrPendingRecovery();
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
   applyReducedConnectionState(data);
-}
-
-function syncQrPendingRecovery() {
-  if (shouldRecoverPendingQr()) {
-    qrPendingRecovery.start();
-    return;
-  }
-
-  qrPendingRecovery.stop();
 }
 
 async function recoverQrAfterCentrifugoRecoveryFailure() {
@@ -636,16 +642,6 @@ async function recoverQrAfterCentrifugoRecoveryFailure() {
   }
 
   await fetchHistoryAndProcess(workerConnectionChannel.value);
-
-  const state = await channelStore.requestConnectionQrCode(channelId.value, {
-    silent: true,
-    timeoutMs: 20_000,
-  });
-  if (state) {
-    applyDirectConnectionResponse(state);
-  }
-
-  syncQrPendingRecovery();
 }
 
 function handleCentrifugoRecoveryFailed(event: Event) {
@@ -662,8 +658,11 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     return;
   }
 
+  if (data.worker_status_id) {
+    workerStatusId.value = data.worker_status_id;
+  }
+
   if (data.worker_status_id === EWorkerStatus.recreating) {
-    qrPendingRecovery.stop();
     isResetting.value = true;
     statusConnection.value = EBaileysConnectionStatus.connecting;
     statusCode.value = ECodeMessage.awaitConnection;
@@ -676,11 +675,21 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
     return;
   }
 
+  if (data.worker_status_id === EWorkerStatus.creating) {
+    isResetting.value = false;
+    prepareConnectionStart();
+    return;
+  }
+
   if (data.worker_status_id) {
     isResetting.value = false;
   }
 
   applyReducedConnectionState(data);
+
+  if (data.worker_status_id === EWorkerStatus.disponible) {
+    void requestQrCodeIfReady({ silent: true });
+  }
 }
 
 onMounted(async () => {
@@ -689,7 +698,6 @@ onMounted(async () => {
   }
 
   prepareInitialModalState();
-  syncQrPendingRecovery();
   await loadExternalConnectionLink();
 
   globalThis.addEventListener(
@@ -703,27 +711,19 @@ onMounted(async () => {
     handleWorkerConnectionMessage
   );
 
-  const state = await channelStore.requestConnectionQrCode(channelId.value);
-  if (state) {
-    applyDirectConnectionResponse(state);
-  }
-  syncQrPendingRecovery();
+  await requestQrCodeIfReady();
 });
 
 watch(isVisible, (visible) => {
   if (!visible) {
-    qrPendingRecovery.stop();
     return;
   }
 
   void loadExternalConnectionLink();
-  if (!isConnected.value) {
-    void reconnectChannel();
-  }
+  void requestQrCodeIfReady({ silent: true });
 });
 
 onUnmounted(() => {
-  qrPendingRecovery.stop();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
 

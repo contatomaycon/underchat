@@ -97,6 +97,7 @@
   "worker_view_success": "Channel viewed successfully!",
   "worker_view_error": "Error viewing channel!",
   "worker_not_found": "Worker not found!",
+  "worker_qrcode_not_ready": "Channel is not ready to request a QR Code yet.",
   "role_not_found": "Role not found!",
   "worker_delete_success": "Worker deleted successfully!",
   "worker_delete_error": "Error deleting worker!",

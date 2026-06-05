@@ -97,6 +97,7 @@
   "worker_view_success": "Canal visualizado com sucesso!",
   "worker_view_error": "Erro ao visualizar o canal!",
   "worker_not_found": "Canal não encontrado!",
+  "worker_qrcode_not_ready": "Canal ainda não está disponível para solicitar QR Code.",
   "role_not_found": "Grupo de acesso não encontrado!",
   "worker_delete_success": "Canal excluído com sucesso!",
   "worker_delete_error": "Erro ao excluir o canal!",

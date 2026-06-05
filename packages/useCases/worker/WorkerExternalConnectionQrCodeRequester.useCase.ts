@@ -36,7 +36,8 @@ export class WorkerExternalConnectionQrCodeRequesterUseCase {
     return this.workerConnectionQrCodeRequesterUseCase.execute(
       t,
       payload.account_id,
-      payload.worker_id
+      payload.worker_id,
+      'external'
     );
   }
 

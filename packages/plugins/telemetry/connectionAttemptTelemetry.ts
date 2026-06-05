@@ -5,7 +5,10 @@ import {
   recordGauge,
   recordHistogram,
 } from '@core/plugins/telemetry/observability';
-import { recordConnectionLifecycle } from './connectionLifecycleDebug';
+import {
+  isConnectionLifecycleDebugEnabled,
+  recordConnectionLifecycle,
+} from './connectionLifecycleDebug';
 
 type TelemetryLevel = 'info' | 'warn' | 'error';
 
@@ -185,6 +188,10 @@ function recordMetric(input: ConnectionAttemptTelemetryInput): void {
 export function recordConnectionAttemptTelemetry(
   input: ConnectionAttemptTelemetryInput
 ): void {
+  if (!isConnectionLifecycleDebugEnabled()) {
+    return;
+  }
+
   const level = input.level ?? (input.error ? 'error' : 'info');
   const hasQr = input.has_qr ?? Boolean(input.qrcode);
   const payload = {

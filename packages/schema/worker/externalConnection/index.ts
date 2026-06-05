@@ -41,6 +41,7 @@ export const viewWorkerExternalConnectionSchema = {
     400: publicErrorResponseSchema,
     404: publicErrorResponseSchema,
     410: publicErrorResponseSchema,
+    503: publicErrorResponseSchema,
     500: publicErrorResponseSchema,
   },
 };
@@ -52,14 +53,14 @@ export const requestWorkerExternalConnectionQrCodeSchema = {
   headers: languageHeadersSchema,
   params: workerExternalConnectionRequestSchema,
   response: {
-    200: Type.Object(
+    202: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
         data: workerConnectionStateResponseSchema,
       },
-      { description: 'Successful' }
+      { description: 'Accepted' }
     ),
     400: publicErrorResponseSchema,
     404: publicErrorResponseSchema,

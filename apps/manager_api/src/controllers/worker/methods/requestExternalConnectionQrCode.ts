@@ -26,7 +26,7 @@ export const requestExternalConnectionQrCode = async (
 
     return sendResponse(reply, {
       message: t('worker_external_connection_qrcode_success'),
-      httpStatusCode: EHTTPStatusCode.ok,
+      httpStatusCode: EHTTPStatusCode.accepted,
       data: response,
     });
   } catch (error) {
