@@ -7,6 +7,7 @@ import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.sc
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { VForm } from 'vuetify/components/VForm';
 import { can } from '@layouts/plugins/casl';
+import AppChannelConnectionTypeInfo from './AppChannelConnectionTypeInfo.vue';
 
 const channelStore = useChannelsStore();
 
@@ -163,6 +164,10 @@ onMounted(resetForm);
                 item-value="value"
                 item-title="title"
               />
+            </VCol>
+
+            <VCol cols="12">
+              <AppChannelConnectionTypeInfo />
             </VCol>
           </VRow>
         </VCardText>

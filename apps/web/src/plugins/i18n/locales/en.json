@@ -418,6 +418,8 @@
   "channel_connection_type_info_socket_description": "lighter and faster for day-to-day operations.",
   "channel_connection_type_info_browser_label": "Browser (Option 2):",
   "channel_connection_type_info_browser_description": "best option for users who work with Ads, with behavior closer to WhatsApp Web.",
+  "channel_connection_type_info_socket_meow_label": "Socket (Option 3):",
+  "channel_connection_type_info_socket_meow_description": "more stable connection for continuous operation, recommended when the priority is keeping the session active with low latency.",
   "channel_connection_type_info_socket": "Socket (Option 1): lighter and faster for day-to-day operations.",
   "channel_connection_type_info_browser": "Browser (Option 2): best option for users who work with Ads, with behavior closer to WhatsApp Web.",
   "channel_connection_type_info_switch": "When changing the channel type, it will be disconnected and recreated automatically.",

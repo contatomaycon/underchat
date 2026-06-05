@@ -46,6 +46,12 @@ const mapConcurrent = async <T, R>(
   return results;
 };
 
+interface IRunningWorkerContainer {
+  name: string;
+  isWarmStandby: boolean;
+  warmPoolId?: string;
+}
+
 @injectable()
 export class WorkerMonitorService {
   private readonly timeoutMinutes = 5;
@@ -562,11 +568,37 @@ export class WorkerMonitorService {
     password: this.passwordEncryptorService.decrypt(server.ssh_password),
   });
 
+  private readonly parseRunningContainerLine = (
+    line: string
+  ): IRunningWorkerContainer | null => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const [rawName, rawWarmStandby, rawWarmPoolId] = trimmed.split('|');
+    const name = rawName?.trim();
+    if (!name) {
+      return null;
+    }
+
+    const warmStandby = rawWarmStandby?.trim().toLowerCase() === 'true';
+    const warmPoolId = rawWarmPoolId?.trim();
+    const isWarmStandby =
+      warmStandby || !!warmPoolId || name.startsWith('warm-');
+
+    return {
+      name,
+      isWarmStandby,
+      warmPoolId: warmPoolId || undefined,
+    };
+  };
+
   private readonly listContainers = async (
     serverId: string,
     sshConfig: ConnectConfig
   ): Promise<string[]> => {
-    const command = 'docker ps --format "{{.Names}}"';
+    const command = `docker ps --format '{{.Names}}|{{.Label "underchat.warm_standby"}}|{{.Label "underchat.warm_pool_id"}}'`;
     const outputs = await this.sshService.runCommands(
       serverId,
       sshConfig,
@@ -578,7 +610,14 @@ export class WorkerMonitorService {
       .map((item) => item.output)
       .join('\n')
       .trim();
-    const list = combined.split('\n').map((name) => name.trim());
+    const list = combined
+      .split('\n')
+      .map((line) => this.parseRunningContainerLine(line))
+      .filter(
+        (container): container is IRunningWorkerContainer =>
+          !!container && !container.isWarmStandby
+      )
+      .map((container) => container.name);
     const result = list.filter((name) => !!name);
     return result;
   };

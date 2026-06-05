@@ -22,6 +22,15 @@
       </span>
     </p>
 
+    <p class="text-body-2 mb-1">
+      <span class="font-weight-bold">
+        {{ $t('channel_connection_type_info_socket_meow_label') }}
+      </span>
+      <span class="ms-1">
+        {{ $t('channel_connection_type_info_socket_meow_description') }}
+      </span>
+    </p>
+
     <p class="text-body-2 mb-0">
       {{ $t('channel_connection_type_info_switch') }}
     </p>

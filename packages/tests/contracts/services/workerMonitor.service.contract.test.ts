@@ -27,11 +27,15 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
 
-function makeService(): WorkerMonitorService {
+function makeService(
+  overrides: {
+    sshService?: { runCommands: jest.Mock };
+  } = {}
+): WorkerMonitorService {
   return new WorkerMonitorService(
     {} as never,
     {} as never,
-    {} as never,
+    (overrides.sshService ?? {}) as never,
     {} as never,
     {} as never,
     {} as never,
@@ -52,6 +56,7 @@ function makeWorker(overrides: Partial<IWorkerMonitor> = {}): IWorkerMonitor {
     updated_at: oldDate,
     deleted_at: null,
     container_id: 'container-1',
+    lifecycle_operation_id: null,
     last_connection_check_at: oldDate,
     ...overrides,
   };
@@ -80,5 +85,29 @@ describe('WorkerMonitorService', () => {
     const shouldStop = (service as any).shouldStopDueToInactivity(worker);
 
     expect(shouldStop).toBe(true);
+  });
+
+  it('ignores warm standby containers when listing remote containers', async () => {
+    const sshService = {
+      runCommands: jest.fn(async () => [
+        {
+          output: [
+            'under-balance-api||',
+            'worker-1||',
+            'warm-pool-1|true|pool-1',
+            'warm-pool-2||pool-2',
+            'warm-legacy||',
+          ].join('\n'),
+        },
+      ]),
+    };
+    const service = makeService({ sshService });
+
+    const containers = await (service as any).listContainers(
+      'server-1',
+      {} as never
+    );
+
+    expect(containers).toEqual(['under-balance-api', 'worker-1']);
   });
 });
