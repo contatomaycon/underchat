@@ -1,11 +1,12 @@
 import * as schema from '@core/models';
-import { server, serverWeb, worker } from '@core/models';
+import { server, serverSsh, serverWeb, worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull, lt, count, asc, notInArray } from 'drizzle-orm';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IListWorkerServer } from '@core/common/interfaces/IListWorkerServer';
+import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorServer';
 
 @injectable()
 export class WorkerServerListerRepository {
@@ -64,5 +65,35 @@ export class WorkerServerListerRepository {
       .execute();
 
     return result as IListWorkerServer[];
+  };
+
+  listWarmPoolEligibleBalanceServers = async (): Promise<
+    IBalanceMonitorServer[]
+  > => {
+    const result = await this.dbRo
+      .select({
+        server_id: server.server_id,
+        server_status_id: server.server_status_id,
+        ssh_ip: serverSsh.ssh_ip,
+        ssh_port: serverSsh.ssh_port,
+        ssh_username: serverSsh.ssh_username,
+        ssh_password: serverSsh.ssh_password,
+        web_domain: serverWeb.web_domain,
+        web_port: serverWeb.web_port,
+        web_protocol: serverWeb.web_protocol,
+      })
+      .from(server)
+      .innerJoin(serverSsh, eq(serverSsh.server_id, server.server_id))
+      .innerJoin(serverWeb, eq(serverWeb.server_id, server.server_id))
+      .where(
+        and(
+          isNull(server.deleted_at),
+          eq(server.server_status_id, EServerStatus.online)
+        )
+      )
+      .orderBy(server.name)
+      .execute();
+
+    return result as IBalanceMonitorServer[];
   };
 }

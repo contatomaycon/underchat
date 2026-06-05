@@ -93,6 +93,25 @@ export class WorkerWarmPoolRepository {
     return Number(result?.value ?? 0);
   }
 
+  async listActiveByServer(serverId: string): Promise<IWorkerWarmPool[]> {
+    const result = await this.dbRo
+      .select()
+      .from(workerWarmPool)
+      .where(
+        and(
+          eq(workerWarmPool.server_id, serverId),
+          inArray(workerWarmPool.state, [
+            EWorkerWarmPoolState.warming,
+            EWorkerWarmPoolState.ready,
+            EWorkerWarmPoolState.reserved,
+          ])
+        )
+      )
+      .execute();
+
+    return result as IWorkerWarmPool[];
+  }
+
   async listReadyCounts(): Promise<IWorkerWarmPoolReadyCount[]> {
     const result = await this.dbRo
       .select({
@@ -268,7 +287,7 @@ export class WorkerWarmPoolRepository {
     serverId: string,
     workerTypeId: string
   ): Promise<number> {
-    const [result] = await this.dbRo
+    const [result] = await this.dbRw
       .select({ value: count(workerWarmPool.warm_pool_id) })
       .from(workerWarmPool)
       .where(
