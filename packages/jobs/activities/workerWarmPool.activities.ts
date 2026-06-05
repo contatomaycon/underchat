@@ -4,22 +4,22 @@ import { ConnectConfig } from 'ssh2';
 import { WorkerServerListerRepository } from '@core/repositories/worker/WorkerServerLister.repository';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WorkerWarmPoolQueueService } from '@core/services/workerWarmPoolQueue.service';
+import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 import { SshService } from '@core/services/ssh.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
-import { workerPoolEnvironment } from '@core/config/environments';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import { currentTime } from '@core/common/functions/currentTime';
 import { logger } from '@core/plugins/telemetry/logger';
 import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorServer';
 import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
+import { IWorkerWarmPoolSettings } from '@core/common/interfaces/IWorkerWarmPoolSettings';
 
 const WARM_WORKER_TYPES = [
   EWorkerType.baileys,
   EWorkerType.wwebjs,
   EWorkerType.whatsmeow,
 ];
-const WARMING_STALE_AFTER_MS = 3 * 60 * 1000;
 
 interface IRunningWarmContainer {
   name: string;
@@ -36,6 +36,8 @@ export class WorkerWarmPoolActivity {
     private readonly workerWarmPoolRepository: WorkerWarmPoolRepository,
     @inject(WorkerWarmPoolQueueService)
     private readonly workerWarmPoolQueueService: WorkerWarmPoolQueueService,
+    @inject(WorkerWarmPoolSettingsService)
+    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService,
     @inject(SshService)
     private readonly sshService: SshService,
     @inject(PasswordEncryptorService)
@@ -43,7 +45,14 @@ export class WorkerWarmPoolActivity {
   ) {}
 
   async scan(): Promise<void> {
-    if (!workerPoolEnvironment.warmWorkerPoolEnabled) {
+    const settings = await this.workerWarmPoolSettingsService.view();
+    if (!settings.warmup_enabled) {
+      return;
+    }
+
+    const shouldRun =
+      await this.workerWarmPoolSettingsService.shouldRunScan(settings);
+    if (!shouldRun) {
       return;
     }
 
@@ -53,14 +62,18 @@ export class WorkerWarmPoolActivity {
       await this.workerWarmPoolRepository.releaseExpiredReservations();
     const servers =
       await this.workerServerListerRepository.listWarmPoolEligibleBalanceServers();
-    const target = workerPoolEnvironment.warmWorkerTargetReady;
+    const targets = this.getTargetsByType(settings);
     let replenishPublished = 0;
     let staleReconciled = 0;
 
     for (const server of servers) {
-      staleReconciled += await this.reconcileServerWarmPool(server);
+      staleReconciled += await this.reconcileServerWarmPool(
+        server,
+        settings.warming_stale_after_seconds * 1000
+      );
 
       for (const workerTypeId of WARM_WORKER_TYPES) {
+        const target = targets[workerTypeId] ?? 0;
         const activeCount =
           await this.workerWarmPoolRepository.countActiveByServerAndType(
             server.server_id,
@@ -98,13 +111,25 @@ export class WorkerWarmPoolActivity {
         type: 'warm_pool.scan.summary',
         duration_ms: Date.now() - startedAt,
         servers_count: servers.length,
-        target_count: target,
+        target_ready_baileys: settings.target_ready_baileys,
+        target_ready_wwebjs: settings.target_ready_wwebjs,
+        target_ready_whatsmeow: settings.target_ready_whatsmeow,
         released_reservations: releasedReservations,
         stale_reconciled: staleReconciled,
         replenish_published: replenishPublished,
       },
       'Warm worker pool scan completed'
     );
+  }
+
+  private getTargetsByType(
+    settings: IWorkerWarmPoolSettings
+  ): Partial<Record<EWorkerType, number>> {
+    return {
+      [EWorkerType.baileys]: settings.target_ready_baileys,
+      [EWorkerType.wwebjs]: settings.target_ready_wwebjs,
+      [EWorkerType.whatsmeow]: settings.target_ready_whatsmeow,
+    };
   }
 
   private buildSshConfig(server: IBalanceMonitorServer): ConnectConfig {
@@ -220,7 +245,8 @@ export class WorkerWarmPoolActivity {
 
   private shouldReconcileMissingEntry(
     entry: IWorkerWarmPool,
-    nowMs: number
+    nowMs: number,
+    warmingStaleAfterMs: number
   ): boolean {
     if (entry.state === EWorkerWarmPoolState.ready) {
       return true;
@@ -236,7 +262,7 @@ export class WorkerWarmPoolActivity {
       const createdAt = this.getEntryTimestampMs(entry.created_at);
       const lastTouchedAt = Math.max(updatedAt, createdAt);
       return (
-        lastTouchedAt === 0 || nowMs - lastTouchedAt >= WARMING_STALE_AFTER_MS
+        lastTouchedAt === 0 || nowMs - lastTouchedAt >= warmingStaleAfterMs
       );
     }
 
@@ -244,7 +270,8 @@ export class WorkerWarmPoolActivity {
   }
 
   private async reconcileServerWarmPool(
-    server: IBalanceMonitorServer
+    server: IBalanceMonitorServer,
+    warmingStaleAfterMs: number
   ): Promise<number> {
     const [runningContainers, activeEntries] = await Promise.all([
       this.listRunningWarmContainers(server),
@@ -263,7 +290,9 @@ export class WorkerWarmPoolActivity {
         continue;
       }
 
-      if (!this.shouldReconcileMissingEntry(entry, nowMs)) {
+      if (
+        !this.shouldReconcileMissingEntry(entry, nowMs, warmingStaleAfterMs)
+      ) {
         continue;
       }
 

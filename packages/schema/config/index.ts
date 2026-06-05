@@ -9,6 +9,8 @@ export * from './listAccounts';
 export * from './listChannelServers';
 export * from './recreateWarmChannel';
 export * from './recreateWarmChannelsAll';
+export * from './viewWarmChannelSettings';
+export * from './updateWarmChannelSettings';
 export * from './listCreditCardFee';
 export * from './updateCreditCardFee';
 export * from './updateChannel';

@@ -11,3 +11,4 @@ export * from './workerProfileInfo.model';
 export * from './workerProfileStatusContact.model';
 export * from './workerRuntime.model';
 export * from './workerWarmPool.model';
+export * from './workerWarmPoolSettings.model';

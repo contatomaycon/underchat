@@ -14,6 +14,7 @@ import { useSnackbarCleanup } from '@/composables/useSnackbarCleanup';
 import { useWarmChannelsStore } from '@/@webcore/stores/warmChannels';
 import TablePagination from '@/@webcore/components/TablePagination.vue';
 import VDialogHandler from '@/components/VDialogHandler.vue';
+import WarmChannelsSettingsDialog from '@/components/warmChannels/WarmChannelsSettingsDialog.vue';
 
 definePage({
   meta: {
@@ -108,9 +109,13 @@ const serverItems = computed(() =>
 );
 
 const totalReady = computed(() => warmChannelsStore.pagings.total);
+const canRecreateWarmChannels = computed(
+  () => warmChannelsStore.settings?.warmup_enabled === true
+);
 const warmChannelToRecreate = ref<string | null>(null);
 const isDialogRecreatorShow = ref(false);
 const isDialogRecreateAllShow = ref(false);
+const isSettingsDialogShow = ref(false);
 
 const resolveTypeVariant = (value: string | undefined | null) => {
   if (value === EWorkerType.baileys) {
@@ -163,6 +168,8 @@ const handleTableChange = (payload: {
 };
 
 const recreateWarmChannel = (warmPoolId: string) => {
+  if (!canRecreateWarmChannels.value) return;
+
   warmChannelToRecreate.value = warmPoolId;
   isDialogRecreatorShow.value = true;
 };
@@ -217,7 +224,10 @@ watch(isDialogRecreatorShow, (isOpen) => {
 });
 
 onMounted(async () => {
-  await warmChannelsStore.listWarmChannelServers();
+  await Promise.all([
+    warmChannelsStore.listWarmChannelServers(),
+    warmChannelsStore.viewWarmChannelSettings(),
+  ]);
 });
 </script>
 
@@ -242,14 +252,24 @@ onMounted(async () => {
             </div>
           </div>
 
-          <VBtn
-            color="primary"
-            prepend-icon="tabler-refresh"
-            :disabled="totalReady === 0"
-            @click="isDialogRecreateAllShow = true"
-          >
-            {{ $t('recreate_all') }}
-          </VBtn>
+          <div class="warm-summary__actions">
+            <VBtn
+              color="secondary"
+              variant="tonal"
+              prepend-icon="tabler-settings"
+              @click="isSettingsDialogShow = true"
+            >
+              {{ $t('settings') }}
+            </VBtn>
+            <VBtn
+              color="primary"
+              prepend-icon="tabler-refresh"
+              :disabled="totalReady === 0 || !canRecreateWarmChannels"
+              @click="isDialogRecreateAllShow = true"
+            >
+              {{ $t('recreate_all') }}
+            </VBtn>
+          </div>
         </div>
 
         <div class="filters-grid mb-4">
@@ -442,20 +462,29 @@ onMounted(async () => {
 
           <template #item.last_health_at="{ item }">
             <span>
-              {{ item.last_health_at ? formatDateTime(item.last_health_at) : '-' }}
+              {{
+                item.last_health_at ? formatDateTime(item.last_health_at) : '-'
+              }}
             </span>
           </template>
 
           <template #item.updated_at="{ item }">
-            <span>{{ item.updated_at ? formatDateTime(item.updated_at) : '-' }}</span>
+            <span>{{
+              item.updated_at ? formatDateTime(item.updated_at) : '-'
+            }}</span>
           </template>
 
           <template #item.created_at="{ item }">
-            <span>{{ item.created_at ? formatDateTime(item.created_at) : '-' }}</span>
+            <span>{{
+              item.created_at ? formatDateTime(item.created_at) : '-'
+            }}</span>
           </template>
 
           <template #item.actions="{ item }">
-            <IconBtn @click="recreateWarmChannel(item.warm_pool_id)">
+            <IconBtn
+              :disabled="!canRecreateWarmChannels"
+              @click="recreateWarmChannel(item.warm_pool_id)"
+            >
               <VTooltip
                 location="top"
                 transition="scale-transition"
@@ -500,6 +529,13 @@ onMounted(async () => {
       :message="$t('recreate_all_warm_channels_confirmation')"
       @confirm="handleRecreateAll"
     />
+
+    <WarmChannelsSettingsDialog
+      v-model="isSettingsDialogShow"
+      :settings="warmChannelsStore.settings"
+      :loading="warmChannelsStore.settingsLoading"
+      @saved="warmChannelsStore.viewWarmChannelSettings"
+    />
   </div>
 </template>
 
@@ -518,9 +554,19 @@ onMounted(async () => {
   min-block-size: 56px;
 }
 
+.warm-summary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
 .filters-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) 120px minmax(240px, 1.5fr);
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) 120px minmax(
+      240px,
+      1.5fr
+    );
   gap: 1rem;
   align-items: end;
 }
@@ -539,7 +585,9 @@ onMounted(async () => {
   display: inline-block;
   max-inline-size: 18rem;
   overflow: hidden;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    monospace;
   text-overflow: ellipsis;
   vertical-align: bottom;
   white-space: nowrap;
@@ -563,6 +611,14 @@ onMounted(async () => {
   .warm-summary {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .warm-summary__actions {
+    justify-content: stretch;
+  }
+
+  .warm-summary__actions :deep(.v-btn) {
+    flex: 1 1 auto;
   }
 
   .filters-grid,

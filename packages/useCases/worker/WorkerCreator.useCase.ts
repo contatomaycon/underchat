@@ -15,10 +15,11 @@ import { PlanAccountService } from '@core/services/planAccount.service';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
-import { workerPoolEnvironment } from '@core/config/environments';
+import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 import { currentTime } from '@core/common/functions/currentTime';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { logger } from '@core/plugins/telemetry/logger';
+import { IWorkerWarmPoolSettings } from '@core/common/interfaces/IWorkerWarmPoolSettings';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -35,6 +36,8 @@ export class WorkerCreatorUseCase {
     private readonly workerGrpcClientService: WorkerGrpcClientService,
     @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
+    @inject(WorkerWarmPoolSettingsService)
+    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService,
     @inject(WorkerWarmPoolRepository)
     private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never
   ) {}
@@ -140,19 +143,16 @@ export class WorkerCreatorUseCase {
   }
 
   private async tryClaimWarmWorker(
-    payload: IWorkerPayload
+    payload: IWorkerPayload,
+    settings: IWorkerWarmPoolSettings
   ): Promise<ICreateWorkerResponse | null> {
-    if (
-      !workerPoolEnvironment.warmWorkerPoolEnabled ||
-      !payload.worker_type_id ||
-      !this.workerWarmPoolRepository
-    ) {
+    if (!payload.worker_type_id || !this.workerWarmPoolRepository) {
       return null;
     }
 
     await this.workerWarmPoolRepository.releaseExpiredReservations();
     const reservationExpiresAt = new Date(
-      Date.now() + workerPoolEnvironment.warmWorkerReservationTtlMs
+      Date.now() + settings.reservation_ttl_seconds * 1000
     ).toISOString();
     const warm = await this.workerWarmPoolRepository.reserveReady(
       payload.server_id,
@@ -172,11 +172,13 @@ export class WorkerCreatorUseCase {
         },
         'Warm worker pool miss'
       );
-      await this.publishWarmReplenish(
-        payload.server_id,
-        payload.worker_type_id,
-        'pool_miss'
-      );
+      if (settings.warmup_enabled) {
+        await this.publishWarmReplenish(
+          payload.server_id,
+          payload.worker_type_id,
+          'pool_miss'
+        );
+      }
       return null;
     }
 
@@ -193,11 +195,13 @@ export class WorkerCreatorUseCase {
         60_000
       );
 
-      await this.publishWarmReplenish(
-        payload.server_id,
-        payload.worker_type_id,
-        'claim_replenish'
-      );
+      if (settings.warmup_enabled) {
+        await this.publishWarmReplenish(
+          payload.server_id,
+          payload.worker_type_id,
+          'claim_replenish'
+        );
+      }
 
       logger.info(
         {
@@ -268,11 +272,13 @@ export class WorkerCreatorUseCase {
           'Failed to delete failed warm worker'
         );
       }
-      await this.publishWarmReplenish(
-        payload.server_id,
-        payload.worker_type_id,
-        'pool_miss'
-      );
+      if (settings.warmup_enabled) {
+        await this.publishWarmReplenish(
+          payload.server_id,
+          payload.worker_type_id,
+          'pool_miss'
+        );
+      }
       return null;
     }
   }
@@ -356,7 +362,11 @@ export class WorkerCreatorUseCase {
       payloadCreate
     );
 
-    const warmClaim = await this.tryClaimWarmWorker(payloadCreate);
+    const warmSettings = await this.workerWarmPoolSettingsService.view();
+    const warmClaim = await this.tryClaimWarmWorker(
+      payloadCreate,
+      warmSettings
+    );
     if (warmClaim) {
       return warmClaim;
     }
@@ -367,7 +377,7 @@ export class WorkerCreatorUseCase {
       worker_id: workerId,
       server_id: serverId,
       worker_type_id: workerType,
-      fallback_created: workerPoolEnvironment.warmWorkerPoolEnabled,
+      fallback_created: warmSettings.warmup_enabled,
     };
   }
 }

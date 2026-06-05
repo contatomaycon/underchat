@@ -14,7 +14,6 @@ import { ScheduleSendActivity } from '@core/jobs/activities/scheduleSend.activit
 import { AccountBucketCleanupActivity } from '@core/jobs/activities/accountBucketCleanup.activities';
 import { S3BackupMigrationActivity } from '@core/jobs/activities/s3BackupMigration.activities';
 import { WorkerWarmPoolActivity } from '@core/jobs/activities/workerWarmPool.activities';
-import { workerPoolEnvironment } from '@core/config/environments';
 import {
   LockAcquisitionTimeoutError,
   withLock,
@@ -203,14 +202,11 @@ export function cronJobs(
     }),
   ];
 
-  if (
-    options?.enableWarmPoolJobs === true &&
-    workerPoolEnvironment.warmWorkerPoolEnabled
-  ) {
+  if (options?.enableWarmPoolJobs === true) {
     jobs.push(
       createCronJob(server, redis, {
         jobId: 'worker-warm-pool-schedule',
-        cronExpression: `*/${workerPoolEnvironment.warmWorkerScanIntervalSeconds} * * * * *`,
+        cronExpression: '*/5 * * * * *',
         handler: () => workerWarmPoolActivity.scan(),
       })
     );

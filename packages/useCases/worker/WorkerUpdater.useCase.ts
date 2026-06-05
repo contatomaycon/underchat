@@ -19,7 +19,7 @@ import { getErrorMessage } from '@core/common/functions/toError';
 import { v7 as uuidv7 } from 'uuid';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
-import { workerPoolEnvironment } from '@core/config/environments';
+import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 import { currentTime } from '@core/common/functions/currentTime';
 import { logger } from '@core/plugins/telemetry/logger';
 import { IWorkerRuntime } from '@core/common/interfaces/IWorkerRuntime';
@@ -43,6 +43,8 @@ export class WorkerUpdaterUseCase {
     private readonly workerRecreatorUseCase: WorkerRecreatorUseCase,
     @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
+    @inject(WorkerWarmPoolSettingsService)
+    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService,
     @inject(WorkerWarmPoolRepository)
     private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never,
     @inject(WorkerRuntimeRepository)
@@ -144,13 +146,10 @@ export class WorkerUpdaterUseCase {
     oldServerId?: string;
     currentRuntime?: IWorkerRuntime | null;
   }): Promise<boolean> {
-    if (!workerPoolEnvironment.warmWorkerPoolEnabled) {
-      return false;
-    }
-
+    const settings = await this.workerWarmPoolSettingsService.view();
     await this.workerWarmPoolRepository.releaseExpiredReservations();
     const reservationExpiresAt = new Date(
-      Date.now() + workerPoolEnvironment.warmWorkerReservationTtlMs
+      Date.now() + settings.reservation_ttl_seconds * 1000
     ).toISOString();
     const warm = await this.workerWarmPoolRepository.reserveReady(
       input.serverId,

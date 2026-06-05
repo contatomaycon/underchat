@@ -24,8 +24,7 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorServer';
 import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
-
-const previousWarmPoolEnabled = process.env.WARM_WORKER_POOL_ENABLED;
+import { IWorkerWarmPoolSettings } from '@core/common/interfaces/IWorkerWarmPoolSettings';
 
 function makeServer(): IBalanceMonitorServer {
   return {
@@ -62,11 +61,31 @@ function makeWarmPool(
   };
 }
 
+function makeSettings(
+  overrides: Partial<IWorkerWarmPoolSettings> = {}
+): IWorkerWarmPoolSettings {
+  return {
+    settings_id: 'default',
+    warmup_enabled: true,
+    target_ready_baileys: 2,
+    target_ready_wwebjs: 2,
+    target_ready_whatsmeow: 2,
+    scan_interval_seconds: 30,
+    reservation_ttl_seconds: 90,
+    warming_stale_after_seconds: 180,
+    created_at: '2026-06-05T12:00:00.000Z',
+    updated_at: '2026-06-05T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
 function makeActivity(
   overrides: {
     activeEntries?: IWorkerWarmPool[];
     dockerOutput?: string;
     activeCounts?: Partial<Record<EWorkerType, number>>;
+    settings?: Partial<IWorkerWarmPoolSettings>;
+    shouldRunScan?: boolean;
   } = {}
 ): {
   activity: WorkerWarmPoolActivity;
@@ -80,6 +99,10 @@ function makeActivity(
     ensure: jest.Mock;
     publishReplenish: jest.Mock;
     publishDelete: jest.Mock;
+  };
+  workerWarmPoolSettingsService: {
+    view: jest.Mock;
+    shouldRunScan: jest.Mock;
   };
   sshService: { runCommands: jest.Mock };
 } {
@@ -100,6 +123,10 @@ function makeActivity(
     publishReplenish: jest.fn(async () => undefined),
     publishDelete: jest.fn(async () => undefined),
   };
+  const workerWarmPoolSettingsService = {
+    view: jest.fn(async () => makeSettings(overrides.settings)),
+    shouldRunScan: jest.fn(async () => overrides.shouldRunScan ?? true),
+  };
   const sshService = {
     runCommands: jest.fn(async () => [
       {
@@ -117,6 +144,7 @@ function makeActivity(
     workerServerListerRepository as never,
     workerWarmPoolRepository as never,
     workerWarmPoolQueueService as never,
+    workerWarmPoolSettingsService as never,
     sshService as never,
     passwordEncryptorService as never
   );
@@ -125,17 +153,14 @@ function makeActivity(
     activity,
     workerWarmPoolRepository,
     workerWarmPoolQueueService,
+    workerWarmPoolSettingsService,
     sshService,
   };
 }
 
 describe('WorkerWarmPoolActivity', () => {
   beforeEach(() => {
-    process.env.WARM_WORKER_POOL_ENABLED = 'true';
-  });
-
-  afterAll(() => {
-    process.env.WARM_WORKER_POOL_ENABLED = previousWarmPoolEnabled;
+    jest.clearAllMocks();
   });
 
   it('reconciles active warm pool entries missing in Docker and replenishes the pool', async () => {
@@ -220,5 +245,69 @@ describe('WorkerWarmPoolActivity', () => {
     expect(
       deps.workerWarmPoolQueueService.publishReplenish
     ).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not scan when automatic warmup is disabled', async () => {
+    const deps = makeActivity({
+      settings: {
+        warmup_enabled: false,
+      },
+    });
+
+    await deps.activity.scan();
+
+    expect(deps.workerWarmPoolSettingsService.view).toHaveBeenCalledTimes(1);
+    expect(
+      deps.workerWarmPoolSettingsService.shouldRunScan
+    ).not.toHaveBeenCalled();
+    expect(deps.workerWarmPoolQueueService.ensure).not.toHaveBeenCalled();
+    expect(
+      deps.workerWarmPoolRepository.releaseExpiredReservations
+    ).not.toHaveBeenCalled();
+  });
+
+  it('does not scan when the configured interval has not elapsed', async () => {
+    const deps = makeActivity({
+      shouldRunScan: false,
+    });
+
+    await deps.activity.scan();
+
+    expect(deps.workerWarmPoolSettingsService.shouldRunScan).toHaveBeenCalled();
+    expect(deps.workerWarmPoolQueueService.ensure).not.toHaveBeenCalled();
+    expect(
+      deps.workerWarmPoolRepository.releaseExpiredReservations
+    ).not.toHaveBeenCalled();
+  });
+
+  it('uses configured targets by worker type and accepts zero', async () => {
+    const deps = makeActivity({
+      dockerOutput: '',
+      settings: {
+        target_ready_baileys: 0,
+        target_ready_wwebjs: 1,
+        target_ready_whatsmeow: 0,
+      },
+      activeCounts: {
+        [EWorkerType.baileys]: 0,
+        [EWorkerType.wwebjs]: 0,
+        [EWorkerType.whatsmeow]: 0,
+      },
+    });
+
+    await deps.activity.scan();
+
+    expect(
+      deps.workerWarmPoolQueueService.publishReplenish
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      deps.workerWarmPoolQueueService.publishReplenish
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        server_id: 'server-1',
+        worker_type_id: EWorkerType.wwebjs,
+        reason: 'scheduled_scan',
+      })
+    );
   });
 });

@@ -28,6 +28,8 @@ import { listWarmChannelsSchema } from '@core/schema/config/listWarmChannels';
 import { listWarmChannelServersSchema } from '@core/schema/config/listWarmChannelServers';
 import { recreateWarmChannelSchema } from '@core/schema/config/recreateWarmChannel';
 import { recreateWarmChannelsAllSchema } from '@core/schema/config/recreateWarmChannelsAll';
+import { viewWarmChannelSettingsSchema } from '@core/schema/config/viewWarmChannelSettings';
+import { updateWarmChannelSettingsSchema } from '@core/schema/config/updateWarmChannelSettings';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -153,6 +155,24 @@ export default async function configRoutes(server: FastifyInstance) {
   server.get('/config/warm-channels/servers', {
     schema: listWarmChannelServersSchema,
     handler: configController.listWarmChannelServers,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/warm-channels/settings', {
+    schema: viewWarmChannelSettingsSchema,
+    handler: configController.viewWarmChannelSettings,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.patch('/config/warm-channels/settings', {
+    schema: updateWarmChannelSettingsSchema,
+    handler: configController.updateWarmChannelSettings,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

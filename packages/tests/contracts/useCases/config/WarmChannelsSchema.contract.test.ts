@@ -5,6 +5,8 @@ import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import { listWarmChannelsSchema } from '@core/schema/config/listWarmChannels';
 import { recreateWarmChannelSchema } from '@core/schema/config/recreateWarmChannel';
 import { recreateWarmChannelsAllSchema } from '@core/schema/config/recreateWarmChannelsAll';
+import { updateWarmChannelSettingsSchema } from '@core/schema/config/updateWarmChannelSettings';
+import { viewWarmChannelSettingsSchema } from '@core/schema/config/viewWarmChannelSettings';
 
 const check = (schema: unknown, value: unknown) =>
   Value.Check(schema as never, value);
@@ -89,6 +91,57 @@ describe('Warm channels API schemas', () => {
         status: true,
         message: 'accepted',
         data: { enqueued: 2 },
+      })
+    ).toBe(true);
+  });
+
+  it('exposes view and update settings contracts', () => {
+    const settings = {
+      warmup_enabled: false,
+      target_ready_baileys: 0,
+      target_ready_wwebjs: 1,
+      target_ready_whatsmeow: 2,
+      scan_interval_seconds: 60,
+      reservation_ttl_seconds: 120,
+      warming_stale_after_seconds: 240,
+      created_at: '2026-06-05T11:00:00.000Z',
+      updated_at: null,
+    };
+
+    expect(
+      check(updateWarmChannelSettingsSchema.body, {
+        warmup_enabled: true,
+        target_ready_baileys: 100,
+        target_ready_wwebjs: 0,
+        target_ready_whatsmeow: 2,
+        scan_interval_seconds: 5,
+        reservation_ttl_seconds: 10,
+        warming_stale_after_seconds: 30,
+      })
+    ).toBe(true);
+    expect(
+      check(updateWarmChannelSettingsSchema.body, {
+        warmup_enabled: true,
+        target_ready_baileys: 101,
+        target_ready_wwebjs: 0,
+        target_ready_whatsmeow: 2,
+        scan_interval_seconds: 5,
+        reservation_ttl_seconds: 10,
+        warming_stale_after_seconds: 30,
+      })
+    ).toBe(false);
+    expect(
+      check(viewWarmChannelSettingsSchema.response[200], {
+        status: true,
+        message: 'ok',
+        data: settings,
+      })
+    ).toBe(true);
+    expect(
+      check(updateWarmChannelSettingsSchema.response[200], {
+        status: true,
+        message: 'ok',
+        data: settings,
       })
     ).toBe(true);
   });

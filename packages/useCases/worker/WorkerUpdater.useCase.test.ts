@@ -103,12 +103,28 @@ function buildUseCase(
     refreshTypingSimulationCache: jest.fn(async () => undefined),
   };
 
+  const workerWarmPoolSettingsService = {
+    view: jest.fn(async () => ({
+      reservation_ttl_seconds: 90,
+    })),
+  };
+  const workerWarmPoolRepository = {
+    releaseExpiredReservations: jest.fn(async () => 0),
+    reserveReady: jest.fn(async () => null),
+  };
+  const workerRuntimeRepository = {
+    viewByWorkerId: jest.fn(async () => null),
+  };
+
   const useCase = new WorkerUpdaterUseCase(
     workerService as never,
     accountService as never,
     workerGrpcClientService as never,
     workerRecreatorUseCase as never,
-    workerConfigService as never
+    workerConfigService as never,
+    workerWarmPoolSettingsService as never,
+    workerWarmPoolRepository as never,
+    workerRuntimeRepository as never
   );
 
   return {
@@ -119,6 +135,9 @@ function buildUseCase(
     workerGrpcClientService,
     workerRecreatorUseCase,
     workerConfigService,
+    workerWarmPoolSettingsService,
+    workerWarmPoolRepository,
+    workerRuntimeRepository,
     currentServerId,
     nextServerId,
   };

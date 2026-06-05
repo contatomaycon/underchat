@@ -4,12 +4,12 @@ import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
+import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 import { IWorkerWarmReplenishRequest } from '@core/common/interfaces/IWorkerWarmPoolQueue';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
-import { workerPoolEnvironment } from '@core/config/environments';
 import { logger } from '@core/plugins/telemetry/logger';
 
 @singleton()
@@ -22,7 +22,9 @@ export class WorkerWarmReplenishConsume {
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(WorkerGrpcClientService)
-    private readonly workerGrpcClientService: WorkerGrpcClientService
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
+    @inject(WorkerWarmPoolSettingsService)
+    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService
   ) {}
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -53,7 +55,18 @@ export class WorkerWarmReplenishConsume {
 
     this.consumer.on('data', async (message) => {
       const payload = this.parsePayload(message.value);
-      if (!payload || !workerPoolEnvironment.warmWorkerPoolEnabled) {
+      if (!payload) {
+        await commitOffset(
+          this.consumerOrThrow,
+          topic,
+          message.partition,
+          message.offset
+        );
+        return;
+      }
+
+      const settings = await this.workerWarmPoolSettingsService.view();
+      if (!settings.warmup_enabled) {
         await commitOffset(
           this.consumerOrThrow,
           topic,

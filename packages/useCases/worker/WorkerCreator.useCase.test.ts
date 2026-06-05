@@ -3,6 +3,7 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerCreatorUseCase } from './WorkerCreator.useCase';
+import { container } from 'tsyringe';
 
 jest.mock('@core/services/worker.service', () => ({
   WorkerService: class WorkerService {},
@@ -38,7 +39,18 @@ const flushPromises = async (): Promise<void> => {
   await new Promise((resolve) => setImmediate(resolve));
 };
 
-function buildUseCase() {
+function buildUseCase(
+  overrides: {
+    activateWarmWorkerError?: unknown;
+    warmPool?: {
+      warm_pool_id: string;
+      container_id?: string | null;
+      container_name?: string | null;
+      session_volume_name?: string | null;
+    } | null;
+    warmupEnabled?: boolean;
+  } = {}
+) {
   const callOrder: string[] = [];
 
   const workerService = {
@@ -83,6 +95,18 @@ function buildUseCase() {
       callOrder.push('grpc-create');
       return undefined;
     }),
+    activateWarmWorker: jest.fn(async () => {
+      if (overrides.activateWarmWorkerError) {
+        throw overrides.activateWarmWorkerError;
+      }
+
+      return {
+        container_id: overrides.warmPool?.container_id ?? 'container-1',
+        session_volume_name:
+          overrides.warmPool?.session_volume_name ?? 'volume-1',
+      };
+    }),
+    deleteWarmWorker: jest.fn(async () => undefined),
   };
 
   const workerConfigService = {
@@ -101,13 +125,26 @@ function buildUseCase() {
     }),
   };
 
+  const workerWarmPoolSettingsService = {
+    view: jest.fn(async () => ({
+      warmup_enabled: overrides.warmupEnabled ?? false,
+      reservation_ttl_seconds: 90,
+    })),
+  };
+  const workerWarmPoolRepository = {
+    releaseExpiredReservations: jest.fn(async () => 0),
+    reserveReady: jest.fn(async () => overrides.warmPool ?? null),
+  };
+
   const useCase = new WorkerCreatorUseCase(
     workerService as never,
     accountService as never,
     centrifugoService as never,
     planAccountService as never,
     workerGrpcClientService as never,
-    workerConfigService as never
+    workerConfigService as never,
+    workerWarmPoolSettingsService as never,
+    workerWarmPoolRepository as never
   );
 
   return {
@@ -117,6 +154,8 @@ function buildUseCase() {
     planAccountService,
     useCase,
     workerConfigService,
+    workerWarmPoolSettingsService,
+    workerWarmPoolRepository,
     workerGrpcClientService,
     workerService,
   };
@@ -253,5 +292,44 @@ describe('WorkerCreatorUseCase', () => {
     );
 
     jest.restoreAllMocks();
+  });
+
+  it('does not enqueue replenish after a failed warm activation when warmup is disabled', async () => {
+    const resolveSpy = jest.spyOn(container, 'resolve');
+    const deps = buildUseCase({
+      activateWarmWorkerError: new Error('activate failed'),
+      warmPool: {
+        warm_pool_id: 'warm-1',
+        container_id: 'container-1',
+        container_name: 'warm-container-1',
+        session_volume_name: 'volume-1',
+      },
+      warmupEnabled: false,
+    });
+
+    await expect(
+      deps.useCase.execute(t, 'account-1', {
+        name: 'Canal principal',
+        server_id: 'server-1',
+        worker_type: EWorkerType.baileys,
+      })
+    ).resolves.toMatchObject({
+      worker_id: 'worker-created-id',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.baileys,
+      fallback_created: false,
+    });
+
+    expect(deps.workerWarmPoolRepository.reserveReady).toHaveBeenCalled();
+    expect(deps.workerGrpcClientService.deleteWarmWorker).toHaveBeenCalledWith(
+      'server-1',
+      expect.objectContaining({
+        warm_pool_id: 'warm-1',
+        remove_volume: true,
+      }),
+      60_000
+    );
+    expect(resolveSpy).not.toHaveBeenCalled();
+    resolveSpy.mockRestore();
   });
 });

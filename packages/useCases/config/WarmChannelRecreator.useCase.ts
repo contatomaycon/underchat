@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { v7 as uuidv7 } from 'uuid';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WorkerWarmPoolQueueService } from '@core/services/workerWarmPoolQueue.service';
+import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
 import { currentTime } from '@core/common/functions/currentTime';
@@ -13,13 +14,20 @@ export class WarmChannelRecreatorUseCase {
     @inject(WorkerWarmPoolRepository)
     private readonly workerWarmPoolRepository: WorkerWarmPoolRepository,
     @inject(WorkerWarmPoolQueueService)
-    private readonly workerWarmPoolQueueService: WorkerWarmPoolQueueService
+    private readonly workerWarmPoolQueueService: WorkerWarmPoolQueueService,
+    @inject(WorkerWarmPoolSettingsService)
+    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService
   ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
     warmPoolId: string
   ): Promise<{ enqueued: number }> {
+    const settings = await this.workerWarmPoolSettingsService.view();
+    if (!settings.warmup_enabled) {
+      throw new Error(t('warm_pool_warmup_disabled'));
+    }
+
     const warm = await this.workerWarmPoolRepository.viewById(warmPoolId);
 
     if (!warm || warm.state !== EWorkerWarmPoolState.ready) {

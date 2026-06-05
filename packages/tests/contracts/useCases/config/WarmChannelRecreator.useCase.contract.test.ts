@@ -20,6 +20,12 @@ import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import { WarmChannelRecreatorUseCase } from '@core/useCases/config/WarmChannelRecreator.useCase';
 
 describe('WarmChannelRecreatorUseCase', () => {
+  const makeSettingsService = (warmupEnabled = true) => ({
+    view: jest.fn(async () => ({
+      warmup_enabled: warmupEnabled,
+    })),
+  });
+
   it('rejects a warm pool entry that is not ready', async () => {
     const repository = {
       viewById: jest.fn(async () => ({
@@ -32,15 +38,42 @@ describe('WarmChannelRecreatorUseCase', () => {
       publishDelete: jest.fn(),
       publishReplenish: jest.fn(),
     };
+    const settingsService = makeSettingsService();
     const useCase = new WarmChannelRecreatorUseCase(
       repository as never,
-      queueService as never
+      queueService as never,
+      settingsService as never
     );
     const t = jest.fn((key: string) => key);
 
     await expect(useCase.execute(t as never, 'warm-1')).rejects.toThrow(
       'warm_channel_not_found'
     );
+    expect(queueService.publishDelete).not.toHaveBeenCalled();
+    expect(queueService.publishReplenish).not.toHaveBeenCalled();
+  });
+
+  it('rejects manual recreation when automatic warmup is disabled', async () => {
+    const repository = {
+      viewById: jest.fn(),
+    };
+    const queueService = {
+      ensure: jest.fn(),
+      publishDelete: jest.fn(),
+      publishReplenish: jest.fn(),
+    };
+    const settingsService = makeSettingsService(false);
+    const useCase = new WarmChannelRecreatorUseCase(
+      repository as never,
+      queueService as never,
+      settingsService as never
+    );
+    const t = jest.fn((key: string) => key);
+
+    await expect(useCase.execute(t as never, 'warm-1')).rejects.toThrow(
+      'warm_pool_warmup_disabled'
+    );
+    expect(repository.viewById).not.toHaveBeenCalled();
     expect(queueService.publishDelete).not.toHaveBeenCalled();
     expect(queueService.publishReplenish).not.toHaveBeenCalled();
   });
@@ -63,9 +96,11 @@ describe('WarmChannelRecreatorUseCase', () => {
       publishDelete: jest.fn(async () => undefined),
       publishReplenish: jest.fn(async () => undefined),
     };
+    const settingsService = makeSettingsService();
     const useCase = new WarmChannelRecreatorUseCase(
       repository as never,
-      queueService as never
+      queueService as never,
+      settingsService as never
     );
 
     await expect(

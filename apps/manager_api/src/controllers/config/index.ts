@@ -26,6 +26,8 @@ import { listWarmChannels } from './methods/listWarmChannels';
 import { listWarmChannelServers } from './methods/listWarmChannelServers';
 import { recreateWarmChannel } from './methods/recreateWarmChannel';
 import { recreateWarmChannelsAll } from './methods/recreateWarmChannelsAll';
+import { viewWarmChannelSettings } from './methods/viewWarmChannelSettings';
+import { updateWarmChannelSettings } from './methods/updateWarmChannelSettings';
 
 @injectable()
 class ConfigController {
@@ -56,6 +58,8 @@ class ConfigController {
   public listWarmChannelServers = listWarmChannelServers;
   public recreateWarmChannel = recreateWarmChannel;
   public recreateWarmChannelsAll = recreateWarmChannelsAll;
+  public viewWarmChannelSettings = viewWarmChannelSettings;
+  public updateWarmChannelSettings = updateWarmChannelSettings;
 }
 
 export default ConfigController;

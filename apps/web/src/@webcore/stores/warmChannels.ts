@@ -13,6 +13,8 @@ import {
 import { ListWarmChannelsRequest } from '@core/schema/config/listWarmChannels/request.schema';
 import { ListWarmChannelServersResponse } from '@core/schema/config/listWarmChannelServers/response.schema';
 import { RecreateWarmChannelsAllRequest } from '@core/schema/config/recreateWarmChannelsAll/request.schema';
+import { WarmChannelSettingsResponse } from '@core/schema/config/viewWarmChannelSettings/response.schema';
+import { UpdateWarmChannelSettingsRequest } from '@core/schema/config/updateWarmChannelSettings/request.schema';
 
 interface RecreateWarmChannelsResponse {
   enqueued: number;
@@ -36,6 +38,8 @@ export const useWarmChannelsStore = defineStore('warmChannels', {
       total: 0 as number,
     } as PagingResponseSchema,
     servers: [] as ListWarmChannelServersResponse['results'],
+    settings: null as WarmChannelSettingsResponse | null,
+    settingsLoading: false,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -139,6 +143,85 @@ export const useWarmChannelsStore = defineStore('warmChannels', {
         }
         this.showSnackbar(errorMessage, EColor.error);
         return false;
+      }
+    },
+    async viewWarmChannelSettings(): Promise<WarmChannelSettingsResponse | null> {
+      try {
+        this.settingsLoading = true;
+
+        const response = await axios.get<
+          IApiResponse<WarmChannelSettingsResponse>
+        >('/config/warm-channels/settings');
+
+        this.settingsLoading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.showSnackbar(
+            data?.message ??
+              this.i18n.global.t('warm_channel_settings_view_error'),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.settings = data.data;
+
+        return data.data;
+      } catch (error) {
+        this.settingsLoading = false;
+        let errorMessage = this.i18n.global.t(
+          'warm_channel_settings_view_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+    async updateWarmChannelSettings(
+      payload: UpdateWarmChannelSettingsRequest
+    ): Promise<WarmChannelSettingsResponse | null> {
+      try {
+        this.settingsLoading = true;
+
+        const response = await axios.patch<
+          IApiResponse<WarmChannelSettingsResponse>
+        >('/config/warm-channels/settings', payload);
+
+        this.settingsLoading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          this.showSnackbar(
+            data?.message ??
+              this.i18n.global.t('warm_channel_settings_update_error'),
+            EColor.error
+          );
+          return null;
+        }
+
+        this.settings = data.data;
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('warm_channel_settings_update_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.settingsLoading = false;
+        let errorMessage = this.i18n.global.t(
+          'warm_channel_settings_update_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
       }
     },
     async recreateWarmChannelsAll(

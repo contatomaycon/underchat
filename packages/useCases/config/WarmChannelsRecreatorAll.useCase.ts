@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WarmChannelRecreatorUseCase } from './WarmChannelRecreator.useCase';
 import { RecreateWarmChannelsAllRequest } from '@core/schema/config/recreateWarmChannelsAll/request.schema';
+import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 
 @injectable()
 export class WarmChannelsRecreatorAllUseCase {
@@ -10,13 +11,20 @@ export class WarmChannelsRecreatorAllUseCase {
     @inject(WorkerWarmPoolRepository)
     private readonly workerWarmPoolRepository: WorkerWarmPoolRepository,
     @inject(WarmChannelRecreatorUseCase)
-    private readonly warmChannelRecreatorUseCase: WarmChannelRecreatorUseCase
+    private readonly warmChannelRecreatorUseCase: WarmChannelRecreatorUseCase,
+    @inject(WorkerWarmPoolSettingsService)
+    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService
   ) {}
 
   async execute(
     t: TFunction<'translation', undefined>,
     filters: RecreateWarmChannelsAllRequest
   ): Promise<{ enqueued: number }> {
+    const settings = await this.workerWarmPoolSettingsService.view();
+    if (!settings.warmup_enabled) {
+      throw new Error(t('warm_pool_warmup_disabled'));
+    }
+
     const warmChannels =
       await this.workerWarmPoolRepository.listReadyWarmChannelsForRecreate(
         this.normalizeFilters(filters)
