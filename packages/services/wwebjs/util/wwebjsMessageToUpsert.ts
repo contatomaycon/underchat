@@ -83,7 +83,7 @@ function isSystemMessageJid(value: string): boolean {
 function mapWwebjsTypeToMessageType(
   type: string | undefined,
   rawData?: Record<string, unknown>
-): EMessageType {
+): EMessageType | null {
   const t = (type ?? 'chat').toLowerCase();
   const subType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
 
@@ -119,7 +119,7 @@ function mapWwebjsTypeToMessageType(
     return EMessageType.system;
   }
   if (t === 'e2e_notification') return EMessageType.system;
-  return EMessageType.text;
+  return null;
 }
 
 function resolveE2ENotificationBody(
@@ -1324,6 +1324,9 @@ export async function wwebjsMessageToUpsert(
   }
   if (disappearingProtocolMessage) {
     messageType = EMessageType.set_disappearing_messages;
+  }
+  if (!messageType) {
+    return null;
   }
   const isViewOnceUnavailableFanout =
     rawType === 'ciphertext' &&

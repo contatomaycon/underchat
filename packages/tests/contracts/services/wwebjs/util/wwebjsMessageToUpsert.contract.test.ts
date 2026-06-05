@@ -144,4 +144,17 @@ describe('wwebjsMessageToUpsert', () => {
     expect(upsert?.type).toBe(EMessageType.system);
     expect(innerMessage.conversation).toBe(fallbackText);
   });
+
+  it('does not convert unknown WWebJS message types with body into text', async () => {
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      type: 'unknown_reaction_status',
+      body: 'this should not become a chatbot text trigger',
+      _data: {
+        type: 'unknown_reaction_status',
+      },
+    } as never);
+
+    expect(upsert).toBeNull();
+  });
 });

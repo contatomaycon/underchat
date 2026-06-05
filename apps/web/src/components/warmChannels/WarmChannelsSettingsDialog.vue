@@ -114,18 +114,15 @@ watch(isVisible, (value) => {
 
 <template>
   <VDialog v-model="isVisible" max-width="760" persistent>
+    <DialogCloseBtn :disabled="loading" @click="isVisible = false" />
+
     <VCard>
-      <VCardTitle class="settings-title">
-        <div>
-          <div class="text-h6">{{ $t('warm_channel_settings') }}</div>
-          <div class="text-caption text-medium-emphasis">
-            {{ $t('warm_channel_settings_subtitle') }}
-          </div>
-        </div>
-        <IconBtn :disabled="loading" @click="isVisible = false">
-          <VIcon icon="tabler-x" />
-        </IconBtn>
-      </VCardTitle>
+      <VCardItem class="pb-2">
+        <VCardTitle>{{ $t('warm_channel_settings') }}</VCardTitle>
+        <VCardSubtitle>
+          {{ $t('warm_channel_settings_subtitle') }}
+        </VCardSubtitle>
+      </VCardItem>
 
       <VDivider />
 
@@ -219,7 +216,7 @@ watch(isVisible, (value) => {
 
         <VDivider />
 
-        <VCardActions class="justify-end pa-4">
+        <VCardText class="d-flex justify-end flex-wrap gap-3">
           <VBtn
             color="secondary"
             variant="tonal"
@@ -228,29 +225,16 @@ watch(isVisible, (value) => {
           >
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn
-            color="primary"
-            type="submit"
-            prepend-icon="tabler-device-floppy"
-            :loading="loading"
-          >
+          <VBtn color="primary" variant="flat" type="submit" :loading="loading">
             {{ $t('save') }}
           </VBtn>
-        </VCardActions>
+        </VCardText>
       </VForm>
     </VCard>
   </VDialog>
 </template>
 
 <style scoped>
-.settings-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-block: 1rem;
-}
-
 .settings-form {
   display: grid;
   gap: 1.25rem;

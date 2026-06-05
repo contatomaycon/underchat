@@ -79,6 +79,19 @@ const HISTORY_EVENT_POST_READY_GRACE_MS = 2 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_MAX_SIZE = 100000;
 const HISTORY_FETCH_CHAT_SCAN_LIMIT = HISTORY_RECONCILIATION_MESSAGE_LIMIT;
+const WWEBJS_REACTION_LIVE_MAX_AGE_MS = readPositiveIntEnv(
+  'WWEBJS_REACTION_LIVE_MAX_AGE_MS',
+  5 * 60 * 1000
+);
+const WWEBJS_REACTION_FUTURE_TOLERANCE_MS = readPositiveIntEnv(
+  'WWEBJS_REACTION_FUTURE_TOLERANCE_MS',
+  60 * 1000
+);
+const WWEBJS_REACTION_DEDUPE_TTL_MS = Math.max(
+  WWEBJS_REACTION_LIVE_MAX_AGE_MS,
+  5 * 60 * 1000
+);
+const WWEBJS_REACTION_DEDUPE_MAX_SIZE = 100000;
 
 interface WwebjsResolvedJids {
   remoteJid: string;
@@ -160,6 +173,13 @@ interface WwebjsReactionEvent {
   senderUserJid?: unknown;
   timestamp?: unknown;
   reactionTimestamp?: unknown;
+}
+
+interface WwebjsReactionLiveValidation {
+  allowed: boolean;
+  timestampSeconds: number | null;
+  ageMs: number | null;
+  reason?: string;
 }
 
 function getNonEmptyString(value: unknown): string | undefined {
@@ -448,6 +468,18 @@ function parseNumberLike(value: unknown): number | undefined {
     return value;
   }
 
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'toNumber' in value &&
+    typeof (value as { toNumber: unknown }).toNumber === 'function'
+  ) {
+    const numeric = (value as { toNumber: () => number }).toNumber();
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+  }
+
   if (typeof value === 'string') {
     const numeric = Number(value);
     if (Number.isFinite(numeric)) {
@@ -686,6 +718,7 @@ export class WwebjsIncomingMessageService {
   private readonly processedPinMessages = new Map<string, number>();
   private readonly processedIncomingMessages = new Map<string, number>();
   private readonly processedHistoryMessages = new Map<string, number>();
+  private readonly processedReactions = new Map<string, number>();
   private readonly historyEventBuffer = new Map<
     string,
     IWwebjsHistoryBufferedMessage
@@ -1426,7 +1459,20 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      void this.handleMessageReaction(client, reaction);
+      const reactionValidation = this.shouldSkipReactionEvent(
+        reactionId,
+        parentMsgId,
+        reaction
+      );
+      if (!reactionValidation.allowed || !reactionValidation.timestampSeconds) {
+        return;
+      }
+
+      void this.handleMessageReaction(
+        client,
+        reaction,
+        reactionValidation.timestampSeconds
+      );
     });
     client.on(
       'call',
@@ -2169,6 +2215,221 @@ export class WwebjsIncomingMessageService {
 
       this.processedHistoryMessages.delete(key);
     }
+  }
+
+  private cleanupProcessedReactions(now: number): void {
+    for (const [key, timestamp] of this.processedReactions.entries()) {
+      if (now - timestamp > WWEBJS_REACTION_DEDUPE_TTL_MS) {
+        this.processedReactions.delete(key);
+      }
+    }
+
+    if (this.processedReactions.size <= WWEBJS_REACTION_DEDUPE_MAX_SIZE) {
+      return;
+    }
+
+    const excess =
+      this.processedReactions.size - WWEBJS_REACTION_DEDUPE_MAX_SIZE;
+    const iterator = this.processedReactions.keys();
+    for (let i = 0; i < excess; i++) {
+      const key = iterator.next().value;
+      if (!key) {
+        break;
+      }
+
+      this.processedReactions.delete(key);
+    }
+  }
+
+  private getReactionDedupeKey(
+    reactionId: string | undefined,
+    parentMsgId: string | undefined,
+    reaction: WwebjsReactionEvent,
+    timestampSeconds: number
+  ): string | null {
+    if (!reactionId || !parentMsgId) {
+      return null;
+    }
+
+    return [
+      reactionId,
+      parentMsgId,
+      getReactionEmoji(reaction),
+      getReactionSenderId(reaction) ?? '',
+      timestampSeconds,
+    ].join('|');
+  }
+
+  private logReactionSkip(
+    reactionId: string | undefined,
+    parentMsgId: string | undefined,
+    reaction: WwebjsReactionEvent,
+    payload: Record<string, unknown>
+  ): void {
+    const basePayload = {
+      reactionId,
+      parentMsgId,
+      senderId: getReactionSenderId(reaction),
+      emoji: getReactionEmoji(reaction),
+      ...payload,
+    };
+
+    this.logEvent('message_reaction_skip', basePayload);
+
+    if (!isMessageLifecycleDebugEnabled()) {
+      return;
+    }
+
+    const remoteJid =
+      (parentMsgId
+        ? getRemoteFromSerializedMessageId(parentMsgId)
+        : undefined) ??
+      (reactionId ? getRemoteFromSerializedMessageId(reactionId) : undefined);
+    const contextData = buildMessageLifecycleContext(
+      {
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+        account_id: wwebjsEnvironment.wwebjsAccountId,
+        source_provider: 'wwebjs',
+        type: EMessageType.react,
+        message: {
+          key: {
+            id: reactionId,
+            remoteJid,
+            fromMe: false,
+          },
+          message: {
+            reactionMessage: {
+              key: parentMsgId ? { id: parentMsgId } : undefined,
+              text: getReactionEmoji(reaction),
+            },
+          },
+        },
+        has_quoted: false,
+      },
+      'wwebjs'
+    );
+
+    recordMessageLifecycle({
+      ...contextData,
+      ...basePayload,
+      stage: 'wwebjs.incoming.skip',
+      decision: 'reaction_live_guard',
+      outcome: 'skipped',
+    });
+  }
+
+  private validateLiveReaction(
+    reaction: WwebjsReactionEvent
+  ): WwebjsReactionLiveValidation {
+    const timestampSeconds = getReactionTimestampSeconds(reaction);
+    if (!timestampSeconds) {
+      return {
+        allowed: false,
+        timestampSeconds: null,
+        ageMs: null,
+        reason: 'missing_reaction_timestamp',
+      };
+    }
+
+    const now = Date.now();
+    const timestampMs = timestampSeconds * 1000;
+    const ageMs = now - timestampMs;
+
+    if (timestampMs - now > WWEBJS_REACTION_FUTURE_TOLERANCE_MS) {
+      return {
+        allowed: false,
+        timestampSeconds,
+        ageMs,
+        reason: 'future_reaction_timestamp',
+      };
+    }
+
+    if (ageMs > WWEBJS_REACTION_LIVE_MAX_AGE_MS) {
+      return {
+        allowed: false,
+        timestampSeconds,
+        ageMs,
+        reason: 'stale_reaction',
+      };
+    }
+
+    return {
+      allowed: true,
+      timestampSeconds,
+      ageMs,
+    };
+  }
+
+  private shouldSkipReactionEvent(
+    reactionId: string | undefined,
+    parentMsgId: string | undefined,
+    reaction: WwebjsReactionEvent
+  ): WwebjsReactionLiveValidation {
+    const validation = this.validateLiveReaction(reaction);
+    if (!validation.allowed) {
+      this.logReactionSkip(reactionId, parentMsgId, reaction, {
+        reason: validation.reason,
+        timestampSeconds: validation.timestampSeconds,
+        ageMs: validation.ageMs,
+        maxAgeMs: WWEBJS_REACTION_LIVE_MAX_AGE_MS,
+      });
+      return validation;
+    }
+
+    const timestampSeconds = validation.timestampSeconds;
+    if (!timestampSeconds) {
+      this.logReactionSkip(reactionId, parentMsgId, reaction, {
+        reason: 'missing_reaction_timestamp',
+        timestampSeconds,
+        ageMs: validation.ageMs,
+      });
+      return {
+        allowed: false,
+        timestampSeconds: null,
+        ageMs: validation.ageMs,
+        reason: 'missing_reaction_timestamp',
+      };
+    }
+
+    const dedupeKey = this.getReactionDedupeKey(
+      reactionId,
+      parentMsgId,
+      reaction,
+      timestampSeconds
+    );
+    if (!dedupeKey) {
+      this.logReactionSkip(reactionId, parentMsgId, reaction, {
+        reason: 'missing_reaction_key',
+        timestampSeconds,
+        ageMs: validation.ageMs,
+      });
+      return {
+        allowed: false,
+        timestampSeconds,
+        ageMs: validation.ageMs,
+        reason: 'missing_reaction_key',
+      };
+    }
+
+    const now = Date.now();
+    this.cleanupProcessedReactions(now);
+    if (this.processedReactions.has(dedupeKey)) {
+      this.logReactionSkip(reactionId, parentMsgId, reaction, {
+        reason: 'duplicate_reaction',
+        timestampSeconds,
+        ageMs: validation.ageMs,
+        dedupeKey,
+      });
+      return {
+        allowed: false,
+        timestampSeconds,
+        ageMs: validation.ageMs,
+        reason: 'duplicate_reaction',
+      };
+    }
+
+    this.processedReactions.set(dedupeKey, now);
+    return validation;
   }
 
   private clearHistoryEventBuffer(): void {
@@ -4189,7 +4450,8 @@ export class WwebjsIncomingMessageService {
 
   private async handleMessageReaction(
     client: Client,
-    reaction: WwebjsReactionEvent
+    reaction: WwebjsReactionEvent,
+    timestamp: number
   ): Promise<void> {
     const reactionId = getReactionIdSerialized(reaction);
     const parentMsgId = getReactionMsgIdSerialized(reaction);
@@ -4256,9 +4518,6 @@ export class WwebjsIncomingMessageService {
       normalizedSenderId ??
       senderId ??
       (fromMe ? (normalizeJidForComparison(myJid) ?? myJid) : undefined);
-    const timestamp =
-      getReactionTimestampSeconds(reaction) ?? Math.floor(Date.now() / 1000);
-
     const upsert = buildReactionUpsert(
       remoteJid,
       remoteJidAlt,
@@ -4617,6 +4876,7 @@ export class WwebjsIncomingMessageService {
     this.processedPinMessages.clear();
     this.processedIncomingMessages.clear();
     this.processedHistoryMessages.clear();
+    this.processedReactions.clear();
   }
 
   async markRead(keys: IMessageKeyLike[]): Promise<void> {

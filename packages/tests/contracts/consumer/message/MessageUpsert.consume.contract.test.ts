@@ -231,10 +231,11 @@ describe('MessageUpsertConsume edit fallback', () => {
 
   const makeTextUpsert = (
     body: string = adBody,
-    options: { fromMe?: boolean } = {}
+    options: { fromMe?: boolean; messageTimestamp?: number } = {}
   ): IUpsertMessage => ({
     account_id: 'account-1',
     worker_id: 'worker-1',
+    source_provider: 'wwebjs',
     type: EMessageType.text,
     has_quoted: false,
     message: {
@@ -250,10 +251,51 @@ describe('MessageUpsertConsume edit fallback', () => {
           text: body,
         },
       },
-      messageTimestamp: 1778190016,
+      messageTimestamp: options.messageTimestamp ?? 1778190016,
       pushName: 'Luh',
     },
   });
+
+  const makeReactionUpsert = (input: {
+    phone?: string;
+    name?: string;
+    messageId?: string;
+    targetMessageId?: string | null;
+    messageTimestamp?: number;
+  }): IUpsertMessage => {
+    const phone = input.phone ?? '556999715039';
+    const remote = `${phone}@s.whatsapp.net`;
+    const messageId =
+      input.messageId ?? `false_${remote}_reaction-${phone.slice(-4)}`;
+    const targetId =
+      input.targetMessageId === undefined
+        ? `false_${remote}_target-${phone.slice(-4)}`
+        : input.targetMessageId;
+
+    return {
+      account_id: 'account-1',
+      worker_id: 'worker-1',
+      source_provider: 'wwebjs',
+      type: EMessageType.react,
+      has_quoted: false,
+      message: {
+        key: {
+          id: messageId,
+          remoteJid: remote,
+          fromMe: false,
+        },
+        message: {
+          reactionMessage: {
+            key: targetId ? { id: targetId, remoteJid: remote } : undefined,
+            text: '👍',
+            senderTimestampMs: (input.messageTimestamp ?? 1778190016) * 1000,
+          },
+        },
+        messageTimestamp: input.messageTimestamp ?? 1778190016,
+        pushName: input.name ?? 'Luh',
+      },
+    };
+  };
 
   const makeEditUpsert = (): IUpsertMessage => ({
     account_id: 'account-1',
@@ -394,6 +436,24 @@ describe('MessageUpsertConsume edit fallback', () => {
     const activeWhatsappValidationService = {
       handleIncomingMessage: jest.fn(async () => false),
     };
+    const workerConfigService = {
+      viewWorkerConfig: jest.fn(async () => ({
+        mark_as_read: false,
+      })),
+      viewChatbots: jest.fn(async () => ({
+        enabled: false,
+        chatbot_id: null,
+        output_chatbot_id: null,
+        chatbot_working_hours_enabled: false,
+        chatbot_working_hours_rules: null,
+        chatbot_working_hours_timezone: null,
+      })),
+    };
+    const chatbotFlowRunnerService = {
+      canTriggerChatbotEvent: jest.fn(async () => false),
+      clearFlowCacheForChat: jest.fn(async () => undefined),
+      execute: jest.fn(async () => undefined),
+    };
     const consumer = new MessageUpsertConsume(
       redis as never,
       {} as never,
@@ -424,23 +484,8 @@ describe('MessageUpsertConsume edit fallback', () => {
         getContactByPhone: jest.fn(async () => null),
         updateContactById: jest.fn(async () => undefined),
       } as never,
-      {
-        viewWorkerConfig: jest.fn(async () => ({
-          mark_as_read: false,
-        })),
-        viewChatbots: jest.fn(async () => ({
-          enabled: false,
-          chatbot_id: null,
-          output_chatbot_id: null,
-          chatbot_working_hours_enabled: false,
-          chatbot_working_hours_rules: null,
-          chatbot_working_hours_timezone: null,
-        })),
-      } as never,
-      {
-        canTriggerChatbotEvent: jest.fn(async () => false),
-        clearFlowCacheForChat: jest.fn(async () => undefined),
-      } as never,
+      workerConfigService as never,
+      chatbotFlowRunnerService as never,
       {
         cancelInactivityTrackingForEndedAttendance: jest.fn(
           async () => undefined
@@ -468,6 +513,8 @@ describe('MessageUpsertConsume edit fallback', () => {
       pushNotificationService,
       elasticDatabaseService,
       activeWhatsappValidationService,
+      workerConfigService,
+      chatbotFlowRunnerService,
     };
   };
 
@@ -681,6 +728,231 @@ describe('MessageUpsertConsume edit fallback', () => {
         message: adBody,
       }),
     ]);
+  });
+
+  it('does not execute chatbot flow for historical react payloads from the affected WWebJS contacts', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-06-05T14:03:00.000Z'),
+    });
+
+    try {
+      const {
+        consumer,
+        chatService,
+        workerConfigService,
+        chatbotFlowRunnerService,
+      } = makeConsumer();
+      workerConfigService.viewChatbots.mockResolvedValue({
+        enabled: true,
+        chatbot_id: 'chatbot-input',
+        output_chatbot_id: null,
+        chatbot_working_hours_enabled: false,
+        chatbot_working_hours_rules: null,
+        chatbot_working_hours_timezone: null,
+      } as any);
+      chatbotFlowRunnerService.canTriggerChatbotEvent.mockResolvedValue(true);
+
+      const affectedReactions = [
+        {
+          name: 'Bruna - Gandrei - EX',
+          phone: '554791258681',
+          messageTimestamp: Math.floor(
+            new Date('2026-05-07T13:57:00.000-03:00').getTime() / 1000
+          ),
+        },
+        {
+          name: 'Marcela - Arte Visual Grafica - EX',
+          phone: '558532818181',
+          messageTimestamp: Math.floor(
+            new Date('2026-05-07T13:54:00.000-03:00').getTime() / 1000
+          ),
+        },
+        {
+          name: 'Ana - Passografic - 5.0',
+          phone: '555496561299',
+          messageTimestamp: Math.floor(
+            new Date('2026-03-27T13:54:00.000-03:00').getTime() / 1000
+          ),
+        },
+        {
+          name: 'Julia - Xprint - EX',
+          phone: '5519982360051',
+          messageTimestamp: Math.floor(
+            new Date('2026-03-27T13:54:00.000-03:00').getTime() / 1000
+          ),
+        },
+        {
+          name: 'Priscilla - Masao - 5.0',
+          phone: '5511983908280',
+          messageTimestamp: Math.floor(
+            new Date('2026-03-27T14:03:00.000-03:00').getTime() / 1000
+          ),
+        },
+        {
+          name: 'Janaina - Ribergrafica - 5.0',
+          phone: '5516997774378',
+          messageTimestamp: Math.floor(
+            new Date('2026-03-27T13:54:00.000-03:00').getTime() / 1000
+          ),
+        },
+      ];
+
+      for (const reaction of affectedReactions) {
+        await (consumer as any).createOrUpdateChat(
+          jest.fn((key: string) => key),
+          makeReactionUpsert({
+            ...reaction,
+            messageId: `false_${reaction.phone}@s.whatsapp.net_reaction-${reaction.phone}`,
+            targetMessageId: `false_${reaction.phone}@s.whatsapp.net_target-${reaction.phone}`,
+          }),
+          reaction.phone
+        );
+      }
+
+      expect(
+        chatbotFlowRunnerService.canTriggerChatbotEvent
+      ).not.toHaveBeenCalled();
+      expect(chatbotFlowRunnerService.execute).not.toHaveBeenCalled();
+      expect(chatService.ensureProtocolForNewChat).not.toHaveBeenCalled();
+      expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not create a new attendance for a fresh reaction without an existing chat', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-06-05T14:03:00.000Z'),
+    });
+
+    try {
+      const {
+        consumer,
+        chatService,
+        workerConfigService,
+        chatbotFlowRunnerService,
+      } = makeConsumer();
+      workerConfigService.viewChatbots.mockResolvedValue({
+        enabled: true,
+        chatbot_id: 'chatbot-input',
+        output_chatbot_id: null,
+        chatbot_working_hours_enabled: false,
+        chatbot_working_hours_rules: null,
+        chatbot_working_hours_timezone: null,
+      } as any);
+      chatbotFlowRunnerService.canTriggerChatbotEvent.mockResolvedValue(true);
+
+      await (consumer as any).createOrUpdateChat(
+        jest.fn((key: string) => key),
+        makeReactionUpsert({
+          messageTimestamp: Math.floor(Date.now() / 1000) - 30,
+        }),
+        '556999715039'
+      );
+
+      expect(
+        chatbotFlowRunnerService.canTriggerChatbotEvent
+      ).not.toHaveBeenCalled();
+      expect(chatbotFlowRunnerService.execute).not.toHaveBeenCalled();
+      expect(chatService.ensureProtocolForNewChat).not.toHaveBeenCalled();
+      expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('queues but does not execute chatbot for a fresh reaction whose target message is missing', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-06-05T14:03:00.000Z'),
+    });
+
+    try {
+      const {
+        consumer,
+        chat,
+        chatService,
+        workerConfigService,
+        chatbotFlowRunnerService,
+      } = makeConsumer();
+      const uraChat = {
+        ...chat,
+        status: EChatStatus.ura,
+      } as IChat;
+      chatService.findChatByPhone.mockResolvedValueOnce(uraChat as any);
+      chatService.findChatByChatId.mockResolvedValue(uraChat);
+      workerConfigService.viewChatbots.mockResolvedValue({
+        enabled: true,
+        chatbot_id: 'chatbot-input',
+        output_chatbot_id: null,
+        chatbot_working_hours_enabled: false,
+        chatbot_working_hours_rules: null,
+        chatbot_working_hours_timezone: null,
+      } as any);
+      chatbotFlowRunnerService.canTriggerChatbotEvent.mockResolvedValue(true);
+
+      await (consumer as any).createOrUpdateChat(
+        jest.fn((key: string) => key),
+        makeReactionUpsert({
+          messageTimestamp: Math.floor(Date.now() / 1000) - 30,
+          targetMessageId: 'missing-target-message',
+        }),
+        '556999715039'
+      );
+
+      expect(
+        chatbotFlowRunnerService.canTriggerChatbotEvent
+      ).not.toHaveBeenCalled();
+      expect(chatbotFlowRunnerService.execute).not.toHaveBeenCalled();
+      expect(chatService.ensureProtocolForNewChat).not.toHaveBeenCalled();
+      expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('still executes chatbot flow for a fresh text message when configured', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-06-05T14:03:00.000Z'),
+    });
+
+    try {
+      const { consumer, workerConfigService, chatbotFlowRunnerService } =
+        makeConsumer();
+      workerConfigService.viewChatbots.mockResolvedValue({
+        enabled: true,
+        chatbot_id: 'chatbot-input',
+        output_chatbot_id: null,
+        chatbot_working_hours_enabled: false,
+        chatbot_working_hours_rules: null,
+        chatbot_working_hours_timezone: null,
+      } as any);
+      chatbotFlowRunnerService.canTriggerChatbotEvent.mockResolvedValue(true);
+
+      const data = makeTextUpsert('quero atendimento', {
+        messageTimestamp: Math.floor(Date.now() / 1000) - 30,
+      });
+
+      await (consumer as any).createOrUpdateChat(
+        jest.fn((key: string) => key),
+        data,
+        '556999715039'
+      );
+
+      expect(
+        chatbotFlowRunnerService.canTriggerChatbotEvent
+      ).toHaveBeenCalledWith(data, 'account-1', 'chatbot-input');
+      expect(chatbotFlowRunnerService.execute).toHaveBeenCalledTimes(1);
+      expect(chatbotFlowRunnerService.execute).toHaveBeenCalledWith(
+        expect.any(Function),
+        data,
+        expect.objectContaining({
+          status: EChatStatus.ura,
+        }),
+        'chatbot-input'
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('sends a transfer push when message upsert transfers the chat to a user', async () => {

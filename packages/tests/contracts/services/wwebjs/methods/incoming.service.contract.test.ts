@@ -392,6 +392,31 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     return message;
   };
 
+  const makeReactionEvent = (input: {
+    reactionId?: string;
+    parentMsgId?: string;
+    emoji?: string;
+    senderId?: string;
+    timestamp?: number;
+  }) => ({
+    id: {
+      _serialized: input.reactionId ?? `false_${lidJid}_reaction-1`,
+      fromMe: false,
+      remote: lidJid,
+      id: 'reaction-1',
+      participant: input.senderId ?? lidJid,
+    },
+    msgId: {
+      _serialized: input.parentMsgId ?? `false_${lidJid}_parent-1`,
+      fromMe: false,
+      remote: lidJid,
+      id: 'parent-1',
+    },
+    reaction: input.emoji ?? '👍',
+    senderId: input.senderId ?? lidJid,
+    timestamp: input.timestamp,
+  });
+
   const adCtwaContext = {
     conversionSource: 'FB_Ads',
     ctwaSignals: 'all,all',
@@ -694,6 +719,101 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
     } finally {
       consoleLogSpy.mockRestore();
       consoleWarnSpy.mockRestore();
+    }
+  });
+
+  it('drops historical reaction events even when WWebJS emits them as live events', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-06-05T14:03:00.000Z'),
+    });
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+      service.markConnectionReady();
+
+      client.emit(
+        'message_reaction',
+        makeReactionEvent({
+          reactionId: `false_${lidJid}_reaction-march`,
+          parentMsgId: `false_${lidJid}_target-march`,
+          timestamp: Math.floor(
+            new Date('2026-03-27T13:54:00.000Z').getTime() / 1000
+          ),
+        })
+      );
+      await flushMicrotasks();
+
+      expect(
+        streamProducerService.send.mock.calls.filter(
+          ([topic]) => topic === 'upsert-message'
+        )
+      ).toHaveLength(0);
+    } finally {
+      consoleLogSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('publishes one fresh reaction and drops the duplicate event', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-06-05T14:03:00.000Z'),
+    });
+    const consoleLogSpy = jest
+      .spyOn(console, 'log')
+      .mockImplementation(() => undefined);
+
+    try {
+      const { service, streamProducerService } = makeService();
+      const client = new FakeWwebjsClient();
+      service.bindTo(client as never);
+      service.markConnectionReady();
+
+      const timestamp = Math.floor(Date.now() / 1000) - 30;
+      const reaction = makeReactionEvent({
+        reactionId: `false_${lidJid}_reaction-fresh`,
+        parentMsgId: `false_${lidJid}_target-fresh`,
+        senderId: phoneJid,
+        timestamp,
+      });
+
+      client.emit('message_reaction', reaction);
+      client.emit('message_reaction', reaction);
+      await flushMicrotasks();
+
+      const upsertPayloads = streamProducerService.send.mock.calls
+        .filter(([topic]) => topic === 'upsert-message')
+        .map(([, payload]) => payload as any);
+
+      expect(upsertPayloads).toHaveLength(1);
+      expect(upsertPayloads[0]).toEqual(
+        expect.objectContaining({
+          type: EMessageType.react,
+          worker_id: 'worker-w',
+          account_id: 'account-w',
+        })
+      );
+      expect(upsertPayloads[0].message.key).toEqual(
+        expect.objectContaining({
+          id: `false_${lidJid}_reaction-fresh`,
+          remoteJid: lidJid,
+          remoteJidAlt: undefined,
+          fromMe: false,
+          participant: phoneJid,
+        })
+      );
+      expect(upsertPayloads[0].message.messageTimestamp).toBe(timestamp);
+      expect(upsertPayloads[0].message.message.reactionMessage).toEqual({
+        key: { id: `false_${lidJid}_target-fresh` },
+        text: '👍',
+      });
+    } finally {
+      consoleLogSpy.mockRestore();
+      jest.useRealTimers();
     }
   });
 

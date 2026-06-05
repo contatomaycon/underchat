@@ -129,6 +129,37 @@ interface IEditMessagePayload {
   editedContent?: Record<string, unknown>;
 }
 
+interface IAutomationTriggerGuard {
+  canAutomate: boolean;
+  discardEvent: boolean;
+  reason?: string;
+  messageTimestampMs?: number | null;
+  ageMs?: number | null;
+}
+
+function readPositiveIntEnv(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+}
+
+const CHATBOT_TRIGGER_MAX_EVENT_AGE_MS = readPositiveIntEnv(
+  'CHATBOT_TRIGGER_MAX_EVENT_AGE_MS',
+  15 * 60 * 1000
+);
+const CHATBOT_TRIGGER_FUTURE_TOLERANCE_MS = readPositiveIntEnv(
+  'CHATBOT_TRIGGER_FUTURE_TOLERANCE_MS',
+  60 * 1000
+);
+
 interface KafkaConsumerMessage {
   value: Buffer | null;
   partition: number;
@@ -5009,6 +5040,215 @@ export class MessageUpsertConsume {
     return !isFromMe && !data.from_history_sync && !data.webhook_message_type;
   }
 
+  private shouldEvaluateProviderAutomation(data: IUpsertMessage): boolean {
+    const isFromMe = data.message?.key?.fromMe ?? false;
+
+    return !isFromMe && !data.from_history_sync && !data.webhook_message_type;
+  }
+
+  private normalizeTimestampMs(raw: unknown): number | null {
+    if (raw === null || raw === undefined) {
+      return null;
+    }
+
+    const value =
+      typeof raw === 'object' && raw && 'toNumber' in raw
+        ? (raw as { toNumber: () => number }).toNumber()
+        : Number(raw);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+
+  private getUpsertMessageTimestampMs(data: IUpsertMessage): number | null {
+    const messageLike = data.message as
+      | (IUpsertMessage['message'] & {
+          timestamp?: unknown;
+          _data?: Record<string, unknown>;
+        })
+      | null
+      | undefined;
+    const timestamps = [
+      messageLike?.messageTimestamp,
+      messageLike?.timestamp,
+      messageLike?._data?.timestamp,
+      messageLike?._data?.t,
+      messageLike?._data?.senderTimestampMs,
+      messageLike?._data?.senderTimestamp,
+      messageLike?._data?.latestEditSenderTimestampMs,
+    ]
+      .map((raw) => this.normalizeTimestampMs(raw))
+      .filter((value): value is number => value !== null);
+
+    return timestamps.length > 0 ? Math.min(...timestamps) : null;
+  }
+
+  private validateAutomationEventFreshness(
+    data: IUpsertMessage
+  ): IAutomationTriggerGuard {
+    const messageTimestampMs = this.getUpsertMessageTimestampMs(data);
+    if (!messageTimestampMs) {
+      return {
+        canAutomate: false,
+        discardEvent: false,
+        reason: 'missing_message_timestamp',
+        messageTimestampMs,
+        ageMs: null,
+      };
+    }
+
+    const now = Date.now();
+    const ageMs = now - messageTimestampMs;
+
+    if (messageTimestampMs - now > CHATBOT_TRIGGER_FUTURE_TOLERANCE_MS) {
+      return {
+        canAutomate: false,
+        discardEvent: false,
+        reason: 'future_message_timestamp',
+        messageTimestampMs,
+        ageMs,
+      };
+    }
+
+    if (ageMs > CHATBOT_TRIGGER_MAX_EVENT_AGE_MS) {
+      return {
+        canAutomate: false,
+        discardEvent: false,
+        reason: 'stale_message_timestamp',
+        messageTimestampMs,
+        ageMs,
+      };
+    }
+
+    return {
+      canAutomate: true,
+      discardEvent: false,
+      messageTimestampMs,
+      ageMs,
+    };
+  }
+
+  private getReactionTargetMessageId(data: IUpsertMessage): string | null {
+    if (data.type !== EMessageType.react) {
+      return null;
+    }
+
+    const reactionMessage = extractReactionMessage(
+      data.message?.message as Parameters<typeof extractReactionMessage>[0]
+    );
+
+    return this.toNonEmptyString(reactionMessage?.key?.id) ?? null;
+  }
+
+  private async hasReactionTargetInChat(
+    getChat: IChat,
+    data: IUpsertMessage,
+    targetMessageId: string
+  ): Promise<boolean> {
+    let targetMessage = await this.findMessageByKeyId(
+      data.account_id,
+      getChat.chat_id,
+      targetMessageId,
+      data.message?.key
+    );
+
+    if (!targetMessage) {
+      const reactionMessage = extractReactionMessage(
+        data.message?.message as Parameters<typeof extractReactionMessage>[0]
+      );
+      targetMessage = await this.findAlbumHeadMessageByAlbumId(
+        data.account_id,
+        getChat.chat_id,
+        targetMessageId,
+        reactionMessage?.key as IMessageKeyIdContext,
+        data.message?.key
+      );
+    }
+
+    return Boolean(targetMessage);
+  }
+
+  private async resolveAutomationTriggerGuard(
+    data: IUpsertMessage,
+    getChat: IChat | null
+  ): Promise<IAutomationTriggerGuard> {
+    if (!this.shouldEvaluateProviderAutomation(data)) {
+      return { canAutomate: true, discardEvent: false };
+    }
+
+    const freshnessGuard = this.validateAutomationEventFreshness(data);
+    if (!freshnessGuard.canAutomate) {
+      return data.type === EMessageType.react && !getChat
+        ? { ...freshnessGuard, discardEvent: true }
+        : freshnessGuard;
+    }
+
+    if (data.type !== EMessageType.react) {
+      return freshnessGuard;
+    }
+
+    if (!getChat) {
+      return {
+        ...freshnessGuard,
+        canAutomate: false,
+        discardEvent: true,
+        reason: 'reaction_without_existing_chat',
+      };
+    }
+
+    const targetMessageId = this.getReactionTargetMessageId(data);
+    if (!targetMessageId) {
+      return {
+        ...freshnessGuard,
+        canAutomate: false,
+        discardEvent: false,
+        reason: 'reaction_missing_target_message_id',
+      };
+    }
+
+    const hasTarget = await this.hasReactionTargetInChat(
+      getChat,
+      data,
+      targetMessageId
+    );
+    if (!hasTarget) {
+      return {
+        ...freshnessGuard,
+        canAutomate: false,
+        discardEvent: false,
+        reason: 'reaction_target_not_found',
+      };
+    }
+
+    return freshnessGuard;
+  }
+
+  private logAutomationTriggerGuard(
+    data: IUpsertMessage,
+    guard: IAutomationTriggerGuard,
+    phone: string,
+    chatId?: string
+  ): void {
+    if (guard.canAutomate) {
+      return;
+    }
+
+    this.logLifecycle(data, {
+      stage: 'message_upsert.automation.skip',
+      decision: 'automation_trigger_guard',
+      outcome: guard.discardEvent ? 'discarded' : 'queue',
+      reason: guard.reason,
+      phone,
+      chat_id: chatId,
+      message_timestamp_ms: guard.messageTimestampMs,
+      age_ms: guard.ageMs,
+      max_age_ms: CHATBOT_TRIGGER_MAX_EVENT_AGE_MS,
+    });
+  }
+
   private resolveOutsideHoursContext(
     data: IUpsertMessage,
     workerConfigFields: Awaited<
@@ -5460,10 +5700,33 @@ export class MessageUpsertConsume {
           data = editCreateFallback;
         }
 
-        const outsideHoursContext = this.resolveOutsideHoursContext(
+        const automationTriggerGuard = await this.resolveAutomationTriggerGuard(
           data,
-          workerConfigFields
+          getChat
         );
+        this.logAutomationTriggerGuard(
+          data,
+          automationTriggerGuard,
+          phone,
+          getChat?.chat_id
+        );
+
+        if (automationTriggerGuard.discardEvent) {
+          logger.info({
+            type: 'message_upsert_automation_guard_discarded',
+            account_id: data.account_id,
+            worker_id: data.worker_id,
+            message_key_id: data.message?.key?.id,
+            reason: automationTriggerGuard.reason,
+            message_timestamp_ms: automationTriggerGuard.messageTimestampMs,
+            age_ms: automationTriggerGuard.ageMs,
+          });
+          return;
+        }
+
+        const outsideHoursContext = automationTriggerGuard.canAutomate
+          ? this.resolveOutsideHoursContext(data, workerConfigFields)
+          : null;
         const isFirstOutsideHoursInteraction = !getChat;
 
         const defaultInputChatbotId =
@@ -5586,6 +5849,7 @@ export class MessageUpsertConsume {
         }
 
         if (
+          automationTriggerGuard.canAutomate &&
           outputChatbotId &&
           getChat &&
           getChat.status === EChatStatus.ura_output &&
@@ -5628,6 +5892,7 @@ export class MessageUpsertConsume {
         );
 
         if (
+          automationTriggerGuard.canAutomate &&
           effectiveInputChatbotId &&
           (!getChat ||
             getChat.status === EChatStatus.ura ||
