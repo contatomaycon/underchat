@@ -10,9 +10,9 @@ import (
 )
 
 type Config struct {
-	WorkerID  string
-	AccountID string
-	DataDir   string
+	WorkerID    string
+	AccountID   string
+	DataDir     string
 	WarmStandby bool
 	WarmPoolID  string
 
@@ -58,10 +58,11 @@ type Config struct {
 	ProxyUsername string
 	ProxyPassword string
 
-	SendTimeout            time.Duration
-	WhatsAppConnectTimeout time.Duration
-	KafkaPollInterval      time.Duration
-	OutboundReadyTimeout   time.Duration
+	SendTimeout                time.Duration
+	WhatsAppConnectTimeout     time.Duration
+	ConnectionQRFirstQRTimeout time.Duration
+	KafkaPollInterval          time.Duration
+	OutboundReadyTimeout       time.Duration
 
 	KafkaSendConsumerIdleRecreateInterval time.Duration
 	KafkaHandlerErrorBackoff              time.Duration
@@ -131,6 +132,7 @@ func LoadConfig() (Config, error) {
 			"WORKER_WHATSAPP_CONNECT_TIMEOUT",
 			45*time.Second,
 		),
+		ConnectionQRFirstQRTimeout:             envMillisDurationDefault("CONNECTION_QR_FIRST_QR_TIMEOUT_MS", 75*time.Second),
 		KafkaPollInterval:                      250 * time.Millisecond,
 		OutboundReadyTimeout:                   envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
 		KafkaSendConsumerIdleRecreateInterval:  envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 2*time.Minute),

@@ -46,6 +46,10 @@ message ChangeConnectionStatusRequest {
   string proxy_error_code = 10;
   string proxy_fallback = 11;
   bool proxy_bypassed = 12;
+  string connection_lifecycle_id = 13;
+  int32 qr_request_deadline_ms = 14;
+  int32 runtime_generation = 15;
+  string warm_pool_id = 16;
 }
 
 message NotifyWorkerStatusRequest {
@@ -79,6 +83,13 @@ message WorkerConnectionState {
   string proxy_fallback = 19;
   bool proxy_bypassed = 20;
   string qr_generated_at = 21;
+  string connection_lifecycle_id = 22;
+  string reason = 23;
+  string error = 24;
+  int32 time_to_first_qr_ms = 25;
+  string container_id = 26;
+  int32 runtime_generation = 27;
+  string warm_pool_id = 28;
 }
 
 message ResolveIncomingCallActionRequest {
@@ -163,6 +174,7 @@ message ActivateWarmWorkerRequest {
   string account_id = 3;
   string server_id = 4;
   string worker_type_id = 5;
+  string lifecycle_operation_id = 6;
 }
 
 message WarmWorkerCommandResponse {

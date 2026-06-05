@@ -14,6 +14,7 @@ import {
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
 import { recordConnectionQrSummary } from '@core/plugins/telemetry/connectionQrSummary';
+import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
 import { getErrorMessage } from '@core/common/functions/toError';
 import { status as GrpcStatus } from '@grpc/grpc-js';
 
@@ -112,6 +113,17 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         server_id: serverId,
         connection_attempt_id: connectionAttemptId,
       });
+      recordConnectionAttemptTelemetry({
+        event: 'manager_qrcode_request_start',
+        stage: 'connection.manager.grpc.request_start',
+        metric_event: 'qr_request',
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: serverId,
+        worker_type: view?.type?.id,
+        connection_attempt_id: connectionAttemptId,
+        outcome: 'started',
+      });
       let returnedPendingBySoftTimeout = false;
       const grpcRequest = this.workerGrpcClientService.requestConnectionQrCode(
         serverId,
@@ -124,22 +136,68 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         accountId
       );
 
-      void grpcRequest.catch((err) => {
-        if (!returnedPendingBySoftTimeout) {
-          return;
-        }
+      void grpcRequest.then(
+        (state) => {
+          if (!returnedPendingBySoftTimeout) {
+            return;
+          }
 
-        recordConnectionLifecycle({
-          stage: 'connection.manager.grpc.background_request_error',
-          decision: 'request_connection_qrcode',
-          outcome: 'error',
-          reason: 'grpc_error_after_http_fallback',
-          level: this.isRetryableQrGrpcError(err) ? 'warn' : 'error',
-          server_id: serverId,
-          connection_attempt_id: connectionAttemptId,
-          error: getErrorMessage(err),
-        });
-      });
+          const hasQr = Boolean(state.qrcode);
+          const reason = hasQr
+            ? 'qr_generated_after_http_fallback'
+            : (state.reason ?? 'no_qr_after_http_fallback');
+          recordConnectionLifecycle({
+            stage: 'connection.manager.grpc.background_request_completed',
+            decision: 'request_connection_qrcode',
+            outcome: hasQr ? 'success' : 'pending',
+            reason,
+            level: hasQr ? 'info' : 'warn',
+            server_id: serverId,
+            connection_attempt_id: state.connection_attempt_id,
+            status: state.status,
+            code: state.code,
+            qrcode: state.qrcode,
+            pairing_code: state.pairing_code,
+            has_qr: hasQr,
+            has_pairing_code: Boolean(state.pairing_code),
+          });
+          recordConnectionQrSummary({
+            event: hasQr
+              ? 'manager_balancer_qrcode_background_success'
+              : 'manager_balancer_qrcode_background_pending',
+            ...state,
+            server_id: serverId,
+            reason,
+            qr_pending: state.qr_pending,
+            level: hasQr ? 'info' : 'warn',
+          });
+        },
+        (err) => {
+          if (!returnedPendingBySoftTimeout) {
+            return;
+          }
+
+          recordConnectionLifecycle({
+            stage: 'connection.manager.grpc.background_request_error',
+            decision: 'request_connection_qrcode',
+            outcome: 'error',
+            reason: 'grpc_error_after_http_fallback',
+            level: this.isRetryableQrGrpcError(err) ? 'warn' : 'error',
+            server_id: serverId,
+            connection_attempt_id: connectionAttemptId,
+            error: getErrorMessage(err),
+          });
+          recordConnectionQrSummary({
+            event: 'manager_balancer_qrcode_background_error',
+            ...pendingResponse,
+            server_id: serverId,
+            reason: 'grpc_error_after_http_fallback',
+            error: getErrorMessage(err),
+            qr_pending: true,
+            level: this.isRetryableQrGrpcError(err) ? 'warn' : 'error',
+          });
+        }
+      );
 
       const response = await this.withQrSoftTimeout(
         grpcRequest,
@@ -226,6 +284,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       account_id: accountId,
       connection_attempt_id: connectionAttemptId,
       qr_pending: true,
+      reason: 'qr_pending',
     };
   }
 
@@ -259,7 +318,10 @@ export class WorkerConnectionQrCodeRequesterUseCase {
             qr_pending: true,
             level: 'warn',
           });
-          resolve(pendingResponse);
+          resolve({
+            ...pendingResponse,
+            reason: 'qr_http_soft_timeout',
+          });
         }, this.qrHttpSoftTimeoutMs);
       }
     );

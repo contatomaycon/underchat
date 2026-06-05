@@ -64,6 +64,11 @@ import {
   recordConnectionQrSummary,
   summarizeConnectionQrState,
 } from '@core/plugins/telemetry/connectionQrSummary';
+import {
+  getConnectionQrFirstQrTimeoutMs,
+  getConnectionQrRecreateCooldownMs,
+  recordConnectionAttemptTelemetry,
+} from '@core/plugins/telemetry/connectionAttemptTelemetry';
 import { WorkerLifecycleLockService } from '@core/services/workerLifecycleLock.service';
 import {
   ProxyConnectivityResult,
@@ -72,6 +77,7 @@ import {
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
+import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
 import {
   IActivateWarmWorkerRequestProto,
   ICreateWarmWorkerRequestProto,
@@ -89,6 +95,8 @@ interface ResolvedWorkerDataForContainer {
   workerStatusId?: EWorkerStatus;
   containerId?: string | null;
   lifecycleOperationId?: string | null;
+  runtimeGeneration?: number;
+  warmPoolId?: string | null;
 }
 
 interface ResolvedWorkerProxyConfig {
@@ -170,6 +178,10 @@ export class WorkerCommandHandlerService {
   private qrConnectionRequestPayloads = new Map<
     string,
     QrConnectionAttemptRetryContext
+  >();
+  private qrContainerRecreateCooldowns = new Map<
+    string,
+    { reason: string; untilMs: number }
   >();
   private readonly defaultCallAction: IResolveIncomingCallActionResponseProto =
     {
@@ -483,6 +495,49 @@ export class WorkerCommandHandlerService {
     const sessionVolumeName =
       warm.session_volume_name || `warm-${data.warm_pool_id}`;
     const startedAt = Date.now();
+    const sourceInspection =
+      await this.workerService.inspectContainerWorkerById(sourceContainerName);
+    const rejectionReason = this.validateWarmActivation(
+      data,
+      warm,
+      sourceInspection,
+      workerType
+    );
+    if (rejectionReason) {
+      await this.rejectWarmActivation(
+        data,
+        warm,
+        sourceInspection,
+        rejectionReason,
+        startedAt
+      );
+      throw new Error(`Warm pool activation rejected: ${rejectionReason}`);
+    }
+    if (
+      data.lifecycle_operation_id &&
+      !(await this.isLifecycleOperationCurrent(
+        {
+          action: EWorkerAction.create,
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          server_id: data.server_id,
+          worker_type_id: workerType,
+          lifecycle_operation_id: data.lifecycle_operation_id,
+        },
+        'activate_warm_worker'
+      ))
+    ) {
+      await this.rejectWarmActivation(
+        data,
+        warm,
+        sourceInspection,
+        'stale_lifecycle_operation',
+        startedAt
+      );
+      throw new Error(
+        'Warm pool activation rejected: stale_lifecycle_operation'
+      );
+    }
 
     await this.kafkaBaileysQueueService.ensure(data.worker_id);
 
@@ -523,9 +578,11 @@ export class WorkerCommandHandlerService {
       throw new Error(activation.error || 'Warm runtime activation failed');
     }
 
-    await this.workerRuntimeRepository?.upsert({
+    const activatedInspection =
+      await this.workerService.inspectContainerWorkerById(data.worker_id);
+    const runtime = await this.workerRuntimeRepository?.upsert({
       worker_id: data.worker_id,
-      container_id: warm.container_id,
+      container_id: activatedInspection.container_id ?? warm.container_id,
       container_name: data.worker_id,
       session_volume_name: sessionVolumeName,
       warm_pool_id: data.warm_pool_id,
@@ -537,9 +594,25 @@ export class WorkerCommandHandlerService {
     );
     await this.workerService.updateWorkerById(data.account_id, {
       worker_id: data.worker_id,
-      container_id: warm.container_id,
+      container_id: activatedInspection.container_id ?? warm.container_id,
       worker_status_id: EWorkerStatus.disponible,
     });
+    if (runtime?.runtime_generation !== undefined) {
+      recordConnectionAttemptTelemetry({
+        event: 'worker_runtime_generation_updated',
+        stage: 'connection.balancer.runtime.generation_updated',
+        metric_event: 'runtime_generation',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        server_id: data.server_id,
+        worker_type: workerType,
+        warm_pool_id: data.warm_pool_id,
+        container_id:
+          activatedInspection.container_id ?? warm.container_id ?? undefined,
+        runtime_generation: runtime.runtime_generation,
+        outcome: 'updated',
+      });
+    }
 
     recordConnectionLifecycle({
       stage: 'connection.balancer.warm_pool.activate_success',
@@ -551,20 +624,168 @@ export class WorkerCommandHandlerService {
       server_id: data.server_id,
       worker_type: workerType,
       worker_type_id: workerType,
-      container_id: warm.container_id,
+      container_id: activatedInspection.container_id ?? warm.container_id,
       container_name: data.worker_id,
       session_volume_name: sessionVolumeName,
+      runtime_generation: runtime?.runtime_generation,
       duration_ms: Date.now() - startedAt,
     });
 
     return {
       warm_pool_id: data.warm_pool_id,
       worker_id: data.worker_id,
-      container_id: warm.container_id ?? '',
+      container_id: activatedInspection.container_id ?? warm.container_id ?? '',
       container_name: data.worker_id,
       session_volume_name: sessionVolumeName,
       claimed: true,
     };
+  }
+
+  private validateWarmActivation(
+    data: IActivateWarmWorkerRequestProto,
+    warm: IWorkerWarmPool,
+    sourceInspection: WorkerContainerInspection,
+    workerType: EWorkerType
+  ): string | undefined {
+    if (warm.server_id !== data.server_id) {
+      return 'server_mismatch';
+    }
+    if (warm.worker_type_id !== data.worker_type_id) {
+      return 'worker_type_mismatch';
+    }
+    if (warm.state !== EWorkerWarmPoolState.reserved) {
+      return 'warm_pool_state_not_reserved';
+    }
+    if (warm.reserved_by_worker_id !== data.worker_id) {
+      return 'reserved_worker_mismatch';
+    }
+    if (warm.reservation_expires_at) {
+      const expiresAtMs = Date.parse(warm.reservation_expires_at);
+      if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
+        return 'reservation_expired';
+      }
+    }
+    if (!sourceInspection.exists) {
+      return 'source_container_missing';
+    }
+    if (sourceInspection.running !== true) {
+      return 'source_container_not_running';
+    }
+
+    const labels = sourceInspection.container_labels ?? {};
+    const env = sourceInspection.container_env ?? {};
+    const expectedImage = getImageWorker(workerType);
+    const expectedGrpcPort = this.getExpectedWorkerGrpcPort(workerType);
+    const expectedGrpcPortValue =
+      expectedGrpcPort === undefined ? undefined : String(expectedGrpcPort);
+
+    if (
+      sourceInspection.container_image &&
+      sourceInspection.container_image !== expectedImage
+    ) {
+      return 'container_image_mismatch';
+    }
+    if (
+      labels['underchat.worker_image'] &&
+      labels['underchat.worker_image'] !== expectedImage
+    ) {
+      return 'container_label_image_mismatch';
+    }
+    if (env.WORKER_IMAGE && env.WORKER_IMAGE !== expectedImage) {
+      return 'container_env_image_mismatch';
+    }
+    if (
+      labels['underchat.warm_pool_id'] &&
+      labels['underchat.warm_pool_id'] !== data.warm_pool_id
+    ) {
+      return 'container_label_warm_pool_mismatch';
+    }
+    if (
+      labels['underchat.server_id'] &&
+      labels['underchat.server_id'] !== data.server_id
+    ) {
+      return 'container_label_server_mismatch';
+    }
+    if (
+      labels['underchat.worker_type_id'] &&
+      labels['underchat.worker_type_id'] !== data.worker_type_id
+    ) {
+      return 'container_label_worker_type_mismatch';
+    }
+    if (env.WORKER_TYPE_ID && env.WORKER_TYPE_ID !== data.worker_type_id) {
+      return 'container_env_worker_type_mismatch';
+    }
+    if (env.WARM_POOL_ID && env.WARM_POOL_ID !== data.warm_pool_id) {
+      return 'container_env_warm_pool_mismatch';
+    }
+    if (env.WARM_STANDBY && env.WARM_STANDBY !== 'true') {
+      return 'container_env_not_warm_standby';
+    }
+    if (
+      expectedGrpcPortValue &&
+      labels['underchat.worker_grpc_port'] &&
+      labels['underchat.worker_grpc_port'] !== expectedGrpcPortValue
+    ) {
+      return 'container_label_grpc_port_mismatch';
+    }
+    if (
+      expectedGrpcPortValue &&
+      env.WORKER_GRPC_PORT &&
+      env.WORKER_GRPC_PORT !== expectedGrpcPortValue
+    ) {
+      return 'container_env_grpc_port_mismatch';
+    }
+
+    return undefined;
+  }
+
+  private async rejectWarmActivation(
+    data: IActivateWarmWorkerRequestProto,
+    warm: IWorkerWarmPool,
+    sourceInspection: WorkerContainerInspection,
+    reason: string,
+    startedAt: number
+  ): Promise<void> {
+    await this.workerWarmPoolRepository.markRuntime({
+      warm_pool_id: warm.warm_pool_id,
+      state: EWorkerWarmPoolState.error,
+      last_error: reason,
+    });
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.warm_pool.activate_rejected',
+      decision: 'activate_warm_worker',
+      outcome: 'rejected',
+      reason,
+      level: 'warn',
+      warm_pool_id: warm.warm_pool_id,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      server_id: data.server_id,
+      worker_type: data.worker_type_id,
+      worker_type_id: data.worker_type_id,
+      reserved_by_worker_id: warm.reserved_by_worker_id,
+      warm_state: warm.state,
+      reservation_expires_at: warm.reservation_expires_at,
+      duration_ms: Date.now() - startedAt,
+      ...this.lifecycleFieldsFromInspection(sourceInspection),
+    });
+    recordConnectionAttemptTelemetry({
+      event: 'warm_activation_rejected',
+      stage: 'connection.balancer.warm_pool.activate_rejected',
+      metric_event: 'warm_activation_rejection',
+      level: 'warn',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      server_id: data.server_id,
+      worker_type: data.worker_type_id,
+      warm_pool_id: warm.warm_pool_id,
+      container_id: sourceInspection.container_id,
+      container_name: sourceInspection.container_name,
+      outcome: 'rejected',
+      reason,
+      duration_ms: Date.now() - startedAt,
+    });
   }
 
   private async runWithWorkerLifecycleLock<T>(
@@ -1538,6 +1759,10 @@ export class WorkerCommandHandlerService {
     options: {
       attempt?: number;
       maxAttempts?: number;
+      reason?: string;
+      runtimeGeneration?: number;
+      warmPoolId?: string | null;
+      containerId?: string | null;
     } = {}
   ): IBaileysConnectionState {
     return {
@@ -1547,6 +1772,10 @@ export class WorkerCommandHandlerService {
       account_id: accountId,
       connection_attempt_id: this.ensureQrConnectionAttemptId(payload),
       qr_pending: true,
+      reason: options.reason,
+      runtime_generation: options.runtimeGeneration,
+      warm_pool_id: options.warmPoolId ?? undefined,
+      container_id: options.containerId ?? undefined,
       ...(options.attempt !== undefined ? { attempt: options.attempt } : {}),
       ...(options.maxAttempts !== undefined
         ? { max_attempts: options.maxAttempts }
@@ -1578,6 +1807,7 @@ export class WorkerCommandHandlerService {
       normalized.code !== ECodeMessage.connectionEstablished
     ) {
       normalized.qr_pending = true;
+      normalized.reason ??= 'worker_response_without_qr';
       normalized.code = ECodeMessage.awaitingReadQrCode;
       normalized.status = EBaileysConnectionStatus.connecting;
     }
@@ -1702,6 +1932,9 @@ export class WorkerCommandHandlerService {
         ...summarizeConnectionQrState(normalizedState),
         worker_type: options.workerType,
         reason: stale.reason,
+        container_id: normalizedState.container_id,
+        runtime_generation: normalizedState.runtime_generation,
+        warm_pool_id: normalizedState.warm_pool_id,
         publish_source: options.publishSource ?? options.event,
         ignored_stale: true,
         qr_age_ms: this.qrAgeMs(normalizedState),
@@ -1721,6 +1954,9 @@ export class WorkerCommandHandlerService {
         worker_type: options.workerType,
         reason: 'redis_cache_failed',
         error: getErrorMessage(err),
+        container_id: normalizedState.container_id,
+        runtime_generation: normalizedState.runtime_generation,
+        warm_pool_id: normalizedState.warm_pool_id,
         qr_age_ms: this.qrAgeMs(normalizedState),
         qr_cache_ttl_seconds: ttlSeconds,
         qr_expired: this.isQrExpired(normalizedState),
@@ -1732,10 +1968,13 @@ export class WorkerCommandHandlerService {
       event: options.event,
       ...summarizeConnectionQrState(normalizedState),
       worker_type: options.workerType,
-      reason: options.reason,
+      reason: normalizedState.reason ?? options.reason,
       error: options.error,
       recreate_reason: options.recreateReason,
       time_to_first_qr_ms: options.timeToFirstQrMs,
+      container_id: normalizedState.container_id,
+      runtime_generation: normalizedState.runtime_generation,
+      warm_pool_id: normalizedState.warm_pool_id,
       qr_age_ms: this.qrAgeMs(normalizedState),
       qr_cache_ttl_seconds: ttlSeconds,
       qr_expired: this.isQrExpired(normalizedState),
@@ -1880,6 +2119,10 @@ export class WorkerCommandHandlerService {
         {
           attempt: this.qrRetryMaxAttempts,
           maxAttempts: this.qrRetryMaxAttempts,
+          reason: 'retry_exhausted',
+          runtimeGeneration: context.workerData.runtimeGeneration,
+          warmPoolId: context.workerData.warmPoolId,
+          containerId: context.workerData.containerId,
         }
       );
       await this.cacheAndPublishQrAttemptState(pending, {
@@ -1946,6 +2189,12 @@ export class WorkerCommandHandlerService {
               context.accountId
             )
           );
+          normalized.runtime_generation ??=
+            context.workerData.runtimeGeneration;
+          normalized.warm_pool_id ??=
+            context.workerData.warmPoolId ?? undefined;
+          normalized.container_id ??=
+            context.workerData.containerId ?? undefined;
           this.applyProxyDecisionToState(normalized, proxyDecision);
           normalized.attempt ??= attempt;
           normalized.max_attempts ??= this.qrRetryMaxAttempts;
@@ -1959,7 +2208,7 @@ export class WorkerCommandHandlerService {
               workerType: context.workerData.workerTypeId,
               reason: normalized.qrcode
                 ? undefined
-                : 'worker_response_without_qr',
+                : (normalized.reason ?? 'worker_response_without_qr'),
               timeToFirstQrMs: normalized.qrcode
                 ? Date.now() - context.startedAtMs
                 : undefined,
@@ -1981,6 +2230,12 @@ export class WorkerCommandHandlerService {
         {
           attempt,
           maxAttempts: this.qrRetryMaxAttempts,
+          reason: retryable
+            ? 'retryable_worker_error'
+            : 'non_retryable_worker_error',
+          runtimeGeneration: context.workerData.runtimeGeneration,
+          warmPoolId: context.workerData.warmPoolId,
+          containerId: context.workerData.containerId,
         }
       );
       if (proxyDecision) {
@@ -2125,7 +2380,13 @@ export class WorkerCommandHandlerService {
 
       const pending = this.buildQrPendingState(
         payload,
-        workerData.accountIdResolved
+        workerData.accountIdResolved,
+        {
+          reason: 'retryable_worker_error',
+          runtimeGeneration: workerData.runtimeGeneration,
+          warmPoolId: workerData.warmPoolId,
+          containerId: workerData.containerId,
+        }
       );
       this.applyProxyDecisionToState(pending, proxyDecision);
       await this.cacheAndPublishQrAttemptState(pending, {
@@ -2151,6 +2412,9 @@ export class WorkerCommandHandlerService {
         workerData.accountIdResolved
       )
     );
+    normalized.runtime_generation ??= workerData.runtimeGeneration;
+    normalized.warm_pool_id ??= workerData.warmPoolId ?? undefined;
+    normalized.container_id ??= workerData.containerId ?? undefined;
     this.applyProxyDecisionToState(normalized, proxyDecision);
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_new_worker_success',
@@ -2172,7 +2436,9 @@ export class WorkerCommandHandlerService {
         ? 'balancer_qrcode_initial_success'
         : 'balancer_qrcode_initial_pending',
       workerType: workerData.workerTypeId,
-      reason: normalized.qrcode ? undefined : 'worker_response_without_qr',
+      reason: normalized.qrcode
+        ? undefined
+        : (normalized.reason ?? 'worker_response_without_qr'),
       timeToFirstQrMs: normalized.qrcode ? 0 : undefined,
       publishSource: 'qr_initial',
       level: normalized.qrcode ? 'info' : 'warn',
@@ -2334,6 +2600,17 @@ export class WorkerCommandHandlerService {
     }
 
     if (
+      this.shouldSuppressQrContainerRecreate(
+        workerId,
+        workerData,
+        recreateReason,
+        inspection
+      )
+    ) {
+      return proxyDecision;
+    }
+
+    if (
       inspection.exists &&
       this.shouldResetQrVolumeForRecreateReason(recreateReason, workerData)
     ) {
@@ -2369,6 +2646,24 @@ export class WorkerCommandHandlerService {
       worker_type: workerData.workerTypeId,
       worker_status_id: workerData.workerStatusId,
       ...this.lifecycleFieldsFromInspection(inspection),
+    });
+    this.markQrContainerRecreateCooldown(workerId, recreateReason);
+    recordConnectionAttemptTelemetry({
+      event: 'balancer_qrcode_container_recreate',
+      stage: 'connection.balancer.command_handler.qrcode_container_recreate',
+      metric_event: 'container_recreate',
+      level: 'warn',
+      worker_id: workerId,
+      account_id: workerData.accountIdResolved,
+      server_id: workerData.serverId,
+      worker_type: workerData.workerTypeId,
+      runtime_generation: workerData.runtimeGeneration,
+      warm_pool_id: workerData.warmPoolId ?? undefined,
+      container_id: inspection.container_id,
+      container_name: inspection.container_name,
+      outcome: 'started',
+      reason: recreateReason,
+      recreate_reason: recreateReason,
     });
 
     await this.createWorkerWithPayload(workerId, workerData, undefined, {
@@ -2596,6 +2891,8 @@ export class WorkerCommandHandlerService {
         inspection.container_labels?.['underchat.worker_type_id'],
       container_label_worker_image:
         inspection.container_labels?.['underchat.worker_image'],
+      container_label_server_id:
+        inspection.container_labels?.['underchat.server_id'],
       container_label_worker_grpc_port:
         inspection.container_labels?.['underchat.worker_grpc_port'],
       container_env_worker_id: inspection.container_env?.WORKER_ID,
@@ -2702,6 +2999,124 @@ export class WorkerCommandHandlerService {
     }
 
     return undefined;
+  }
+
+  private isHardQrContainerRecreateReason(reason: string): boolean {
+    return [
+      'container_missing',
+      'container_not_running',
+      'image_mismatch',
+      'worker_id_mismatch',
+      'account_id_mismatch',
+      'worker_type_mismatch',
+      'worker_grpc_port_mismatch',
+      'proxy_unhealthy_direct_fallback',
+    ].includes(reason);
+  }
+
+  private activeQrAttemptAgeMs(workerId: string): number | undefined {
+    const active = this.qrConnectionRequestPayloads.get(workerId);
+    if (!active) {
+      return undefined;
+    }
+
+    return Math.max(0, Date.now() - active.startedAtMs);
+  }
+
+  private markQrContainerRecreateCooldown(
+    workerId: string,
+    reason: string
+  ): void {
+    this.qrContainerRecreateCooldowns.set(workerId, {
+      reason,
+      untilMs: Date.now() + getConnectionQrRecreateCooldownMs(),
+    });
+  }
+
+  private shouldSuppressQrContainerRecreate(
+    workerId: string,
+    workerData: ResolvedWorkerDataForContainer,
+    recreateReason: string,
+    inspection: WorkerContainerInspection
+  ): boolean {
+    if (this.isHardQrContainerRecreateReason(recreateReason)) {
+      return false;
+    }
+
+    if (!inspection.exists || inspection.running !== true) {
+      return false;
+    }
+
+    const now = Date.now();
+    const activeAgeMs = this.activeQrAttemptAgeMs(workerId);
+    const firstQrTimeoutMs = getConnectionQrFirstQrTimeoutMs();
+    const cooldown = this.qrContainerRecreateCooldowns.get(workerId);
+    const cooldownActive = Boolean(cooldown && cooldown.untilMs > now);
+    const firstQrWindowActive =
+      activeAgeMs !== undefined && activeAgeMs <= firstQrTimeoutMs;
+
+    if (!cooldownActive && !firstQrWindowActive) {
+      return false;
+    }
+
+    const reason = cooldownActive
+      ? 'recreate_cooldown_active'
+      : 'first_qr_window_active';
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.qrcode_container_recreate_suppressed',
+      decision: 'suppress_qr_container_recreate',
+      outcome: 'suppressed',
+      reason,
+      recreate_reason: recreateReason,
+      level: 'warn',
+      worker_type: workerData.workerTypeId,
+      server_id: workerData.serverId,
+      account_id: workerData.accountIdResolved,
+      runtime_generation: workerData.runtimeGeneration,
+      warm_pool_id: workerData.warmPoolId,
+      qr_pending_age_ms: activeAgeMs,
+      deadline_ms: firstQrTimeoutMs,
+      recreate_cooldown_ms: getConnectionQrRecreateCooldownMs(),
+      recreate_cooldown_reason: cooldown?.reason,
+      ...this.lifecycleFieldsFromInspection(inspection),
+    });
+    recordConnectionAttemptTelemetry({
+      event: 'balancer_qrcode_container_recreate_suppressed',
+      stage:
+        'connection.balancer.command_handler.qrcode_container_recreate_suppressed',
+      metric_event: 'qr_outcome',
+      level: 'warn',
+      worker_id: workerId,
+      account_id: workerData.accountIdResolved,
+      server_id: workerData.serverId,
+      worker_type: workerData.workerTypeId,
+      runtime_generation: workerData.runtimeGeneration,
+      warm_pool_id: workerData.warmPoolId ?? undefined,
+      container_id: inspection.container_id,
+      container_name: inspection.container_name,
+      outcome: 'pending',
+      reason,
+      recreate_reason: recreateReason,
+      qr_pending_age_ms: activeAgeMs,
+      deadline_ms: firstQrTimeoutMs,
+    });
+    recordConnectionQrSummary({
+      event: 'balancer_qrcode_container_recreate_suppressed',
+      worker_id: workerId,
+      account_id: workerData.accountIdResolved,
+      worker_type: workerData.workerTypeId,
+      server_id: workerData.serverId,
+      container_id: inspection.container_id,
+      runtime_generation: workerData.runtimeGeneration,
+      warm_pool_id: workerData.warmPoolId ?? undefined,
+      recreate_reason: recreateReason,
+      reason,
+      qr_pending: true,
+      level: 'warn',
+    });
+
+    return true;
   }
 
   private isWorkerGrpcReadinessRequired(workerType: EWorkerType): boolean {
@@ -2852,6 +3267,17 @@ export class WorkerCommandHandlerService {
         health_error: result.health_error,
         health_failure_reason: result.health_failure_reason,
       });
+      recordConnectionAttemptTelemetry({
+        event: 'balancer_container_health_result',
+        stage: 'connection.balancer.command_handler.container_health_result',
+        metric_event: 'container_health',
+        container_id: containerId,
+        outcome: result.healthy ? 'healthy' : 'unhealthy',
+        reason: result.health_failure_reason,
+        health_status_code: result.health_status_code || 'none',
+        health_failure_reason: result.health_failure_reason,
+        duration_ms: result.health_duration_ms,
+      });
       return result.healthy;
     } catch (err) {
       recordConnectionLifecycle({
@@ -2890,6 +3316,27 @@ export class WorkerCommandHandlerService {
     workerId: string,
     accountId?: string
   ): Promise<ResolvedWorkerDataForContainer | null> {
+    const attachRuntime = async (
+      data: ResolvedWorkerDataForContainer | null
+    ): Promise<ResolvedWorkerDataForContainer | null> => {
+      if (!data || !this.workerRuntimeRepository) {
+        return data;
+      }
+
+      const runtime =
+        await this.workerRuntimeRepository.viewByWorkerId(workerId);
+      if (!runtime) {
+        return data;
+      }
+
+      return {
+        ...data,
+        containerId: data.containerId ?? runtime.container_id,
+        runtimeGeneration: runtime.runtime_generation,
+        warmPoolId: runtime.warm_pool_id,
+      };
+    };
+
     if (accountId) {
       const fromView = await this.resolveWorkerDataFromView(
         accountId,
@@ -2897,15 +3344,17 @@ export class WorkerCommandHandlerService {
       );
       if (fromView) {
         const fromMonitor = await this.resolveWorkerDataFromMonitor(workerId);
-        return {
+        return attachRuntime({
           ...fromView,
           containerId: fromMonitor?.containerId,
           lifecycleOperationId: fromMonitor?.lifecycleOperationId,
-        };
+          runtimeGeneration: fromMonitor?.runtimeGeneration,
+          warmPoolId: fromMonitor?.warmPoolId,
+        });
       }
     }
 
-    return this.resolveWorkerDataFromMonitor(workerId);
+    return attachRuntime(await this.resolveWorkerDataFromMonitor(workerId));
   }
 
   private async resolveWorkerDataFromView(

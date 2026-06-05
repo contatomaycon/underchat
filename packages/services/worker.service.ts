@@ -128,6 +128,7 @@ export class WorkerService {
     'underchat.proxy_mode',
     'underchat.warm_standby',
     'underchat.warm_pool_id',
+    'underchat.server_id',
     'underchat.session_volume_name',
   ]);
 

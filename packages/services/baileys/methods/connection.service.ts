@@ -38,6 +38,10 @@ import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppCon
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { logger } from '@core/plugins/telemetry/logger';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
+import {
+  getConnectionQrFirstQrTimeoutMs,
+  recordConnectionAttemptTelemetry,
+} from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000;
@@ -151,6 +155,7 @@ export class BaileysConnectionService {
     EBaileysConnectionType.qrcode;
   private phoneConnection?: string = undefined;
   private connectionAttemptId?: string = undefined;
+  private connectionAttemptStartedAtMs = 0;
 
   private connecting = false;
   private retryCount = 0;
@@ -626,6 +631,7 @@ export class BaileysConnectionService {
       this.retryCount = 0;
     }
     this.socketId += 1;
+    this.connectionAttemptStartedAtMs = Date.now();
 
     const { socket } = await this.createSocket();
     this.baileysIncomingMessageService.bindTo(socket);
@@ -819,8 +825,88 @@ export class BaileysConnectionService {
 
   private wait(socket: WASocket, id: number): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
-      this.pendingResolve = resolve;
+      const startedAtMs = this.connectionAttemptStartedAtMs || Date.now();
+      const firstQrTimeoutMs = getConnectionQrFirstQrTimeoutMs();
+      let settled = false;
       let opened = false;
+      let firstQrTimeout: NodeJS.Timeout | undefined;
+      const settle = (state: IBaileysConnectionState): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (firstQrTimeout) {
+          clearTimeout(firstQrTimeout);
+        }
+        resolve(state);
+        this.pendingResolve = undefined;
+      };
+      this.pendingResolve = settle;
+
+      firstQrTimeout = setTimeout(() => {
+        if (
+          settled ||
+          id !== this.socketId ||
+          this.status !== Status.connecting
+        ) {
+          return;
+        }
+
+        const elapsedMs = Date.now() - startedAtMs;
+        this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
+        this.logConnectionEvent(
+          'first_qr_timeout',
+          {
+            reason: 'first_qr_timeout',
+            deadline_ms: firstQrTimeoutMs,
+            time_to_first_qr_ms: elapsedMs,
+            connection_type: this.typeConnection,
+            has_session: this.hasSession(),
+            has_active_socket: Boolean(this.socket),
+          },
+          'warn'
+        );
+        recordConnectionAttemptTelemetry({
+          event: 'worker_baileys_first_qr_timeout',
+          stage: 'connection.baileys.service.first_qr_timeout',
+          metric_event: 'qr_outcome',
+          level: 'warn',
+          worker_id: getWorker(),
+          account_id: getAccount(),
+          worker_type: 'baileys',
+          library: 'baileys',
+          connection_attempt_id: this.connectionAttemptId,
+          status: this.status,
+          code: this.code,
+          outcome: 'timeout',
+          reason: 'first_qr_timeout',
+          deadline_ms: firstQrTimeoutMs,
+          time_to_first_qr_ms: elapsedMs,
+        });
+
+        const payload = this.state(undefined, undefined, {
+          qr_pending: true,
+          reason: 'first_qr_timeout',
+          time_to_first_qr_ms: elapsedMs,
+          worker_status_id: EWorkerStatus.disponible,
+        });
+        this.publishSub(payload, true);
+        void this.notifyWorkerStatusSafely(payload, 'first_qr_timeout');
+
+        try {
+          socket.ev.removeAllListeners('connection.update');
+          const ws = this.resolveWebSocket();
+          if (ws?.readyState === 1) {
+            ws.close(1000, 'first_qr_timeout');
+          } else if (ws && (ws.readyState === 0 || ws.readyState === 2)) {
+            ws.terminate?.();
+          }
+        } catch {}
+
+        this.baileysIncomingMessageService.unbind();
+        this.socket = undefined;
+        settle(payload);
+      }, firstQrTimeoutMs);
 
       socket.ev.on('connection.update', async (u: IBaileysUpdateEvent) => {
         if (id !== this.socketId) {
@@ -835,7 +921,7 @@ export class BaileysConnectionService {
           this.typeConnection === EBaileysConnectionType.qrcode
         ) {
           this.awaitingNewLogin = false;
-          return this.onQr(qr, resolve, id);
+          return this.onQr(qr, settle, id);
         }
 
         if (isNewLogin) {
@@ -850,11 +936,11 @@ export class BaileysConnectionService {
           opened = true;
           this.retryCount = 0;
 
-          return void this.onOpen(resolve, id);
+          return void this.onOpen(settle, id);
         }
 
         if (connection === 'close') {
-          return this.onClose(lastDisconnect, resolve, id);
+          return this.onClose(lastDisconnect, settle, id);
         }
 
         this.awaitingNewLogin = false;
@@ -884,10 +970,32 @@ export class BaileysConnectionService {
     this.qrGenerationCount += 1;
     this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
     const qrGeneratedAt = new Date().toISOString();
+    const timeToFirstQrMs =
+      this.connectionAttemptStartedAtMs > 0
+        ? Date.now() - this.connectionAttemptStartedAtMs
+        : undefined;
     this.logConnectionEvent('qr_generated', {
       attempt: this.qrGenerationCount,
       max_attempts: this.maxQrGenerations,
       connection_type: this.typeConnection,
+      time_to_first_qr_ms: timeToFirstQrMs,
+    });
+    recordConnectionAttemptTelemetry({
+      event: 'worker_baileys_qr_generated',
+      stage: 'connection.baileys.service.qr_generated',
+      metric_event: 'qr_outcome',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type: 'baileys',
+      library: 'baileys',
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      outcome: 'qr_generated',
+      attempt: this.qrGenerationCount,
+      max_attempts: this.maxQrGenerations,
+      time_to_first_qr_ms: timeToFirstQrMs,
+      has_qr: true,
     });
 
     await this.printQrInConsole(qr);
@@ -907,6 +1015,7 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: this.connectionAttemptId,
       qr_generated_at: qrGeneratedAt,
+      time_to_first_qr_ms: timeToFirstQrMs,
     };
     void this.notifyWorkerStatusSafely(payload, 'qr');
 
@@ -920,7 +1029,11 @@ export class BaileysConnectionService {
       });
     }
 
-    resolve(this.state(img, qrGeneratedAt));
+    resolve(
+      this.state(img, qrGeneratedAt, {
+        time_to_first_qr_ms: timeToFirstQrMs,
+      })
+    );
 
     this.pendingResolve = undefined;
   }
@@ -1714,7 +1827,11 @@ export class BaileysConnectionService {
     }
   }
 
-  private state(qr?: string, qrGeneratedAt?: string): IBaileysConnectionState {
+  private state(
+    qr?: string,
+    qrGeneratedAt?: string,
+    extras: Partial<IBaileysConnectionState> = {}
+  ): IBaileysConnectionState {
     const result: IBaileysConnectionState = {
       status: this.status,
       worker_id: getWorker(),
@@ -1722,6 +1839,7 @@ export class BaileysConnectionService {
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
+      ...extras,
     };
     if (qr && qrGeneratedAt) {
       result.qr_generated_at = qrGeneratedAt;

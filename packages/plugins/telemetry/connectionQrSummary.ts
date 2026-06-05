@@ -3,6 +3,10 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { logger } from '@core/plugins/telemetry/logger';
+import {
+  incrementCounter,
+  recordHistogram,
+} from '@core/plugins/telemetry/observability';
 
 type QrSummaryLevel = 'info' | 'warn' | 'error';
 
@@ -24,6 +28,10 @@ export interface ConnectionQrSummaryInput {
   attempt?: number;
   max_attempts?: number;
   server_id?: string;
+  library?: string;
+  container_id?: string;
+  runtime_generation?: number;
+  warm_pool_id?: string;
   worker_status_id?: string;
   time_to_first_qr_ms?: number;
   qr_age_ms?: number;
@@ -96,6 +104,10 @@ export function recordConnectionQrSummary(
     worker_type: input.worker_type,
     grpc_address: input.grpc_address,
     server_id: input.server_id,
+    library: input.library,
+    container_id: input.container_id,
+    runtime_generation: input.runtime_generation,
+    warm_pool_id: input.warm_pool_id,
     status: input.status,
     code: input.code,
     worker_status_id: input.worker_status_id,
@@ -119,6 +131,24 @@ export function recordConnectionQrSummary(
     proxy_fallback: input.proxy_fallback,
     proxy_bypassed: input.proxy_bypassed === true,
   };
+
+  const metricLabels = {
+    worker_type: input.worker_type,
+    library: input.library,
+    server_id: input.server_id,
+    outcome: hasQr ? 'qr_generated' : input.qr_pending ? 'pending' : 'no_qr',
+    reason: input.reason ?? input.recreate_reason,
+    grpc_method: input.grpc_address ? 'RequestConnection' : undefined,
+    proxy_status: input.proxy_status,
+  };
+  incrementCounter('underchat_connection_qr_outcomes_total', 1, metricLabels);
+  if (typeof input.time_to_first_qr_ms === 'number') {
+    recordHistogram(
+      'underchat_connection_qr_time_to_first_qr_ms',
+      input.time_to_first_qr_ms,
+      metricLabels
+    );
+  }
 
   logger[level](payload, 'Connection QR summary');
 }

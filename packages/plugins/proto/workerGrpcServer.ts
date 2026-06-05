@@ -493,23 +493,69 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     >,
     callback: sendUnaryData<IWarmWorkerCommandResponseProto>
   ) => {
-    handler
-      .activateWarmWorker(call.request)
-      .then((response) => {
-        callback(null, response);
-      })
-      .catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        fastify.log.error(
-          {
-            err,
-            workerId: call.request.worker_id,
-            warmPoolId: call.request.warm_pool_id,
-          },
-          'ActivateWarmWorker gRPC handler error'
-        );
-        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+    const req = call.request;
+    const contextData = buildConnectionLifecycleContext({
+      account_id: req.account_id,
+      worker_id: req.worker_id,
+      channel_id: req.worker_id,
+      worker_type: req.worker_type_id,
+      source_provider: 'balancer',
+      connection_action: 'activate_warm_worker',
+    });
+
+    runWithGrpcConnectionContext(call.metadata, contextData, () => {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.worker_command_grpc.activate_warm_received',
+        decision: 'grpc_activate_warm_worker',
+        outcome: 'received',
+        grpc_method: 'ActivateWarmWorker',
+        server_id: req.server_id,
+        worker_type: req.worker_type_id,
+        warm_pool_id: req.warm_pool_id,
+        lifecycle_operation_id: req.lifecycle_operation_id,
       });
+
+      handler
+        .activateWarmWorker(req)
+        .then((response) => {
+          recordConnectionLifecycle({
+            stage:
+              'connection.balancer.worker_command_grpc.activate_warm_success',
+            decision: 'grpc_activate_warm_worker',
+            outcome: 'success',
+            grpc_method: 'ActivateWarmWorker',
+            server_id: req.server_id,
+            worker_type: req.worker_type_id,
+            warm_pool_id: req.warm_pool_id,
+          });
+          callback(null, response);
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          recordConnectionLifecycle({
+            stage:
+              'connection.balancer.worker_command_grpc.activate_warm_error',
+            decision: 'grpc_activate_warm_worker',
+            outcome: 'error',
+            reason: 'handler_error',
+            level: 'error',
+            grpc_method: 'ActivateWarmWorker',
+            server_id: req.server_id,
+            worker_type: req.worker_type_id,
+            warm_pool_id: req.warm_pool_id,
+            error: msg,
+          });
+          fastify.log.error(
+            {
+              err,
+              workerId: req.worker_id,
+              warmPoolId: req.warm_pool_id,
+            },
+            'ActivateWarmWorker gRPC handler error'
+          );
+          callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+        });
+    });
   };
 
   grpcServer.addService(WorkerCommandService.service, {

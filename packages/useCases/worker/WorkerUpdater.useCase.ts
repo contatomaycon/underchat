@@ -145,6 +145,7 @@ export class WorkerUpdaterUseCase {
     workerType: EWorkerType;
     oldServerId?: string;
     currentRuntime?: IWorkerRuntime | null;
+    lifecycleOperationId?: string;
   }): Promise<boolean> {
     const settings = await this.workerWarmPoolSettingsService.view();
     await this.workerWarmPoolRepository.releaseExpiredReservations();
@@ -182,6 +183,7 @@ export class WorkerUpdaterUseCase {
           account_id: input.accountId,
           server_id: input.serverId,
           worker_type_id: input.workerType,
+          lifecycle_operation_id: input.lifecycleOperationId,
         },
         60_000
       );
@@ -434,6 +436,7 @@ export class WorkerUpdaterUseCase {
           workerType: warmWorkerType,
           oldServerId: currentServerId,
           currentRuntime,
+          lifecycleOperationId,
         }));
 
       if (warmActivated) {

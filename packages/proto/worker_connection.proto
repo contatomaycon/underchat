@@ -16,6 +16,10 @@ message StatusConnectionRequest {
   string phone_connection = 4;
   bool remove_session = 5;
   string connection_attempt_id = 6;
+  string connection_lifecycle_id = 7;
+  int32 qr_request_deadline_ms = 8;
+  int32 runtime_generation = 9;
+  string warm_pool_id = 10;
 }
 
 message WorkerConnectionResponse {
@@ -40,6 +44,13 @@ message WorkerConnectionResponse {
   string proxy_fallback = 19;
   bool proxy_bypassed = 20;
   string qr_generated_at = 21;
+  string connection_lifecycle_id = 22;
+  string reason = 23;
+  string error = 24;
+  int32 time_to_first_qr_ms = 25;
+  string container_id = 26;
+  int32 runtime_generation = 27;
+  string warm_pool_id = 28;
 }
 
 message PhoneValidationRequest {
@@ -68,6 +79,8 @@ message WorkerRuntimeActivationRequest {
   string session_volume_name = 5;
   string balancer_grpc_host = 6;
   int32 balancer_grpc_port = 7;
+  string connection_lifecycle_id = 8;
+  int32 runtime_generation = 9;
 }
 
 message WorkerRuntimeActivationResponse {

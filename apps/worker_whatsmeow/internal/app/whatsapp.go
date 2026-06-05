@@ -1218,6 +1218,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 
 	resultCh := make(chan ConnectionState, 1)
 	var resultOnce sync.Once
+	qrWaitStartedAt := time.Now()
 	sendResult := func(state ConnectionState) {
 		resultOnce.Do(func() {
 			resultCh <- state
@@ -1268,28 +1269,34 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 				}
 				qrImage := qrCodeDataURL(evt.Code)
 				m.setCurrentQRCode(qrImage)
+				qrGeneratedAt := time.Now().UTC().Format(time.RFC3339Nano)
+				timeToFirstQRMS := int(time.Since(qrWaitStartedAt).Milliseconds())
 				recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-					"stage":        "connection.whatsmeow.qrcode.generated",
-					"decision":     "qr_channel_event",
-					"outcome":      "success",
-					"qrcode":       evt.Code,
-					"attempt":      attempt,
-					"max_attempts": maxQRCodeGenerations,
-					"deadline_ms":  evt.Timeout.Milliseconds(),
+					"stage":               "connection.whatsmeow.qrcode.generated",
+					"decision":            "qr_channel_event",
+					"outcome":             "success",
+					"qrcode":              evt.Code,
+					"attempt":             attempt,
+					"max_attempts":        maxQRCodeGenerations,
+					"deadline_ms":         evt.Timeout.Milliseconds(),
+					"qr_generated_at":     qrGeneratedAt,
+					"time_to_first_qr_ms": timeToFirstQRMS,
 				})
 				log.Printf("whatsmeow qr code received worker_id=%s timeout=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, evt.Timeout, attempt, maxQRCodeGenerations)
 				m.publishStateWithAttempts(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", qrImage, true, attempt, maxQRCodeGenerations)
 				sendResult(ConnectionState{
-					Code:           CodeAwaitingReadQRCode,
-					Status:         "connecting",
-					WorkerID:       m.cfg.WorkerID,
-					AccountID:      m.cfg.AccountID,
-					QRCode:         qrImage,
-					IsNewLogin:     true,
-					Time:           time.Now().Unix(),
-					WorkerStatusID: WorkerStatusDisponible,
-					Attempt:        attempt,
-					MaxAttempts:    maxQRCodeGenerations,
+					Code:            CodeAwaitingReadQRCode,
+					Status:          "connecting",
+					WorkerID:        m.cfg.WorkerID,
+					AccountID:       m.cfg.AccountID,
+					QRCode:          qrImage,
+					IsNewLogin:      true,
+					Time:            time.Now().Unix(),
+					WorkerStatusID:  WorkerStatusDisponible,
+					Attempt:         attempt,
+					MaxAttempts:     maxQRCodeGenerations,
+					QRGeneratedAt:   qrGeneratedAt,
+					TimeToFirstQRMS: timeToFirstQRMS,
 				})
 			case "success":
 				m.clearLoginArtifacts()
@@ -1383,16 +1390,34 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			"error":    ctx.Err().Error(),
 		})
 		return ConnectionState{}, ctx.Err()
-	case <-time.After(30 * time.Second):
+	case <-time.After(m.cfg.ConnectionQRFirstQRTimeout):
+		elapsedMS := int(time.Since(qrWaitStartedAt).Milliseconds())
 		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-			"stage":       "connection.whatsmeow.qrcode.result_error",
-			"decision":    "qrcode_result",
-			"outcome":     "error",
-			"reason":      "request_timeout",
-			"level":       "error",
-			"deadline_ms": int64(30000),
+			"stage":               "connection.whatsmeow.qrcode.first_qr_timeout",
+			"decision":            "qrcode_result",
+			"outcome":             "timeout",
+			"reason":              "first_qr_timeout",
+			"level":               "warn",
+			"status":              "connecting",
+			"code":                CodeAwaitingReadQRCode,
+			"deadline_ms":         m.cfg.ConnectionQRFirstQRTimeout.Milliseconds(),
+			"time_to_first_qr_ms": elapsedMS,
 		})
-		return ConnectionState{}, fmt.Errorf("qrcode request timeout")
+		state := ConnectionState{
+			Code:                CodeAwaitingReadQRCode,
+			Status:              "connecting",
+			WorkerID:            m.cfg.WorkerID,
+			AccountID:           m.cfg.AccountID,
+			IsNewLogin:          true,
+			Time:                time.Now().Unix(),
+			WorkerStatusID:      WorkerStatusDisponible,
+			QRPending:           true,
+			Reason:              "first_qr_timeout",
+			TimeToFirstQRMS:     elapsedMS,
+			ConnectionAttemptID: m.connectionAttemptID,
+		}
+		m.publishState(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", "", true)
+		return state, nil
 	}
 }
 

@@ -395,7 +395,7 @@ export class ContainerHealthService {
       return {
         statusCode,
         durationMs: Date.now() - startedAt,
-        ...(errorParts.length > 0 ? { error: errorParts.join('; ') } : {}),
+        error: errorParts.length > 0 ? errorParts.join('; ') : undefined,
       };
     } catch (error) {
       return {

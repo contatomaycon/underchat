@@ -74,6 +74,10 @@ interface IStatusConnectionRequestProto {
   phone_connection?: string;
   remove_session?: boolean;
   connection_attempt_id?: string;
+  connection_lifecycle_id?: string;
+  qr_request_deadline_ms?: number;
+  runtime_generation?: number;
+  warm_pool_id?: string;
 }
 
 interface WorkerConnectionGrpcOptions {
@@ -162,6 +166,18 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
     if (req.connection_attempt_id) {
       payload.connection_attempt_id = req.connection_attempt_id;
+    }
+    if (req.connection_lifecycle_id) {
+      payload.connection_lifecycle_id = req.connection_lifecycle_id;
+    }
+    if (req.qr_request_deadline_ms) {
+      payload.qr_request_deadline_ms = req.qr_request_deadline_ms;
+    }
+    if (req.runtime_generation) {
+      payload.runtime_generation = req.runtime_generation;
+    }
+    if (req.warm_pool_id) {
+      payload.warm_pool_id = req.warm_pool_id;
     }
     const accountId = getAccountId();
     const contextData = buildConnectionLifecycleContext({

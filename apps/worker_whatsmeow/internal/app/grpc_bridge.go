@@ -66,12 +66,16 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		return nil, err
 	}
 	req := StatusConnectionRequest{
-		WorkerID:            dynamicString(msg, "worker_id"),
-		Status:              dynamicString(msg, "status"),
-		Type:                dynamicString(msg, "type"),
-		PhoneConnection:     dynamicString(msg, "phone_connection"),
-		RemoveSession:       dynamicBool(msg, "remove_session"),
-		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
+		WorkerID:              dynamicString(msg, "worker_id"),
+		Status:                dynamicString(msg, "status"),
+		Type:                  dynamicString(msg, "type"),
+		PhoneConnection:       dynamicString(msg, "phone_connection"),
+		RemoveSession:         dynamicBool(msg, "remove_session"),
+		ConnectionAttemptID:   dynamicString(msg, "connection_attempt_id"),
+		ConnectionLifecycleID: dynamicString(msg, "connection_lifecycle_id"),
+		QRRequestDeadlineMS:   int(dynamicInt32(msg, "qr_request_deadline_ms")),
+		RuntimeGeneration:     int(dynamicInt32(msg, "runtime_generation")),
+		WarmPoolID:            dynamicString(msg, "warm_pool_id"),
 	}
 	ctx = extractIncomingConnectionLifecycleContext(ctx, s.cfg, req, "request_connection")
 	lifecycle, _ := connectionLifecycleFromContext(ctx)
@@ -154,6 +158,14 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicInt32(out, "max_attempts", int32(state.MaxAttempts))
 	setDynamicString(out, "connection_attempt_id", state.ConnectionAttemptID)
 	setDynamicBool(out, "qr_pending", state.QRPending)
+	setDynamicString(out, "qr_generated_at", state.QRGeneratedAt)
+	setDynamicString(out, "connection_lifecycle_id", state.ConnectionLifecycleID)
+	setDynamicString(out, "reason", state.Reason)
+	setDynamicString(out, "error", state.Error)
+	setDynamicInt32(out, "time_to_first_qr_ms", int32(state.TimeToFirstQRMS))
+	setDynamicString(out, "container_id", state.ContainerID)
+	setDynamicInt32(out, "runtime_generation", int32(state.RuntimeGeneration))
+	setDynamicString(out, "warm_pool_id", state.WarmPoolID)
 	setDynamicString(out, "proxy_status", state.ProxyStatus)
 	setDynamicString(out, "proxy_error_code", state.ProxyErrorCode)
 	setDynamicString(out, "proxy_fallback", state.ProxyFallback)
@@ -195,13 +207,15 @@ func (s *WorkerConnectionGRPCServer) ActivateRuntime(ctx context.Context, msg *d
 		return nil, err
 	}
 	req := WorkerRuntimeActivationRequest{
-		WorkerID:          dynamicString(msg, "worker_id"),
-		AccountID:         dynamicString(msg, "account_id"),
-		WorkerTypeID:      dynamicString(msg, "worker_type_id"),
-		WarmPoolID:        dynamicString(msg, "warm_pool_id"),
-		SessionVolumeName: dynamicString(msg, "session_volume_name"),
-		BalancerGRPCHost:  dynamicString(msg, "balancer_grpc_host"),
-		BalancerGRPCPort:  int(dynamicInt32(msg, "balancer_grpc_port")),
+		WorkerID:              dynamicString(msg, "worker_id"),
+		AccountID:             dynamicString(msg, "account_id"),
+		WorkerTypeID:          dynamicString(msg, "worker_type_id"),
+		WarmPoolID:            dynamicString(msg, "warm_pool_id"),
+		SessionVolumeName:     dynamicString(msg, "session_volume_name"),
+		BalancerGRPCHost:      dynamicString(msg, "balancer_grpc_host"),
+		BalancerGRPCPort:      int(dynamicInt32(msg, "balancer_grpc_port")),
+		ConnectionLifecycleID: dynamicString(msg, "connection_lifecycle_id"),
+		RuntimeGeneration:     int(dynamicInt32(msg, "runtime_generation")),
 	}
 	log.Printf("grpc ActivateRuntime received worker_id=%s warm_pool_id=%s", req.WorkerID, req.WarmPoolID)
 	resp, err := s.handler.ActivateRuntime(ctx, req)

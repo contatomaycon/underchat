@@ -16,6 +16,13 @@ export interface IWorkerConnectionStateProto {
   connection_attempt_id?: string;
   qr_pending?: boolean;
   qr_generated_at?: string;
+  connection_lifecycle_id?: string;
+  reason?: string;
+  error?: string;
+  time_to_first_qr_ms?: number | string;
+  container_id?: string;
+  runtime_generation?: number | string;
+  warm_pool_id?: string;
   proxy_status?: string;
   proxy_error_code?: string;
   proxy_fallback?: string;

@@ -18,8 +18,15 @@ export interface IBaileysConnectionState {
   attempt?: number;
   max_attempts?: number;
   connection_attempt_id?: string;
+  connection_lifecycle_id?: string;
   qr_pending?: boolean;
   qr_generated_at?: string;
+  reason?: string;
+  error?: string;
+  time_to_first_qr_ms?: number;
+  container_id?: string;
+  runtime_generation?: number;
+  warm_pool_id?: string;
   proxy_status?: 'healthy' | 'unhealthy' | 'disabled';
   proxy_error_code?: string;
   proxy_fallback?: 'direct';

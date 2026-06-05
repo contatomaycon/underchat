@@ -25,6 +25,7 @@ export interface IActivateWarmWorkerRequestProto {
   account_id?: string;
   server_id?: string;
   worker_type_id?: string;
+  lifecycle_operation_id?: string;
 }
 
 export interface IWarmWorkerCommandResponseProto {

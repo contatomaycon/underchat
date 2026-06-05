@@ -104,6 +104,18 @@ export function protoToStatusConnectionRequest(
   if (proto.connection_attempt_id) {
     payload.connection_attempt_id = proto.connection_attempt_id;
   }
+  if (proto.connection_lifecycle_id) {
+    payload.connection_lifecycle_id = proto.connection_lifecycle_id;
+  }
+  if (proto.qr_request_deadline_ms) {
+    payload.qr_request_deadline_ms = Number(proto.qr_request_deadline_ms);
+  }
+  if (proto.runtime_generation) {
+    payload.runtime_generation = Number(proto.runtime_generation);
+  }
+  if (proto.warm_pool_id) {
+    payload.warm_pool_id = proto.warm_pool_id;
+  }
   if (proto.qr_pending === true) {
     payload.qr_pending = true;
   }
@@ -142,6 +154,18 @@ export function statusConnectionRequestToProto(
   }
   if (payload.connection_attempt_id) {
     proto.connection_attempt_id = payload.connection_attempt_id;
+  }
+  if (payload.connection_lifecycle_id) {
+    proto.connection_lifecycle_id = payload.connection_lifecycle_id;
+  }
+  if (payload.qr_request_deadline_ms) {
+    proto.qr_request_deadline_ms = payload.qr_request_deadline_ms;
+  }
+  if (payload.runtime_generation) {
+    proto.runtime_generation = payload.runtime_generation;
+  }
+  if (payload.warm_pool_id) {
+    proto.warm_pool_id = payload.warm_pool_id;
   }
   if (payload.qr_pending === true) {
     proto.qr_pending = true;

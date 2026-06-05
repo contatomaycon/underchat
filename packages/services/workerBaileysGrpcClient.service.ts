@@ -33,6 +33,10 @@ import {
   recordConnectionQrSummary,
   summarizeConnectionQrState,
 } from '@core/plugins/telemetry/connectionQrSummary';
+import {
+  getConnectionQrFirstQrTimeoutMs,
+  recordConnectionAttemptTelemetry,
+} from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,7 +62,10 @@ if (!WorkerConnectionClient) {
 }
 
 const GRPC_DEADLINE_MS = 10_000;
-const CONNECTION_QR_GRPC_DEADLINE_MS = 30_000;
+const CONNECTION_QR_GRPC_DEADLINE_MS = Math.max(
+  30_000,
+  getConnectionQrFirstQrTimeoutMs() + 5_000
+);
 const GRPC_READY_DEADLINE_MS = 10_000;
 
 @injectable()
@@ -70,6 +77,10 @@ export class WorkerBaileysGrpcClientService {
     phone_connection?: string;
     remove_session?: boolean;
     connection_attempt_id?: string;
+    connection_lifecycle_id?: string;
+    qr_request_deadline_ms?: number;
+    runtime_generation?: number;
+    warm_pool_id?: string;
   } {
     const protoPayload = {
       worker_id: payload.worker_id,
@@ -87,6 +98,24 @@ export class WorkerBaileysGrpcClientService {
       (
         protoPayload as { connection_attempt_id?: string }
       ).connection_attempt_id = payload.connection_attempt_id;
+    }
+    if (payload.connection_lifecycle_id) {
+      (
+        protoPayload as { connection_lifecycle_id?: string }
+      ).connection_lifecycle_id = payload.connection_lifecycle_id;
+    }
+    if (payload.qr_request_deadline_ms) {
+      (
+        protoPayload as { qr_request_deadline_ms?: number }
+      ).qr_request_deadline_ms = payload.qr_request_deadline_ms;
+    }
+    if (payload.runtime_generation) {
+      (protoPayload as { runtime_generation?: number }).runtime_generation =
+        payload.runtime_generation;
+    }
+    if (payload.warm_pool_id) {
+      (protoPayload as { warm_pool_id?: string }).warm_pool_id =
+        payload.warm_pool_id;
     }
 
     return protoPayload;
@@ -144,6 +173,10 @@ export class WorkerBaileysGrpcClientService {
       phone_connection?: string;
       remove_session?: boolean;
       connection_attempt_id?: string;
+      connection_lifecycle_id?: string;
+      qr_request_deadline_ms?: number;
+      runtime_generation?: number;
+      warm_pool_id?: string;
     }
   ): Promise<IBaileysConnectionState> {
     const client = new WorkerConnectionClient(
@@ -163,6 +196,18 @@ export class WorkerBaileysGrpcClientService {
       status: protoPayload.status,
       connection_type: protoPayload.type,
       remove_session: protoPayload.remove_session === true,
+    });
+    recordConnectionAttemptTelemetry({
+      event: 'balancer_worker_grpc_request_connection_start',
+      stage: 'connection.balancer.worker_connection_grpc.request_start',
+      metric_event: 'grpc_request',
+      worker_id: protoPayload.worker_id,
+      worker_type: undefined,
+      grpc_method: 'RequestConnection',
+      grpc_address: address,
+      status: protoPayload.status,
+      outcome: 'started',
+      deadline_ms: GRPC_DEADLINE_MS,
     });
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
@@ -220,6 +265,10 @@ export class WorkerBaileysGrpcClientService {
       phone_connection?: string;
       remove_session?: boolean;
       connection_attempt_id?: string;
+      connection_lifecycle_id?: string;
+      qr_request_deadline_ms?: number;
+      runtime_generation?: number;
+      warm_pool_id?: string;
     }
   ): Promise<IBaileysConnectionState> {
     const client = new WorkerConnectionClient(
@@ -238,6 +287,18 @@ export class WorkerBaileysGrpcClientService {
       deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
       status: protoPayload.status,
       connection_type: protoPayload.type,
+    });
+    recordConnectionAttemptTelemetry({
+      event: 'balancer_worker_grpc_qrcode_start',
+      stage: 'connection.balancer.worker_connection_grpc.qrcode_start',
+      metric_event: 'grpc_request',
+      worker_id: protoPayload.worker_id,
+      connection_attempt_id: protoPayload.connection_attempt_id,
+      grpc_method: 'RequestConnection',
+      grpc_address: address,
+      status: protoPayload.status,
+      outcome: 'started',
+      deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
     });
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
@@ -409,11 +470,25 @@ export class WorkerBaileysGrpcClientService {
       credentials.createInsecure()
     );
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const metadata = injectGrpcConnectionMetadata(new Metadata());
+
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.worker_connection_grpc.activate_runtime_start',
+      decision: 'grpc_activate_runtime',
+      outcome: 'started',
+      grpc_method: 'ActivateRuntime',
+      grpc_address: address,
+      deadline_ms: GRPC_DEADLINE_MS,
+      worker_type: payload.worker_type_id,
+      warm_pool_id: payload.warm_pool_id,
+    });
 
     return new Promise<IWorkerRuntimeActivationResponseProto>(
       (resolve, reject) => {
         (client as any).ActivateRuntime(
           payload,
+          metadata,
           { deadline },
           (
             err: ServiceError | null,
@@ -421,10 +496,37 @@ export class WorkerBaileysGrpcClientService {
           ): void => {
             client.close();
             if (err) {
+              recordConnectionLifecycle({
+                stage:
+                  'connection.balancer.worker_connection_grpc.activate_runtime_error',
+                decision: 'grpc_activate_runtime',
+                outcome: 'error',
+                reason: 'grpc_error',
+                level: 'error',
+                grpc_method: 'ActivateRuntime',
+                grpc_address: address,
+                deadline_ms: GRPC_DEADLINE_MS,
+                worker_type: payload.worker_type_id,
+                warm_pool_id: payload.warm_pool_id,
+                error: err.message,
+              });
               reject(err);
               return;
             }
 
+            recordConnectionLifecycle({
+              stage:
+                'connection.balancer.worker_connection_grpc.activate_runtime_success',
+              decision: 'grpc_activate_runtime',
+              outcome: response?.activated ? 'success' : 'error',
+              reason: response?.error,
+              grpc_method: 'ActivateRuntime',
+              grpc_address: address,
+              deadline_ms: GRPC_DEADLINE_MS,
+              worker_type: payload.worker_type_id,
+              warm_pool_id: payload.warm_pool_id,
+              already_active: response?.already_active === true,
+            });
             resolve(
               response ?? {
                 worker_id: payload.worker_id,

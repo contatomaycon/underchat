@@ -42,11 +42,26 @@ export function protoToConnectionState(
   if (proto.connection_attempt_id) {
     state.connection_attempt_id = proto.connection_attempt_id;
   }
+  if (proto.connection_lifecycle_id) {
+    state.connection_lifecycle_id = proto.connection_lifecycle_id;
+  }
   if (proto.qr_pending === true) {
     state.qr_pending = true;
   }
   if (proto.qr_generated_at) {
     state.qr_generated_at = proto.qr_generated_at;
+  }
+  if (proto.reason) {
+    state.reason = proto.reason;
+  }
+  if (proto.error) {
+    state.error = proto.error;
+  }
+  if (proto.container_id) {
+    state.container_id = proto.container_id;
+  }
+  if (proto.warm_pool_id) {
+    state.warm_pool_id = proto.warm_pool_id;
   }
   if (proto.proxy_status) {
     state.proxy_status =
@@ -69,6 +84,8 @@ export function protoToConnectionState(
   );
   const attempt = optionalNumber(proto.attempt);
   const maxAttempts = optionalNumber(proto.max_attempts);
+  const timeToFirstQrMs = optionalNumber(proto.time_to_first_qr_ms);
+  const runtimeGeneration = optionalNumber(proto.runtime_generation);
 
   if (time !== undefined) state.time = time;
   if (secondsUntilNextAttempt !== undefined) {
@@ -76,6 +93,12 @@ export function protoToConnectionState(
   }
   if (attempt !== undefined) state.attempt = attempt;
   if (maxAttempts !== undefined) state.max_attempts = maxAttempts;
+  if (timeToFirstQrMs !== undefined) {
+    state.time_to_first_qr_ms = timeToFirstQrMs;
+  }
+  if (runtimeGeneration !== undefined) {
+    state.runtime_generation = runtimeGeneration;
+  }
 
   return state;
 }
@@ -101,6 +124,13 @@ export function connectionStateToProto(
     connection_attempt_id: state.connection_attempt_id ?? '',
     qr_pending: state.qr_pending ?? false,
     qr_generated_at: state.qr_generated_at ?? '',
+    connection_lifecycle_id: state.connection_lifecycle_id ?? '',
+    reason: state.reason ?? '',
+    error: state.error ?? '',
+    time_to_first_qr_ms: state.time_to_first_qr_ms ?? 0,
+    container_id: state.container_id ?? '',
+    runtime_generation: state.runtime_generation ?? 0,
+    warm_pool_id: state.warm_pool_id ?? '',
     proxy_status: state.proxy_status ?? '',
     proxy_error_code: state.proxy_error_code ?? '',
     proxy_fallback: state.proxy_fallback ?? '',
