@@ -171,6 +171,29 @@ export class WorkerConnectionQrCodeRequesterUseCase {
             qr_pending: state.qr_pending,
             level: hasQr ? 'info' : 'warn',
           });
+          recordConnectionAttemptTelemetry({
+            event: hasQr
+              ? 'manager_qrcode_background_qr_generated'
+              : 'manager_qrcode_background_pending',
+            stage: 'connection.manager.grpc.background_request_completed',
+            metric_event: 'qr_outcome',
+            level: hasQr ? 'info' : 'warn',
+            worker_id: workerId,
+            account_id: accountId,
+            server_id: serverId,
+            worker_type: view?.type?.id,
+            connection_attempt_id: state.connection_attempt_id,
+            status: state.status,
+            code: state.code,
+            outcome: hasQr ? 'qr_generated' : 'pending',
+            reason,
+            qrcode: state.qrcode,
+            has_qr: hasQr,
+            runtime_generation: state.runtime_generation,
+            warm_pool_id: state.warm_pool_id,
+            container_id: state.container_id,
+            time_to_first_qr_ms: state.time_to_first_qr_ms,
+          });
         },
         (err) => {
           if (!returnedPendingBySoftTimeout) {
@@ -196,6 +219,22 @@ export class WorkerConnectionQrCodeRequesterUseCase {
             qr_pending: true,
             level: this.isRetryableQrGrpcError(err) ? 'warn' : 'error',
           });
+          recordConnectionAttemptTelemetry({
+            event: 'manager_qrcode_background_error',
+            stage: 'connection.manager.grpc.background_request_error',
+            metric_event: 'qr_outcome',
+            level: this.isRetryableQrGrpcError(err) ? 'warn' : 'error',
+            worker_id: workerId,
+            account_id: accountId,
+            server_id: serverId,
+            worker_type: view?.type?.id,
+            connection_attempt_id: connectionAttemptId,
+            status: pendingResponse.status,
+            code: pendingResponse.code,
+            outcome: 'error',
+            reason: 'grpc_error_after_http_fallback',
+            error: getErrorMessage(err),
+          });
         }
       );
 
@@ -219,6 +258,31 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         pairing_code: response.pairing_code,
         has_qr: Boolean(response.qrcode),
         has_pairing_code: Boolean(response.pairing_code),
+      });
+      recordConnectionAttemptTelemetry({
+        event: response.qrcode
+          ? 'manager_qrcode_request_qr_generated'
+          : 'manager_qrcode_request_pending',
+        stage: 'connection.manager.grpc.request_success',
+        metric_event: 'qr_outcome',
+        level: response.qrcode ? 'info' : 'warn',
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: serverId,
+        worker_type: view?.type?.id,
+        connection_attempt_id: response.connection_attempt_id,
+        status: response.status,
+        code: response.code,
+        outcome: response.qrcode ? 'qr_generated' : 'pending',
+        reason: response.qrcode
+          ? 'qr_generated'
+          : (response.reason ?? 'grpc_response_without_qr'),
+        qrcode: response.qrcode,
+        has_qr: Boolean(response.qrcode),
+        runtime_generation: response.runtime_generation,
+        warm_pool_id: response.warm_pool_id,
+        container_id: response.container_id,
+        time_to_first_qr_ms: response.time_to_first_qr_ms,
       });
       recordConnectionLifecycle({
         stage: 'connection.manager.qrcode_request.http_response_ready',
@@ -254,6 +318,22 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           error: getErrorMessage(err),
           qr_pending: true,
           level: 'warn',
+        });
+        recordConnectionAttemptTelemetry({
+          event: 'manager_qrcode_retryable_error_pending',
+          stage: 'connection.manager.grpc.request_pending_fallback',
+          metric_event: 'qr_outcome',
+          level: 'warn',
+          worker_id: workerId,
+          account_id: accountId,
+          server_id: serverId,
+          worker_type: view?.type?.id,
+          connection_attempt_id: connectionAttemptId,
+          status: pendingResponse.status,
+          code: pendingResponse.code,
+          outcome: 'pending',
+          reason: 'retryable_grpc_error',
+          error: getErrorMessage(err),
         });
         return pendingResponse;
       }
@@ -317,6 +397,22 @@ export class WorkerConnectionQrCodeRequesterUseCase {
             reason: 'qr_http_soft_timeout',
             qr_pending: true,
             level: 'warn',
+          });
+          recordConnectionAttemptTelemetry({
+            event: 'manager_qrcode_soft_timeout_pending',
+            stage: 'connection.manager.grpc.request_soft_timeout',
+            metric_event: 'qr_outcome',
+            level: 'warn',
+            worker_id: pendingResponse.worker_id,
+            account_id: pendingResponse.account_id,
+            server_id: serverId,
+            connection_attempt_id: pendingResponse.connection_attempt_id,
+            status: pendingResponse.status,
+            code: pendingResponse.code,
+            outcome: 'pending',
+            reason: 'qr_http_soft_timeout',
+            qr_pending_age_ms: this.qrHttpSoftTimeoutMs,
+            deadline_ms: this.qrHttpSoftTimeoutMs,
           });
           resolve({
             ...pendingResponse,

@@ -43,8 +43,40 @@ import {
   recordConnectionAttemptTelemetry,
 } from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
+function readBoundedIntEnv(
+  key: string,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = Number.parseInt(process.env[key] ?? '', 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, parsed));
+}
+
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000;
+const AUTH_STATE_TIMEOUT_MS = readBoundedIntEnv(
+  'BAILEYS_AUTH_STATE_TIMEOUT_MS',
+  15_000,
+  5_000,
+  60_000
+);
+const WA_VERSION_TIMEOUT_MS = readBoundedIntEnv(
+  'BAILEYS_WA_VERSION_TIMEOUT_MS',
+  15_000,
+  5_000,
+  60_000
+);
+const SOCKET_CREATE_TIMEOUT_MS = readBoundedIntEnv(
+  'BAILEYS_SOCKET_CREATE_TIMEOUT_MS',
+  15_000,
+  5_000,
+  60_000
+);
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const SHOULD_LOG_CONNECTION_IP =
@@ -132,6 +164,18 @@ async function getCachedWaWebVersion(): Promise<[number, number, number]> {
   const baileysResult = await fetchLatestBaileysVersion();
   cachedWaVersion = { version: baileysResult.version, fetchedAt: Date.now() };
   return baileysResult.version;
+}
+
+class BaileysConnectionPhaseError extends Error {
+  constructor(
+    readonly reason: string,
+    message: string,
+    readonly originalError?: unknown
+  ) {
+    super(message);
+    this.name = 'BaileysConnectionPhaseError';
+    Object.setPrototypeOf(this, BaileysConnectionPhaseError.prototype);
+  }
 }
 
 @singleton()
@@ -633,7 +677,13 @@ export class BaileysConnectionService {
     this.socketId += 1;
     this.connectionAttemptStartedAtMs = Date.now();
 
-    const { socket } = await this.createSocket();
+    let socket: WASocket;
+    try {
+      ({ socket } = await this.createSocket());
+    } catch (error) {
+      return this.handleSocketCreateFailure(error);
+    }
+
     this.baileysIncomingMessageService.bindTo(socket);
     this.socket = socket;
 
@@ -766,35 +816,55 @@ export class BaileysConnectionService {
   }
 
   private async createSocket() {
-    const { state, saveCreds } = await useMultiFileAuthState(getFolder());
-    const version = await getCachedWaWebVersion();
+    const { state, saveCreds } = await this.runConnectionPhase(
+      'auth_state_load',
+      AUTH_STATE_TIMEOUT_MS,
+      'auth_state_timeout',
+      () => useMultiFileAuthState(getFolder())
+    );
+    const version = await this.runConnectionPhase(
+      'wa_version_resolve',
+      WA_VERSION_TIMEOUT_MS,
+      'wa_version_timeout',
+      () => getCachedWaWebVersion()
+    );
     const proxyConfig = readProxyConfig();
 
     const proxyAgent = proxyConfig ? createProxyAgent(proxyConfig) : undefined;
     this.activeProxyUrl = proxyConfig?.url ?? null;
     this.activeProxyAgent = proxyAgent;
 
-    const socket = makeWASocket({
-      auth: state,
-      version,
-      browser: Browsers.macOS('Desktop'),
-      logger: P({ level: 'silent' }),
-      getMessage: async (key) =>
-        this.baileysIncomingMessageService.getCachedMessage(key),
-      enableAutoSessionRecreation: true,
-      enableRecentMessageCache: true,
-      retryRequestDelayMs: 5_000,
-      connectTimeoutMs: 30_000,
-      keepAliveIntervalMs: 15_000,
-      defaultQueryTimeoutMs: 60_000,
-      maxMsgRetryCount: 10,
-      ...(proxyAgent
-        ? {
-            agent: proxyAgent,
-            fetchAgent: proxyAgent,
-          }
-        : {}),
-    });
+    const socket = await this.runConnectionPhase(
+      'socket_create',
+      SOCKET_CREATE_TIMEOUT_MS,
+      'socket_create_timeout',
+      async () =>
+        makeWASocket({
+          auth: state,
+          version,
+          browser: Browsers.macOS('Desktop'),
+          logger: P({ level: 'silent' }),
+          getMessage: async (key) =>
+            this.baileysIncomingMessageService.getCachedMessage(key),
+          enableAutoSessionRecreation: true,
+          enableRecentMessageCache: true,
+          retryRequestDelayMs: 5_000,
+          connectTimeoutMs: 30_000,
+          keepAliveIntervalMs: 15_000,
+          defaultQueryTimeoutMs: 60_000,
+          maxMsgRetryCount: 10,
+          ...(proxyAgent
+            ? {
+                agent: proxyAgent,
+                fetchAgent: proxyAgent,
+              }
+            : {}),
+        }),
+      {
+        proxy_status: proxyConfig ? 'configured' : 'disabled',
+        wa_version: version.join('.'),
+      }
+    );
 
     socket.ev.on('creds.update', (creds) => {
       void saveCreds().catch((error) => {
@@ -804,6 +874,179 @@ export class BaileysConnectionService {
     });
 
     return { socket, saveCreds };
+  }
+
+  private async runConnectionPhase<T>(
+    phase: string,
+    timeoutMs: number,
+    timeoutReason: string,
+    task: () => Promise<T>,
+    details: Record<string, unknown> = {}
+  ): Promise<T> {
+    const startedAt = Date.now();
+    this.logConnectionEvent(`${phase}_start`, {
+      deadline_ms: timeoutMs,
+      ...details,
+    });
+    recordConnectionAttemptTelemetry({
+      event: `worker_baileys_${phase}_start`,
+      stage: `connection.baileys.service.${phase}_start`,
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type: 'baileys',
+      library: 'baileys',
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      outcome: 'started',
+      deadline_ms: timeoutMs,
+      ...details,
+    });
+
+    try {
+      const result = await this.withDeadline(task(), timeoutMs, timeoutReason);
+      this.logConnectionEvent(`${phase}_success`, {
+        duration_ms: Date.now() - startedAt,
+        deadline_ms: timeoutMs,
+        ...details,
+      });
+      recordConnectionAttemptTelemetry({
+        event: `worker_baileys_${phase}_success`,
+        stage: `connection.baileys.service.${phase}_success`,
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type: 'baileys',
+        library: 'baileys',
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+        outcome: 'success',
+        duration_ms: Date.now() - startedAt,
+        deadline_ms: timeoutMs,
+        ...details,
+      });
+      return result;
+    } catch (error) {
+      const phaseError =
+        error instanceof BaileysConnectionPhaseError
+          ? error
+          : new BaileysConnectionPhaseError(
+              `${phase}_error`,
+              this.errorMessage(error),
+              error
+            );
+      this.logConnectionEvent(
+        `${phase}_error`,
+        {
+          reason: phaseError.reason,
+          error: phaseError.message,
+          duration_ms: Date.now() - startedAt,
+          deadline_ms: timeoutMs,
+          ...details,
+        },
+        'warn'
+      );
+      recordConnectionAttemptTelemetry({
+        event: `worker_baileys_${phase}_error`,
+        stage: `connection.baileys.service.${phase}_error`,
+        level: 'warn',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type: 'baileys',
+        library: 'baileys',
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+        outcome: phaseError.reason.includes('timeout') ? 'timeout' : 'error',
+        reason: phaseError.reason,
+        error: phaseError.message,
+        duration_ms: Date.now() - startedAt,
+        deadline_ms: timeoutMs,
+        ...details,
+      });
+      throw phaseError;
+    }
+  }
+
+  private withDeadline<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    timeoutReason: string
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new BaileysConnectionPhaseError(
+            timeoutReason,
+            `${timeoutReason} after ${timeoutMs}ms`
+          )
+        );
+      }, timeoutMs);
+
+      promise
+        .then((value) => {
+          clearTimeout(timer);
+          resolve(value);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }
+
+  private handleSocketCreateFailure(error: unknown): IBaileysConnectionState {
+    const phaseError =
+      error instanceof BaileysConnectionPhaseError ? error : undefined;
+    const reason = phaseError?.reason ?? 'socket_create_error';
+    const elapsedMs =
+      this.connectionAttemptStartedAtMs > 0
+        ? Date.now() - this.connectionAttemptStartedAtMs
+        : undefined;
+
+    this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
+    this.connecting = false;
+    this.currentPromise = undefined;
+    this.baileysIncomingMessageService.unbind();
+    this.socket = undefined;
+
+    this.logConnectionEvent(
+      'socket_create_failed_pending',
+      {
+        reason,
+        error: this.errorMessage(error),
+        time_to_first_qr_ms: elapsedMs,
+        connection_type: this.typeConnection,
+        has_session: this.hasSession(),
+      },
+      'warn'
+    );
+    recordConnectionAttemptTelemetry({
+      event: 'worker_baileys_socket_create_failed_pending',
+      stage: 'connection.baileys.service.socket_create_failed_pending',
+      metric_event: 'qr_outcome',
+      level: 'warn',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type: 'baileys',
+      library: 'baileys',
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      outcome: reason.includes('timeout') ? 'timeout' : 'pending',
+      reason,
+      time_to_first_qr_ms: elapsedMs,
+    });
+
+    const payload = this.state(undefined, undefined, {
+      qr_pending: true,
+      reason,
+      time_to_first_qr_ms: elapsedMs,
+      worker_status_id: EWorkerStatus.disponible,
+    });
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, reason);
+    return payload;
   }
 
   private restoreSessionInProgress(): boolean {
@@ -830,6 +1073,11 @@ export class BaileysConnectionService {
       let settled = false;
       let opened = false;
       let firstQrTimeout: NodeJS.Timeout | undefined;
+      this.logConnectionEvent('wait_connection_update_start', {
+        socket_id: id,
+        deadline_ms: firstQrTimeoutMs,
+        connection_type: this.typeConnection,
+      });
       const settle = (state: IBaileysConnectionState): void => {
         if (settled) {
           return;
@@ -914,6 +1162,25 @@ export class BaileysConnectionService {
         }
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
+        const lastDisconnectError =
+          lastDisconnect &&
+          typeof lastDisconnect === 'object' &&
+          'error' in lastDisconnect
+            ? (lastDisconnect as { error?: unknown }).error
+            : undefined;
+        this.logConnectionEvent('connection_update_received', {
+          socket_id: id,
+          connection_state: connection,
+          has_qr: Boolean(qr),
+          is_new_login: Boolean(isNewLogin),
+          last_disconnect_code: this.extractStatusCode(lastDisconnectError),
+          last_disconnect_message:
+            this.extractStatusMessage(lastDisconnectError) ??
+            (lastDisconnectError
+              ? this.errorMessage(lastDisconnectError)
+              : undefined),
+          time_since_attempt_start_ms: Date.now() - startedAtMs,
+        });
 
         if (
           qr &&
@@ -999,7 +1266,51 @@ export class BaileysConnectionService {
     });
 
     await this.printQrInConsole(qr);
-    const img = await QRCode.toDataURL(qr);
+    const qrDataUrlStartedAt = Date.now();
+    this.logConnectionEvent('qr_dataurl_generate_start', {
+      attempt: this.qrGenerationCount,
+      max_attempts: this.maxQrGenerations,
+      time_to_first_qr_ms: timeToFirstQrMs,
+    });
+    let img: string;
+    try {
+      img = await QRCode.toDataURL(qr);
+      this.logConnectionEvent('qr_dataurl_generate_success', {
+        attempt: this.qrGenerationCount,
+        max_attempts: this.maxQrGenerations,
+        duration_ms: Date.now() - qrDataUrlStartedAt,
+        time_to_first_qr_ms: timeToFirstQrMs,
+      });
+    } catch (error) {
+      this.logConnectionEvent(
+        'qr_dataurl_generate_error',
+        {
+          reason: 'qr_dataurl_generation_failed',
+          error: this.errorMessage(error),
+          duration_ms: Date.now() - qrDataUrlStartedAt,
+          time_to_first_qr_ms: timeToFirstQrMs,
+        },
+        'error'
+      );
+      recordConnectionAttemptTelemetry({
+        event: 'worker_baileys_qr_dataurl_generation_error',
+        stage: 'connection.baileys.service.qr_dataurl_generate_error',
+        metric_event: 'qr_outcome',
+        level: 'error',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type: 'baileys',
+        library: 'baileys',
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+        outcome: 'error',
+        reason: 'qr_dataurl_generation_failed',
+        error: this.errorMessage(error),
+        time_to_first_qr_ms: timeToFirstQrMs,
+      });
+      throw error;
+    }
     if (id !== this.socketId) {
       return;
     }
@@ -1932,6 +2243,18 @@ export class BaileysConnectionService {
     return undefined;
   }
 
+  private errorMessage(error: unknown): string {
+    if (error instanceof BaileysConnectionPhaseError) {
+      return error.message;
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return String(error);
+  }
+
   private logConnectionEvent(
     event: string,
     details: Record<string, unknown> = {},
@@ -1944,6 +2267,8 @@ export class BaileysConnectionService {
       event,
       worker_id: getWorker(),
       account_id: getAccount(),
+      connection_attempt_id: this.connectionAttemptId,
+      connection_type: this.typeConnection,
       status: this.status,
       code: this.code,
       ...details,
@@ -1959,6 +2284,8 @@ export class BaileysConnectionService {
       worker_id: getWorker(),
       channel_id: getWorker(),
       account_id: getAccount(),
+      connection_attempt_id: this.connectionAttemptId,
+      connection_type: this.typeConnection,
       status: this.status,
       code: this.code,
       ...details,

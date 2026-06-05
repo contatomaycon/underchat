@@ -39,6 +39,7 @@ import {
   recordConnectionLifecycle,
   runWithGrpcConnectionContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
+import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -204,11 +205,16 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         status: payload.status,
         connection_type: payload.type,
         remove_session: payload.remove_session === true,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        warm_pool_id: payload.warm_pool_id,
+        qr_request_deadline_ms: payload.qr_request_deadline_ms,
       },
       'Worker connection request received'
     );
 
     runWithGrpcConnectionContext(call.metadata, contextData, () => {
+      const startedAt = Date.now();
       recordConnectionLifecycle({
         stage: 'connection.worker.grpc.request_received',
         decision: 'worker_connection_request',
@@ -217,6 +223,25 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         status: payload.status,
         connection_type: payload.type,
         remove_session: payload.remove_session === true,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        warm_pool_id: payload.warm_pool_id,
+        deadline_ms: payload.qr_request_deadline_ms,
+      });
+      recordConnectionAttemptTelemetry({
+        event: 'worker_grpc_request_received',
+        stage: 'connection.worker.grpc.request_received',
+        worker_id: payload.worker_id,
+        account_id: accountId,
+        worker_type: sourceProvider,
+        library: sourceProvider,
+        connection_attempt_id: payload.connection_attempt_id,
+        status: payload.status,
+        outcome: 'received',
+        grpc_method: 'RequestConnection',
+        deadline_ms: payload.qr_request_deadline_ms,
+        runtime_generation: payload.runtime_generation,
+        warm_pool_id: payload.warm_pool_id,
       });
 
       connectionConsume
@@ -239,6 +264,47 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             pairing_code: response.pairing_code,
             has_qr: Boolean(response.qrcode),
             has_pairing_code: Boolean(response.pairing_code),
+            connection_attempt_id:
+              response.connection_attempt_id ?? payload.connection_attempt_id,
+            runtime_generation:
+              response.runtime_generation ?? payload.runtime_generation,
+            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+            container_id: response.container_id,
+            reason: response.reason,
+            qr_pending: response.qr_pending === true,
+            time_to_first_qr_ms: response.time_to_first_qr_ms,
+            duration_ms: Date.now() - startedAt,
+          });
+          recordConnectionAttemptTelemetry({
+            event: response.qrcode
+              ? 'worker_grpc_request_qr_generated'
+              : 'worker_grpc_request_completed',
+            stage: 'connection.worker.grpc.request_success',
+            worker_id: payload.worker_id,
+            account_id: accountId,
+            worker_type: sourceProvider,
+            library: sourceProvider,
+            connection_attempt_id:
+              response.connection_attempt_id ?? payload.connection_attempt_id,
+            status: response.status,
+            code: response.code,
+            outcome: response.qrcode
+              ? 'qr_generated'
+              : response.qr_pending
+                ? 'pending'
+                : 'completed',
+            reason: response.qrcode
+              ? 'qr_generated'
+              : (response.reason ?? 'worker_response_without_qr'),
+            qrcode: response.qrcode,
+            has_qr: Boolean(response.qrcode),
+            grpc_method: 'RequestConnection',
+            duration_ms: Date.now() - startedAt,
+            time_to_first_qr_ms: response.time_to_first_qr_ms,
+            runtime_generation:
+              response.runtime_generation ?? payload.runtime_generation,
+            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+            container_id: response.container_id,
           });
           fastify.log.info(
             {
@@ -252,6 +318,13 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
               connection_type: payload.type,
               remove_session: payload.remove_session === true,
               has_qr: Boolean(response.qrcode),
+              connection_attempt_id:
+                response.connection_attempt_id ?? payload.connection_attempt_id,
+              runtime_generation:
+                response.runtime_generation ?? payload.runtime_generation,
+              warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+              reason: response.reason,
+              qr_pending: response.qr_pending === true,
             },
             'Worker connection request dispatched'
           );
@@ -269,6 +342,28 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             status: payload.status,
             connection_type: payload.type,
             error: msg,
+            connection_attempt_id: payload.connection_attempt_id,
+            runtime_generation: payload.runtime_generation,
+            warm_pool_id: payload.warm_pool_id,
+            duration_ms: Date.now() - startedAt,
+          });
+          recordConnectionAttemptTelemetry({
+            event: 'worker_grpc_request_error',
+            stage: 'connection.worker.grpc.request_error',
+            level: 'error',
+            worker_id: payload.worker_id,
+            account_id: accountId,
+            worker_type: sourceProvider,
+            library: sourceProvider,
+            connection_attempt_id: payload.connection_attempt_id,
+            status: payload.status,
+            outcome: 'error',
+            reason: 'handler_error',
+            error: msg,
+            grpc_method: 'RequestConnection',
+            duration_ms: Date.now() - startedAt,
+            runtime_generation: payload.runtime_generation,
+            warm_pool_id: payload.warm_pool_id,
           });
           fastify.log.error(
             {
@@ -282,6 +377,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
               status: payload.status,
               connection_type: payload.type,
               remove_session: payload.remove_session === true,
+              connection_attempt_id: payload.connection_attempt_id,
+              runtime_generation: payload.runtime_generation,
+              warm_pool_id: payload.warm_pool_id,
             },
             'WorkerConnection gRPC handler error'
           );

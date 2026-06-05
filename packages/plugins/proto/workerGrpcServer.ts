@@ -235,6 +235,11 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         grpc_method: 'RequestConnectionQrCode',
         status: payload.status,
         connection_type: payload.type,
+        connection_attempt_id: payload.connection_attempt_id,
+        connection_lifecycle_id: payload.connection_lifecycle_id,
+        runtime_generation: payload.runtime_generation,
+        warm_pool_id: payload.warm_pool_id,
+        deadline_ms: payload.qr_request_deadline_ms,
       });
 
       handler
@@ -251,6 +256,15 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
             pairing_code: response.pairing_code,
             has_qr: Boolean(response.qrcode),
             has_pairing_code: Boolean(response.pairing_code),
+            connection_attempt_id:
+              response.connection_attempt_id ?? payload.connection_attempt_id,
+            runtime_generation:
+              response.runtime_generation ?? payload.runtime_generation,
+            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+            container_id: response.container_id,
+            reason: response.reason,
+            qr_pending: response.qr_pending === true,
+            time_to_first_qr_ms: response.time_to_first_qr_ms,
           });
           callback(null, connectionStateToProto(response));
         })
@@ -266,6 +280,9 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
             status: payload.status,
             connection_type: payload.type,
             error: msg,
+            connection_attempt_id: payload.connection_attempt_id,
+            runtime_generation: payload.runtime_generation,
+            warm_pool_id: payload.warm_pool_id,
           });
           fastify.log.error(
             { err, workerId: req.worker_id },
