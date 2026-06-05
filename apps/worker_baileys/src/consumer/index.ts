@@ -11,6 +11,7 @@ import { container } from 'tsyringe';
 import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
 import { BaileysService } from '@core/services/baileys';
 import { getWorkerConsumers, registerWorkerConsumer } from './registry';
+import { baileysEnvironment } from '@core/config/environments';
 
 const CONSUMER_STAGGER_DELAY_MS = 500;
 
@@ -45,8 +46,49 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
   }
 }
 
+let activationPromise: Promise<void> | null = null;
+
+export async function activateBaileysRuntime(
+  fastify: FastifyInstance
+): Promise<{ alreadyActive?: boolean }> {
+  if (activationPromise) {
+    await activationPromise;
+    return { alreadyActive: true };
+  }
+
+  activationPromise = (async () => {
+    try {
+      const healthCheckService = container.resolve(BaileysHealthCheckService);
+      fastify.baileysInitialized = healthCheckService.bootstrapConnection();
+    } catch (err) {
+      fastify.log.error(
+        { err },
+        'Baileys: falha ao iniciar bootstrap de conexão'
+      );
+      fastify.baileysInitialized = Promise.resolve();
+    }
+
+    await startConsumers(fastify);
+  })();
+
+  await activationPromise;
+  return { alreadyActive: false };
+}
+
 const baileysConsumersOnListenHook = fp(async (fastify) => {
   fastify.addHook('onListen', () => {
+    if (baileysEnvironment.isWarmStandby) {
+      fastify.log.info(
+        {
+          component: 'baileys_consumer_boot',
+          type: 'warm_pool.standby',
+          warm_pool_id: baileysEnvironment.warmPoolId,
+        },
+        'Baileys warm standby: skipping session bootstrap and consumers'
+      );
+      return;
+    }
+
     try {
       const healthCheckService = container.resolve(BaileysHealthCheckService);
 
@@ -59,7 +101,8 @@ const baileysConsumersOnListenHook = fp(async (fastify) => {
       fastify.baileysInitialized = Promise.resolve();
     }
 
-    startConsumers(fastify).catch((err) => {
+    activationPromise = startConsumers(fastify).then(() => undefined);
+    activationPromise.catch((err) => {
       fastify.log.error({ err }, 'Baileys: falha ao iniciar consumidores');
     });
   });

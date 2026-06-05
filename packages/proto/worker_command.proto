@@ -14,6 +14,9 @@ service WorkerCommand {
   rpc GetTypingSimulationConfig(GetTypingSimulationConfigRequest) returns (GetTypingSimulationConfigResponse);
   rpc RegisterS3BackupFallbackUpload(RegisterS3BackupFallbackUploadRequest) returns (WorkerCommandResponse);
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
+  rpc CreateWarmWorker(CreateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
+  rpc DeleteWarmWorker(DeleteWarmWorkerRequest) returns (WorkerCommandResponse);
+  rpc ActivateWarmWorker(ActivateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
 }
 
 message WorkerPayload {
@@ -131,6 +134,46 @@ message PhoneValidationResponse {
   string jid = 5;
   string phone = 6;
   string error = 7;
+}
+
+message CreateWarmWorkerRequest {
+  string request_id = 1;
+  string warm_pool_id = 2;
+  string server_id = 3;
+  string worker_type_id = 4;
+}
+
+message DeleteWarmWorkerRequest {
+  string request_id = 1;
+  string warm_pool_id = 2;
+  string server_id = 3;
+  string worker_type_id = 4;
+  string container_id = 5;
+  string container_name = 6;
+  string session_volume_name = 7;
+  bool remove_volume = 8;
+  string reason = 9;
+  string worker_id = 10;
+  string requested_at = 11;
+}
+
+message ActivateWarmWorkerRequest {
+  string warm_pool_id = 1;
+  string worker_id = 2;
+  string account_id = 3;
+  string server_id = 4;
+  string worker_type_id = 5;
+}
+
+message WarmWorkerCommandResponse {
+  string warm_pool_id = 1;
+  string worker_id = 2;
+  string container_id = 3;
+  string container_name = 4;
+  string session_volume_name = 5;
+  bool claimed = 6;
+  bool fallback_created = 7;
+  string error = 8;
 }
 
 message WorkerCommandResponse {}

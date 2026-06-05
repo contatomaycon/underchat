@@ -11,6 +11,7 @@ import { container } from 'tsyringe';
 import { WwebjsHealthCheckService } from '@core/services/wwebjs/methods/healthCheck.service';
 import { WwebjsService } from '@core/services/wwebjs';
 import { getWorkerConsumers, registerWorkerConsumer } from './registry';
+import { wwebjsEnvironment } from '@core/config/environments';
 
 const CONSUMER_STAGGER_DELAY_MS = 500;
 
@@ -45,8 +46,49 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
   }
 }
 
+let activationPromise: Promise<void> | null = null;
+
+export async function activateWwebjsRuntime(
+  fastify: FastifyInstance
+): Promise<{ alreadyActive?: boolean }> {
+  if (activationPromise) {
+    await activationPromise;
+    return { alreadyActive: true };
+  }
+
+  activationPromise = (async () => {
+    try {
+      const healthCheckService = container.resolve(WwebjsHealthCheckService);
+      fastify.wwebjsInitialized = healthCheckService.bootstrapConnection();
+    } catch (err) {
+      fastify.log.error(
+        { err },
+        'Wwebjs: falha ao iniciar bootstrap de conexão'
+      );
+      fastify.wwebjsInitialized = Promise.resolve();
+    }
+
+    await startConsumers(fastify);
+  })();
+
+  await activationPromise;
+  return { alreadyActive: false };
+}
+
 const wwebjsConsumersOnListenHook = fp(async (fastify) => {
   fastify.addHook('onListen', () => {
+    if (wwebjsEnvironment.isWarmStandby) {
+      fastify.log.info(
+        {
+          component: 'wwebjs_consumer_boot',
+          type: 'warm_pool.standby',
+          warm_pool_id: wwebjsEnvironment.warmPoolId,
+        },
+        'Wwebjs warm standby: skipping session bootstrap and consumers'
+      );
+      return;
+    }
+
     try {
       const healthCheckService = container.resolve(WwebjsHealthCheckService);
 
@@ -59,7 +101,8 @@ const wwebjsConsumersOnListenHook = fp(async (fastify) => {
       fastify.wwebjsInitialized = Promise.resolve();
     }
 
-    startConsumers(fastify).catch((err) => {
+    activationPromise = startConsumers(fastify).then(() => undefined);
+    activationPromise.catch((err) => {
       fastify.log.error({ err }, 'Wwebjs: falha ao iniciar consumidores');
     });
   });

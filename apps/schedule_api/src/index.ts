@@ -58,7 +58,7 @@ const start = async () => {
 
     setupGracefulShutdown(server);
 
-    startJobs(server);
+    startJobs(server, { enableWarmPoolJobs: true });
   } catch (err) {
     console.log(err);
 

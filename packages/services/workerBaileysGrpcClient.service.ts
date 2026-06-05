@@ -18,6 +18,12 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
+  IWorkerRuntimeActivationRequestProto,
+  IWorkerRuntimeActivationResponseProto,
+  IWorkerRuntimeHealthRequestProto,
+  IWorkerRuntimeHealthResponseProto,
+} from '@core/common/interfaces/IWorkerRuntimeActivationProto';
+import {
   buildConnectionLifecycleContext,
   injectGrpcConnectionMetadata,
   recordConnectionLifecycle,
@@ -394,6 +400,82 @@ export class WorkerBaileysGrpcClientService {
     });
   }
 
+  private async activateRuntimeByAddress(
+    address: string,
+    payload: IWorkerRuntimeActivationRequestProto
+  ): Promise<IWorkerRuntimeActivationResponseProto> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+
+    return new Promise<IWorkerRuntimeActivationResponseProto>(
+      (resolve, reject) => {
+        (client as any).ActivateRuntime(
+          payload,
+          { deadline },
+          (
+            err: ServiceError | null,
+            response?: IWorkerRuntimeActivationResponseProto
+          ): void => {
+            client.close();
+            if (err) {
+              reject(err);
+              return;
+            }
+
+            resolve(
+              response ?? {
+                worker_id: payload.worker_id,
+                account_id: payload.account_id,
+                activated: false,
+                error: 'Empty gRPC response',
+              }
+            );
+          }
+        );
+      }
+    );
+  }
+
+  private async runtimeHealthByAddress(
+    address: string,
+    payload: IWorkerRuntimeHealthRequestProto
+  ): Promise<IWorkerRuntimeHealthResponseProto> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + GRPC_READY_DEADLINE_MS);
+
+    return new Promise<IWorkerRuntimeHealthResponseProto>((resolve, reject) => {
+      (client as any).RuntimeHealth(
+        payload,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerRuntimeHealthResponseProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve(
+            response ?? {
+              worker_id: payload.worker_id,
+              warm_pool_id: payload.warm_pool_id,
+              ready: false,
+              error: 'Empty gRPC response',
+            }
+          );
+        }
+      );
+    });
+  }
+
   private async callWithFallback<T>(
     workerId: string,
     workerType: EWorkerType | undefined,
@@ -520,6 +602,26 @@ export class WorkerBaileysGrpcClientService {
       this.callWithFallback(workerId, workerType, (address) =>
         this.waitForReadyByAddress(address, timeoutMs)
       )
+    );
+  }
+
+  async activateRuntime(
+    containerName: string,
+    payload: IWorkerRuntimeActivationRequestProto,
+    workerType?: EWorkerType
+  ): Promise<IWorkerRuntimeActivationResponseProto> {
+    return this.callWithFallback(containerName, workerType, (address) =>
+      this.activateRuntimeByAddress(address, payload)
+    );
+  }
+
+  async runtimeHealth(
+    containerName: string,
+    payload: IWorkerRuntimeHealthRequestProto,
+    workerType?: EWorkerType
+  ): Promise<IWorkerRuntimeHealthResponseProto> {
+    return this.callWithFallback(containerName, workerType, (address) =>
+      this.runtimeHealthByAddress(address, payload)
     );
   }
 

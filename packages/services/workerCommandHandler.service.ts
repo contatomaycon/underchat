@@ -69,6 +69,15 @@ import {
   ProxyConnectivityResult,
   ProxyConnectivityService,
 } from '@core/services/proxyConnectivity.service';
+import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
+import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
+import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
+import {
+  IActivateWarmWorkerRequestProto,
+  ICreateWarmWorkerRequestProto,
+  IDeleteWarmWorkerRequestProto,
+  IWarmWorkerCommandResponseProto,
+} from '@core/common/interfaces/IWorkerWarmCommandProto';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -113,6 +122,17 @@ interface CreateWorkerOptions {
   healthOptions?: ContainerHealthCheckOptions;
   proxyOverride?: ResolvedWorkerProxyConfig | null;
   proxyMode?: 'proxy' | 'direct' | 'direct_fallback';
+}
+
+interface RecreateSessionVolumeResolution {
+  sessionVolumeName?: string;
+  source:
+    | 'worker_runtime'
+    | 'container_label'
+    | 'container_env'
+    | 'legacy_worker_id'
+    | 'reset';
+  runtimeWasBackfilled: boolean;
 }
 
 class WorkerCreateAttemptError extends Error {
@@ -186,7 +206,11 @@ export class WorkerCommandHandlerService {
     @inject(ProxyConnectivityService)
     private readonly proxyConnectivityService: ProxyConnectivityService,
     @inject('Redis')
-    private readonly redis: Redis
+    private readonly redis: Redis,
+    @inject(WorkerWarmPoolRepository)
+    private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never,
+    @inject(WorkerRuntimeRepository)
+    private readonly workerRuntimeRepository: WorkerRuntimeRepository = undefined as never
   ) {}
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -261,6 +285,286 @@ export class WorkerCommandHandlerService {
         }
       );
     }
+  }
+
+  async createWarmWorker(
+    data: ICreateWarmWorkerRequestProto
+  ): Promise<IWarmWorkerCommandResponseProto> {
+    if (!data.warm_pool_id || !data.server_id || !data.worker_type_id) {
+      throw new Error(
+        'Missing required fields: warm_pool_id, server_id, worker_type_id'
+      );
+    }
+
+    const workerType = data.worker_type_id as EWorkerType;
+    if (!Object.values(EWorkerType).includes(workerType)) {
+      throw new Error('Invalid worker_type_id');
+    }
+
+    const imageName = getImageWorker(workerType);
+    const sessionVolumeName = `warm-${data.warm_pool_id}`;
+    const startedAt = Date.now();
+
+    await this.workerWarmPoolRepository.create({
+      warm_pool_id: data.warm_pool_id,
+      server_id: data.server_id,
+      worker_type_id: workerType,
+      session_volume_name: sessionVolumeName,
+      state: EWorkerWarmPoolState.warming,
+    });
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.warm_pool.create_start',
+      decision: 'create_warm_worker',
+      outcome: 'started',
+      warm_pool_id: data.warm_pool_id,
+      server_id: data.server_id,
+      worker_type: workerType,
+      worker_type_id: workerType,
+      session_volume_name: sessionVolumeName,
+    });
+
+    try {
+      const proxy = await this.resolveServerProxyConfig(data.server_id);
+      const runtime = await this.workerService.createWarmContainerWorker({
+        imageName,
+        warmPoolId: data.warm_pool_id,
+        serverId: data.server_id,
+        workerTypeId: workerType,
+        grpcHost: balanceEnvironment.grpcHost,
+        grpcPort: balanceEnvironment.grpcPort,
+        workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
+        proxy,
+      });
+
+      await this.containerHealthService.checkServiceHealth(
+        runtime.container_id,
+        this.buildNewContainerHealthOptions()
+      );
+
+      if (this.isWorkerGrpcReadinessRequired(workerType)) {
+        await this.workerBaileysGrpcClientService.waitForReady(
+          runtime.container_name,
+          workerType,
+          30_000
+        );
+        await this.workerBaileysGrpcClientService.runtimeHealth(
+          runtime.container_name,
+          {
+            warm_pool_id: data.warm_pool_id,
+          },
+          workerType
+        );
+      }
+
+      await this.workerWarmPoolRepository.markRuntime({
+        warm_pool_id: data.warm_pool_id,
+        container_id: runtime.container_id,
+        container_name: runtime.container_name,
+        session_volume_name: runtime.session_volume_name,
+        state: EWorkerWarmPoolState.ready,
+      });
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.create_success',
+        decision: 'create_warm_worker',
+        outcome: 'success',
+        warm_pool_id: data.warm_pool_id,
+        server_id: data.server_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        container_id: runtime.container_id,
+        container_name: runtime.container_name,
+        session_volume_name: runtime.session_volume_name,
+        duration_ms: Date.now() - startedAt,
+      });
+
+      return {
+        warm_pool_id: data.warm_pool_id,
+        container_id: runtime.container_id,
+        container_name: runtime.container_name,
+        session_volume_name: runtime.session_volume_name,
+      };
+    } catch (error) {
+      await this.workerWarmPoolRepository.markRuntime({
+        warm_pool_id: data.warm_pool_id,
+        state: EWorkerWarmPoolState.error,
+        last_error: getErrorMessage(error),
+      });
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.create_error',
+        decision: 'create_warm_worker',
+        outcome: 'error',
+        reason: 'warm_create_failed',
+        level: 'error',
+        warm_pool_id: data.warm_pool_id,
+        server_id: data.server_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        session_volume_name: sessionVolumeName,
+        duration_ms: Date.now() - startedAt,
+        error: getErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  async deleteWarmWorker(data: IDeleteWarmWorkerRequestProto): Promise<void> {
+    const containerName =
+      data.container_name ||
+      (data.warm_pool_id ? `warm-${data.warm_pool_id}` : '');
+    const volumeName =
+      data.session_volume_name ||
+      (data.warm_pool_id ? `warm-${data.warm_pool_id}` : undefined);
+
+    if (data.warm_pool_id) {
+      await this.workerWarmPoolRepository.markDeleting(data.warm_pool_id);
+    }
+
+    if (containerName) {
+      await this.workerService.removeContainerByNameAndVolume(
+        containerName,
+        volumeName,
+        data.remove_volume === true
+      );
+    } else if (data.remove_volume === true && volumeName) {
+      const existsVolume =
+        await this.workerService.existsVolumeByName(volumeName);
+      if (existsVolume) {
+        await this.workerService.removeVolumeByName(volumeName);
+      }
+    } else {
+      throw new Error('Missing warm container_name, warm_pool_id or volume');
+    }
+
+    if (data.warm_pool_id) {
+      await this.workerWarmPoolRepository.deleteById(data.warm_pool_id);
+    }
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.warm_pool.delete_success',
+      decision: 'delete_warm_worker',
+      outcome: 'success',
+      warm_pool_id: data.warm_pool_id,
+      server_id: data.server_id,
+      worker_type_id: data.worker_type_id,
+      container_name: containerName,
+      session_volume_name: volumeName,
+      remove_volume: data.remove_volume === true,
+      reason: data.reason,
+    });
+  }
+
+  async activateWarmWorker(
+    data: IActivateWarmWorkerRequestProto
+  ): Promise<IWarmWorkerCommandResponseProto> {
+    if (
+      !data.warm_pool_id ||
+      !data.worker_id ||
+      !data.account_id ||
+      !data.server_id ||
+      !data.worker_type_id
+    ) {
+      throw new Error(
+        'Missing required fields: warm_pool_id, worker_id, account_id, server_id, worker_type_id'
+      );
+    }
+
+    const warm = await this.workerWarmPoolRepository.viewById(
+      data.warm_pool_id
+    );
+    if (!warm) {
+      throw new Error('Warm pool entry not found');
+    }
+
+    const workerType = data.worker_type_id as EWorkerType;
+    const sourceContainerName =
+      warm.container_name || `warm-${data.warm_pool_id}`;
+    const sessionVolumeName =
+      warm.session_volume_name || `warm-${data.warm_pool_id}`;
+    const startedAt = Date.now();
+
+    await this.kafkaBaileysQueueService.ensure(data.worker_id);
+
+    const targetInspection =
+      await this.workerService.inspectContainerWorkerById(data.worker_id);
+    if (
+      targetInspection.exists &&
+      targetInspection.container_name !== sourceContainerName
+    ) {
+      await this.workerService.recordContainerDiagnostics(
+        data.worker_id,
+        'remove_existing_container_before_warm_activation'
+      );
+      await this.workerService.removeContainerWorkerById(data.worker_id);
+    }
+
+    await this.workerService.renameContainer(
+      sourceContainerName,
+      data.worker_id
+    );
+
+    const activation =
+      await this.workerBaileysGrpcClientService.activateRuntime(
+        data.worker_id,
+        {
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: workerType,
+          warm_pool_id: data.warm_pool_id,
+          session_volume_name: sessionVolumeName,
+          balancer_grpc_host: balanceEnvironment.grpcHost,
+          balancer_grpc_port: balanceEnvironment.grpcPort,
+        },
+        workerType
+      );
+
+    if (!activation.activated) {
+      throw new Error(activation.error || 'Warm runtime activation failed');
+    }
+
+    await this.workerRuntimeRepository?.upsert({
+      worker_id: data.worker_id,
+      container_id: warm.container_id,
+      container_name: data.worker_id,
+      session_volume_name: sessionVolumeName,
+      warm_pool_id: data.warm_pool_id,
+      activated_at: currentTime(),
+    });
+    await this.workerWarmPoolRepository.markAssigned(
+      data.warm_pool_id,
+      data.worker_id
+    );
+    await this.workerService.updateWorkerById(data.account_id, {
+      worker_id: data.worker_id,
+      container_id: warm.container_id,
+      worker_status_id: EWorkerStatus.disponible,
+    });
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.warm_pool.activate_success',
+      decision: 'activate_warm_worker',
+      outcome: 'success',
+      warm_pool_id: data.warm_pool_id,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      server_id: data.server_id,
+      worker_type: workerType,
+      worker_type_id: workerType,
+      container_id: warm.container_id,
+      container_name: data.worker_id,
+      session_volume_name: sessionVolumeName,
+      duration_ms: Date.now() - startedAt,
+    });
+
+    return {
+      warm_pool_id: data.warm_pool_id,
+      worker_id: data.worker_id,
+      container_id: warm.container_id ?? '',
+      container_name: data.worker_id,
+      session_volume_name: sessionVolumeName,
+      claimed: true,
+    };
   }
 
   private async runWithWorkerLifecycleLock<T>(
@@ -3216,6 +3520,150 @@ export class WorkerCommandHandlerService {
     return result;
   }
 
+  private optionalNonEmpty(
+    value: string | undefined | null
+  ): string | undefined {
+    const normalized = value?.trim();
+    return normalized && normalized.length > 0 ? normalized : undefined;
+  }
+
+  private getSessionVolumeNameFromInspection(
+    inspection: WorkerContainerInspection | undefined
+  ): {
+    sessionVolumeName?: string;
+    source?: 'container_label' | 'container_env';
+  } {
+    const labelVolume = this.optionalNonEmpty(
+      inspection?.container_labels?.['underchat.session_volume_name']
+    );
+    if (labelVolume) {
+      return { sessionVolumeName: labelVolume, source: 'container_label' };
+    }
+
+    const envVolume = this.optionalNonEmpty(
+      inspection?.container_env?.SESSION_VOLUME_NAME
+    );
+    if (envVolume) {
+      return { sessionVolumeName: envVolume, source: 'container_env' };
+    }
+
+    return {};
+  }
+
+  private async resolveRecreateSessionVolume(
+    data: IWorkerPayload,
+    shouldRemoveVolume: boolean
+  ): Promise<RecreateSessionVolumeResolution> {
+    if (shouldRemoveVolume) {
+      return {
+        source: 'reset',
+        runtimeWasBackfilled: false,
+      };
+    }
+
+    const runtimeBeforeRemove =
+      (await this.workerRuntimeRepository?.viewByWorkerId(data.worker_id)) ??
+      null;
+    const runtimeVolume = this.optionalNonEmpty(
+      runtimeBeforeRemove?.session_volume_name
+    );
+
+    if (runtimeVolume) {
+      return {
+        sessionVolumeName: runtimeVolume,
+        source: 'worker_runtime',
+        runtimeWasBackfilled: false,
+      };
+    }
+
+    const inspection = await this.workerService.inspectContainerWorkerById(
+      data.worker_id
+    );
+    const containerVolume = this.getSessionVolumeNameFromInspection(inspection);
+    const sessionVolumeName =
+      containerVolume.sessionVolumeName ?? data.worker_id;
+    const source = containerVolume.source ?? 'legacy_worker_id';
+
+    if (inspection.exists && this.workerRuntimeRepository) {
+      const volumeExists =
+        await this.workerService.existsVolumeByName(sessionVolumeName);
+
+      if (volumeExists) {
+        await this.workerRuntimeRepository.upsert({
+          worker_id: data.worker_id,
+          container_id: inspection.container_id,
+          container_name: inspection.container_name ?? data.worker_id,
+          session_volume_name: sessionVolumeName,
+          activated_at: currentTime(),
+        });
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.runtime_legacy_backfilled',
+          decision: 'resolve_recreate_session_volume',
+          outcome: 'success',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          container_id: inspection.container_id,
+          container_name: inspection.container_name,
+          session_volume_name: sessionVolumeName,
+          session_volume_source: source,
+        });
+      }
+    }
+
+    return {
+      sessionVolumeName,
+      source,
+      runtimeWasBackfilled: inspection.exists,
+    };
+  }
+
+  private async assertPreservedSessionVolumeExists(
+    data: IWorkerPayload,
+    resolution: RecreateSessionVolumeResolution,
+    workerType: EWorkerType
+  ): Promise<void> {
+    if (!resolution.sessionVolumeName) {
+      return;
+    }
+
+    const existsVolume = await this.workerService.existsVolumeByName(
+      resolution.sessionVolumeName
+    );
+
+    if (existsVolume) {
+      return;
+    }
+
+    recordConnectionLifecycle({
+      stage:
+        'connection.balancer.command_handler.recreate_session_volume_missing',
+      decision: 'preserve_session_volume',
+      outcome: 'error',
+      reason: 'session_volume_missing',
+      level: 'error',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type: workerType,
+      worker_type_id: workerType,
+      session_volume_name: resolution.sessionVolumeName,
+      session_volume_source: resolution.source,
+      runtime_was_backfilled: resolution.runtimeWasBackfilled,
+    });
+
+    await this.updateWorkerErrorStatus(
+      data.worker_id,
+      data.account_id,
+      data.action,
+      data.server_id,
+      data.lifecycle_operation_id
+    );
+
+    throw new Error(
+      `Worker session volume ${resolution.sessionVolumeName} not found. Recreate aborted to preserve WhatsApp session.`
+    );
+  }
+
   private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
     if (!(await this.isLifecycleOperationCurrent(data, 'recreate_worker'))) {
       return {} as PublishResult;
@@ -3240,6 +3688,12 @@ export class WorkerCommandHandlerService {
     const workerType = viewWorkerType.worker_type_id as EWorkerType;
     const shouldRemoveSession = data.remove_session === true;
     const shouldRemoveVolume = data.remove_volume === true;
+    const sessionVolumeResolution = await this.resolveRecreateSessionVolume(
+      data,
+      shouldRemoveVolume
+    );
+    const preservedSessionVolumeName =
+      sessionVolumeResolution.sessionVolumeName;
 
     if (
       !(await this.isLifecycleOperationCurrent(
@@ -3284,12 +3738,17 @@ export class WorkerCommandHandlerService {
       }
     }
 
+    if (!shouldRemoveVolume) {
+      await this.assertPreservedSessionVolumeExists(
+        data,
+        sessionVolumeResolution,
+        workerType
+      );
+    }
+
     const removed = await this.retryOperation(
       async () =>
-        this.workerService.removeContainerWorker(
-          data.worker_id,
-          shouldRemoveVolume
-        ),
+        this.removeRuntimeContainer(data.worker_id, shouldRemoveVolume),
       (r) => !r
     );
 
@@ -3330,8 +3789,28 @@ export class WorkerCommandHandlerService {
     }
 
     const containerId = await this.retryOperation(
-      async () =>
-        this.workerService.createContainerWorker(
+      async () => {
+        const options = {
+          workerTypeId: workerType,
+          workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
+        };
+
+        if (preservedSessionVolumeName) {
+          return this.workerService.createContainerWorker(
+            imageName,
+            data.worker_id,
+            data.account_id,
+            false,
+            balanceEnvironment.grpcHost,
+            balanceEnvironment.grpcPort,
+            proxy,
+            options,
+            preservedSessionVolumeName,
+            { requireExistingVolume: true }
+          );
+        }
+
+        return this.workerService.createContainerWorker(
           imageName,
           data.worker_id,
           data.account_id,
@@ -3339,11 +3818,9 @@ export class WorkerCommandHandlerService {
           balanceEnvironment.grpcHost,
           balanceEnvironment.grpcPort,
           proxy,
-          {
-            workerTypeId: workerType,
-            workerGrpcPort: this.getExpectedWorkerGrpcPort(workerType),
-          }
-        ),
+          options
+        );
+      },
       (r) => !r
     );
 
@@ -3430,6 +3907,14 @@ export class WorkerCommandHandlerService {
       });
       return {} as PublishResult;
     }
+
+    await this.workerRuntimeRepository?.upsert({
+      worker_id: data.worker_id,
+      container_id: containerId,
+      container_name: data.worker_id,
+      session_volume_name: preservedSessionVolumeName ?? data.worker_id,
+      activated_at: currentTime(),
+    });
 
     return this.publishWorkerRecreateFinalState(data, reconciliation);
   }
@@ -3642,6 +4127,33 @@ export class WorkerCommandHandlerService {
     return result;
   }
 
+  private async removeRuntimeContainer(
+    workerId: string,
+    removeVolume: boolean,
+    options: { cleanup?: boolean } = {}
+  ): Promise<boolean> {
+    if (!this.workerRuntimeRepository) {
+      return options.cleanup
+        ? this.workerService.cleanupContainerWorker(workerId, removeVolume)
+        : this.workerService.removeContainerWorker(workerId, removeVolume);
+    }
+
+    const runtime = await this.workerRuntimeRepository.viewByWorkerId(workerId);
+    const volumeName = runtime?.session_volume_name ?? workerId;
+    const containerName = runtime?.container_name || workerId;
+    const removed = await this.workerService.removeContainerByNameAndVolume(
+      containerName,
+      volumeName,
+      removeVolume
+    );
+
+    if (removed && removeVolume) {
+      await this.workerRuntimeRepository.deleteByWorkerId(workerId);
+    }
+
+    return removed;
+  }
+
   private async cleanupWorker(data: IWorkerPayload): Promise<void> {
     this.stopConnectionRequestRetry(data.worker_id);
 
@@ -3684,9 +4196,12 @@ export class WorkerCommandHandlerService {
 
     const cleaned = await this.retryOperation(
       async () =>
-        this.workerService.cleanupContainerWorker(
+        this.removeRuntimeContainer(
           data.worker_id,
-          data.remove_volume !== false
+          data.remove_volume !== false,
+          {
+            cleanup: true,
+          }
         ),
       (r) => !r
     );
@@ -3764,7 +4279,7 @@ export class WorkerCommandHandlerService {
     let containerRemoved = false;
     try {
       containerRemoved = await this.retryOperation(
-        async () => this.workerService.removeContainerWorker(data.worker_id),
+        async () => this.removeRuntimeContainer(data.worker_id, true),
         (r) => !r
       );
     } catch (err) {
@@ -4034,6 +4549,14 @@ export class WorkerCommandHandlerService {
         containerId,
       });
     }
+
+    await this.workerRuntimeRepository?.upsert({
+      worker_id: data.worker_id,
+      container_id: containerId,
+      container_name: data.worker_id,
+      session_volume_name: data.worker_id,
+      activated_at: currentTime(),
+    });
 
     const dataPublish: IBaileysConnectionState = {
       code: ECodeMessage.info,

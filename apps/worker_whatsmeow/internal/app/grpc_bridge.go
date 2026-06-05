@@ -15,6 +15,8 @@ import (
 type WorkerConnectionHandler interface {
 	RequestConnection(context.Context, StatusConnectionRequest) (ConnectionState, error)
 	ValidatePhone(context.Context, PhoneValidationRequest) (PhoneValidationResponse, error)
+	ActivateRuntime(context.Context, WorkerRuntimeActivationRequest) (WorkerRuntimeActivationResponse, error)
+	RuntimeHealth(context.Context, WorkerRuntimeHealthRequest) (WorkerRuntimeHealthResponse, error)
 }
 
 type WorkerConnectionGRPCServer struct {
@@ -187,9 +189,68 @@ func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dyn
 	return out, nil
 }
 
+func (s *WorkerConnectionGRPCServer) ActivateRuntime(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	req := WorkerRuntimeActivationRequest{
+		WorkerID:          dynamicString(msg, "worker_id"),
+		AccountID:         dynamicString(msg, "account_id"),
+		WorkerTypeID:      dynamicString(msg, "worker_type_id"),
+		WarmPoolID:        dynamicString(msg, "warm_pool_id"),
+		SessionVolumeName: dynamicString(msg, "session_volume_name"),
+		BalancerGRPCHost:  dynamicString(msg, "balancer_grpc_host"),
+		BalancerGRPCPort:  int(dynamicInt32(msg, "balancer_grpc_port")),
+	}
+	log.Printf("grpc ActivateRuntime received worker_id=%s warm_pool_id=%s", req.WorkerID, req.WarmPoolID)
+	resp, err := s.handler.ActivateRuntime(ctx, req)
+	if err != nil {
+		log.Printf("grpc ActivateRuntime failed worker_id=%s warm_pool_id=%s error=%v", req.WorkerID, req.WarmPoolID, err)
+		return nil, err
+	}
+	out := newDynamicMessage(descs.workerRuntimeActivationResponse)
+	setDynamicBool(out, "activated", resp.Activated)
+	setDynamicBool(out, "already_active", resp.AlreadyActive)
+	setDynamicString(out, "worker_id", resp.WorkerID)
+	setDynamicString(out, "account_id", resp.AccountID)
+	setDynamicString(out, "warm_pool_id", resp.WarmPoolID)
+	setDynamicString(out, "error", resp.Error)
+	return out, nil
+}
+
+func (s *WorkerConnectionGRPCServer) RuntimeHealth(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	req := WorkerRuntimeHealthRequest{
+		WorkerID:   dynamicString(msg, "worker_id"),
+		WarmPoolID: dynamicString(msg, "warm_pool_id"),
+	}
+	resp, err := s.handler.RuntimeHealth(ctx, req)
+	if err != nil {
+		log.Printf("grpc RuntimeHealth failed worker_id=%s warm_pool_id=%s error=%v", req.WorkerID, req.WarmPoolID, err)
+		return nil, err
+	}
+	out := newDynamicMessage(descs.workerRuntimeHealthResponse)
+	setDynamicBool(out, "ready", resp.Ready)
+	setDynamicBool(out, "standby", resp.Standby)
+	setDynamicBool(out, "activated", resp.Activated)
+	setDynamicString(out, "worker_id", resp.WorkerID)
+	setDynamicString(out, "account_id", resp.AccountID)
+	setDynamicString(out, "warm_pool_id", resp.WarmPoolID)
+	setDynamicBool(out, "has_session", resp.HasSession)
+	setDynamicBool(out, "has_qr", resp.HasQR)
+	setDynamicString(out, "error", resp.Error)
+	return out, nil
+}
+
 type dynamicWorkerConnectionService interface {
 	RequestConnection(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	ValidatePhone(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
+	ActivateRuntime(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
+	RuntimeHealth(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 }
 
 func RegisterWorkerConnectionService(server *grpc.Server, service dynamicWorkerConnectionService) {
@@ -204,6 +265,14 @@ func RegisterWorkerConnectionService(server *grpc.Server, service dynamicWorkerC
 			{
 				MethodName: "ValidatePhone",
 				Handler:    validatePhoneHandler,
+			},
+			{
+				MethodName: "ActivateRuntime",
+				Handler:    activateRuntimeHandler,
+			},
+			{
+				MethodName: "RuntimeHealth",
+				Handler:    runtimeHealthHandler,
 			},
 		},
 		Streams:  []grpc.StreamDesc{},
@@ -251,6 +320,50 @@ func validatePhoneHandler(srv any, ctx context.Context, dec func(any) error, int
 	}
 	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(dynamicWorkerConnectionService).ValidatePhone(ctx, req.(*dynamicpb.Message))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func activateRuntimeHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	in := newDynamicMessage(descs.workerRuntimeActivationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(dynamicWorkerConnectionService).ActivateRuntime(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker_connection.WorkerConnection/ActivateRuntime",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(dynamicWorkerConnectionService).ActivateRuntime(ctx, req.(*dynamicpb.Message))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func runtimeHealthHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	in := newDynamicMessage(descs.workerRuntimeHealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(dynamicWorkerConnectionService).RuntimeHealth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker_connection.WorkerConnection/RuntimeHealth",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(dynamicWorkerConnectionService).RuntimeHealth(ctx, req.(*dynamicpb.Message))
 	}
 	return interceptor(ctx, in, info, handler)
 }

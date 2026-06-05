@@ -47,6 +47,8 @@ export class KafkaServiceQueueService {
     const buildVersionCancelRequest = this.buildVersionCancelRequest();
     const internalChatDirectMessage = this.internalChatDirectMessage();
     const internalChatGroupMessage = this.internalChatGroupMessage();
+    const workerWarmReplenishRequest = this.workerWarmReplenishRequest();
+    const workerWarmDeleteRequest = this.workerWarmDeleteRequest();
 
     return [
       createServer,
@@ -73,6 +75,8 @@ export class KafkaServiceQueueService {
       buildVersionCancelRequest,
       internalChatDirectMessage,
       internalChatGroupMessage,
+      workerWarmReplenishRequest,
+      workerWarmDeleteRequest,
     ];
   };
 
@@ -148,6 +152,14 @@ export class KafkaServiceQueueService {
 
   workerConfigUpdate = () => {
     return `worker.config.update`;
+  };
+
+  workerWarmReplenishRequest = () => {
+    return 'worker.warm.replenish.request';
+  };
+
+  workerWarmDeleteRequest = () => {
+    return 'worker.warm.delete.request';
   };
 
   aiAgentPromptEmbedding = () => {

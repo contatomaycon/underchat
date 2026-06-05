@@ -18,7 +18,7 @@ import { safePlugin } from '@core/common/functions/safePlugin';
 import redisPlugin from '@core/plugins/redis';
 import s3Plugin from '@core/plugins/s3';
 import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnectionGrpcServer';
-import wwebjsConsumersOnListenHook from './consumer';
+import wwebjsConsumersOnListenHook, { activateWwebjsRuntime } from './consumer';
 import { setupGracefulShutdown } from '@core/plugins/telemetry/errorHandlers';
 
 const server = fastify({
@@ -52,7 +52,7 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 server.register(
   safePlugin(workerConnectionGrpcServerPlugin, 'workerConnectionGrpcServer'),
-  { module: ERouteModule.worker_wwebjs }
+  { module: ERouteModule.worker_wwebjs, activateRuntime: activateWwebjsRuntime }
 );
 
 server.register(

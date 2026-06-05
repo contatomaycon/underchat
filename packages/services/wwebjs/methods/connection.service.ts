@@ -31,12 +31,7 @@ import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { logger } from '@core/plugins/telemetry/logger';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
-const FOLDER = `/app/data/wwebjs/storage/${wwebjsEnvironment.wwebjsWorkerId}`;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
-const CHANNEL = workerCentrifugoQueue(wwebjsEnvironment.wwebjsAccountId);
-const CHAT_CHANNEL = chatAccountCentrifugo(wwebjsEnvironment.wwebjsAccountId);
-const WORKER = wwebjsEnvironment.wwebjsWorkerId;
-const ACCOUNT = wwebjsEnvironment.wwebjsAccountId;
 const RETRY_DELAY = 60_000;
 const MAX_RETRIES = 10;
 const RECONNECT_COOLDOWN_DELAY = 30 * 60 * 1000;
@@ -60,6 +55,26 @@ const CHROMIUM_LOCK_FILE_NAMES = [
   'SingletonCookie',
 ] as const;
 const CHROMIUM_PROFILE_SUBDIRECTORIES = ['', 'Default'] as const;
+
+function getFolder(): string {
+  return `/app/data/wwebjs/storage/${wwebjsEnvironment.wwebjsWorkerId}`;
+}
+
+function getChannel(): string {
+  return workerCentrifugoQueue(wwebjsEnvironment.wwebjsAccountId);
+}
+
+function getChatChannel(): string {
+  return chatAccountCentrifugo(wwebjsEnvironment.wwebjsAccountId);
+}
+
+function getWorker(): string {
+  return wwebjsEnvironment.wwebjsWorkerId;
+}
+
+function getAccount(): string {
+  return wwebjsEnvironment.wwebjsAccountId;
+}
 const PUPPETEER_PROTOCOL_TIMEOUT_MS = (() => {
   const parsed = Number.parseInt(
     process.env.WWEBJS_PROTOCOL_TIMEOUT_MS ?? '',
@@ -214,7 +229,7 @@ export class WwebjsConnectionService {
 
     try {
       const payload = JSON.parse(this.lastPayload) as IBaileysConnectionState;
-      void this.centrifugo.publishSub(CHANNEL, payload).catch((error) => {
+      void this.centrifugo.publishSub(getChannel(), payload).catch((error) => {
         console.error('[WwebjsConnection] Republish failed', error);
       });
     } catch (error) {
@@ -394,7 +409,7 @@ export class WwebjsConnectionService {
     }
 
     this.saveLogWppConnection({
-      worker_id: WORKER,
+      worker_id: getWorker(),
       status: this.status,
       code: this.code?.toString(),
       message: 'WwebjsConnectionService disconnected',
@@ -405,8 +420,8 @@ export class WwebjsConnectionService {
 
     const payload: IBaileysConnectionState = {
       status: this.status,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       code: this.code,
       disconnected_user: disconnectedUser,
       worker_status_id: EWorkerStatus.disponible,
@@ -442,7 +457,7 @@ export class WwebjsConnectionService {
       initial_connection: initialConnection,
     }).catch(() => {
       this.saveLogWppConnection({
-        worker_id: WORKER,
+        worker_id: getWorker(),
         status: this.status ?? Status.disconnected,
         code: this.code ?? ECodeMessage.connectionLost,
         message: 'Reconnect failed',
@@ -535,25 +550,25 @@ export class WwebjsConnectionService {
   }
 
   private prepareFolder(): void {
-    if (!fs.existsSync(FOLDER)) {
-      fs.mkdirSync(FOLDER, { recursive: true });
+    if (!fs.existsSync(getFolder())) {
+      fs.mkdirSync(getFolder(), { recursive: true });
     }
   }
 
   private clearFolder(): void {
-    if (!fs.existsSync(FOLDER)) {
+    if (!fs.existsSync(getFolder())) {
       return;
     }
 
-    for (const f of fs.readdirSync(FOLDER)) {
+    for (const f of fs.readdirSync(getFolder())) {
       try {
-        fs.rmSync(path.join(FOLDER, f), { recursive: true, force: true });
+        fs.rmSync(path.join(getFolder(), f), { recursive: true, force: true });
       } catch {}
     }
   }
 
   private getSessionPath(): string {
-    return path.join(FOLDER, '.wwebjs_auth', `session-${WORKER}`);
+    return path.join(getFolder(), '.wwebjs_auth', `session-${getWorker()}`);
   }
 
   private clearChromiumProfileLock(): void {
@@ -599,8 +614,8 @@ export class WwebjsConnectionService {
   private publishReconnectAttempt(attempt: number, delayMs: number): void {
     const retryPayload: IBaileysConnectionState = {
       status: Status.connecting,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       code: ECodeMessage.awaitConnection,
       attempt,
       max_attempts: MAX_RETRIES,
@@ -623,8 +638,8 @@ export class WwebjsConnectionService {
     this.publishSub(
       {
         status: Status.connecting,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        account_id: getAccount(),
         code: ECodeMessage.awaitConnection,
         connection_attempt_id: this.connectionAttemptId,
       },
@@ -637,8 +652,8 @@ export class WwebjsConnectionService {
     this.publishSub(
       {
         status: Status.connecting,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        account_id: getAccount(),
         code: ECodeMessage.logoutInProgress,
         disconnected_user: true,
       },
@@ -861,7 +876,7 @@ export class WwebjsConnectionService {
     }
 
     this.saveLogWppConnection({
-      worker_id: WORKER,
+      worker_id: getWorker(),
       status: Status.disconnected,
       code: ECodeMessage.connectionLost,
       message,
@@ -877,7 +892,7 @@ export class WwebjsConnectionService {
 
       this.clearChromiumProfileLock();
 
-      const authPath = path.join(FOLDER, `.wwebjs_auth`);
+      const authPath = path.join(getFolder(), `.wwebjs_auth`);
       const proxy = readProxyConfig();
       const puppeteerOpts: {
         headless: boolean;
@@ -909,7 +924,7 @@ export class WwebjsConnectionService {
 
       const clientOptions: ConstructorParameters<typeof ClientCtor>[0] = {
         authStrategy: new LocalAuth({
-          clientId: WORKER,
+          clientId: getWorker(),
           dataPath: authPath,
         }),
         puppeteer: puppeteerOpts,
@@ -969,8 +984,8 @@ export class WwebjsConnectionService {
           status: this.status,
           code: this.code,
           pairing_code: pairingCode,
-          worker_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          account_id: getAccount(),
           worker_status_id: EWorkerStatus.disponible,
         };
 
@@ -1024,8 +1039,8 @@ export class WwebjsConnectionService {
           status: this.status,
           code: this.code,
           qrcode: img,
-          worker_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          account_id: getAccount(),
           attempt: this.qrGenerationCount,
           max_attempts: MAX_QR_GENERATIONS,
           worker_status_id: EWorkerStatus.disponible,
@@ -1037,7 +1052,7 @@ export class WwebjsConnectionService {
 
         if (!this.initialConnection) {
           this.saveLogWppConnection({
-            worker_id: WORKER,
+            worker_id: getWorker(),
             status: this.status,
             code: this.code?.toString(),
             message: 'QR Code received',
@@ -1072,8 +1087,8 @@ export class WwebjsConnectionService {
         const payload: IBaileysConnectionState = {
           status: this.status,
           code: this.code,
-          worker_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          account_id: getAccount(),
           is_new_login: true,
           worker_status_id: EWorkerStatus.disponible,
         };
@@ -1125,8 +1140,8 @@ export class WwebjsConnectionService {
 
         const payload: IBaileysConnectionState = {
           status: this.status,
-          worker_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          account_id: getAccount(),
           code: statusCode,
           worker_status_id: workerStatusId,
         };
@@ -1134,7 +1149,7 @@ export class WwebjsConnectionService {
         this.publishSub(payload, true);
 
         this.saveLogWppConnection({
-          worker_id: WORKER,
+          worker_id: getWorker(),
           status: this.status,
           code: this.code?.toString(),
           message: reason ?? 'Wwebjs disconnected',
@@ -1150,10 +1165,10 @@ export class WwebjsConnectionService {
         if (statusCode === ECodeMessage.loggedOut) {
           const logoutPayload: IBaileysConnectionState = {
             status: this.status,
-            worker_id: WORKER,
+            worker_id: getWorker(),
             code: statusCode,
             disconnected_user: true,
-            account_id: ACCOUNT,
+            account_id: getAccount(),
             worker_status_id: EWorkerStatus.mismatched,
           };
 
@@ -1212,8 +1227,8 @@ export class WwebjsConnectionService {
         });
         const payload: IBaileysConnectionState = {
           status: this.status,
-          worker_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          account_id: getAccount(),
           code: this.code,
           worker_status_id: EWorkerStatus.mismatched,
         };
@@ -1648,8 +1663,8 @@ export class WwebjsConnectionService {
 
     const payload: IBaileysConnectionState = {
       status: this.status,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       code: this.code,
       phone,
       worker_status_id: EWorkerStatus.online,
@@ -1789,11 +1804,13 @@ export class WwebjsConnectionService {
       is_typing: resolved.is_typing,
       is_recording: resolved.is_recording,
       typing_state: resolved.typing_state,
-      account_id: ACCOUNT,
-      worker_id: WORKER,
+      account_id: getAccount(),
+      worker_id: getWorker(),
     };
 
-    void this.centrifugo.publishSub(CHAT_CHANNEL, typingEvent).catch(() => {});
+    void this.centrifugo
+      .publishSub(getChatChannel(), typingEvent)
+      .catch(() => {});
   }
 
   private trackQrReadSession(
@@ -1857,8 +1874,8 @@ export class WwebjsConnectionService {
     const payload: IBaileysConnectionState = {
       status: this.status,
       code: this.code,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       attempt: MAX_QR_GENERATIONS + 1,
       max_attempts: MAX_QR_GENERATIONS,
       worker_status_id: EWorkerStatus.disponible,
@@ -1924,7 +1941,7 @@ export class WwebjsConnectionService {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch {
         this.saveLogWppConnection({
-          worker_id: WORKER,
+          worker_id: getWorker(),
           status: Status.disconnected,
           code: ECodeMessage.connectionLost,
           message: 'Error during logout',
@@ -1937,7 +1954,7 @@ export class WwebjsConnectionService {
       await this.client.destroy();
     } catch {
       this.saveLogWppConnection({
-        worker_id: WORKER,
+        worker_id: getWorker(),
         status: Status.disconnected,
         code: ECodeMessage.connectionLost,
         message: 'Error during destroy',
@@ -1960,8 +1977,8 @@ export class WwebjsConnectionService {
       const payload = {
         status: this.status,
         code: ECodeMessage.connectionEstablished,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        account_id: getAccount(),
         phone: getPhoneNumber(this.client?.info?.wid?._serialized),
         worker_status_id: EWorkerStatus.online,
       };
@@ -1996,8 +2013,8 @@ export class WwebjsConnectionService {
   private state(qr?: string, qrGeneratedAt?: string): IBaileysConnectionState {
     const result: IBaileysConnectionState = {
       status: this.status,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
@@ -2021,9 +2038,9 @@ export class WwebjsConnectionService {
         reason: 'initial_connection_false',
         source_provider: 'wwebjs',
         worker_type: 'wwebjs',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
       });
@@ -2039,9 +2056,9 @@ export class WwebjsConnectionService {
         reason: 'payload_duplicated',
         source_provider: 'wwebjs',
         worker_type: 'wwebjs',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
       });
@@ -2056,9 +2073,9 @@ export class WwebjsConnectionService {
       outcome: 'started',
       source_provider: 'wwebjs',
       worker_type: 'wwebjs',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: payload.status,
       code: payload.code,
       worker_status_id: payload.worker_status_id,
@@ -2067,7 +2084,7 @@ export class WwebjsConnectionService {
       force,
     });
     void this.centrifugo
-      .publishSub(CHANNEL, payload)
+      .publishSub(getChannel(), payload)
       .then(() => {
         recordConnectionLifecycle({
           stage: 'connection.wwebjs.centrifugo.publish_success',
@@ -2075,9 +2092,9 @@ export class WwebjsConnectionService {
           outcome: 'success',
           source_provider: 'wwebjs',
           worker_type: 'wwebjs',
-          worker_id: WORKER,
-          channel_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          channel_id: getWorker(),
+          account_id: getAccount(),
           status: payload.status,
           code: payload.code,
           worker_status_id: payload.worker_status_id,
@@ -2095,9 +2112,9 @@ export class WwebjsConnectionService {
           level: 'error',
           source_provider: 'wwebjs',
           worker_type: 'wwebjs',
-          worker_id: WORKER,
-          channel_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          channel_id: getWorker(),
+          account_id: getAccount(),
           status: payload.status,
           code: payload.code,
           worker_status_id: payload.worker_status_id,
@@ -2119,9 +2136,9 @@ export class WwebjsConnectionService {
       outcome: 'started',
       source_provider: 'wwebjs',
       worker_type: 'wwebjs',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: payload.status,
       code: payload.code,
       worker_status_id: payload.worker_status_id,
@@ -2139,9 +2156,9 @@ export class WwebjsConnectionService {
         outcome: 'success',
         source_provider: 'wwebjs',
         worker_type: 'wwebjs',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
         worker_status_id: payload.worker_status_id,
@@ -2159,9 +2176,9 @@ export class WwebjsConnectionService {
         level: 'error',
         source_provider: 'wwebjs',
         worker_type: 'wwebjs',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
         worker_status_id: payload.worker_status_id,
@@ -2182,8 +2199,8 @@ export class WwebjsConnectionService {
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.info,
       status: Status.disconnected,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       worker_status_id: EWorkerStatus.mismatched,
     };
 
@@ -2201,8 +2218,8 @@ export class WwebjsConnectionService {
       component: 'wwebjs_connection_service',
       type: 'connection_status',
       event,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       status: this.status,
       code: this.code,
       ...details,
@@ -2215,9 +2232,9 @@ export class WwebjsConnectionService {
       level,
       source_provider: 'wwebjs',
       worker_type: 'wwebjs',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: this.status,
       code: this.code,
       ...details,
@@ -2246,9 +2263,9 @@ export class WwebjsConnectionService {
       outcome: 'started',
       source_provider: 'wwebjs',
       worker_type: 'wwebjs',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: wppLog?.status,
       code: wppLog?.code,
       elastic_index: EElasticIndex.wpp_connection,
@@ -2268,16 +2285,19 @@ export class WwebjsConnectionService {
         level: 'warn',
         source_provider: 'wwebjs',
         worker_type: 'wwebjs',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         elastic_index: EElasticIndex.wpp_connection,
         duration_ms: Date.now() - startedAt,
       });
       return false;
     }
 
-    const documentId = buildWppConnectionDocumentId(ACCOUNT, wppLog.worker_id);
+    const documentId = buildWppConnectionDocumentId(
+      getAccount(),
+      wppLog.worker_id
+    );
 
     try {
       const updateResult = await this.elasticDatabaseService.updateWithOCC(
@@ -2302,9 +2322,9 @@ export class WwebjsConnectionService {
         reason: updateResult,
         source_provider: 'wwebjs',
         worker_type: 'wwebjs',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: wppLog.status,
         code: wppLog.code,
         elastic_index: EElasticIndex.wpp_connection,
@@ -2324,9 +2344,9 @@ export class WwebjsConnectionService {
         level: 'error',
         source_provider: 'wwebjs',
         worker_type: 'wwebjs',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: wppLog.status,
         code: wppLog.code,
         elastic_index: EElasticIndex.wpp_connection,

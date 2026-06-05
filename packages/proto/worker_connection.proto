@@ -5,6 +5,8 @@ package worker_connection;
 service WorkerConnection {
   rpc RequestConnection(StatusConnectionRequest) returns (WorkerConnectionResponse);
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
+  rpc ActivateRuntime(WorkerRuntimeActivationRequest) returns (WorkerRuntimeActivationResponse);
+  rpc RuntimeHealth(WorkerRuntimeHealthRequest) returns (WorkerRuntimeHealthResponse);
 }
 
 message StatusConnectionRequest {
@@ -56,4 +58,39 @@ message PhoneValidationResponse {
   string jid = 5;
   string phone = 6;
   string error = 7;
+}
+
+message WorkerRuntimeActivationRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string worker_type_id = 3;
+  string warm_pool_id = 4;
+  string session_volume_name = 5;
+  string balancer_grpc_host = 6;
+  int32 balancer_grpc_port = 7;
+}
+
+message WorkerRuntimeActivationResponse {
+  string worker_id = 1;
+  string account_id = 2;
+  bool activated = 3;
+  bool already_active = 4;
+  string error = 5;
+}
+
+message WorkerRuntimeHealthRequest {
+  string worker_id = 1;
+  string warm_pool_id = 2;
+}
+
+message WorkerRuntimeHealthResponse {
+  string worker_id = 1;
+  string account_id = 2;
+  string warm_pool_id = 3;
+  bool standby = 4;
+  bool activated = 5;
+  bool ready = 6;
+  bool has_session = 7;
+  bool has_qr = 8;
+  string error = 9;
 }

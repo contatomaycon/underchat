@@ -100,6 +100,42 @@ type PhoneValidationResponse struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type WorkerRuntimeActivationRequest struct {
+	WorkerID          string `json:"worker_id"`
+	AccountID         string `json:"account_id"`
+	WorkerTypeID      string `json:"worker_type_id"`
+	WarmPoolID        string `json:"warm_pool_id"`
+	SessionVolumeName string `json:"session_volume_name"`
+	BalancerGRPCHost  string `json:"balancer_grpc_host"`
+	BalancerGRPCPort  int    `json:"balancer_grpc_port"`
+}
+
+type WorkerRuntimeActivationResponse struct {
+	Activated     bool   `json:"activated"`
+	AlreadyActive bool   `json:"already_active,omitempty"`
+	WorkerID      string `json:"worker_id,omitempty"`
+	AccountID     string `json:"account_id,omitempty"`
+	WarmPoolID    string `json:"warm_pool_id,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+type WorkerRuntimeHealthRequest struct {
+	WorkerID   string `json:"worker_id"`
+	WarmPoolID string `json:"warm_pool_id"`
+}
+
+type WorkerRuntimeHealthResponse struct {
+	Ready      bool   `json:"ready"`
+	Standby    bool   `json:"standby"`
+	Activated  bool   `json:"activated"`
+	WorkerID   string `json:"worker_id,omitempty"`
+	AccountID  string `json:"account_id,omitempty"`
+	WarmPoolID string `json:"warm_pool_id,omitempty"`
+	HasSession bool   `json:"has_session,omitempty"`
+	HasQR      bool   `json:"has_qr,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
 type MessageKey struct {
 	RemoteJID       string `json:"remote_jid,omitempty"`
 	RemoteJIDAlt    string `json:"remote_jid_alt,omitempty"`

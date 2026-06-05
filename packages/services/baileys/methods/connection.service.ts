@@ -39,11 +39,7 @@ import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { logger } from '@core/plugins/telemetry/logger';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
-const FOLDER = `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
-const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
-const WORKER = baileysEnvironment.baileysWorkerId;
-const ACCOUNT = baileysEnvironment.baileysAccountId;
 const WA_VERSION_TTL_MS = 6 * 60 * 60 * 1000;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
@@ -53,6 +49,22 @@ let cachedWaVersion: {
   version: [number, number, number];
   fetchedAt: number;
 } | null = null;
+
+function getFolder(): string {
+  return `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
+}
+
+function getChannel(): string {
+  return workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
+}
+
+function getWorker(): string {
+  return baileysEnvironment.baileysWorkerId;
+}
+
+function getAccount(): string {
+  return baileysEnvironment.baileysAccountId;
+}
 
 function readProxyConfig(): {
   protocol: EProxyProtocol;
@@ -236,7 +248,7 @@ export class BaileysConnectionService {
 
     try {
       const payload = JSON.parse(this.lastPayload) as IBaileysConnectionState;
-      void this.centrifugo.publishSub(CHANNEL, payload).catch((error) => {
+      void this.centrifugo.publishSub(getChannel(), payload).catch((error) => {
         console.error('[BaileysConnection] Republish failed', error);
       });
     } catch (error) {
@@ -282,7 +294,7 @@ export class BaileysConnectionService {
           'error'
         );
         this.saveLogWppConnection({
-          worker_id: WORKER,
+          worker_id: getWorker(),
           status: this.status ?? Status.disconnected,
           code: this.code ?? ECodeMessage.connectionLost,
           message: `Reconnect failed after ${delayMs}ms retry`,
@@ -309,8 +321,8 @@ export class BaileysConnectionService {
 
     const retryPayload: IBaileysConnectionState = {
       status: Status.connecting,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       code: ECodeMessage.awaitConnection,
       attempt,
       max_attempts: this.maxRetries,
@@ -332,8 +344,8 @@ export class BaileysConnectionService {
     this.publishSub(
       {
         status: Status.connecting,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        account_id: getAccount(),
         code: ECodeMessage.awaitConnection,
         connection_attempt_id: this.connectionAttemptId,
       },
@@ -344,8 +356,8 @@ export class BaileysConnectionService {
   private publishPairingInProgress(context: string): void {
     const payload: IBaileysConnectionState = {
       status: Status.connecting,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       is_new_login: true,
       code: ECodeMessage.pairingInProgress,
       worker_status_id: EWorkerStatus.disponible,
@@ -360,8 +372,8 @@ export class BaileysConnectionService {
     this.publishSub(
       {
         status: Status.connecting,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        account_id: getAccount(),
         code: ECodeMessage.logoutInProgress,
         disconnected_user: true,
       },
@@ -670,7 +682,7 @@ export class BaileysConnectionService {
     }
 
     this.saveLogWppConnection({
-      worker_id: WORKER,
+      worker_id: getWorker(),
       status: this.status,
       code: this.code?.toString(),
       message: 'BaileysConnectionService disconnected',
@@ -681,8 +693,8 @@ export class BaileysConnectionService {
 
     const payload: IBaileysConnectionState = {
       status: this.status,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       code: this.code,
       disconnected_user: disconnectedUser,
       worker_status_id: EWorkerStatus.disponible,
@@ -718,7 +730,7 @@ export class BaileysConnectionService {
       initial_connection: initialConnection,
     }).catch(() => {
       this.saveLogWppConnection({
-        worker_id: WORKER,
+        worker_id: getWorker(),
         status: this.status ?? Status.disconnected,
         code: this.code ?? ECodeMessage.connectionLost,
         message: 'Reconnect failed',
@@ -748,7 +760,7 @@ export class BaileysConnectionService {
   }
 
   private async createSocket() {
-    const { state, saveCreds } = await useMultiFileAuthState(FOLDER);
+    const { state, saveCreds } = await useMultiFileAuthState(getFolder());
     const version = await getCachedWaWebVersion();
     const proxyConfig = readProxyConfig();
 
@@ -888,8 +900,8 @@ export class BaileysConnectionService {
       status: this.status,
       code: this.code,
       qrcode: img,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       attempt: this.qrGenerationCount,
       max_attempts: this.maxQrGenerations,
       worker_status_id: EWorkerStatus.disponible,
@@ -900,7 +912,7 @@ export class BaileysConnectionService {
 
     if (!this.initialConnection) {
       this.saveLogWppConnection({
-        worker_id: WORKER,
+        worker_id: getWorker(),
         status: this.status,
         code: this.code?.toString(),
         message: 'QR Code received',
@@ -949,8 +961,8 @@ export class BaileysConnectionService {
 
     const payload: IBaileysConnectionState = {
       status: this.status,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       code: this.code,
       phone: getPhoneNumber(this.socket?.user?.id),
       worker_status_id: EWorkerStatus.online,
@@ -1127,8 +1139,8 @@ export class BaileysConnectionService {
     if (!this.awaitingNewLogin) {
       const payload: IBaileysConnectionState = {
         status: this.status,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        account_id: getAccount(),
         code: disconnectionCode,
         worker_status_id: workerStatusId,
       };
@@ -1139,7 +1151,7 @@ export class BaileysConnectionService {
         this.lastStatusPayload = payloadStr;
 
         this.saveLogWppConnection({
-          worker_id: WORKER,
+          worker_id: getWorker(),
           status: this.status,
           code: this.code?.toString(),
           message: statusMessage ?? 'BaileysConnectionService disconnected',
@@ -1157,10 +1169,10 @@ export class BaileysConnectionService {
     if (statusCode === ECodeMessage.loggedOut) {
       const payload: IBaileysConnectionState = {
         status: this.status,
-        worker_id: WORKER,
+        worker_id: getWorker(),
         code: disconnectionCode,
         disconnected_user: true,
-        account_id: ACCOUNT,
+        account_id: getAccount(),
         worker_status_id: EWorkerStatus.mismatched,
       };
 
@@ -1313,8 +1325,8 @@ export class BaileysConnectionService {
     const payload: IBaileysConnectionState = {
       status: this.status,
       code: this.code,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       attempt: this.maxQrGenerations + 1,
       max_attempts: this.maxQrGenerations,
       worker_status_id: EWorkerStatus.disponible,
@@ -1326,7 +1338,7 @@ export class BaileysConnectionService {
   }
 
   hasSession(): boolean {
-    return fs.existsSync(FOLDER) && fs.readdirSync(FOLDER).length > 0;
+    return fs.existsSync(getFolder()) && fs.readdirSync(getFolder()).length > 0;
   }
 
   private async restoreWithRetries(): Promise<IBaileysConnectionState> {
@@ -1339,7 +1351,7 @@ export class BaileysConnectionService {
       });
     } catch (e) {
       this.saveLogWppConnection({
-        worker_id: WORKER,
+        worker_id: getWorker(),
         status: Status.disconnected,
         code: ECodeMessage.connectionLost,
         message: `Failed to restore session: ${e instanceof Error ? e.message : String(e)}`,
@@ -1362,9 +1374,9 @@ export class BaileysConnectionService {
         reason: 'initial_connection_false',
         source_provider: 'baileys',
         worker_type: 'baileys',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
       });
@@ -1380,9 +1392,9 @@ export class BaileysConnectionService {
         reason: 'payload_duplicated',
         source_provider: 'baileys',
         worker_type: 'baileys',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
       });
@@ -1397,9 +1409,9 @@ export class BaileysConnectionService {
       outcome: 'started',
       source_provider: 'baileys',
       worker_type: 'baileys',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: payload.status,
       code: payload.code,
       worker_status_id: payload.worker_status_id,
@@ -1408,7 +1420,7 @@ export class BaileysConnectionService {
       force,
     });
     void this.centrifugo
-      .publishSub(CHANNEL, payload)
+      .publishSub(getChannel(), payload)
       .then(() => {
         recordConnectionLifecycle({
           stage: 'connection.baileys.centrifugo.publish_success',
@@ -1416,9 +1428,9 @@ export class BaileysConnectionService {
           outcome: 'success',
           source_provider: 'baileys',
           worker_type: 'baileys',
-          worker_id: WORKER,
-          channel_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          channel_id: getWorker(),
+          account_id: getAccount(),
           status: payload.status,
           code: payload.code,
           worker_status_id: payload.worker_status_id,
@@ -1436,9 +1448,9 @@ export class BaileysConnectionService {
           level: 'error',
           source_provider: 'baileys',
           worker_type: 'baileys',
-          worker_id: WORKER,
-          channel_id: WORKER,
-          account_id: ACCOUNT,
+          worker_id: getWorker(),
+          channel_id: getWorker(),
+          account_id: getAccount(),
           status: payload.status,
           code: payload.code,
           worker_status_id: payload.worker_status_id,
@@ -1460,9 +1472,9 @@ export class BaileysConnectionService {
       outcome: 'started',
       source_provider: 'baileys',
       worker_type: 'baileys',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: payload.status,
       code: payload.code,
       worker_status_id: payload.worker_status_id,
@@ -1480,9 +1492,9 @@ export class BaileysConnectionService {
         outcome: 'success',
         source_provider: 'baileys',
         worker_type: 'baileys',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
         worker_status_id: payload.worker_status_id,
@@ -1500,9 +1512,9 @@ export class BaileysConnectionService {
         level: 'error',
         source_provider: 'baileys',
         worker_type: 'baileys',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: payload.status,
         code: payload.code,
         worker_status_id: payload.worker_status_id,
@@ -1523,8 +1535,8 @@ export class BaileysConnectionService {
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.info,
       status: Status.disconnected,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       worker_status_id: EWorkerStatus.mismatched,
     };
 
@@ -1542,7 +1554,7 @@ export class BaileysConnectionService {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch {
         this.saveLogWppConnection({
-          worker_id: WORKER,
+          worker_id: getWorker(),
           status: Status.disconnected,
           code: ECodeMessage.connectionLost,
           message: 'Error during logout',
@@ -1576,7 +1588,7 @@ export class BaileysConnectionService {
       }
     } catch {
       this.saveLogWppConnection({
-        worker_id: WORKER,
+        worker_id: getWorker(),
         status: Status.disconnected,
         code: ECodeMessage.connectionLost,
         message: 'Error during WebSocket close',
@@ -1595,7 +1607,7 @@ export class BaileysConnectionService {
       this.socket?.ev.removeAllListeners('connection.update');
     } catch {
       this.saveLogWppConnection({
-        worker_id: WORKER,
+        worker_id: getWorker(),
         status: Status.disconnected,
         code: ECodeMessage.connectionLost,
         message: 'Error during cancel attempt',
@@ -1618,7 +1630,7 @@ export class BaileysConnectionService {
         }
       } catch {
         this.saveLogWppConnection({
-          worker_id: WORKER,
+          worker_id: getWorker(),
           status: Status.disconnected,
           code: ECodeMessage.connectionLost,
           message: 'Error closing websocket during cancel attempt',
@@ -1647,8 +1659,8 @@ export class BaileysConnectionService {
       const payload = {
         status: this.status,
         code: ECodeMessage.connectionEstablished,
-        worker_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        account_id: getAccount(),
         phone: getPhoneNumber(this.socket?.user?.id),
         worker_status_id: EWorkerStatus.online,
       };
@@ -1661,20 +1673,20 @@ export class BaileysConnectionService {
   }
 
   private prepareFolder() {
-    if (!fs.existsSync(FOLDER)) {
-      fs.mkdirSync(FOLDER, {
+    if (!fs.existsSync(getFolder())) {
+      fs.mkdirSync(getFolder(), {
         recursive: true,
       });
     }
   }
 
   private clearFolder() {
-    if (!fs.existsSync(FOLDER)) {
+    if (!fs.existsSync(getFolder())) {
       return;
     }
 
-    for (const f of fs.readdirSync(FOLDER)) {
-      fs.rmSync(path.join(FOLDER, f), {
+    for (const f of fs.readdirSync(getFolder())) {
+      fs.rmSync(path.join(getFolder(), f), {
         recursive: true,
         force: true,
       });
@@ -1705,8 +1717,8 @@ export class BaileysConnectionService {
   private state(qr?: string, qrGeneratedAt?: string): IBaileysConnectionState {
     const result: IBaileysConnectionState = {
       status: this.status,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
@@ -1812,8 +1824,8 @@ export class BaileysConnectionService {
       component: 'baileys_connection_service',
       type: 'connection_status',
       event,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       status: this.status,
       code: this.code,
       ...details,
@@ -1826,9 +1838,9 @@ export class BaileysConnectionService {
       level,
       source_provider: 'baileys',
       worker_type: 'baileys',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: this.status,
       code: this.code,
       ...details,
@@ -1857,9 +1869,9 @@ export class BaileysConnectionService {
       outcome: 'started',
       source_provider: 'baileys',
       worker_type: 'baileys',
-      worker_id: WORKER,
-      channel_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      channel_id: getWorker(),
+      account_id: getAccount(),
       status: wppLog?.status,
       code: wppLog?.code,
       elastic_index: EElasticIndex.wpp_connection,
@@ -1880,16 +1892,19 @@ export class BaileysConnectionService {
         level: 'warn',
         source_provider: 'baileys',
         worker_type: 'baileys',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         elastic_index: EElasticIndex.wpp_connection,
         duration_ms: Date.now() - startedAt,
       });
       return false;
     }
 
-    const documentId = buildWppConnectionDocumentId(ACCOUNT, wppLog.worker_id);
+    const documentId = buildWppConnectionDocumentId(
+      getAccount(),
+      wppLog.worker_id
+    );
 
     try {
       const updateResult = await this.elasticDatabaseService.updateWithOCC(
@@ -1917,9 +1932,9 @@ export class BaileysConnectionService {
         reason: updateResult,
         source_provider: 'baileys',
         worker_type: 'baileys',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: wppLog.status,
         code: wppLog.code,
         elastic_index: EElasticIndex.wpp_connection,
@@ -1939,9 +1954,9 @@ export class BaileysConnectionService {
         level: 'error',
         source_provider: 'baileys',
         worker_type: 'baileys',
-        worker_id: WORKER,
-        channel_id: WORKER,
-        account_id: ACCOUNT,
+        worker_id: getWorker(),
+        channel_id: getWorker(),
+        account_id: getAccount(),
         status: wppLog.status,
         code: wppLog.code,
         elastic_index: EElasticIndex.wpp_connection,

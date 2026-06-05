@@ -29,6 +29,12 @@ import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidati
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
+  IWorkerRuntimeActivationRequestProto,
+  IWorkerRuntimeActivationResponseProto,
+  IWorkerRuntimeHealthRequestProto,
+  IWorkerRuntimeHealthResponseProto,
+} from '@core/common/interfaces/IWorkerRuntimeActivationProto';
+import {
   buildConnectionLifecycleContext,
   recordConnectionLifecycle,
   runWithGrpcConnectionContext,
@@ -72,6 +78,10 @@ interface IStatusConnectionRequestProto {
 
 interface WorkerConnectionGrpcOptions {
   module?: ERouteModule;
+  activateRuntime?: (
+    fastify: FastifyInstance,
+    request: IWorkerRuntimeActivationRequestProto
+  ) => Promise<{ alreadyActive?: boolean } | void>;
 }
 
 const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
@@ -90,13 +100,45 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     module === ERouteModule.worker_wwebjs
       ? wwebjsEnvironment.grpcPort
       : baileysEnvironment.grpcPort;
-  const accountId =
-    module === ERouteModule.worker_wwebjs
-      ? wwebjsEnvironment.wwebjsAccountId
-      : baileysEnvironment.baileysAccountId;
   const sourceProvider =
     module === ERouteModule.worker_wwebjs ? 'wwebjs' : 'baileys';
   const grpcServer = new Server();
+
+  const getAccountId = () =>
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.wwebjsAccountId
+      : baileysEnvironment.baileysAccountId;
+
+  const getWorkerId = () =>
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.wwebjsWorkerId
+      : baileysEnvironment.baileysWorkerId;
+
+  const isWarmStandby = () =>
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.isWarmStandby
+      : baileysEnvironment.isWarmStandby;
+
+  const isRuntimeActivated = () =>
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.isRuntimeActivated
+      : baileysEnvironment.isRuntimeActivated;
+
+  const activateEnvironment = (
+    request: IWorkerRuntimeActivationRequestProto
+  ) => {
+    const input = {
+      worker_id: request.worker_id ?? '',
+      account_id: request.account_id ?? '',
+      worker_type_id: request.worker_type_id,
+      warm_pool_id: request.warm_pool_id,
+      session_volume_name: request.session_volume_name,
+    };
+
+    return module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.activateRuntime(input)
+      : baileysEnvironment.activateRuntime(input);
+  };
 
   const handleRequestConnection = (
     call: ServerUnaryCall<
@@ -121,6 +163,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     if (req.connection_attempt_id) {
       payload.connection_attempt_id = req.connection_attempt_id;
     }
+    const accountId = getAccountId();
     const contextData = buildConnectionLifecycleContext({
       account_id: accountId,
       worker_id: payload.worker_id,
@@ -278,9 +321,117 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       });
   };
 
+  const handleActivateRuntime = (
+    call: ServerUnaryCall<
+      IWorkerRuntimeActivationRequestProto,
+      IWorkerRuntimeActivationResponseProto
+    >,
+    callback: sendUnaryData<IWorkerRuntimeActivationResponseProto>
+  ) => {
+    const req = call.request;
+    if (!req.worker_id || !req.account_id) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message: 'Missing required fields: worker_id, account_id',
+          details: 'Missing required fields: worker_id, account_id',
+        },
+        null
+      );
+      return;
+    }
+
+    Promise.resolve()
+      .then(async () => {
+        const activation = activateEnvironment(req);
+        const callbackResult = await options?.activateRuntime?.(fastify, req);
+        return {
+          alreadyActive:
+            activation.alreadyActive || callbackResult?.alreadyActive === true,
+        };
+      })
+      .then(({ alreadyActive }) => {
+        fastify.log.info(
+          {
+            module,
+            component: 'worker_connection_grpc_server',
+            type: 'runtime_activation',
+            event: 'worker_runtime_activated',
+            worker_id: req.worker_id,
+            account_id: req.account_id,
+            warm_pool_id: req.warm_pool_id,
+            already_active: alreadyActive,
+          },
+          'Worker runtime activated'
+        );
+        callback(null, {
+          worker_id: req.worker_id,
+          account_id: req.account_id,
+          activated: true,
+          already_active: alreadyActive,
+          error: '',
+        });
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          {
+            err,
+            module,
+            component: 'worker_connection_grpc_server',
+            type: 'runtime_activation',
+            event: 'worker_runtime_activation_error',
+            worker_id: req.worker_id,
+            account_id: req.account_id,
+            warm_pool_id: req.warm_pool_id,
+          },
+          'Worker runtime activation failed'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
+  const handleRuntimeHealth = (
+    call: ServerUnaryCall<
+      IWorkerRuntimeHealthRequestProto,
+      IWorkerRuntimeHealthResponseProto
+    >,
+    callback: sendUnaryData<IWorkerRuntimeHealthResponseProto>
+  ) => {
+    try {
+      callback(null, {
+        worker_id: isRuntimeActivated() ? getWorkerId() : '',
+        account_id: isRuntimeActivated() ? getAccountId() : '',
+        warm_pool_id:
+          call.request.warm_pool_id ?? process.env.WARM_POOL_ID ?? '',
+        standby: isWarmStandby(),
+        activated: isRuntimeActivated(),
+        ready: isWarmStandby() || isRuntimeActivated(),
+        has_session: false,
+        has_qr: false,
+        error: '',
+      });
+    } catch (err) {
+      callback(null, {
+        worker_id: '',
+        account_id: '',
+        warm_pool_id:
+          call.request.warm_pool_id ?? process.env.WARM_POOL_ID ?? '',
+        standby: false,
+        activated: false,
+        ready: false,
+        has_session: false,
+        has_qr: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   grpcServer.addService(WorkerConnectionService.service, {
     RequestConnection: handleRequestConnection,
     ValidatePhone: handleValidatePhone,
+    ActivateRuntime: handleActivateRuntime,
+    RuntimeHealth: handleRuntimeHealth,
   });
 
   const bind = `0.0.0.0:${grpcPort}`;

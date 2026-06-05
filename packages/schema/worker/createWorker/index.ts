@@ -28,7 +28,14 @@ export const createWorkerSchema = {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
         status: Type.Boolean({ const: true }),
         message: Type.String(),
-        data: Type.Null(),
+        data: Type.Object({
+          worker_id: Type.String(),
+          server_id: Type.String(),
+          worker_type_id: Type.String(),
+          warm_pool_claimed: Type.Optional(Type.Boolean()),
+          warm_pool_id: Type.Optional(Type.String()),
+          fallback_created: Type.Optional(Type.Boolean()),
+        }),
       },
       { description: 'Successful' }
     ),

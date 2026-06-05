@@ -20,17 +20,20 @@ import (
 )
 
 type Worker struct {
-	cfg        Config
-	kafka      *KafkaClient
-	redis      *redis.Client
-	centrifugo *CentrifugoClient
-	balance    *BalanceGRPCClient
-	storage    *StorageClient
-	whatsapp   *WhatsAppManager
-	grpcServer *WorkerConnectionGRPCServer
-	httpServer *http.Server
-	cancel     context.CancelFunc
-	shutdown   sync.Once
+	cfg            Config
+	kafka          *KafkaClient
+	redis          *redis.Client
+	centrifugo     *CentrifugoClient
+	balance        *BalanceGRPCClient
+	storage        *StorageClient
+	whatsapp       *WhatsAppManager
+	grpcServer     *WorkerConnectionGRPCServer
+	httpServer     *http.Server
+	cancel         context.CancelFunc
+	shutdown       sync.Once
+	runtimeMu      sync.RWMutex
+	runCtx         context.Context
+	runtimeStarted bool
 }
 
 func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
@@ -54,11 +57,7 @@ func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
 	if err != nil {
 		return nil, err
 	}
-	grpcServer, err := NewWorkerConnectionGRPCServer(cfg.GRPCAddr, whatsApp, cfg)
-	if err != nil {
-		return nil, err
-	}
-	return &Worker{
+	worker := &Worker{
 		cfg:        cfg,
 		kafka:      kafkaClient,
 		redis:      redisClient,
@@ -66,13 +65,19 @@ func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
 		balance:    balance,
 		storage:    storage,
 		whatsapp:   whatsApp,
-		grpcServer: grpcServer,
-	}, nil
+	}
+	grpcServer, err := NewWorkerConnectionGRPCServer(cfg.GRPCAddr, worker, cfg)
+	if err != nil {
+		return nil, err
+	}
+	worker.grpcServer = grpcServer
+	return worker, nil
 }
 
 func (w *Worker) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
+	w.runCtx = runCtx
 
 	log.Printf("worker run starting worker_id=%s", w.cfg.WorkerID)
 	if err := w.startHTTP(); err != nil {
@@ -81,8 +86,13 @@ func (w *Worker) Run(ctx context.Context) error {
 	if err := w.grpcServer.Start(); err != nil {
 		return err
 	}
-	w.whatsapp.Bootstrap(runCtx)
-	if err := w.startConsumers(runCtx); err != nil {
+	if w.cfg.WarmStandby {
+		log.Printf("worker warm standby ready warm_pool_id=%s worker_id=%s", w.cfg.WarmPoolID, w.cfg.WorkerID)
+		<-runCtx.Done()
+		log.Printf("worker warm standby stopping worker_id=%s reason=%v", w.cfg.WorkerID, runCtx.Err())
+		return runCtx.Err()
+	}
+	if err := w.startActivatedRuntime(runCtx); err != nil {
 		return err
 	}
 	log.Printf("worker run ready worker_id=%s", w.cfg.WorkerID)
@@ -126,7 +136,11 @@ func (w *Worker) startHTTP() error {
 		writeJSON(resp, http.StatusOK, map[string]any{"status": "ok", "provider": "whatsmeow"})
 	})
 	mux.HandleFunc("/v1/connection/health/check", func(resp http.ResponseWriter, req *http.Request) {
-		health := w.whatsapp.ConnectionHealth()
+		manager := w.currentWhatsApp()
+		health := map[string]any{"ready": false, "provider": "whatsmeow", "error": "runtime_not_initialized"}
+		if manager != nil {
+			health = manager.ConnectionHealth()
+		}
 		health["kafka_consumers"] = w.kafka.ConsumerHealthSnapshot()
 		if ready, _ := health["ready"].(bool); ready {
 			writeJSON(resp, http.StatusOK, health)
@@ -146,6 +160,174 @@ func (w *Worker) startHTTP() error {
 	}()
 	log.Printf("http server listening addr=%s", w.cfg.HTTPAddr)
 	return nil
+}
+
+func (w *Worker) currentWhatsApp() *WhatsAppManager {
+	w.runtimeMu.RLock()
+	defer w.runtimeMu.RUnlock()
+	return w.whatsapp
+}
+
+func (w *Worker) startActivatedRuntime(ctx context.Context) error {
+	w.runtimeMu.Lock()
+	defer w.runtimeMu.Unlock()
+	return w.startActivatedRuntimeLocked(ctx)
+}
+
+func (w *Worker) startActivatedRuntimeLocked(ctx context.Context) error {
+	if w.runtimeStarted {
+		return nil
+	}
+	if w.whatsapp == nil {
+		return fmt.Errorf("whatsmeow runtime is not initialized")
+	}
+	w.whatsapp.Bootstrap(ctx)
+	if err := w.startConsumers(ctx); err != nil {
+		return err
+	}
+	w.runtimeStarted = true
+	return nil
+}
+
+func (w *Worker) RequestConnection(ctx context.Context, req StatusConnectionRequest) (ConnectionState, error) {
+	manager := w.currentWhatsApp()
+	if manager == nil {
+		return ConnectionState{}, fmt.Errorf("whatsmeow runtime is not initialized")
+	}
+	return manager.RequestConnection(ctx, req)
+}
+
+func (w *Worker) ValidatePhone(ctx context.Context, req PhoneValidationRequest) (PhoneValidationResponse, error) {
+	manager := w.currentWhatsApp()
+	if manager == nil {
+		return PhoneValidationResponse{}, fmt.Errorf("whatsmeow runtime is not initialized")
+	}
+	return manager.ValidatePhone(ctx, req)
+}
+
+func (w *Worker) ActivateRuntime(ctx context.Context, req WorkerRuntimeActivationRequest) (WorkerRuntimeActivationResponse, error) {
+	if req.WorkerID == "" || req.AccountID == "" {
+		return WorkerRuntimeActivationResponse{
+			Activated:  false,
+			WorkerID:   req.WorkerID,
+			AccountID:  req.AccountID,
+			WarmPoolID: req.WarmPoolID,
+			Error:      "worker_id and account_id are required",
+		}, fmt.Errorf("worker_id and account_id are required")
+	}
+
+	w.runtimeMu.Lock()
+	defer w.runtimeMu.Unlock()
+
+	if w.runtimeStarted {
+		if w.cfg.WorkerID == req.WorkerID && w.cfg.AccountID == req.AccountID {
+			return WorkerRuntimeActivationResponse{
+				Activated:     true,
+				AlreadyActive: true,
+				WorkerID:      w.cfg.WorkerID,
+				AccountID:     w.cfg.AccountID,
+				WarmPoolID:    firstNonEmpty(req.WarmPoolID, w.cfg.WarmPoolID),
+			}, nil
+		}
+		err := fmt.Errorf("runtime already activated for worker_id=%s", w.cfg.WorkerID)
+		return WorkerRuntimeActivationResponse{
+			Activated:  false,
+			WorkerID:   req.WorkerID,
+			AccountID:  req.AccountID,
+			WarmPoolID: req.WarmPoolID,
+			Error:      err.Error(),
+		}, err
+	}
+
+	nextCfg := w.cfg
+	nextCfg.WorkerID = req.WorkerID
+	nextCfg.AccountID = req.AccountID
+	nextCfg.WarmStandby = false
+	if req.WarmPoolID != "" {
+		nextCfg.WarmPoolID = req.WarmPoolID
+	}
+	if req.BalancerGRPCHost != "" {
+		nextCfg.BalanceGRPCHost = req.BalancerGRPCHost
+	}
+	if req.BalancerGRPCPort > 0 {
+		nextCfg.BalanceGRPCPort = req.BalancerGRPCPort
+	}
+
+	runtimeCtx := w.runCtx
+	if runtimeCtx == nil {
+		runtimeCtx = context.Background()
+	}
+	balance := NewBalanceGRPCClient(nextCfg)
+	storage, err := NewStorageClient(nextCfg, balance)
+	if err != nil {
+		return WorkerRuntimeActivationResponse{
+			Activated:  false,
+			WorkerID:   req.WorkerID,
+			AccountID:  req.AccountID,
+			WarmPoolID: req.WarmPoolID,
+			Error:      err.Error(),
+		}, err
+	}
+	whatsApp, err := NewWhatsAppManager(runtimeCtx, nextCfg, w.kafka, w.centrifugo, balance, storage, w.redis)
+	if err != nil {
+		return WorkerRuntimeActivationResponse{
+			Activated:  false,
+			WorkerID:   req.WorkerID,
+			AccountID:  req.AccountID,
+			WarmPoolID: req.WarmPoolID,
+			Error:      err.Error(),
+		}, err
+	}
+
+	w.cfg = nextCfg
+	w.balance = balance
+	w.storage = storage
+	w.whatsapp = whatsApp
+	if err := w.startActivatedRuntimeLocked(runtimeCtx); err != nil {
+		return WorkerRuntimeActivationResponse{
+			Activated:  false,
+			WorkerID:   req.WorkerID,
+			AccountID:  req.AccountID,
+			WarmPoolID: req.WarmPoolID,
+			Error:      err.Error(),
+		}, err
+	}
+
+	log.Printf("worker runtime activated worker_id=%s account_id=%s warm_pool_id=%s", req.WorkerID, req.AccountID, req.WarmPoolID)
+	return WorkerRuntimeActivationResponse{
+		Activated:  true,
+		WorkerID:   req.WorkerID,
+		AccountID:  req.AccountID,
+		WarmPoolID: req.WarmPoolID,
+	}, nil
+}
+
+func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthRequest) (WorkerRuntimeHealthResponse, error) {
+	w.runtimeMu.RLock()
+	defer w.runtimeMu.RUnlock()
+	standby := w.cfg.WarmStandby && !w.runtimeStarted
+	ready := w.whatsapp != nil && (standby || w.runtimeStarted)
+	hasSession := false
+	hasQR := false
+	if w.whatsapp != nil {
+		health := w.whatsapp.ConnectionHealth()
+		if value, ok := health["has_store_id"].(bool); ok {
+			hasSession = value
+		}
+		w.whatsapp.mu.RLock()
+		hasQR = w.whatsapp.currentQRCode != ""
+		w.whatsapp.mu.RUnlock()
+	}
+	return WorkerRuntimeHealthResponse{
+		Ready:      ready,
+		Standby:    standby,
+		Activated:  w.runtimeStarted,
+		WorkerID:   w.cfg.WorkerID,
+		AccountID:  w.cfg.AccountID,
+		WarmPoolID: firstNonEmpty(req.WarmPoolID, w.cfg.WarmPoolID),
+		HasSession: hasSession,
+		HasQR:      hasQR,
+	}, nil
 }
 
 func writeJSON(resp http.ResponseWriter, status int, payload any) {

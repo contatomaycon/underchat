@@ -2,7 +2,9 @@
 import { nextTick } from 'vue';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
+import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { VForm } from 'vuetify/components/VForm';
 import { can } from '@layouts/plugins/casl';
 
@@ -12,7 +14,10 @@ const props = defineProps<{
   modelValue: boolean;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  (e: 'update:modelValue', visible: boolean): void;
+  (e: 'created', data: ICreateWorkerResponse): void;
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -25,6 +30,13 @@ const canChooseServer = computed(() =>
 
 const name = ref<string | null>(null);
 const serverId = ref<string | null>(null);
+const type = ref<EWorkerType>(EWorkerType.baileys);
+
+const itemsType = ref([
+  { value: EWorkerType.baileys, title: 'Opção 1 (Socket)' },
+  { value: EWorkerType.wwebjs, title: 'Opção 2 (Navegador)' },
+  { value: EWorkerType.whatsmeow, title: 'Opção 3 (Socket)' },
+]);
 
 const serverItems = ref<Array<{ value: string; title: string }>>([]);
 const serversLoading = ref(false);
@@ -62,6 +74,7 @@ const addChannel = async () => {
 
   const payload: CreateWorkerRequest = {
     name: name.value,
+    worker_type: type.value,
   };
 
   if (canChooseServer.value && serverId.value) {
@@ -74,6 +87,7 @@ const addChannel = async () => {
 
     if (result) {
       isVisible.value = false;
+      emit('created', result);
 
       await channelStore.listChannels();
     }
@@ -85,6 +99,7 @@ const addChannel = async () => {
 const resetForm = () => {
   name.value = null;
   serverId.value = null;
+  type.value = EWorkerType.baileys;
   refFormAddChannel.value?.resetValidation();
 };
 
@@ -114,6 +129,20 @@ onMounted(resetForm);
       <VCard :title="$t('add_channel')">
         <VCardText>
           <VRow>
+            <VCol cols="12" sm="6" md="6">
+              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
+              <AppSelectSearch
+                v-model="type"
+                :items="itemsType"
+                :placeholder="$t('type')"
+                :clearable="false"
+                item-value="value"
+                item-title="title"
+                data-testid="add-channel-type-select"
+                option-test-id-prefix="add-channel-type-option"
+              />
+            </VCol>
+
             <VCol cols="12" sm="6" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField

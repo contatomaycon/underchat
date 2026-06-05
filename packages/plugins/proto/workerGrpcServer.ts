@@ -31,6 +31,12 @@ import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interf
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
+  IActivateWarmWorkerRequestProto,
+  ICreateWarmWorkerRequestProto,
+  IDeleteWarmWorkerRequestProto,
+  IWarmWorkerCommandResponseProto,
+} from '@core/common/interfaces/IWorkerWarmCommandProto';
+import {
   buildConnectionLifecycleContext,
   recordConnectionLifecycle,
   runWithGrpcConnectionContext,
@@ -439,6 +445,73 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleCreateWarmWorker = (
+    call: ServerUnaryCall<
+      ICreateWarmWorkerRequestProto,
+      IWarmWorkerCommandResponseProto
+    >,
+    callback: sendUnaryData<IWarmWorkerCommandResponseProto>
+  ) => {
+    handler
+      .createWarmWorker(call.request)
+      .then((response) => {
+        callback(null, response);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, warmPoolId: call.request.warm_pool_id },
+          'CreateWarmWorker gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
+  const handleDeleteWarmWorker = (
+    call: ServerUnaryCall<IDeleteWarmWorkerRequestProto, unknown>,
+    callback: sendUnaryData<unknown>
+  ) => {
+    handler
+      .deleteWarmWorker(call.request)
+      .then(() => {
+        callback(null, {});
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, warmPoolId: call.request.warm_pool_id },
+          'DeleteWarmWorker gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
+  const handleActivateWarmWorker = (
+    call: ServerUnaryCall<
+      IActivateWarmWorkerRequestProto,
+      IWarmWorkerCommandResponseProto
+    >,
+    callback: sendUnaryData<IWarmWorkerCommandResponseProto>
+  ) => {
+    handler
+      .activateWarmWorker(call.request)
+      .then((response) => {
+        callback(null, response);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          {
+            err,
+            workerId: call.request.worker_id,
+            warmPoolId: call.request.warm_pool_id,
+          },
+          'ActivateWarmWorker gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   grpcServer.addService(WorkerCommandService.service, {
     CreateWorker: (
       call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
@@ -463,6 +536,9 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     GetTypingSimulationConfig: handleGetTypingSimulationConfig,
     RegisterS3BackupFallbackUpload: handleRegisterS3BackupFallbackUpload,
     ValidatePhone: handleValidatePhone,
+    CreateWarmWorker: handleCreateWarmWorker,
+    DeleteWarmWorker: handleDeleteWarmWorker,
+    ActivateWarmWorker: handleActivateWarmWorker,
   });
 
   const port = balanceEnvironment.grpcPort;

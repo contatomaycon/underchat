@@ -13,7 +13,10 @@ const props = defineProps<{
   channelId: string | null;
 }>();
 
-const emit = defineEmits<(e: 'update:modelValue', visible: boolean) => void>();
+const emit = defineEmits<{
+  (e: 'update:modelValue', visible: boolean): void;
+  (e: 'updated', data: { worker_id: string; worker_type?: EWorkerType }): void;
+}>();
 
 const isVisible = computed({
   get: () => props.modelValue,
@@ -23,11 +26,12 @@ const isVisible = computed({
 const channelId = toRef(props, 'channelId');
 const name = ref<string | null>(null);
 const type = ref<EWorkerType | null>(null);
+const initialType = ref<EWorkerType | null>(null);
 
 const itemsType = ref([
-  { value: EWorkerType.baileys, title: t('unofficial_socket') },
-  { value: EWorkerType.wwebjs, title: t('unofficial_browser') },
-  { value: EWorkerType.whatsmeow, title: t('unofficial_whatsmeow') },
+  { value: EWorkerType.baileys, title: 'Opção 1 (Socket)' },
+  { value: EWorkerType.wwebjs, title: 'Opção 2 (Navegador)' },
+  { value: EWorkerType.whatsmeow, title: 'Opção 3 (Socket)' },
 ]);
 
 const refFormEditChannel = ref<VForm>();
@@ -51,6 +55,12 @@ const updateServer = async () => {
 
   if (result) {
     isVisible.value = false;
+    if (payload.worker_type && payload.worker_type !== initialType.value) {
+      emit('updated', {
+        worker_id: payload.worker_id,
+        worker_type: payload.worker_type as EWorkerType,
+      });
+    }
 
     await channelStore.listChannels();
   }
@@ -67,6 +77,7 @@ const initializeModal = async () => {
     if (channel) {
       name.value = channel.name;
       type.value = (channel.type?.id as EWorkerType) ?? null;
+      initialType.value = type.value;
     }
   } finally {
     isInitializingModal.value = false;
@@ -109,7 +120,7 @@ watch(
                 v-model="type"
                 :items="itemsType"
                 :placeholder="$t('type')"
-                :clearable="true"
+                :clearable="false"
                 item-value="value"
                 item-title="title"
                 data-testid="edit-channel-type-select"

@@ -17,11 +17,19 @@ import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 
-const CHANNEL = workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
-const WORKER = baileysEnvironment.baileysWorkerId;
-const ACCOUNT = baileysEnvironment.baileysAccountId;
-
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
+
+function getChannel(): string {
+  return workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
+}
+
+function getWorker(): string {
+  return baileysEnvironment.baileysWorkerId;
+}
+
+function getAccount(): string {
+  return baileysEnvironment.baileysAccountId;
+}
 
 interface HealthCheckResult {
   isHealthy: boolean;
@@ -254,8 +262,8 @@ export class BaileysHealthCheckService {
     const payload: IBaileysConnectionState = {
       code: ECodeMessage.info,
       status: Status.info,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       worker_status_id: EWorkerStatus.disponible,
     };
 
@@ -347,8 +355,8 @@ export class BaileysHealthCheckService {
   ): Promise<void> {
     const payload: IBaileysConnectionState = {
       status: result.detectedStatus,
-      worker_id: WORKER,
-      account_id: ACCOUNT,
+      worker_id: getWorker(),
+      account_id: getAccount(),
       code:
         result.detectedStatus === Status.connected
           ? ECodeMessage.connectionEstablished
@@ -358,7 +366,7 @@ export class BaileysHealthCheckService {
     };
 
     try {
-      await this.centrifugo.publishSub(CHANNEL, payload);
+      await this.centrifugo.publishSub(getChannel(), payload);
     } catch (error) {
       console.error('[BaileysHealthCheck] Failed to publish status', error);
     }
@@ -378,7 +386,7 @@ export class BaileysHealthCheckService {
     const phone = getPhoneNumber(socket?.user?.id);
 
     await this.saveLogWppConnection({
-      worker_id: WORKER,
+      worker_id: getWorker(),
       status: result.detectedStatus,
       code: payload.code?.toString(),
       message: result.reason ?? 'Health check status update',
@@ -504,7 +512,10 @@ export class BaileysHealthCheckService {
       return false;
     }
 
-    const documentId = buildWppConnectionDocumentId(ACCOUNT, wppLog.worker_id);
+    const documentId = buildWppConnectionDocumentId(
+      getAccount(),
+      wppLog.worker_id
+    );
 
     const updateResult = await this.elasticDatabaseService.updateWithOCC(
       EElasticIndex.wpp_connection,

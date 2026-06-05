@@ -45,4 +45,24 @@ export class WorkerServerListerRepository {
 
     return result as IListWorkerServer[];
   };
+
+  listWarmPoolEligibleServers = async (): Promise<IListWorkerServer[]> => {
+    const result = await this.dbRo
+      .select({
+        server_id: server.server_id,
+        name: server.name,
+      })
+      .from(server)
+      .innerJoin(serverWeb, eq(serverWeb.server_id, server.server_id))
+      .where(
+        and(
+          isNull(server.deleted_at),
+          eq(server.server_status_id, EServerStatus.online)
+        )
+      )
+      .orderBy(server.name)
+      .execute();
+
+    return result as IListWorkerServer[];
+  };
 }

@@ -22,6 +22,12 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
+  IActivateWarmWorkerRequestProto,
+  ICreateWarmWorkerRequestProto,
+  IDeleteWarmWorkerRequestProto,
+  IWarmWorkerCommandResponseProto,
+} from '@core/common/interfaces/IWorkerWarmCommandProto';
+import {
   buildConnectionLifecycleContext,
   injectGrpcConnectionMetadata,
   recordConnectionLifecycle,
@@ -80,6 +86,30 @@ export class WorkerGrpcClientService {
 
   async cleanupWorker(payload: IWorkerPayload): Promise<void> {
     await this.call('CleanupWorker', payload, GRPC_DEADLINE_MS);
+  }
+
+  async createWarmWorker(
+    serverId: string,
+    payload: ICreateWarmWorkerRequestProto,
+    timeoutMs: number = GRPC_DEADLINE_MS
+  ): Promise<IWarmWorkerCommandResponseProto> {
+    return this.callWarm('CreateWarmWorker', serverId, payload, timeoutMs);
+  }
+
+  async deleteWarmWorker(
+    serverId: string,
+    payload: IDeleteWarmWorkerRequestProto,
+    timeoutMs: number = GRPC_DEADLINE_MS
+  ): Promise<void> {
+    await this.callWarm('DeleteWarmWorker', serverId, payload, timeoutMs);
+  }
+
+  async activateWarmWorker(
+    serverId: string,
+    payload: IActivateWarmWorkerRequestProto,
+    timeoutMs: number = GRPC_DEADLINE_MS
+  ): Promise<IWarmWorkerCommandResponseProto> {
+    return this.callWarm('ActivateWarmWorker', serverId, payload, timeoutMs);
   }
 
   async changeConnectionStatus(
@@ -312,6 +342,46 @@ export class WorkerGrpcClientService {
       }
 
       (client as any)[method](protoPayload, callback);
+    });
+  }
+
+  private async callWarm(
+    method: 'CreateWarmWorker' | 'DeleteWarmWorker' | 'ActivateWarmWorker',
+    serverId: string,
+    payload:
+      | ICreateWarmWorkerRequestProto
+      | IDeleteWarmWorkerRequestProto
+      | IActivateWarmWorkerRequestProto,
+    timeoutMs?: number
+  ): Promise<IWarmWorkerCommandResponseProto> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
+
+    return new Promise<IWarmWorkerCommandResponseProto>((resolve, reject) => {
+      const callback = (
+        err: ServiceError | null,
+        response?: IWarmWorkerCommandResponseProto
+      ) => {
+        client.close();
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(response ?? {});
+      };
+
+      if (deadline) {
+        (client as any)[method](payload, { deadline }, callback);
+        return;
+      }
+
+      (client as any)[method](payload, callback);
     });
   }
 

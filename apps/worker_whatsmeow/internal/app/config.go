@@ -13,6 +13,8 @@ type Config struct {
 	WorkerID  string
 	AccountID string
 	DataDir   string
+	WarmStandby bool
+	WarmPoolID  string
 
 	HTTPAddr string
 	GRPCAddr string
@@ -88,6 +90,8 @@ func LoadConfig() (Config, error) {
 		WorkerID:             strings.TrimSpace(os.Getenv("WORKER_ID")),
 		AccountID:            strings.TrimSpace(os.Getenv("ACCOUNT_ID")),
 		DataDir:              envDefault("WORKER_DATA_DIR", "/app/data"),
+		WarmStandby:          envBoolDefault("WARM_STANDBY", false),
+		WarmPoolID:           strings.TrimSpace(os.Getenv("WARM_POOL_ID")),
 		HTTPAddr:             ":" + envDefault("WORKER_HTTP_PORT", "3005"),
 		GRPCAddr:             ":" + envDefault("WORKER_WHATSMEOW_GRPC_PORT", "50054"),
 		BalanceGRPCHost:      envDefault("BALANCER_GRPC_HOST", "under-balance-api"),
@@ -151,6 +155,19 @@ func LoadConfig() (Config, error) {
 			"CONNECTION_LIFECYCLE_DEBUG_RAW_LIMIT",
 			4000,
 		),
+	}
+
+	if cfg.WarmStandby {
+		if cfg.WorkerID == "" {
+			if cfg.WarmPoolID != "" {
+				cfg.WorkerID = cfg.WarmPoolID
+			} else {
+				cfg.WorkerID = "warm-standby"
+			}
+		}
+		if cfg.AccountID == "" {
+			cfg.AccountID = "warm-standby"
+		}
 	}
 
 	if cfg.WorkerID == "" {

@@ -19,6 +19,7 @@ import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 
 definePage({
   meta: {
@@ -275,6 +276,33 @@ const handleRecreate = async () => {
   await channelsStore.recreateChannel(channelToRecreate.value);
 
   channelToRecreate.value = null;
+};
+
+const handleChannelCreated = async (data: ICreateWorkerResponse) => {
+  await channelsStore.listChannels(query.value);
+
+  channelConnectionChannel.value = data.worker_id;
+  channelConnectionType.value = data.worker_type_id;
+  channelConnectionStatus.value = EWorkerStatus.disponible;
+  channelConnectionPhone.value = null;
+  isDialogConnectionChannelShow.value = true;
+};
+
+const handleChannelUpdated = async (data: {
+  worker_id: string;
+  worker_type?: EWorkerType;
+}) => {
+  await channelsStore.listChannels(query.value);
+
+  if (!data.worker_type) {
+    return;
+  }
+
+  channelConnectionChannel.value = data.worker_id;
+  channelConnectionType.value = data.worker_type;
+  channelConnectionStatus.value = EWorkerStatus.disponible;
+  channelConnectionPhone.value = null;
+  isDialogConnectionChannelShow.value = true;
 };
 
 watch(
@@ -602,9 +630,14 @@ onUnmounted(async () => {
         v-if="isDialogEditChannelShow"
         v-model="isDialogEditChannelShow"
         :channel-id="channelToEdit"
+        @updated="handleChannelUpdated"
       />
 
-      <AppAddChannel v-if="isAddChannelVisible" v-model="isAddChannelVisible" />
+      <AppAddChannel
+        v-if="isAddChannelVisible"
+        v-model="isAddChannelVisible"
+        @created="handleChannelCreated"
+      />
 
       <AppConnectChannel
         v-if="isDialogConnectionChannelShow && user?.account_id"

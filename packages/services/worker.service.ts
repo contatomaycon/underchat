@@ -81,6 +81,10 @@ export interface WorkerContainerMetadata {
   proxyMode?: 'proxy' | 'direct' | 'direct_fallback';
 }
 
+export interface WorkerContainerCreateOptions {
+  requireExistingVolume?: boolean;
+}
+
 function dockerErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -111,6 +115,9 @@ export class WorkerService {
     'PROXY_PROTOCOL',
     'PROXY_HOST',
     'PROXY_PORT',
+    'WARM_STANDBY',
+    'WARM_POOL_ID',
+    'SESSION_VOLUME_NAME',
   ]);
   private readonly inspectedLabelKeys = new Set<string>([
     'underchat.worker_id',
@@ -119,6 +126,9 @@ export class WorkerService {
     'underchat.worker_image',
     'underchat.worker_grpc_port',
     'underchat.proxy_mode',
+    'underchat.warm_standby',
+    'underchat.warm_pool_id',
+    'underchat.session_volume_name',
   ]);
 
   constructor(
@@ -221,11 +231,15 @@ export class WorkerService {
     workerId: string;
     accountId: string;
     metadata?: WorkerContainerMetadata;
+    sessionVolumeName?: string;
   }): Record<string, string> {
     return {
       'underchat.worker_id': input.workerId,
       'underchat.account_id': input.accountId,
       'underchat.worker_image': input.imageName,
+      ...(input.sessionVolumeName
+        ? { 'underchat.session_volume_name': input.sessionVolumeName }
+        : {}),
       ...(input.metadata?.workerTypeId
         ? { 'underchat.worker_type_id': input.metadata.workerTypeId }
         : {}),
@@ -483,8 +497,12 @@ export class WorkerService {
   }
 
   public async removeVolumeWorkerById(workerId: string): Promise<boolean> {
+    return this.removeVolumeByName(workerId);
+  }
+
+  public async removeVolumeByName(volumeName: string): Promise<boolean> {
     try {
-      const volume = this.docker.getVolume(workerId);
+      const volume = this.docker.getVolume(volumeName);
       await volume.remove();
 
       return true;
@@ -494,8 +512,12 @@ export class WorkerService {
   }
 
   public async existsVolumeWorkerById(workerId: string): Promise<boolean> {
+    return this.existsVolumeByName(workerId);
+  }
+
+  public async existsVolumeByName(volumeName: string): Promise<boolean> {
     try {
-      const volume = this.docker.getVolume(workerId);
+      const volume = this.docker.getVolume(volumeName);
       await volume.inspect();
 
       return true;
@@ -508,13 +530,70 @@ export class WorkerService {
     workerId: string,
     isCreateVolume: boolean
   ): Promise<void> {
-    const getVolume = await this.existsVolumeWorkerById(workerId);
+    await this.checkVolumeNameAndCreate(workerId, isCreateVolume);
+  }
+
+  public async checkVolumeNameAndCreate(
+    volumeName: string,
+    isCreateVolume: boolean
+  ): Promise<void> {
+    const getVolume = await this.existsVolumeByName(volumeName);
 
     if (!getVolume || isCreateVolume) {
       await this.docker.createVolume({
-        Name: workerId,
+        Name: volumeName,
       });
     }
+  }
+
+  public async removeContainerByNameAndVolume(
+    containerName: string,
+    volumeName?: string | null,
+    isRemoveVolume: boolean = true
+  ): Promise<boolean> {
+    const existsContainerById =
+      await this.existsContainerWorkerById(containerName);
+
+    if (existsContainerById) {
+      const removeContainerWorkerById =
+        await this.removeContainerWorkerById(containerName);
+
+      if (!removeContainerWorkerById) {
+        throw new Error('The worker removal failed');
+      }
+    }
+
+    if (isRemoveVolume && volumeName) {
+      const existsVolumeByName = await this.existsVolumeByName(volumeName);
+      if (existsVolumeByName) {
+        const removeVolumeWorkerById =
+          await this.removeVolumeByName(volumeName);
+
+        if (!removeVolumeWorkerById) {
+          throw new Error('The worker volume removal failed');
+        }
+      }
+    }
+
+    return true;
+  }
+
+  public async renameContainer(
+    currentName: string,
+    nextName: string
+  ): Promise<boolean> {
+    if (currentName === nextName) {
+      return true;
+    }
+
+    const container = this.docker.getContainer(currentName);
+    await (
+      container as unknown as { rename(input: { name: string }): Promise<void> }
+    ).rename({
+      name: nextName,
+    });
+
+    return true;
   }
 
   public async createContainerWorker(
@@ -531,7 +610,9 @@ export class WorkerService {
       username?: string | null;
       password?: string | null;
     },
-    metadata?: WorkerContainerMetadata
+    metadata?: WorkerContainerMetadata,
+    sessionVolumeName?: string,
+    options: WorkerContainerCreateOptions = {}
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
     if (existsContainerById) {
@@ -542,15 +623,27 @@ export class WorkerService {
       await this.removeContainerWorkerById(workerId);
     }
 
-    await this.checkVolumeAndCreate(workerId, isCreateVolume);
+    const volumeName = sessionVolumeName || workerId;
+    const existingVolume = await this.existsVolumeByName(volumeName);
 
-    const getVolume = await this.existsVolumeWorkerById(workerId);
+    if (options.requireExistingVolume === true && !existingVolume) {
+      throw new Error(`Required worker session volume ${volumeName} not found`);
+    }
+
+    if (!existingVolume || isCreateVolume) {
+      await this.docker.createVolume({
+        Name: volumeName,
+      });
+    }
+
+    const getVolume = await this.existsVolumeByName(volumeName);
     if (!getVolume) {
       throw new Error('Volume creation failed');
     }
 
     const envOverrides = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
     envOverrides.push(`WORKER_IMAGE=${imageName}`);
+    envOverrides.push(`SESSION_VOLUME_NAME=${volumeName}`);
 
     if (metadata?.workerTypeId) {
       envOverrides.push(`WORKER_TYPE_ID=${metadata.workerTypeId}`);
@@ -596,6 +689,7 @@ export class WorkerService {
       workerId,
       accountId,
       metadata,
+      sessionVolumeName: volumeName,
     });
 
     recordConnectionLifecycle({
@@ -606,6 +700,7 @@ export class WorkerService {
       worker_type: imageName,
       worker_type_id: metadata?.workerTypeId,
       worker_grpc_port: metadata?.workerGrpcPort,
+      session_volume_name: volumeName,
       proxy_status: proxy ? 'configured' : 'disabled',
       proxy_fallback:
         metadata?.proxyMode === 'direct_fallback' ? 'direct' : undefined,
@@ -624,7 +719,7 @@ export class WorkerService {
         Image: imageName,
         name: workerId,
         HostConfig: {
-          Binds: [`${workerId}:/app/data`],
+          Binds: [`${volumeName}:/app/data`],
           NetworkMode: 'underchat',
           RestartPolicy: {
             Name: 'unless-stopped',
@@ -648,6 +743,7 @@ export class WorkerService {
         worker_type: imageName,
         worker_type_id: metadata?.workerTypeId,
         worker_grpc_port: metadata?.workerGrpcPort,
+        session_volume_name: volumeName,
       });
 
       return container.id;
@@ -660,6 +756,169 @@ export class WorkerService {
         level: 'error',
         container_name: workerId,
         worker_type: imageName,
+        error: dockerErrorMessage(error),
+      });
+      throw error;
+    }
+  }
+
+  public async createWarmContainerWorker(input: {
+    imageName: EWorkerImage;
+    warmPoolId: string;
+    serverId: string;
+    workerTypeId: string;
+    grpcHost?: string;
+    grpcPort?: number;
+    workerGrpcPort?: number;
+    proxy?: {
+      protocol?: EProxyProtocol;
+      host: string;
+      port: number;
+      username?: string | null;
+      password?: string | null;
+    };
+  }): Promise<{
+    container_id: string;
+    container_name: string;
+    session_volume_name: string;
+  }> {
+    const containerName = `warm-${input.warmPoolId}`;
+    const sessionVolumeName = `warm-${input.warmPoolId}`;
+    const existsContainerById =
+      await this.existsContainerWorkerById(containerName);
+    if (existsContainerById) {
+      await this.recordContainerDiagnostics(
+        containerName,
+        'replace_existing_warm_container_before_create'
+      );
+      await this.removeContainerWorkerById(containerName);
+    }
+
+    await this.checkVolumeNameAndCreate(sessionVolumeName, true);
+
+    const envOverrides = [
+      'WARM_STANDBY=true',
+      `WARM_POOL_ID=${input.warmPoolId}`,
+      `WORKER_TYPE_ID=${input.workerTypeId}`,
+      `WORKER_IMAGE=${input.imageName}`,
+      `SESSION_VOLUME_NAME=${sessionVolumeName}`,
+    ];
+
+    if (input.workerGrpcPort !== undefined) {
+      envOverrides.push(`WORKER_GRPC_PORT=${input.workerGrpcPort}`);
+    }
+
+    if (input.imageName === EWorkerImage.baileys) {
+      envOverrides.push('OTEL_SERVICE_NAME=baileys');
+    }
+
+    if (input.imageName === EWorkerImage.wwebjs) {
+      envOverrides.push('OTEL_SERVICE_NAME=wwebjs');
+    }
+
+    if (input.imageName === EWorkerImage.whatsmeow) {
+      envOverrides.push('OTEL_SERVICE_NAME=whatsmeow');
+    }
+
+    if (input.grpcHost !== undefined && input.grpcPort !== undefined) {
+      envOverrides.push(
+        `BALANCER_GRPC_HOST=${input.grpcHost}`,
+        `BALANCER_GRPC_PORT=${input.grpcPort}`
+      );
+    }
+
+    if (input.proxy?.host && Number.isFinite(input.proxy.port)) {
+      envOverrides.push(
+        `PROXY_HOST=${input.proxy.host}`,
+        `PROXY_PORT=${input.proxy.port}`,
+        `PROXY_PROTOCOL=${input.proxy.protocol ?? EProxyProtocol.http}`
+      );
+      if (input.proxy.username) {
+        envOverrides.push(`PROXY_USERNAME=${input.proxy.username}`);
+      }
+      if (input.proxy.password) {
+        envOverrides.push(`PROXY_PASSWORD=${input.proxy.password}`);
+      }
+    }
+
+    const labels: Record<string, string> = {
+      'underchat.warm_standby': 'true',
+      'underchat.warm_pool_id': input.warmPoolId,
+      'underchat.server_id': input.serverId,
+      'underchat.worker_type_id': input.workerTypeId,
+      'underchat.worker_image': input.imageName,
+      'underchat.session_volume_name': sessionVolumeName,
+      ...(input.workerGrpcPort !== undefined
+        ? { 'underchat.worker_grpc_port': String(input.workerGrpcPort) }
+        : {}),
+      ...(input.proxy ? { 'underchat.proxy_mode': 'proxy' } : {}),
+    };
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.warm_container_create_start',
+      decision: 'create_warm_container_worker',
+      outcome: 'started',
+      container_name: containerName,
+      worker_type: input.imageName,
+      worker_type_id: input.workerTypeId,
+      warm_pool_id: input.warmPoolId,
+      server_id: input.serverId,
+      session_volume_name: sessionVolumeName,
+      raw_payload: {
+        container_labels: labels,
+        container_env: this.getAllowedEnv(envOverrides),
+      },
+    });
+
+    try {
+      const container = await this.docker.createContainer({
+        Image: input.imageName,
+        name: containerName,
+        HostConfig: {
+          Binds: [`${sessionVolumeName}:/app/data`],
+          NetworkMode: 'underchat',
+          RestartPolicy: {
+            Name: 'unless-stopped',
+          },
+        },
+        Volumes: {
+          '/app/data': {},
+        },
+        Env: this.buildContainerEnv(envOverrides),
+        Labels: labels,
+      });
+
+      await container.start();
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.warm_container_create_success',
+        decision: 'create_warm_container_worker',
+        outcome: 'created',
+        container_id: container.id,
+        container_name: containerName,
+        worker_type: input.imageName,
+        worker_type_id: input.workerTypeId,
+        warm_pool_id: input.warmPoolId,
+        session_volume_name: sessionVolumeName,
+      });
+
+      return {
+        container_id: container.id,
+        container_name: containerName,
+        session_volume_name: sessionVolumeName,
+      };
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.warm_container_create_error',
+        decision: 'create_warm_container_worker',
+        outcome: 'error',
+        reason: 'docker_create_failed',
+        level: 'error',
+        container_name: containerName,
+        worker_type: input.imageName,
+        worker_type_id: input.workerTypeId,
+        warm_pool_id: input.warmPoolId,
+        session_volume_name: sessionVolumeName,
         error: dockerErrorMessage(error),
       });
       throw error;

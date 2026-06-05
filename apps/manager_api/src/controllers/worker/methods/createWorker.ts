@@ -30,16 +30,10 @@ export const createWorker = async (
       body
     );
 
-    if (response) {
-      return sendResponse(reply, {
-        message: t('worker_creator_success'),
-        httpStatusCode: EHTTPStatusCode.ok,
-      });
-    }
-
     return sendResponse(reply, {
-      message: t('worker_creator_error'),
-      httpStatusCode: EHTTPStatusCode.bad_request,
+      message: t('worker_creator_success'),
+      httpStatusCode: EHTTPStatusCode.ok,
+      data: response,
     });
   } catch (error) {
     handleControllerError(error, reply, t);

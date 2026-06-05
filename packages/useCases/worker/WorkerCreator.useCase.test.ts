@@ -136,7 +136,12 @@ describe('WorkerCreatorUseCase', () => {
         server_id: 'server-1',
         worker_type: EWorkerType.baileys,
       })
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      worker_id: 'worker-created-id',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.baileys,
+      fallback_created: false,
+    });
 
     expect(deps.workerService.createWorker).toHaveBeenCalledWith({
       worker_id: 'worker-created-id',
@@ -186,7 +191,12 @@ describe('WorkerCreatorUseCase', () => {
         server_id: 'server-1',
         worker_type: EWorkerType.baileys,
       })
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      worker_id: 'worker-created-id',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.baileys,
+      fallback_created: false,
+    });
 
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
@@ -219,7 +229,12 @@ describe('WorkerCreatorUseCase', () => {
         server_id: 'server-1',
         worker_type: EWorkerType.baileys,
       })
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      worker_id: 'worker-created-id',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.baileys,
+      fallback_created: false,
+    });
     await flushPromises();
 
     expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(

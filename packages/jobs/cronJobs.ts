@@ -13,6 +13,8 @@ import { WorkerMonitorActivity } from '@core/jobs/activities/workerMonitor.activ
 import { ScheduleSendActivity } from '@core/jobs/activities/scheduleSend.activities';
 import { AccountBucketCleanupActivity } from '@core/jobs/activities/accountBucketCleanup.activities';
 import { S3BackupMigrationActivity } from '@core/jobs/activities/s3BackupMigration.activities';
+import { WorkerWarmPoolActivity } from '@core/jobs/activities/workerWarmPool.activities';
+import { workerPoolEnvironment } from '@core/config/environments';
 import {
   LockAcquisitionTimeoutError,
   withLock,
@@ -87,7 +89,10 @@ const createCronJob = (
   );
 };
 
-export function cronJobs(server: FastifyInstance): CronJob[] {
+export function cronJobs(
+  server: FastifyInstance,
+  options?: { enableWarmPoolJobs?: boolean }
+): CronJob[] {
   const profileStatusRenewalActivity = container.resolve(
     ProfileStatusRenewalActivity
   );
@@ -111,9 +116,10 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
   const s3BackupMigrationActivity = container.resolve(
     S3BackupMigrationActivity
   );
+  const workerWarmPoolActivity = container.resolve(WorkerWarmPoolActivity);
   const redis = container.resolve<Redis>('Redis');
 
-  return [
+  const jobs = [
     createCronJob(server, redis, {
       jobId: 'profile-status-renewal-schedule',
       cronExpression: '0 0 * * * *',
@@ -196,4 +202,19 @@ export function cronJobs(server: FastifyInstance): CronJob[] {
       handler: s3BackupMigrationActivity.processPendingS3BackupUploads,
     }),
   ];
+
+  if (
+    options?.enableWarmPoolJobs === true &&
+    workerPoolEnvironment.warmWorkerPoolEnabled
+  ) {
+    jobs.push(
+      createCronJob(server, redis, {
+        jobId: 'worker-warm-pool-schedule',
+        cronExpression: `*/${workerPoolEnvironment.warmWorkerScanIntervalSeconds} * * * * *`,
+        handler: () => workerWarmPoolActivity.scan(),
+      })
+    );
+  }
+
+  return jobs;
 }

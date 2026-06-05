@@ -47,6 +47,7 @@ import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/
 import { UpdateSecurityKeyResponse } from '@core/schema/worker/updateSecurityKey/response.schema';
 import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/externalConnectionLink/response.schema';
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
+import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 
 const workerConfigForChatPendingModule: Record<
   string,
@@ -162,11 +163,13 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async addChannel(payload: CreateWorkerRequest): Promise<boolean> {
+    async addChannel(
+      payload: CreateWorkerRequest
+    ): Promise<ICreateWorkerResponse | null> {
       try {
         this.loading = true;
 
-        const response = await axios.post<IApiResponse<boolean>>(
+        const response = await axios.post<IApiResponse<ICreateWorkerResponse>>(
           `/worker`,
           payload
         );
@@ -181,7 +184,7 @@ export const useChannelsStore = defineStore('channels', {
 
           this.showSnackbar(mensage, EColor.error);
 
-          return false;
+          return null;
         }
 
         this.showSnackbar(
@@ -189,7 +192,7 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return true;
+        return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('channel_add_error');
         if (error instanceof AxiosError) {
@@ -200,7 +203,7 @@ export const useChannelsStore = defineStore('channels', {
 
         this.loading = false;
 
-        return false;
+        return null;
       }
     },
 

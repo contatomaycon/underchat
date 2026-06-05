@@ -132,6 +132,13 @@ function buildHandler(
   overrides: {
     cleanupError?: unknown;
     cleanupResult?: boolean;
+    volumeExists?: boolean;
+    workerRuntimeRepository?: {
+      viewByWorkerId: jest.Mock;
+      upsert: jest.Mock;
+      deleteByWorkerId: jest.Mock;
+    };
+    workerInspection?: WorkerContainerInspection;
   } = {}
 ) {
   const workerService = {
@@ -152,6 +159,8 @@ function buildHandler(
     deleteWorkerById: jest.fn(async () => true),
     existsWorkerById: jest.fn(async () => true),
     removeContainerWorker: jest.fn(async () => true),
+    removeContainerByNameAndVolume: jest.fn(async () => true),
+    existsVolumeByName: jest.fn(async () => overrides.volumeExists ?? true),
     viewWorkerType: jest.fn(async () => ({
       worker_type_id: EWorkerType.wwebjs,
     })),
@@ -183,7 +192,9 @@ function buildHandler(
     inspectContainerWorkerById: jest.fn<
       Promise<WorkerContainerInspection>,
       [string]
-    >(async () => buildWorkerContainerInspection()),
+    >(
+      async () => overrides.workerInspection ?? buildWorkerContainerInspection()
+    ),
     recordContainerDiagnostics: jest.fn(async () => undefined),
     createContainerWorker: jest.fn(async () => 'container-1'),
   };
@@ -266,6 +277,7 @@ function buildHandler(
       [unknown]
     >(async () => ({ status: 'healthy' })),
   };
+  const workerRuntimeRepository = overrides.workerRuntimeRepository;
 
   const handler = new WorkerCommandHandlerService(
     workerService as never,
@@ -281,7 +293,9 @@ function buildHandler(
     workerConfigService as never,
     workerLifecycleLockService as never,
     proxyConnectivityService as never,
-    redis as never
+    redis as never,
+    undefined as never,
+    workerRuntimeRepository as never
   );
 
   return {
@@ -294,6 +308,7 @@ function buildHandler(
     workerLifecycleLockService,
     workerConfigViewerRepository,
     proxyConnectivityService,
+    workerRuntimeRepository,
     redis,
     redisStore,
   };
@@ -1370,6 +1385,9 @@ describe('WorkerCommandHandlerService connection', () => {
       'worker-1',
       false
     );
+    expect(deps.workerService.existsVolumeByName).toHaveBeenCalledWith(
+      'worker-1'
+    );
     expect(deps.redis.del).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:attempt'
     );
@@ -1384,7 +1402,9 @@ describe('WorkerCommandHandlerService connection', () => {
       expect.objectContaining({
         workerTypeId: EWorkerType.wwebjs,
         workerGrpcPort: 50053,
-      })
+      }),
+      'worker-1',
+      { requireExistingVolume: true }
     );
     expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
       'account-1',
@@ -1394,6 +1414,193 @@ describe('WorkerCommandHandlerService connection', () => {
         container_id: 'container-1',
       })
     );
+  });
+
+  it('preserves the mapped runtime volume during recreate', async () => {
+    const workerRuntimeRepository = {
+      viewByWorkerId: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        container_id: 'container-old',
+        container_name: 'worker-1',
+        session_volume_name: 'warm-123',
+      })),
+      upsert: jest.fn(async () => ({})),
+      deleteByWorkerId: jest.fn(async () => true),
+    };
+    const deps = buildHandler({ workerRuntimeRepository });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+    });
+
+    expect(deps.workerService.existsVolumeByName).toHaveBeenCalledWith(
+      'warm-123'
+    );
+    expect(
+      deps.workerService.removeContainerByNameAndVolume
+    ).toHaveBeenCalledWith('worker-1', 'warm-123', false);
+    expect(deps.workerService.removeContainerWorker).not.toHaveBeenCalled();
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
+      expect.any(String),
+      'worker-1',
+      'account-1',
+      false,
+      expect.any(String),
+      expect.any(Number),
+      undefined,
+      expect.objectContaining({
+        workerTypeId: EWorkerType.wwebjs,
+        workerGrpcPort: 50053,
+      }),
+      'warm-123',
+      { requireExistingVolume: true }
+    );
+    expect(workerRuntimeRepository.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        container_id: 'container-1',
+        container_name: 'worker-1',
+        session_volume_name: 'warm-123',
+      })
+    );
+  });
+
+  it('aborts recreate before removing the container when the preserved volume is missing', async () => {
+    const workerRuntimeRepository = {
+      viewByWorkerId: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        container_id: 'container-old',
+        container_name: 'worker-1',
+        session_volume_name: 'warm-123',
+      })),
+      upsert: jest.fn(async () => ({})),
+      deleteByWorkerId: jest.fn(async () => true),
+    };
+    const deps = buildHandler({
+      workerRuntimeRepository,
+      volumeExists: false,
+    });
+
+    await expect(
+      deps.handler.handle({
+        action: EWorkerAction.recreate,
+        worker_id: 'worker-1',
+        server_id: 'server-1',
+        account_id: 'account-1',
+      })
+    ).rejects.toThrow('Worker session volume warm-123 not found');
+
+    expect(
+      deps.workerService.removeContainerByNameAndVolume
+    ).not.toHaveBeenCalled();
+    expect(deps.workerService.removeContainerWorker).not.toHaveBeenCalled();
+    expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
+    expect(workerRuntimeRepository.upsert).not.toHaveBeenCalled();
+  });
+
+  it('backfills legacy runtime from container session volume metadata during recreate', async () => {
+    const workerRuntimeRepository = {
+      viewByWorkerId: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          worker_id: 'worker-1',
+          container_id: 'container-old',
+          container_name: 'worker-1',
+          session_volume_name: 'legacy-volume',
+        }),
+      upsert: jest.fn(async () => ({})),
+      deleteByWorkerId: jest.fn(async () => true),
+    };
+    const deps = buildHandler({
+      workerRuntimeRepository,
+      workerInspection: buildWorkerContainerInspection({
+        container_id: 'container-old',
+        container_labels: {
+          ...buildWorkerContainerInspection().container_labels,
+          'underchat.session_volume_name': 'legacy-volume',
+        },
+        container_env: {
+          ...buildWorkerContainerInspection().container_env,
+          SESSION_VOLUME_NAME: 'legacy-volume',
+        },
+      }),
+    });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+    });
+
+    expect(workerRuntimeRepository.upsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        container_id: 'container-old',
+        container_name: 'worker-1',
+        session_volume_name: 'legacy-volume',
+      })
+    );
+    expect(
+      deps.workerService.removeContainerByNameAndVolume
+    ).toHaveBeenCalledWith('worker-1', 'legacy-volume', false);
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
+      expect.any(String),
+      'worker-1',
+      'account-1',
+      false,
+      expect.any(String),
+      expect.any(Number),
+      undefined,
+      expect.objectContaining({
+        workerTypeId: EWorkerType.wwebjs,
+        workerGrpcPort: 50053,
+      }),
+      'legacy-volume',
+      { requireExistingVolume: true }
+    );
+  });
+
+  it('backfills legacy runtime with worker id volume when no metadata exists', async () => {
+    const workerRuntimeRepository = {
+      viewByWorkerId: jest
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          worker_id: 'worker-1',
+          container_id: 'container-old',
+          container_name: 'worker-1',
+          session_volume_name: 'worker-1',
+        }),
+      upsert: jest.fn(async () => ({})),
+      deleteByWorkerId: jest.fn(async () => true),
+    };
+    const deps = buildHandler({ workerRuntimeRepository });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+    });
+
+    expect(workerRuntimeRepository.upsert).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        container_id: 'container-1',
+        container_name: 'worker-1',
+        session_volume_name: 'worker-1',
+      })
+    );
+    expect(
+      deps.workerService.removeContainerByNameAndVolume
+    ).toHaveBeenCalledWith('worker-1', 'worker-1', false);
   });
 
   it('removes the volume during recreate only when explicit session reset is requested', async () => {

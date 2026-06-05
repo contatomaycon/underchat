@@ -20,6 +20,7 @@ import { SmtpEnvironment } from './SmtpEnvironment';
 import { VapidEnvironment } from './VapidEnvironment';
 import { TelemetryEnvironment } from './TelemetryEnvironment';
 import { BuildEnvironment } from './BuildEnvironment';
+import { WorkerPoolEnvironment } from './WorkerPoolEnvironment';
 
 export const generalEnvironment = new GeneralEnvironment();
 export const databaseEnvironment = new DatabaseEnvironment();
@@ -36,3 +37,4 @@ export const smtpEnvironment = new SmtpEnvironment();
 export const vapidEnvironment = new VapidEnvironment();
 export const telemetryEnvironment = new TelemetryEnvironment();
 export const buildEnvironment = new BuildEnvironment();
+export const workerPoolEnvironment = new WorkerPoolEnvironment();

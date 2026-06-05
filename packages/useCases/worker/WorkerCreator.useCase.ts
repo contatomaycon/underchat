@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { container, injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -14,6 +14,11 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
+import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
+import { workerPoolEnvironment } from '@core/config/environments';
+import { currentTime } from '@core/common/functions/currentTime';
+import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
+import { logger } from '@core/plugins/telemetry/logger';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -29,7 +34,9 @@ export class WorkerCreatorUseCase {
     @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService,
     @inject(WorkerConfigService)
-    private readonly workerConfigService: WorkerConfigService
+    private readonly workerConfigService: WorkerConfigService,
+    @inject(WorkerWarmPoolRepository)
+    private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never
   ) {}
 
   private async validate(
@@ -102,11 +109,179 @@ export class WorkerCreatorUseCase {
     );
   }
 
+  private async publishWarmReplenish(
+    serverId: string,
+    workerType: EWorkerType,
+    reason: 'claim_replenish' | 'pool_miss'
+  ): Promise<void> {
+    try {
+      const { WorkerWarmPoolQueueService } =
+        await import('@core/services/workerWarmPoolQueue.service');
+      const queueService = container.resolve(WorkerWarmPoolQueueService);
+      await queueService.publishReplenish({
+        request_id: uuidv7(),
+        server_id: serverId,
+        worker_type_id: workerType,
+        reason,
+        requested_at: currentTime(),
+      });
+    } catch (error) {
+      logger.error(
+        {
+          type: 'warm_pool.replenish.error',
+          server_id: serverId,
+          worker_type_id: workerType,
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to enqueue warm worker replenish'
+      );
+    }
+  }
+
+  private async tryClaimWarmWorker(
+    payload: IWorkerPayload
+  ): Promise<ICreateWorkerResponse | null> {
+    if (
+      !workerPoolEnvironment.warmWorkerPoolEnabled ||
+      !payload.worker_type_id ||
+      !this.workerWarmPoolRepository
+    ) {
+      return null;
+    }
+
+    await this.workerWarmPoolRepository.releaseExpiredReservations();
+    const reservationExpiresAt = new Date(
+      Date.now() + workerPoolEnvironment.warmWorkerReservationTtlMs
+    ).toISOString();
+    const warm = await this.workerWarmPoolRepository.reserveReady(
+      payload.server_id,
+      payload.worker_type_id,
+      payload.worker_id,
+      reservationExpiresAt
+    );
+
+    if (!warm) {
+      logger.warn(
+        {
+          type: 'warm_pool.miss',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          server_id: payload.server_id,
+          worker_type_id: payload.worker_type_id,
+        },
+        'Warm worker pool miss'
+      );
+      await this.publishWarmReplenish(
+        payload.server_id,
+        payload.worker_type_id,
+        'pool_miss'
+      );
+      return null;
+    }
+
+    try {
+      const response = await this.workerGrpcClientService.activateWarmWorker(
+        payload.server_id,
+        {
+          warm_pool_id: warm.warm_pool_id,
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          server_id: payload.server_id,
+          worker_type_id: payload.worker_type_id,
+        },
+        60_000
+      );
+
+      await this.publishWarmReplenish(
+        payload.server_id,
+        payload.worker_type_id,
+        'claim_replenish'
+      );
+
+      logger.info(
+        {
+          type: 'warm_pool.claim',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          server_id: payload.server_id,
+          worker_type_id: payload.worker_type_id,
+          warm_pool_id: warm.warm_pool_id,
+          container_id: response.container_id,
+          session_volume_name: response.session_volume_name,
+        },
+        'Warm worker claimed'
+      );
+
+      return {
+        worker_id: payload.worker_id,
+        server_id: payload.server_id,
+        worker_type_id: payload.worker_type_id,
+        warm_pool_claimed: true,
+        warm_pool_id: warm.warm_pool_id,
+      };
+    } catch (error) {
+      logger.error(
+        {
+          type: 'warm_pool.activate.error',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          server_id: payload.server_id,
+          worker_type_id: payload.worker_type_id,
+          warm_pool_id: warm.warm_pool_id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Warm worker activation failed; falling back to normal create'
+      );
+
+      try {
+        await this.workerGrpcClientService.deleteWarmWorker(
+          payload.server_id,
+          {
+            request_id: uuidv7(),
+            warm_pool_id: warm.warm_pool_id,
+            server_id: payload.server_id,
+            worker_type_id: payload.worker_type_id,
+            container_id: warm.container_id ?? undefined,
+            container_name: warm.container_name ?? undefined,
+            session_volume_name: warm.session_volume_name ?? undefined,
+            remove_volume: true,
+            reason: 'pool_reconcile',
+            requested_at: currentTime(),
+          },
+          60_000
+        );
+      } catch (deleteError) {
+        logger.error(
+          {
+            type: 'warm_pool.delete.error',
+            worker_id: payload.worker_id,
+            account_id: payload.account_id,
+            server_id: payload.server_id,
+            worker_type_id: payload.worker_type_id,
+            warm_pool_id: warm.warm_pool_id,
+            error:
+              deleteError instanceof Error
+                ? deleteError.message
+                : String(deleteError),
+          },
+          'Failed to delete failed warm worker'
+        );
+      }
+      await this.publishWarmReplenish(
+        payload.server_id,
+        payload.worker_type_id,
+        'pool_miss'
+      );
+      return null;
+    }
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
     input: CreateWorkerRequest
-  ): Promise<boolean> {
+  ): Promise<ICreateWorkerResponse> {
     await this.validate(t, accountId);
 
     let serverId: string;
@@ -181,8 +356,18 @@ export class WorkerCreatorUseCase {
       payloadCreate
     );
 
+    const warmClaim = await this.tryClaimWarmWorker(payloadCreate);
+    if (warmClaim) {
+      return warmClaim;
+    }
+
     this.dispatchWorkerCreated(t, payloadCreate);
 
-    return isCreated;
+    return {
+      worker_id: workerId,
+      server_id: serverId,
+      worker_type_id: workerType,
+      fallback_created: workerPoolEnvironment.warmWorkerPoolEnabled,
+    };
   }
 }

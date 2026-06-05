@@ -17,6 +17,12 @@ import { status as GrpcStatus } from '@grpc/grpc-js';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { getErrorMessage } from '@core/common/functions/toError';
 import { v7 as uuidv7 } from 'uuid';
+import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
+import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
+import { workerPoolEnvironment } from '@core/config/environments';
+import { currentTime } from '@core/common/functions/currentTime';
+import { logger } from '@core/plugins/telemetry/logger';
+import { IWorkerRuntime } from '@core/common/interfaces/IWorkerRuntime';
 
 @injectable()
 export class WorkerUpdaterUseCase {
@@ -36,7 +42,11 @@ export class WorkerUpdaterUseCase {
     @inject(WorkerRecreatorUseCase)
     private readonly workerRecreatorUseCase: WorkerRecreatorUseCase,
     @inject(WorkerConfigService)
-    private readonly workerConfigService: WorkerConfigService
+    private readonly workerConfigService: WorkerConfigService,
+    @inject(WorkerWarmPoolRepository)
+    private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never,
+    @inject(WorkerRuntimeRepository)
+    private readonly workerRuntimeRepository: WorkerRuntimeRepository = undefined as never
   ) {}
 
   private async validate(
@@ -126,6 +136,134 @@ export class WorkerUpdaterUseCase {
     );
   }
 
+  private async tryActivateWarmRuntimeForRecreate(input: {
+    accountId: string;
+    workerId: string;
+    serverId: string;
+    workerType: EWorkerType;
+    oldServerId?: string;
+    currentRuntime?: IWorkerRuntime | null;
+  }): Promise<boolean> {
+    if (!workerPoolEnvironment.warmWorkerPoolEnabled) {
+      return false;
+    }
+
+    await this.workerWarmPoolRepository.releaseExpiredReservations();
+    const reservationExpiresAt = new Date(
+      Date.now() + workerPoolEnvironment.warmWorkerReservationTtlMs
+    ).toISOString();
+    const warm = await this.workerWarmPoolRepository.reserveReady(
+      input.serverId,
+      input.workerType,
+      input.workerId,
+      reservationExpiresAt
+    );
+
+    if (!warm) {
+      logger.warn(
+        {
+          type: 'warm_pool.miss',
+          worker_id: input.workerId,
+          account_id: input.accountId,
+          server_id: input.serverId,
+          worker_type_id: input.workerType,
+          source: 'worker_update',
+        },
+        'Warm worker pool miss during update/recreate'
+      );
+      return false;
+    }
+
+    try {
+      await this.workerGrpcClientService.activateWarmWorker(
+        input.serverId,
+        {
+          warm_pool_id: warm.warm_pool_id,
+          worker_id: input.workerId,
+          account_id: input.accountId,
+          server_id: input.serverId,
+          worker_type_id: input.workerType,
+        },
+        60_000
+      );
+
+      await this.workerService.updateWorkerById(input.accountId, {
+        worker_id: input.workerId,
+        worker_status_id: EWorkerStatus.disponible,
+        lifecycle_operation_id: null,
+        number: null,
+        connection_date: null,
+      });
+
+      if (input.currentRuntime?.session_volume_name) {
+        const sameServer = input.oldServerId === input.serverId;
+        await this.workerGrpcClientService.deleteWarmWorker(
+          input.oldServerId ?? input.serverId,
+          {
+            request_id: uuidv7(),
+            worker_id: input.workerId,
+            server_id: input.oldServerId ?? input.serverId,
+            worker_type_id: input.workerType,
+            container_name: sameServer
+              ? undefined
+              : (input.currentRuntime.container_name ?? input.workerId),
+            session_volume_name: input.currentRuntime.session_volume_name,
+            remove_volume: true,
+            reason: 'worker_type_change',
+            requested_at: currentTime(),
+          },
+          60_000
+        );
+      }
+
+      logger.info(
+        {
+          type: 'warm_pool.claim',
+          worker_id: input.workerId,
+          account_id: input.accountId,
+          server_id: input.serverId,
+          worker_type_id: input.workerType,
+          warm_pool_id: warm.warm_pool_id,
+          source: 'worker_update',
+        },
+        'Warm worker claimed for update/recreate'
+      );
+
+      return true;
+    } catch (error) {
+      logger.error(
+        {
+          type: 'warm_pool.activate.error',
+          worker_id: input.workerId,
+          account_id: input.accountId,
+          server_id: input.serverId,
+          worker_type_id: input.workerType,
+          warm_pool_id: warm.warm_pool_id,
+          error: getErrorMessage(error),
+        },
+        'Warm worker activation for update failed'
+      );
+
+      await this.workerGrpcClientService.deleteWarmWorker(
+        input.serverId,
+        {
+          request_id: uuidv7(),
+          warm_pool_id: warm.warm_pool_id,
+          server_id: input.serverId,
+          worker_type_id: input.workerType,
+          container_id: warm.container_id ?? undefined,
+          container_name: warm.container_name ?? undefined,
+          session_volume_name: warm.session_volume_name ?? undefined,
+          remove_volume: true,
+          reason: 'pool_reconcile',
+          requested_at: currentTime(),
+        },
+        60_000
+      );
+      return false;
+    }
+  }
+
   private async cleanupPreviousWorkerServer(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -186,6 +324,7 @@ export class WorkerUpdaterUseCase {
     let currentServerStatusId: string | undefined;
     let previousWorkerStatusId: EWorkerStatus | undefined;
     let shouldRecreateOnServerChange = false;
+    let currentRuntime: IWorkerRuntime | null = null;
 
     if (shouldRecreateOnTypeChange || input.server_id) {
       const [viewWorkerBalancer, viewWorker] = await Promise.all([
@@ -202,6 +341,9 @@ export class WorkerUpdaterUseCase {
       previousWorkerStatusId = viewWorker?.status?.id as
         | EWorkerStatus
         | undefined;
+      currentRuntime =
+        (await this.workerRuntimeRepository?.viewByWorkerId(input.worker_id)) ??
+        null;
 
       if (input.server_id) {
         shouldRecreateOnServerChange = await this.validateServerEligibility(
@@ -282,6 +424,23 @@ export class WorkerUpdaterUseCase {
     }
 
     if (shouldRecreateWorker) {
+      const warmWorkerType = nextWorkerType ?? currentType;
+      const warmActivated =
+        warmWorkerType &&
+        (input.server_id || currentServerId) &&
+        (await this.tryActivateWarmRuntimeForRecreate({
+          accountId,
+          workerId: input.worker_id,
+          serverId: input.server_id ?? currentServerId ?? '',
+          workerType: warmWorkerType,
+          oldServerId: currentServerId,
+          currentRuntime,
+        }));
+
+      if (warmActivated) {
+        return true;
+      }
+
       const shouldResetSessionForRecreate =
         shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
 

@@ -17,6 +17,10 @@ type dynamicDescriptors struct {
 	workerConnectionResponse          protoreflect.MessageDescriptor
 	connectionPhoneValidationRequest  protoreflect.MessageDescriptor
 	connectionPhoneValidationResponse protoreflect.MessageDescriptor
+	workerRuntimeActivationRequest    protoreflect.MessageDescriptor
+	workerRuntimeActivationResponse   protoreflect.MessageDescriptor
+	workerRuntimeHealthRequest        protoreflect.MessageDescriptor
+	workerRuntimeHealthResponse       protoreflect.MessageDescriptor
 
 	commandNotifyWorkerStatus       protoreflect.MessageDescriptor
 	commandResponse                 protoreflect.MessageDescriptor
@@ -92,12 +96,45 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("phone", 6),
 				stringField("error", 7),
 			),
+			message("WorkerRuntimeActivationRequest",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				stringField("worker_type_id", 3),
+				stringField("warm_pool_id", 4),
+				stringField("session_volume_name", 5),
+				stringField("balancer_grpc_host", 6),
+				int32Field("balancer_grpc_port", 7),
+			),
+			message("WorkerRuntimeActivationResponse",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				boolField("activated", 3),
+				boolField("already_active", 4),
+				stringField("error", 5),
+			),
+			message("WorkerRuntimeHealthRequest",
+				stringField("worker_id", 1),
+				stringField("warm_pool_id", 2),
+			),
+			message("WorkerRuntimeHealthResponse",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				stringField("warm_pool_id", 3),
+				boolField("standby", 4),
+				boolField("activated", 5),
+				boolField("ready", 6),
+				boolField("has_session", 7),
+				boolField("has_qr", 8),
+				stringField("error", 9),
+			),
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{{
 			Name: proto.String("WorkerConnection"),
 			Method: []*descriptorpb.MethodDescriptorProto{
 				method("RequestConnection", ".worker_connection.StatusConnectionRequest", ".worker_connection.WorkerConnectionResponse"),
 				method("ValidatePhone", ".worker_connection.PhoneValidationRequest", ".worker_connection.PhoneValidationResponse"),
+				method("ActivateRuntime", ".worker_connection.WorkerRuntimeActivationRequest", ".worker_connection.WorkerRuntimeActivationResponse"),
+				method("RuntimeHealth", ".worker_connection.WorkerRuntimeHealthRequest", ".worker_connection.WorkerRuntimeHealthResponse"),
 			},
 		}},
 	}, nil)
@@ -188,6 +225,10 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 		workerConnectionResponse:          connectionFile.Messages().ByName("WorkerConnectionResponse"),
 		connectionPhoneValidationRequest:  connectionFile.Messages().ByName("PhoneValidationRequest"),
 		connectionPhoneValidationResponse: connectionFile.Messages().ByName("PhoneValidationResponse"),
+		workerRuntimeActivationRequest:    connectionFile.Messages().ByName("WorkerRuntimeActivationRequest"),
+		workerRuntimeActivationResponse:   connectionFile.Messages().ByName("WorkerRuntimeActivationResponse"),
+		workerRuntimeHealthRequest:        connectionFile.Messages().ByName("WorkerRuntimeHealthRequest"),
+		workerRuntimeHealthResponse:       connectionFile.Messages().ByName("WorkerRuntimeHealthResponse"),
 		commandNotifyWorkerStatus:         commandFile.Messages().ByName("NotifyWorkerStatusRequest"),
 		commandResponse:                   commandFile.Messages().ByName("WorkerCommandResponse"),
 		commandResolveIncomingCallReq:     commandFile.Messages().ByName("ResolveIncomingCallActionRequest"),

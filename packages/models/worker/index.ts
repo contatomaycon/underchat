@@ -9,3 +9,5 @@ export * from './workerProfileStatus.model';
 export * from './workerProfileStatusType.model';
 export * from './workerProfileInfo.model';
 export * from './workerProfileStatusContact.model';
+export * from './workerRuntime.model';
+export * from './workerWarmPool.model';
