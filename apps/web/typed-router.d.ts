@@ -438,6 +438,13 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
+    'warm-channels': RouteRecordInfo<
+      'warm-channels',
+      '/warm-channels',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
   }
 
   /**
@@ -810,6 +817,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/voice-ia.vue': {
       routes:
         | 'voice-ia'
+      views:
+        | never
+    }
+    'src/pages/warm-channels.vue': {
+      routes:
+        | 'warm-channels'
       views:
         | never
     }

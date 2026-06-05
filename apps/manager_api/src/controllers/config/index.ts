@@ -22,6 +22,10 @@ import { updateMethodPayment } from './methods/updateMethodPayment';
 import { updateChannel } from './methods/updateChannel';
 import { listS3BackupUploads } from './methods/listS3BackupUploads';
 import { reprocessS3BackupUpload } from './methods/reprocessS3BackupUpload';
+import { listWarmChannels } from './methods/listWarmChannels';
+import { listWarmChannelServers } from './methods/listWarmChannelServers';
+import { recreateWarmChannel } from './methods/recreateWarmChannel';
+import { recreateWarmChannelsAll } from './methods/recreateWarmChannelsAll';
 
 @injectable()
 class ConfigController {
@@ -48,6 +52,10 @@ class ConfigController {
   public updateMethodPayment = updateMethodPayment;
   public listS3BackupUploads = listS3BackupUploads;
   public reprocessS3BackupUpload = reprocessS3BackupUpload;
+  public listWarmChannels = listWarmChannels;
+  public listWarmChannelServers = listWarmChannelServers;
+  public recreateWarmChannel = recreateWarmChannel;
+  public recreateWarmChannelsAll = recreateWarmChannelsAll;
 }
 
 export default ConfigController;

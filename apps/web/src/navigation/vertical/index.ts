@@ -449,6 +449,15 @@ export default [
     ],
   },
   {
+    title: 'warm_channels',
+    to: { name: 'warm-channels' as keyof RouteNamedMap },
+    icon: { icon: 'tabler-server-bolt' },
+    permissions: [
+      EGeneralPermissions.full_access,
+      EGeneralPermissions.full_access_group,
+    ],
+  },
+  {
     title: 'server',
     to: { name: 'server' as keyof RouteNamedMap },
     icon: { icon: 'tabler-server' },

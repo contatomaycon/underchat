@@ -1,14 +1,31 @@
 import * as schema from '@core/models';
-import { workerWarmPool } from '@core/models';
+import { server, workerType, workerWarmPool } from '@core/models';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import {
   IWorkerWarmPool,
   IWorkerWarmPoolReadyCount,
 } from '@core/common/interfaces/IWorkerWarmPool';
+import { ListWarmChannelsRequest } from '@core/schema/config/listWarmChannels/request.schema';
+import { ListWarmChannelsResponse } from '@core/schema/config/listWarmChannels/response.schema';
 import { currentTime } from '@core/common/functions/currentTime';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, count, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  SQL,
+  SQLWrapper,
+} from 'drizzle-orm';
 
 export interface CreateWorkerWarmPoolInput {
   warm_pool_id: string;
@@ -28,6 +45,11 @@ export interface UpdateWorkerWarmPoolRuntimeInput {
   state?: EWorkerWarmPoolState;
   last_error?: string | null;
 }
+
+type WarmChannelFilters = Omit<
+  ListWarmChannelsRequest,
+  'current_page' | 'per_page' | 'sort_by'
+>;
 
 @injectable()
 export class WorkerWarmPoolRepository {
@@ -91,6 +113,224 @@ export class WorkerWarmPoolRepository {
       .execute();
 
     return Number(result?.value ?? 0);
+  }
+
+  private readonly buildWarmChannelTextFilter = (
+    query: Partial<WarmChannelFilters>
+  ): SQLWrapper | undefined => {
+    const filters: SQL[] = [];
+
+    if (query.warm_pool_id) {
+      filters.push(ilike(workerWarmPool.warm_pool_id, `%${query.warm_pool_id}%`));
+    }
+    if (query.container_id) {
+      filters.push(ilike(workerWarmPool.container_id, `%${query.container_id}%`));
+    }
+    if (query.container_name) {
+      filters.push(
+        ilike(workerWarmPool.container_name, `%${query.container_name}%`)
+      );
+    }
+    if (query.session_volume_name) {
+      filters.push(
+        ilike(
+          workerWarmPool.session_volume_name,
+          `%${query.session_volume_name}%`
+        )
+      );
+    }
+    if (query.search) {
+      const search = `%${query.search}%`;
+      filters.push(
+        or(
+          ilike(workerWarmPool.warm_pool_id, search),
+          ilike(workerWarmPool.container_id, search),
+          ilike(workerWarmPool.container_name, search),
+          ilike(workerWarmPool.session_volume_name, search),
+          ilike(server.name, search),
+          ilike(workerType.type, search)
+        ) as SQL
+      );
+    }
+
+    if (!filters.length) {
+      return undefined;
+    }
+
+    return and(...filters);
+  };
+
+  private readonly setReadyWarmChannelFilters = (
+    query: Partial<WarmChannelFilters>
+  ): SQLWrapper[] => {
+    const filters: SQLWrapper[] = [
+      eq(workerWarmPool.state, EWorkerWarmPoolState.ready),
+      isNull(server.deleted_at),
+    ];
+
+    if (query.server_id) {
+      filters.push(eq(workerWarmPool.server_id, query.server_id));
+    }
+    if (query.type) {
+      filters.push(eq(workerWarmPool.worker_type_id, query.type));
+    }
+    if (query.created_at_from) {
+      filters.push(gte(workerWarmPool.created_at, query.created_at_from));
+    }
+    if (query.created_at_to) {
+      filters.push(lte(workerWarmPool.created_at, query.created_at_to));
+    }
+    if (query.updated_at_from) {
+      filters.push(gte(workerWarmPool.updated_at, query.updated_at_from));
+    }
+    if (query.updated_at_to) {
+      filters.push(lte(workerWarmPool.updated_at, query.updated_at_to));
+    }
+    if (query.last_health_at_from) {
+      filters.push(gte(workerWarmPool.last_health_at, query.last_health_at_from));
+    }
+    if (query.last_health_at_to) {
+      filters.push(lte(workerWarmPool.last_health_at, query.last_health_at_to));
+    }
+
+    const textFilter = this.buildWarmChannelTextFilter(query);
+    if (textFilter) {
+      filters.push(textFilter);
+    }
+
+    return filters;
+  };
+
+  private readonly setReadyWarmChannelOrders = (
+    query: Pick<ListWarmChannelsRequest, 'sort_by'>
+  ): SQL[] => {
+    const mapping: Record<string, SQLWrapper> = {
+      warm_pool_id: workerWarmPool.warm_pool_id,
+      server: server.name,
+      type: workerType.type,
+      state: workerWarmPool.state,
+      container_id: workerWarmPool.container_id,
+      container_name: workerWarmPool.container_name,
+      session_volume_name: workerWarmPool.session_volume_name,
+      last_health_at: workerWarmPool.last_health_at,
+      created_at: workerWarmPool.created_at,
+      updated_at: workerWarmPool.updated_at,
+    };
+
+    const orders: SQL[] = [];
+
+    for (const sort of query.sort_by ?? []) {
+      const column = mapping[sort.key];
+      if (!column) continue;
+
+      orders.push(sort.order === 'asc' ? asc(column) : desc(column));
+    }
+
+    return orders;
+  };
+
+  async listReadyWarmChannels(
+    perPage: number,
+    currentPage: number,
+    query: ListWarmChannelsRequest
+  ): Promise<ListWarmChannelsResponse[]> {
+    const filters = this.setReadyWarmChannelFilters(query);
+    const orders = this.setReadyWarmChannelOrders(query);
+
+    const queryBuilder = this.dbRo
+      .select({
+        warm_pool_id: workerWarmPool.warm_pool_id,
+        server: {
+          id: server.server_id,
+          name: server.name,
+        },
+        type: {
+          id: workerType.worker_type_id,
+          name: workerType.type,
+        },
+        state: workerWarmPool.state,
+        container_id: workerWarmPool.container_id,
+        container_name: workerWarmPool.container_name,
+        session_volume_name: workerWarmPool.session_volume_name,
+        last_health_at: workerWarmPool.last_health_at,
+        last_error: workerWarmPool.last_error,
+        created_at: workerWarmPool.created_at,
+        updated_at: workerWarmPool.updated_at,
+      })
+      .from(workerWarmPool)
+      .innerJoin(server, eq(server.server_id, workerWarmPool.server_id))
+      .innerJoin(
+        workerType,
+        eq(workerType.worker_type_id, workerWarmPool.worker_type_id)
+      )
+      .where(and(...filters));
+
+    if (orders.length) {
+      queryBuilder.orderBy(...orders);
+    } else {
+      queryBuilder.orderBy(
+        asc(server.name),
+        asc(workerType.type),
+        desc(workerWarmPool.last_health_at)
+      );
+    }
+
+    const result = await queryBuilder
+      .limit(perPage)
+      .offset((currentPage - 1) * perPage)
+      .execute();
+
+    return result as ListWarmChannelsResponse[];
+  }
+
+  async listReadyWarmChannelsTotal(
+    query: Partial<WarmChannelFilters>
+  ): Promise<number> {
+    const filters = this.setReadyWarmChannelFilters(query);
+    const [result] = await this.dbRo
+      .select({ value: count(workerWarmPool.warm_pool_id) })
+      .from(workerWarmPool)
+      .innerJoin(server, eq(server.server_id, workerWarmPool.server_id))
+      .innerJoin(
+        workerType,
+        eq(workerType.worker_type_id, workerWarmPool.worker_type_id)
+      )
+      .where(and(...filters))
+      .execute();
+
+    return Number(result?.value ?? 0);
+  }
+
+  async listReadyWarmChannelsForRecreate(
+    query: Partial<WarmChannelFilters>
+  ): Promise<IWorkerWarmPool[]> {
+    const filters = this.setReadyWarmChannelFilters(query);
+    const result = await this.dbRo
+      .select({
+        warm_pool_id: workerWarmPool.warm_pool_id,
+        server_id: workerWarmPool.server_id,
+        worker_type_id: workerWarmPool.worker_type_id,
+        container_id: workerWarmPool.container_id,
+        container_name: workerWarmPool.container_name,
+        session_volume_name: workerWarmPool.session_volume_name,
+        state: workerWarmPool.state,
+        reserved_by_worker_id: workerWarmPool.reserved_by_worker_id,
+        reservation_expires_at: workerWarmPool.reservation_expires_at,
+        last_health_at: workerWarmPool.last_health_at,
+        last_error: workerWarmPool.last_error,
+        created_at: workerWarmPool.created_at,
+        updated_at: workerWarmPool.updated_at,
+      })
+      .from(workerWarmPool)
+      .innerJoin(server, eq(server.server_id, workerWarmPool.server_id))
+      .innerJoin(
+        workerType,
+        eq(workerType.worker_type_id, workerWarmPool.worker_type_id)
+      )
+      .where(and(...filters))
+      .execute();
+
+    return result as IWorkerWarmPool[];
   }
 
   async listActiveByServer(serverId: string): Promise<IWorkerWarmPool[]> {
