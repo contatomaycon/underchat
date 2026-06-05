@@ -33,6 +33,7 @@ export class CentrifugoService {
   private readonly queueProcessIntervalMs = 25;
   private readonly publishCacheWindowMs = 2_000;
   private readonly publishCacheCleanupIntervalMs = 5_000;
+  private readonly publishErrorLogThrottleMs = 30_000;
 
   private circuitBreakerFailures = 0;
   private circuitBreakerOpenUntil = 0;
@@ -56,6 +57,10 @@ export class CentrifugoService {
   private halfOpenSuccessCount = 0;
   private readonly useDistributed: boolean;
   private readonly redis: Redis | undefined;
+  private readonly publishErrorLogState = new Map<
+    string,
+    { lastLoggedAt: number; suppressedCount: number }
+  >();
 
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {
     try {
@@ -992,6 +997,41 @@ export class CentrifugoService {
     );
   }
 
+  private isCircuitBreakerOpenError(error: Error): boolean {
+    return error.message.toLowerCase().includes('circuit breaker is open');
+  }
+
+  private getPublishErrorLogState(key: string): {
+    lastLoggedAt: number;
+    suppressedCount: number;
+  } {
+    const existing = this.publishErrorLogState.get(key);
+
+    if (existing) {
+      return existing;
+    }
+
+    const created = { lastLoggedAt: 0, suppressedCount: 0 };
+    this.publishErrorLogState.set(key, created);
+
+    return created;
+  }
+
+  private getPublishErrorKind(
+    error: Error,
+    isTimeout: boolean
+  ): 'circuit_breaker_open' | 'timeout' | 'error' {
+    if (this.isCircuitBreakerOpenError(error)) {
+      return 'circuit_breaker_open';
+    }
+
+    if (isTimeout) {
+      return 'timeout';
+    }
+
+    return 'error';
+  }
+
   private handlePublishError(
     error: unknown,
     channel: string,
@@ -999,12 +1039,44 @@ export class CentrifugoService {
   ): PublishResult {
     const errorObj = this.toError(error);
     const isTimeout = this.isTimeoutError(errorObj);
+    const errorKind = this.getPublishErrorKind(errorObj, isTimeout);
+    const isCircuitBreakerOpen = errorKind === 'circuit_breaker_open';
+    const logState = this.getPublishErrorLogState(
+      `${type}:${channel}:${errorKind}:${errorObj.message}`
+    );
+    const now = Date.now();
+
+    if (now - logState.lastLoggedAt < this.publishErrorLogThrottleMs) {
+      logState.suppressedCount += 1;
+      return {} as PublishResult;
+    }
+
+    const suppressedCount = logState.suppressedCount;
+    logState.lastLoggedAt = now;
+    logState.suppressedCount = 0;
+
+    if (isCircuitBreakerOpen) {
+      logger.warn(
+        {
+          type,
+          channel,
+          reason: errorKind,
+          error: errorObj.message,
+          suppressed_count: suppressedCount,
+        },
+        `Centrifugo ${type} skipped because circuit breaker is open - non-critical`
+      );
+
+      return {} as PublishResult;
+    }
 
     logger.warn(
       {
         err: errorObj,
         type,
         channel,
+        reason: errorKind,
+        suppressed_count: suppressedCount,
       },
       isTimeout
         ? `Centrifugo ${type} timeout - non-critical`
@@ -1016,6 +1088,7 @@ export class CentrifugoService {
       centrifugo: {
         type,
         channel,
+        reason: errorKind,
       },
     });
 
