@@ -42,6 +42,7 @@ const (
 	PairClientElectron       PairClientType = "7"
 	PairClientUWP            PairClientType = "8"
 	PairClientOtherWebClient PairClientType = "9"
+	PairClientMacOS          PairClientType = "c"
 	PairClientAndroid        PairClientType = "e"
 )
 
