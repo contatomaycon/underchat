@@ -723,6 +723,34 @@ watch(isVisible, (visible) => {
   void requestQrCodeIfReady({ silent: true });
 });
 
+watch(
+  () => props.initialStatusId,
+  (statusId) => {
+    if (!isVisible.value || !statusId) {
+      return;
+    }
+
+    workerStatusId.value = statusId;
+
+    if (statusId === EWorkerStatus.creating) {
+      isResetting.value = false;
+      prepareConnectionStart();
+      return;
+    }
+
+    if (statusId === EWorkerStatus.recreating) {
+      isResetting.value = true;
+      prepareConnectionStart();
+      return;
+    }
+
+    if (statusId === EWorkerStatus.disponible) {
+      isResetting.value = false;
+      void requestQrCodeIfReady({ silent: true });
+    }
+  }
+);
+
 onUnmounted(() => {
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
