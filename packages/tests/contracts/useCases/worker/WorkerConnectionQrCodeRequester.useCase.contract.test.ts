@@ -111,6 +111,8 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       status: EBaileysConnectionStatus.connecting,
       worker_id: 'worker-1',
       account_id: 'account-1',
+      worker_type_id: EWorkerType.baileys,
+      worker_status_id: EWorkerStatus.disponible,
       qr_pending: true,
       reason: 'queued',
     });
@@ -168,6 +170,8 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         status: EBaileysConnectionStatus.connecting,
         worker_id: 'worker-1',
         account_id: 'account-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.disponible,
         connection_attempt_id: 'attempt-1',
         connection_lifecycle_id: 'lifecycle-1',
         qr_pending: true,
@@ -187,7 +191,11 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
 
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
 
-    expect(response).toMatchObject(activeAttempt.ack);
+    expect(response).toMatchObject({
+      ...activeAttempt.ack,
+      worker_type_id: EWorkerType.baileys,
+      worker_status_id: EWorkerStatus.disponible,
+    });
     expect(deps.streamProducerService.send).not.toHaveBeenCalled();
   });
 

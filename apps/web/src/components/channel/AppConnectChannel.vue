@@ -8,11 +8,11 @@ import {
   watch,
 } from 'vue';
 import {
-  fetchHistoryAndProcess,
   fetchRecentHistoryAndProcess,
   onMessage,
   unsubscribe,
 } from '@/@webcore/centrifugo';
+import { recordException, recordMessage } from '@/@webcore/observability';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -45,12 +45,19 @@ const isVisible = computed({
 });
 
 const channelId = toRef(props, 'channelId');
+const channelType = toRef(props, 'channelType');
 const accountId = toRef(props, 'accountId');
 const workerConnectionChannel = computed(() =>
   accountId.value ? workerCentrifugoQueue(accountId.value) : ''
 );
 
 const MIN_PAIRING_STAGE_MS = 900;
+const QR_HISTORY_RECOVERY_LIMIT = 250;
+const QR_HISTORY_RECOVERY_DELAYS_MS = [
+  1_500, 5_000, 10_000, 20_000, 40_000, 80_000, 120_000, 180_000, 240_000,
+] as const;
+const qrHistoryRecoveryTimeouts = new Set<number>();
+let qrHistoryRecoveryAttemptId: string | undefined;
 
 const statusConnection = shallowRef<EBaileysConnectionStatus>(
   EBaileysConnectionStatus.connecting
@@ -350,6 +357,140 @@ function clearConnectedStateDelay() {
   }
 }
 
+function clearQrHistoryRecovery() {
+  for (const timeoutId of qrHistoryRecoveryTimeouts) {
+    window.clearTimeout(timeoutId);
+  }
+
+  qrHistoryRecoveryTimeouts.clear();
+  qrHistoryRecoveryAttemptId = undefined;
+}
+
+function shouldIgnoreConnectionPayloadForWorkerType(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  const expectedWorkerTypeId = channelType.value;
+  if (!expectedWorkerTypeId) {
+    return false;
+  }
+
+  if (data.worker_type_id && data.worker_type_id !== expectedWorkerTypeId) {
+    recordMessage('connection.qrcode.worker_type_mismatch_ignored', 'warn', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      expected_worker_type_id: expectedWorkerTypeId,
+      incoming_worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      has_qrcode: Boolean(data.qrcode),
+    });
+    return true;
+  }
+
+  if (data.qrcode && !data.worker_type_id) {
+    recordMessage('connection.qrcode.missing_worker_type_ignored', 'warn', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      expected_worker_type_id: expectedWorkerTypeId,
+      connection_attempt_id: data.connection_attempt_id,
+      qrcode_len: data.qrcode.length,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+function canRecoverQrFromRecentHistory(): boolean {
+  return (
+    isVisible.value &&
+    Boolean(channelId.value) &&
+    Boolean(workerConnectionChannel.value) &&
+    Boolean(connectionAttemptId.value) &&
+    !hasActiveConnectionCode.value &&
+    !isConnected.value &&
+    !isBlockingOperation.value
+  );
+}
+
+async function recoverQrFromRecentHistory(reason: string): Promise<number> {
+  if (!workerConnectionChannel.value) {
+    return 0;
+  }
+
+  try {
+    const processed = await fetchRecentHistoryAndProcess(
+      workerConnectionChannel.value,
+      handleWorkerConnectionMessage,
+      QR_HISTORY_RECOVERY_LIMIT
+    );
+
+    recordMessage('connection.qrcode.history_recovery_processed', 'debug', {
+      source: 'connection_dialog',
+      worker_id: channelId.value,
+      account_id: accountId.value,
+      channel: workerConnectionChannel.value,
+      connection_attempt_id: connectionAttemptId.value,
+      reason,
+      processed,
+      has_qrcode: Boolean(qrcode.value),
+      qr_pending: qrPending.value,
+    });
+
+    return processed;
+  } catch (error) {
+    recordException(error, {
+      source: 'connection_dialog.qrcode_history_recovery',
+      worker_id: channelId.value,
+      account_id: accountId.value,
+      channel: workerConnectionChannel.value,
+      connection_attempt_id: connectionAttemptId.value,
+      reason,
+    });
+    return 0;
+  }
+}
+
+function scheduleQrHistoryRecovery(reason = 'pending_ack') {
+  const attemptId = connectionAttemptId.value;
+
+  if (!canRecoverQrFromRecentHistory()) {
+    return;
+  }
+
+  if (!attemptId || qrHistoryRecoveryAttemptId === attemptId) {
+    return;
+  }
+
+  clearQrHistoryRecovery();
+  qrHistoryRecoveryAttemptId = attemptId;
+
+  for (const delayMs of QR_HISTORY_RECOVERY_DELAYS_MS) {
+    const timeoutId = window.setTimeout(() => {
+      qrHistoryRecoveryTimeouts.delete(timeoutId);
+
+      if (!canRecoverQrFromRecentHistory()) {
+        return;
+      }
+
+      void recoverQrFromRecentHistory(`${reason}:${delayMs}ms`).catch(
+        (error) => {
+          recordException(error, {
+            source: 'connection_dialog.qrcode_history_recovery',
+            worker_id: channelId.value,
+            account_id: accountId.value,
+            channel: workerConnectionChannel.value,
+            connection_attempt_id: connectionAttemptId.value,
+            reason,
+            delay_ms: delayMs,
+          });
+        }
+      );
+    }, delayMs);
+
+    qrHistoryRecoveryTimeouts.add(timeoutId);
+  }
+}
+
 function startNextAttemptCountdown() {
   clearNextAttemptCountdown();
 
@@ -366,6 +507,8 @@ function startNextAttemptCountdown() {
 }
 
 function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
+  clearQrHistoryRecovery();
+
   const shouldPreserveQr = options.preserveQr === true && Boolean(qrcode.value);
   const currentQrCode = qrcode.value;
   const currentConnectionAttemptId = connectionAttemptId.value;
@@ -454,6 +597,10 @@ async function requestQrCodeIfReady(
     });
     if (state) {
       applyDirectConnectionResponse(state);
+
+      if (!qrcode.value && state.qr_pending === true) {
+        scheduleQrHistoryRecovery('request_qrcode_pending');
+      }
     }
   } finally {
     isRequestingQr.value = false;
@@ -477,6 +624,7 @@ async function recreateChannelWithFullCleanup() {
   qrcode.value = undefined;
   qrPending.value = false;
   connectionAttemptId.value = undefined;
+  clearQrHistoryRecovery();
   resetQrAttempts();
   resetPairingCodes();
   clearNextAttemptCountdown();
@@ -533,6 +681,7 @@ function applyConnectedState(data: IBaileysConnectionState) {
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
   resetPairingCodes();
+  clearQrHistoryRecovery();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
 }
@@ -553,6 +702,10 @@ function shouldIgnorePhoneUnavailableState(
 
 function applyReducedConnectionState(data: IBaileysConnectionState) {
   if (!channelId.value || data.worker_id !== channelId.value) {
+    return;
+  }
+
+  if (shouldIgnoreConnectionPayloadForWorkerType(data)) {
     return;
   }
 
@@ -602,15 +755,32 @@ function applyReducedConnectionState(data: IBaileysConnectionState) {
     qrcode.value = undefined;
     qrPending.value = false;
     isRequestingQr.value = false;
+    clearQrHistoryRecovery();
   } else if (next.qrcode) {
+    const hadRecoveryScheduled = qrHistoryRecoveryTimeouts.size > 0;
     qrcode.value = next.qrcode;
     isRequestingQr.value = false;
+    clearQrHistoryRecovery();
+    recordMessage('connection.qrcode.received', 'debug', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: next.connection_attempt_id,
+      connection_lifecycle_id: next.connection_lifecycle_id,
+      qrcode_len: next.qrcode.length,
+      recovered_from_history: hadRecoveryScheduled,
+    });
   } else {
     qrcode.value = undefined;
+    if (next.qr_pending === true && next.connection_attempt_id) {
+      scheduleQrHistoryRecovery('stream_pending');
+    }
   }
 
   if (incomingStatus === EBaileysConnectionStatus.disconnected) {
     isRequestingQr.value = false;
+    clearQrHistoryRecovery();
   }
 
   if (incomingStatus) {
@@ -652,7 +822,7 @@ async function recoverQrAfterCentrifugoRecoveryFailure() {
     return;
   }
 
-  await fetchHistoryAndProcess(workerConnectionChannel.value);
+  await recoverQrFromRecentHistory('centrifugo_recovery_failed');
 }
 
 function handleCentrifugoRecoveryFailed(event: Event) {
@@ -664,7 +834,9 @@ function handleCentrifugoRecoveryFailed(event: Event) {
   void recoverQrAfterCentrifugoRecoveryFailure();
 }
 
-function shouldProcessConnectionPublication(ctx?: { offset?: number }): boolean {
+function shouldProcessConnectionPublication(ctx?: {
+  offset?: number;
+}): boolean {
   if (!ctx?.offset) {
     return true;
   }
@@ -685,6 +857,10 @@ function handleWorkerConnectionMessage(
     return;
   }
 
+  if (shouldIgnoreConnectionPayloadForWorkerType(data)) {
+    return;
+  }
+
   if (!shouldProcessConnectionPublication(ctx)) {
     return;
   }
@@ -702,6 +878,7 @@ function handleWorkerConnectionMessage(
     connectionAttemptId.value = data.connection_attempt_id;
     pairingStartedAt.value = null;
     resetPairingCodes();
+    clearQrHistoryRecovery();
     clearConnectedStateDelay();
     return;
   }
@@ -751,10 +928,12 @@ onMounted(async () => {
 
 watch(isVisible, (visible) => {
   if (!visible) {
+    clearQrHistoryRecovery();
     return;
   }
 
   void loadExternalConnectionLink();
+  void recoverQrFromRecentHistory('dialog_visible');
   void requestQrCodeIfReady({ silent: true });
 });
 
@@ -789,6 +968,7 @@ watch(
 onUnmounted(() => {
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
+  clearQrHistoryRecovery();
 
   globalThis.removeEventListener(
     'centrifugo-recovery-failed',

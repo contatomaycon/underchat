@@ -318,6 +318,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         } else {
           const response = {
             ...existing.ack,
+            worker_type_id: workerTypeId as EWorkerType,
+            worker_status_id: workerStatusId as EWorkerStatus | undefined,
             reason: 'queued',
             qr_pending: true,
             qrcode: undefined,
@@ -375,7 +377,9 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       accountId,
       workerId,
       connectionAttemptId,
-      lifecycleContext.connection_lifecycle_id
+      lifecycleContext.connection_lifecycle_id,
+      workerTypeId,
+      workerStatusId
     );
 
     const activeAttempt: ActiveQrAttempt = {
@@ -392,6 +396,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       if (current) {
         return {
           ...current.ack,
+          worker_type_id: workerTypeId as EWorkerType,
+          worker_status_id: workerStatusId as EWorkerStatus | undefined,
           reason: 'queued',
           qr_pending: true,
           qrcode: undefined,
@@ -824,13 +830,17 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     accountId: string,
     workerId: string,
     connectionAttemptId: string,
-    connectionLifecycleId: string
+    connectionLifecycleId: string,
+    workerTypeId: string,
+    workerStatusId?: string
   ): IBaileysConnectionState {
     return {
       code: ECodeMessage.awaitingReadQrCode,
       status: EBaileysConnectionStatus.connecting,
       worker_id: workerId,
       account_id: accountId,
+      worker_type_id: workerTypeId as EWorkerType,
+      worker_status_id: workerStatusId as EWorkerStatus | undefined,
       connection_attempt_id: connectionAttemptId,
       connection_lifecycle_id: connectionLifecycleId,
       qr_pending: true,
