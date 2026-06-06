@@ -128,6 +128,31 @@ const channelConnectionPhone = ref<string | null>(null);
 const isDialogConnectionChannelShow = ref(false);
 const workerStatusOffsets = new Map<string, number>();
 
+const currentConnectionChannel = computed(() => {
+  if (!channelConnectionChannel.value) {
+    return null;
+  }
+
+  return (
+    channelsStore.list.find(
+      (channel) => channel.id === channelConnectionChannel.value
+    ) ?? null
+  );
+});
+
+const currentConnectionChannelType = computed(
+  () => currentConnectionChannel.value?.type?.id ?? channelConnectionType.value
+);
+
+const currentConnectionChannelStatus = computed(
+  () =>
+    currentConnectionChannel.value?.status?.id ?? channelConnectionStatus.value
+);
+
+const currentConnectionChannelPhone = computed(
+  () => currentConnectionChannel.value?.number ?? channelConnectionPhone.value
+);
+
 const channelConnectionLogs = ref<string | null>(null);
 const isDialogConnectionLogsShow = ref(false);
 
@@ -684,10 +709,10 @@ onUnmounted(async () => {
         v-if="isDialogConnectionChannelShow && user?.account_id"
         v-model="isDialogConnectionChannelShow"
         :channel-id="channelConnectionChannel"
-        :channel-type="channelConnectionType"
+        :channel-type="currentConnectionChannelType"
         :account-id="user.account_id"
-        :initial-status-id="channelConnectionStatus"
-        :initial-phone="channelConnectionPhone"
+        :initial-status-id="currentConnectionChannelStatus"
+        :initial-phone="currentConnectionChannelPhone"
       />
 
       <AppLogsChannel
