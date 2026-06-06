@@ -281,11 +281,17 @@ const handleRecreate = async () => {
 const handleChannelCreated = async (data: ICreateWorkerResponse) => {
   await channelsStore.listChannels(query.value);
 
+  const currentChannel =
+    channelsStore.list.find((channel) => channel.id === data.worker_id) ??
+    (await channelsStore.getWorkerById(data.worker_id));
+
   channelConnectionChannel.value = data.worker_id;
-  channelConnectionType.value = data.worker_type_id;
+  channelConnectionType.value = currentChannel?.type?.id ?? data.worker_type_id;
   channelConnectionStatus.value =
-    data.worker_status_id ?? EWorkerStatus.creating;
-  channelConnectionPhone.value = null;
+    currentChannel?.status?.id ??
+    data.worker_status_id ??
+    EWorkerStatus.creating;
+  channelConnectionPhone.value = currentChannel?.number ?? null;
   isDialogConnectionChannelShow.value = true;
 };
 

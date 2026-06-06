@@ -188,4 +188,42 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     expect(response).toMatchObject(activeAttempt.ack);
     expect(deps.streamProducerService.send).not.toHaveBeenCalled();
   });
+
+  it('requeues an old pending active attempt only when a new QR request arrives', async () => {
+    const activeAttempt = {
+      ack: {
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-old',
+        connection_lifecycle_id: 'lifecycle-old',
+        qr_pending: true,
+        reason: 'queued',
+      },
+      queued_at: new Date(Date.now() - 60_000).toISOString(),
+      topic: 'worker.worker-1.connection.qrcode',
+      source: 'manager',
+    };
+    const deps = makeUseCase({
+      redisInitial: {
+        'connection:qrcode:worker-1:active_attempt':
+          JSON.stringify(activeAttempt),
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response).toMatchObject({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      qr_pending: true,
+      reason: 'queued',
+    });
+    expect(response.connection_attempt_id).not.toBe('attempt-old');
+    expect(deps.redis.del).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:active_attempt'
+    );
+    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
+  });
 });

@@ -38,6 +38,10 @@ interface ActiveQrAttempt {
 @injectable()
 export class WorkerConnectionQrCodeRequesterUseCase {
   private readonly activeAttemptTtlSeconds = 180;
+  private readonly activeAttemptRequeueAfterMs = Math.max(
+    1,
+    Number(process.env.CONNECTION_QRCODE_ACTIVE_ATTEMPT_REQUEUE_MS) || 30_000
+  );
   private readonly supportedWorkerTypes = new Set<string>([
     EWorkerType.baileys,
     EWorkerType.wwebjs,
@@ -179,41 +183,108 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
     const existing = await this.getActiveAttempt(workerId);
     if (existing) {
-      recordConnectionLifecycle({
-        stage: 'connection.manager.qrcode_request.duplicate_active_attempt',
-        decision: 'return_existing_qrcode_attempt_ack',
-        outcome: 'deduped',
-        reason: 'active_connection_attempt_exists',
-        server_id: serverId,
-        worker_type: workerTypeId,
-        worker_type_id: workerTypeId,
-        connection_attempt_id: existing.ack.connection_attempt_id,
-        connection_lifecycle_id: existing.ack.connection_lifecycle_id,
-        topic: existing.topic,
-      });
-      recordConnectionAttemptTelemetry({
-        event: 'manager_qrcode_request_duplicate_active_attempt',
-        stage: 'connection.manager.qrcode_request.duplicate_active_attempt',
-        metric_event: 'qr_request',
-        level: 'warn',
-        worker_id: workerId,
-        account_id: accountId,
-        server_id: serverId,
-        worker_type: workerTypeId,
-        connection_attempt_id: existing.ack.connection_attempt_id,
-        connection_lifecycle_id: existing.ack.connection_lifecycle_id,
-        status: existing.ack.status,
-        code: existing.ack.code,
-        outcome: 'deduped',
-        reason: 'active_connection_attempt_exists',
-      });
-      return {
-        ...existing.ack,
-        reason: 'queued',
-        qr_pending: true,
-        qrcode: undefined,
-        pairing_code: undefined,
-      };
+      const existingConnectionAttemptId = existing.ack.connection_attempt_id;
+      if (!existingConnectionAttemptId) {
+        await this.redis.del(this.activeAttemptKey(workerId));
+        recordConnectionLifecycle({
+          stage: 'connection.manager.qrcode_request.active_attempt_invalid',
+          decision: 'validate_active_qrcode_attempt',
+          outcome: 'error',
+          reason: 'active_attempt_missing_connection_attempt_id',
+          level: 'warn',
+          server_id: serverId,
+          worker_type: workerTypeId,
+          worker_type_id: workerTypeId,
+          topic: existing.topic,
+          source: existing.source,
+        });
+      } else {
+        const activeAttemptAgeMs = this.getActiveAttemptAgeMs(existing);
+        if (this.shouldRequeueActiveAttempt(existing, activeAttemptAgeMs)) {
+          await this.clearActiveAttempt(workerId, existingConnectionAttemptId);
+          recordConnectionLifecycle({
+            stage: 'connection.manager.qrcode_request.active_attempt_requeue',
+            decision: 'requeue_stale_pending_qrcode_attempt',
+            outcome: 'requeued',
+            reason: 'active_pending_attempt_exceeded_requeue_threshold',
+            level: 'warn',
+            server_id: serverId,
+            worker_type: workerTypeId,
+            worker_type_id: workerTypeId,
+            connection_attempt_id: existingConnectionAttemptId,
+            connection_lifecycle_id: existing.ack.connection_lifecycle_id,
+            topic: existing.topic,
+            source: existing.source,
+            qr_pending_age_ms: activeAttemptAgeMs,
+            threshold_ms: this.activeAttemptRequeueAfterMs,
+          });
+          recordConnectionAttemptTelemetry({
+            event: 'manager_qrcode_request_active_attempt_requeued',
+            stage: 'connection.manager.qrcode_request.active_attempt_requeue',
+            metric_event: 'qr_request',
+            level: 'warn',
+            worker_id: workerId,
+            account_id: accountId,
+            server_id: serverId,
+            worker_type: workerTypeId,
+            connection_attempt_id: existingConnectionAttemptId,
+            connection_lifecycle_id: existing.ack.connection_lifecycle_id,
+            status: existing.ack.status,
+            code: existing.ack.code,
+            outcome: 'requeued',
+            reason: 'stale_pending_attempt',
+            qr_pending_age_ms: activeAttemptAgeMs,
+          });
+        } else {
+          const response = {
+            ...existing.ack,
+            reason: 'queued',
+            qr_pending: true,
+            qrcode: undefined,
+            pairing_code: undefined,
+          };
+
+          await this.publishPendingAck(response, {
+            server_id: serverId,
+            worker_type_id: workerTypeId,
+            topic: existing.topic,
+            source: existing.source,
+          });
+
+          recordConnectionLifecycle({
+            stage: 'connection.manager.qrcode_request.duplicate_active_attempt',
+            decision: 'return_existing_qrcode_attempt_ack',
+            outcome: 'deduped',
+            reason: 'active_connection_attempt_exists',
+            server_id: serverId,
+            worker_type: workerTypeId,
+            worker_type_id: workerTypeId,
+            connection_attempt_id: existingConnectionAttemptId,
+            connection_lifecycle_id: existing.ack.connection_lifecycle_id,
+            topic: existing.topic,
+            source: existing.source,
+            qr_pending_age_ms: activeAttemptAgeMs,
+          });
+          recordConnectionAttemptTelemetry({
+            event: 'manager_qrcode_request_duplicate_active_attempt',
+            stage: 'connection.manager.qrcode_request.duplicate_active_attempt',
+            metric_event: 'qr_request',
+            level: 'warn',
+            worker_id: workerId,
+            account_id: accountId,
+            server_id: serverId,
+            worker_type: workerTypeId,
+            connection_attempt_id: existingConnectionAttemptId,
+            connection_lifecycle_id: existing.ack.connection_lifecycle_id,
+            status: existing.ack.status,
+            code: existing.ack.code,
+            outcome: 'deduped',
+            reason: 'active_connection_attempt_exists',
+            qr_pending_age_ms: activeAttemptAgeMs,
+          });
+          return response;
+        }
+      }
     }
 
     const connectionAttemptId = uuidv7();
@@ -375,6 +446,27 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       'NX'
     );
     return result === 'OK';
+  }
+
+  private getActiveAttemptAgeMs(attempt: ActiveQrAttempt): number | undefined {
+    const queuedAtMs = Date.parse(attempt.queued_at);
+    if (!Number.isFinite(queuedAtMs)) {
+      return undefined;
+    }
+
+    return Math.max(0, Date.now() - queuedAtMs);
+  }
+
+  private shouldRequeueActiveAttempt(
+    attempt: ActiveQrAttempt,
+    activeAttemptAgeMs: number | undefined
+  ): boolean {
+    return (
+      attempt.ack.qr_pending === true &&
+      !attempt.ack.qrcode &&
+      activeAttemptAgeMs !== undefined &&
+      activeAttemptAgeMs >= this.activeAttemptRequeueAfterMs
+    );
   }
 
   private async clearActiveAttempt(

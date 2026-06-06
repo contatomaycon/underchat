@@ -619,6 +619,14 @@ export class WorkerCommandHandlerService {
       container_id: activatedInspection.container_id ?? warm.container_id,
       worker_status_id: EWorkerStatus.disponible,
     });
+
+    await this.publishWarmActivationDisponible(
+      data,
+      workerType,
+      activatedInspection.container_id ?? warm.container_id ?? undefined,
+      runtime?.runtime_generation
+    );
+
     if (runtime?.runtime_generation !== undefined) {
       recordConnectionAttemptTelemetry({
         event: 'worker_runtime_generation_updated',
@@ -661,6 +669,95 @@ export class WorkerCommandHandlerService {
       session_volume_name: sessionVolumeName,
       claimed: true,
     };
+  }
+
+  private async publishWarmActivationDisponible(
+    data: IActivateWarmWorkerRequestProto,
+    workerType: EWorkerType,
+    containerId?: string,
+    runtimeGeneration?: number
+  ): Promise<void> {
+    if (!data.worker_id || !data.account_id) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.disponible_publish_skipped',
+        decision: 'publish_warm_activation_disponible',
+        outcome: 'skipped',
+        reason: 'missing_worker_or_account',
+        level: 'warn',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        server_id: data.server_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        warm_pool_id: data.warm_pool_id,
+      });
+      return;
+    }
+
+    const state: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_lifecycle_id: data.lifecycle_operation_id,
+      warm_pool_id: data.warm_pool_id,
+      container_id: containerId,
+      runtime_generation: runtimeGeneration,
+      reason: 'warm_activation_disponible',
+    };
+
+    try {
+      await Promise.all([
+        this.centrifugoService.publishSub(
+          workerCentrifugoQueue(data.account_id),
+          state
+        ),
+        this.centrifugoService.publish(channelsConfigCentrifugo(), {
+          action: EWorkerAction.create,
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          server_id: data.server_id ?? '',
+          worker_type_id: workerType,
+          worker_status_id: EWorkerStatus.disponible,
+          lifecycle_operation_id: data.lifecycle_operation_id,
+        }),
+      ]);
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.disponible_published',
+        decision: 'publish_warm_activation_disponible',
+        outcome: 'published',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        server_id: data.server_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        worker_status_id: EWorkerStatus.disponible,
+        warm_pool_id: data.warm_pool_id,
+        container_id: containerId,
+        runtime_generation: runtimeGeneration,
+        centrifugo_channel: workerCentrifugoQueue(data.account_id),
+      });
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.disponible_publish_error',
+        decision: 'publish_warm_activation_disponible',
+        outcome: 'error',
+        reason: 'centrifugo_publish_failed',
+        level: 'warn',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        server_id: data.server_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        worker_status_id: EWorkerStatus.disponible,
+        warm_pool_id: data.warm_pool_id,
+        container_id: containerId,
+        runtime_generation: runtimeGeneration,
+        error: getErrorMessage(error),
+      });
+    }
   }
 
   private validateWarmActivation(
