@@ -3,6 +3,8 @@ export interface IKafkaConsumerHealthSnapshot {
   topics: string[];
   connected: boolean;
   consuming: boolean;
+  assignments?: Array<{ topic: string; partition: number }>;
+  assigned_topics?: string[];
   restart_count: number;
   last_message_at: number;
   last_commit_at: number;

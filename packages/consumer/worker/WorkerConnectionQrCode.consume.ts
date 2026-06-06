@@ -132,8 +132,15 @@ export class WorkerConnectionQrCodeConsume {
   private isConsumerReadyForTopic(topic: string): boolean {
     const health = getManagedKafkaConsumerHealthSnapshot(this.consumer);
 
+    const assignedTopics = health?.assigned_topics;
+    const hasAssignment =
+      !Array.isArray(assignedTopics) || assignedTopics.includes(topic);
+
     return Boolean(
-      health?.connected && health.consuming && health.topics.includes(topic)
+      health?.connected &&
+      health.consuming &&
+      health.topics.includes(topic) &&
+      hasAssignment
     );
   }
 

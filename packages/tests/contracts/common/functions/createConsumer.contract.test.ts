@@ -17,10 +17,38 @@ jest.mock('@core/plugins/telemetry/logger', () => ({
 }));
 
 class FakeKafkaConsumer extends EventEmitter {
+  private subscribedTopics: string[] = [];
+  private assignedTopics: string[] = [];
+
+  constructor(private readonly autoAssign = true) {
+    super();
+  }
+
   connect = jest.fn((_metadata: unknown, cb?: (err: Error | null) => void) => {
     cb?.(null);
   });
-  subscribe = jest.fn();
+  getMetadata = jest.fn(
+    (
+      options: { topic?: string },
+      cb?: (err: Error | null, metadata: unknown) => void
+    ) => {
+      cb?.(null, {
+        topics: [
+          {
+            name: options.topic,
+            partitions: [{ id: 0, leader: 1, replicas: [1], isrs: [1] }],
+          },
+        ],
+        brokers: [],
+      });
+    }
+  );
+  subscribe = jest.fn((topics: string[]) => {
+    this.subscribedTopics = topics;
+    if (this.autoAssign) {
+      this.assignedTopics = topics;
+    }
+  });
   consume = jest.fn();
   commitSync = jest.fn();
   unsubscribe = jest.fn();
@@ -29,6 +57,13 @@ class FakeKafkaConsumer extends EventEmitter {
   });
   pause = jest.fn();
   resume = jest.fn();
+  assignments = jest.fn(() =>
+    this.assignedTopics.map((topic) => ({ topic, partition: 0 }))
+  );
+
+  setAssignments(topics: string[]): void {
+    this.assignedTopics = topics;
+  }
 }
 
 async function flushPromises(times = 6): Promise<void> {
@@ -72,6 +107,7 @@ describe('createConsumer managed kafka consumer', () => {
     expect(firstConsumer.connect).toHaveBeenCalledTimes(1);
 
     firstConsumer.emit('ready');
+    await flushPromises();
     firstConsumer.emit('data', { value: Buffer.from('one') });
 
     expect(ensureKafkaTopic).toHaveBeenCalledWith(
@@ -97,6 +133,7 @@ describe('createConsumer managed kafka consumer', () => {
     expect(secondConsumer.connect).toHaveBeenCalledTimes(1);
 
     secondConsumer.emit('ready');
+    await flushPromises();
     expect(secondConsumer.subscribe).toHaveBeenCalledWith([
       'worker.w1.send.message',
     ]);
@@ -123,11 +160,38 @@ describe('createConsumer managed kafka consumer', () => {
     expect(firstConsumer.connect).toHaveBeenCalledTimes(1);
 
     firstConsumer.emit('ready');
+    await flushPromises();
 
     expect(firstConsumer.subscribe).toHaveBeenCalledWith([
       'worker.w1.send.message',
     ]);
     expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
+    expect(onConnected).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for QR topic assignment before reporting connected', async () => {
+    const topic = 'worker.w1.connection.qrcode';
+    const firstConsumer = new FakeKafkaConsumer(false);
+    const kafka = {
+      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+    const onConnected = jest.fn();
+
+    await connectConsumer(consumer, topic, onConnected);
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+
+    expect(firstConsumer.subscribe).toHaveBeenCalledWith([topic]);
+    expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
+    expect(onConnected).not.toHaveBeenCalled();
+
+    firstConsumer.setAssignments([topic]);
+    firstConsumer.emit('rebalance', null, [{ topic, partition: 0 }]);
+    await flushPromises();
+
     expect(onConnected).toHaveBeenCalledTimes(1);
   });
 });

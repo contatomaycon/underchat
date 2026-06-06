@@ -53,6 +53,47 @@ class KafkaStreamsClient implements KafkaClient {
     this.queueBufferingMaxKbytes = queueBufferingMaxKbytes;
   }
 
+  private getPositiveIntegerEnv(name: string, fallback: number): number {
+    const raw = Number(process.env[name]);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return fallback;
+    }
+
+    return Math.floor(raw);
+  }
+
+  private getMetadataConfig(): Record<string, number | boolean> {
+    const refreshIntervalMs = this.getPositiveIntegerEnv(
+      'KAFKA_METADATA_REFRESH_INTERVAL_MS',
+      5_000
+    );
+    const maxAgeMs = this.getPositiveIntegerEnv(
+      'KAFKA_METADATA_MAX_AGE_MS',
+      Math.max(refreshIntervalMs * 3, 5_000)
+    );
+    const fastIntervalMs = this.getPositiveIntegerEnv(
+      'KAFKA_METADATA_REFRESH_FAST_INTERVAL_MS',
+      250
+    );
+    const fastCount = this.getPositiveIntegerEnv(
+      'KAFKA_METADATA_REFRESH_FAST_COUNT',
+      20
+    );
+    const propagationMaxMs = this.getPositiveIntegerEnv(
+      'KAFKA_TOPIC_METADATA_PROPAGATION_MAX_MS',
+      10_000
+    );
+
+    return {
+      'metadata.max.age.ms': maxAgeMs,
+      'topic.metadata.refresh.interval.ms': refreshIntervalMs,
+      'topic.metadata.refresh.fast.interval.ms': fastIntervalMs,
+      'topic.metadata.refresh.fast.cnt': fastCount,
+      'topic.metadata.refresh.sparse': true,
+      'topic.metadata.propagation.max.ms': propagationMaxMs,
+    };
+  }
+
   getBroker(): string {
     return this.broker;
   }
@@ -84,6 +125,7 @@ class KafkaStreamsClient implements KafkaClient {
 
   createConsumer(groupId: string): KafkaConsumer {
     const securityConfig = this.getSecurityConfig();
+    const metadataConfig = this.getMetadataConfig();
 
     const baseConfig: ConsumerGlobalConfig = {
       'group.id': groupId,
@@ -102,7 +144,7 @@ class KafkaStreamsClient implements KafkaClient {
       // API e metadata
       'api.version.request': true,
       'api.version.request.timeout.ms': 10000,
-      'metadata.max.age.ms': 180000,
+      ...metadataConfig,
 
       // Fetch - otimizado para chat real-time (baixa latência)
       'fetch.wait.max.ms': 50, // Reduzido de 500ms para 50ms
@@ -139,6 +181,7 @@ class KafkaStreamsClient implements KafkaClient {
 
   private getProducerConfig(): Record<string, string | number | boolean> {
     const securityConfig = this.getSecurityConfig();
+    const metadataConfig = this.getMetadataConfig();
 
     return {
       'metadata.broker.list': this.broker,
@@ -159,7 +202,7 @@ class KafkaStreamsClient implements KafkaClient {
       // API e metadata
       'api.version.request': true,
       'api.version.request.timeout.ms': 10000,
-      'metadata.max.age.ms': 180000,
+      ...metadataConfig,
 
       // Idempotência e ordering
       'enable.idempotence': true,

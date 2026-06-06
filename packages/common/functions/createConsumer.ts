@@ -1,4 +1,9 @@
-import type { KafkaConsumer } from 'node-rdkafka';
+import type {
+  Assignment,
+  KafkaConsumer,
+  LibrdKafkaError,
+  Metadata,
+} from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { EventEmitter } from 'node:events';
 import { logger } from '@core/plugins/telemetry/logger';
@@ -17,7 +22,29 @@ interface ITopicPartitionOffset {
   offset?: number;
 }
 
+interface ITopicPartition {
+  topic: string;
+  partition: number;
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(raw);
+}
+
 const CONNECT_TIMEOUT_MS = 30000;
+const METADATA_REFRESH_TIMEOUT_MS = readPositiveIntegerEnv(
+  'KAFKA_CONSUMER_METADATA_REFRESH_TIMEOUT_MS',
+  5000
+);
+const ASSIGNMENT_READY_TIMEOUT_MS = readPositiveIntegerEnv(
+  'KAFKA_CONSUMER_ASSIGNMENT_READY_TIMEOUT_MS',
+  10000
+);
 const RESTART_BASE_MS = 1000;
 const RESTART_MAX_MS = 30000;
 const SEND_IDLE_RESTART_MS = Number(
@@ -61,11 +88,17 @@ class ManagedKafkaConsumer extends EventEmitter {
   }
 
   __health() {
+    const assignments = this.getAssignments();
+
     return {
       group_id: this.groupId,
       topics: this.topics,
       connected: this.connected,
       consuming: this.consuming,
+      assignments,
+      assigned_topics: Array.from(
+        new Set(assignments.map((assignment) => assignment.topic))
+      ),
       restart_count: this.restartCount,
       last_message_at: this.lastMessageAt,
       last_commit_at: this.lastCommitAt,
@@ -327,31 +360,9 @@ class ManagedKafkaConsumer extends EventEmitter {
       if (this.closed || this.current !== consumer) {
         return;
       }
-      this.connected = true;
-      this.connecting = false;
-      this.lastError = '';
       this.clearConnectTimeout();
 
-      if (this.topics.length > 0) {
-        consumer.subscribe(this.topics);
-      }
-      if (this.consuming) {
-        consumer.consume();
-      }
-
-      logger.info(
-        {
-          type: 'kafka.consumer.connect.success',
-          group_id: this.groupId,
-          topics: this.topics,
-          restart_count: this.restartCount,
-        },
-        'Kafka consumer connected'
-      );
-
-      callback?.(null);
-      this.emit('ready');
-      this.armWatchdog();
+      void this.finishReady(consumer, callback);
     });
 
     consumer.on('data', (message) => {
@@ -372,6 +383,265 @@ class ManagedKafkaConsumer extends EventEmitter {
       this.emit('disconnected');
       this.scheduleRestart('disconnected');
     });
+  }
+
+  private async finishReady(
+    consumer: KafkaConsumer,
+    callback?: ConsumerCallback
+  ): Promise<void> {
+    try {
+      await this.refreshTopicMetadata(consumer);
+    } catch (error) {
+      if (this.closed || this.current !== consumer) {
+        return;
+      }
+
+      this.connecting = false;
+      this.connected = false;
+      this.lastError = getErrorMessage(error);
+      logger.warn(
+        {
+          type: 'kafka.consumer.metadata.refresh.error',
+          group_id: this.groupId,
+          topics: this.topics,
+          timeout_ms: METADATA_REFRESH_TIMEOUT_MS,
+          error: this.lastError,
+        },
+        'Kafka consumer topic metadata refresh failed'
+      );
+      callback?.(error instanceof Error ? error : new Error(this.lastError));
+      this.scheduleRestart('metadata_refresh_error', error);
+      return;
+    }
+
+    if (this.closed || this.current !== consumer) {
+      return;
+    }
+
+    if (this.topics.length > 0) {
+      consumer.subscribe(this.topics);
+    }
+    if (this.consuming) {
+      consumer.consume();
+    }
+
+    if (this.shouldWaitForTopicAssignments()) {
+      try {
+        await this.waitForTopicAssignments(consumer);
+      } catch (error) {
+        if (this.closed || this.current !== consumer) {
+          return;
+        }
+
+        this.connecting = false;
+        this.connected = false;
+        this.lastError = getErrorMessage(error);
+        logger.warn(
+          {
+            type: 'kafka.consumer.assignment.timeout',
+            group_id: this.groupId,
+            topics: this.topics,
+            timeout_ms: ASSIGNMENT_READY_TIMEOUT_MS,
+            error: this.lastError,
+          },
+          'Kafka consumer topic assignment not ready'
+        );
+        callback?.(error instanceof Error ? error : new Error(this.lastError));
+        this.scheduleRestart('assignment_timeout', error);
+        return;
+      }
+    }
+
+    this.connected = true;
+    this.connecting = false;
+    this.lastError = '';
+
+    logger.info(
+      {
+        type: 'kafka.consumer.connect.success',
+        group_id: this.groupId,
+        topics: this.topics,
+        restart_count: this.restartCount,
+        assignment_count: this.getAssignments().length,
+      },
+      'Kafka consumer connected'
+    );
+
+    callback?.(null);
+    this.emit('ready');
+    this.armWatchdog();
+  }
+
+  private async refreshTopicMetadata(consumer: KafkaConsumer): Promise<void> {
+    if (this.topics.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      this.topics.map(
+        (topic) =>
+          new Promise<void>((resolve, reject) => {
+            try {
+              consumer.getMetadata(
+                { topic, timeout: METADATA_REFRESH_TIMEOUT_MS },
+                (err: LibrdKafkaError, metadata: Metadata) => {
+                  if (err) {
+                    reject(err);
+                    return;
+                  }
+
+                  const topicMetadata = metadata?.topics?.find(
+                    (entry) => entry.name === topic
+                  );
+                  if (!topicMetadata || topicMetadata.partitions.length === 0) {
+                    reject(
+                      new Error(
+                        `Kafka metadata missing partitions for topic ${topic}`
+                      )
+                    );
+                    return;
+                  }
+
+                  resolve();
+                }
+              );
+            } catch (error) {
+              reject(error);
+            }
+          })
+      )
+    );
+
+    logger.info(
+      {
+        type: 'kafka.consumer.metadata.refresh.success',
+        group_id: this.groupId,
+        topics: this.topics,
+        timeout_ms: METADATA_REFRESH_TIMEOUT_MS,
+      },
+      'Kafka consumer topic metadata refreshed'
+    );
+  }
+
+  private getAssignments(): ITopicPartition[] {
+    if (!this.current || !this.connected) {
+      return [];
+    }
+
+    return this.readAssignments(this.current);
+  }
+
+  private readAssignments(consumer: KafkaConsumer): ITopicPartition[] {
+    try {
+      return (consumer.assignments() ?? []).map((assignment: Assignment) => ({
+        topic: assignment.topic,
+        partition: assignment.partition,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private hasAllTopicAssignments(consumer: KafkaConsumer): boolean {
+    const assignedTopics = new Set(
+      this.readAssignments(consumer).map((assignment) => assignment.topic)
+    );
+
+    return this.topics.every((topic) => assignedTopics.has(topic));
+  }
+
+  private shouldWaitForTopicAssignments(): boolean {
+    return this.topics.some((topic) => {
+      const parts = topic.split('.');
+      return (
+        parts.length === 4 &&
+        parts[0] === 'worker' &&
+        parts[1].length > 0 &&
+        parts[2] === 'connection' &&
+        parts[3] === 'qrcode'
+      );
+    });
+  }
+
+  private async waitForTopicAssignments(
+    consumer: KafkaConsumer
+  ): Promise<void> {
+    if (this.topics.length === 0 || !this.consuming) {
+      return;
+    }
+
+    if (this.hasAllTopicAssignments(consumer)) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let interval: NodeJS.Timeout | undefined;
+      let timeout: NodeJS.Timeout | undefined;
+      let onRebalance = () => {};
+
+      const cleanup = () => {
+        consumer.removeListener('rebalance', onRebalance);
+        if (interval) {
+          clearInterval(interval);
+        }
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+      };
+
+      const done = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        resolve();
+      };
+
+      const fail = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        reject(
+          new Error(
+            `Kafka consumer assignment timeout for topics ${this.topics.join(',')}`
+          )
+        );
+      };
+
+      onRebalance = () => {
+        if (this.hasAllTopicAssignments(consumer)) {
+          done();
+        }
+      };
+
+      timeout = setTimeout(fail, ASSIGNMENT_READY_TIMEOUT_MS);
+      interval = setInterval(() => {
+        if (this.hasAllTopicAssignments(consumer)) {
+          done();
+        }
+      }, 100);
+      consumer.on('rebalance', onRebalance);
+
+      setImmediate(() => {
+        if (this.hasAllTopicAssignments(consumer)) {
+          done();
+        }
+      });
+    });
+
+    logger.info(
+      {
+        type: 'kafka.consumer.assignment.ready',
+        group_id: this.groupId,
+        topics: this.topics,
+        assignments: this.readAssignments(consumer),
+      },
+      'Kafka consumer topic assignment ready'
+    );
   }
 
   private async ensureKnownTopics(): Promise<void> {
