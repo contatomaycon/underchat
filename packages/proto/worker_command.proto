@@ -197,6 +197,10 @@ message ActivateWarmWorkerRequest {
   string server_id = 4;
   string worker_type_id = 5;
   string lifecycle_operation_id = 6;
+  bool remove_session = 7;
+  bool remove_volume = 8;
+  string previous_worker_type_id = 9;
+  string previous_worker_status_id = 10;
 }
 
 message WarmWorkerCommandResponse {

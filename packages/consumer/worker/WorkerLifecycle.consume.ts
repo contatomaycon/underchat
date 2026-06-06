@@ -251,6 +251,10 @@ export class WorkerLifecycleConsume {
           server_id: payload.server_id,
           worker_type_id: payload.worker_type_id,
           lifecycle_operation_id: payload.operation_id,
+          remove_session: payload.remove_session,
+          remove_volume: payload.remove_volume,
+          previous_worker_type_id: payload.previous_worker_type_id,
+          previous_worker_status_id: payload.previous_worker_status_id,
         },
         120_000
       );

@@ -1,6 +1,9 @@
 import 'reflect-metadata';
 jest.mock('@core/common/vendors/nodeRdkafka', () => ({ rdkafka: {} }));
 jest.mock('uuid', () => ({ v7: jest.fn(() => 'uuid-mock') }));
+jest.mock('@core/services/workerGrpcClient.service', () => ({
+  WorkerGrpcClientService: class WorkerGrpcClientService {},
+}));
 
 import { WorkerConnectionQrCodeRequesterUseCase } from '@core/useCases/worker/WorkerConnectionQrCodeRequester.useCase';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -75,6 +78,22 @@ function makeUseCase(
   const readinessService = {
     isReady: jest.fn(async () => overrides.ready ?? true),
   };
+  const workerGrpcClientService = {
+    requestConnectionQrCode: jest.fn(async () => ({
+      code: ECodeMessage.awaitingReadQrCode,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: overrides.workerTypeId ?? EWorkerType.baileys,
+      worker_status_id: overrides.workerStatusId ?? EWorkerStatus.disponible,
+      connection_attempt_id: 'uuid-mock',
+      connection_lifecycle_id: 'uuid-mock',
+      qrcode: 'data:image/png;base64,direct',
+      qr_generated_at: new Date().toISOString(),
+      qr_pending: false,
+      reason: 'qrcode_fastpath_grpc_success',
+    })),
+  };
   const redis = makeRedis(overrides.redisInitial);
   const useCase = new WorkerConnectionQrCodeRequesterUseCase(
     workerService as never,
@@ -82,6 +101,7 @@ function makeUseCase(
     streamProducerService as never,
     centrifugoService as never,
     readinessService as never,
+    workerGrpcClientService as never,
     redis as never
   );
 
@@ -92,6 +112,7 @@ function makeUseCase(
     streamProducerService,
     centrifugoService,
     readinessService,
+    workerGrpcClientService,
     redis,
   };
 }
@@ -101,7 +122,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'false';
   });
 
-  it('enqueues a QR request and returns a pending ack without QR data', async () => {
+  it('requests QR by gRPC and returns the fast path response without Kafka', async () => {
     const deps = makeUseCase();
 
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
@@ -113,10 +134,10 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       account_id: 'account-1',
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
-      qr_pending: true,
-      reason: 'queued',
+      qrcode: 'data:image/png;base64,direct',
+      qr_pending: false,
+      reason: 'qrcode_fastpath_grpc_success',
     });
-    expect(response.qrcode).toBeUndefined();
     expect(response.pairing_code).toBeUndefined();
     expect(response.connection_attempt_id).toBeTruthy();
     expect(response.connection_lifecycle_id).toBeTruthy();
@@ -126,31 +147,43 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       account_id: 'account-1',
       worker_type_id: EWorkerType.baileys,
     });
-    expect(deps.kafkaBaileysQueueService.ensure).toHaveBeenCalledWith(
-      'worker-1'
-    );
-    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
-    expect(deps.streamProducerService.send).toHaveBeenCalledWith(
-      'worker.worker-1.connection.qrcode',
+    expect(
+      deps.workerGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalledWith(
+      'server-1',
       expect.objectContaining({
         worker_id: 'worker-1',
-        account_id: 'account-1',
-        worker_type_id: EWorkerType.baileys,
         connection_attempt_id: response.connection_attempt_id,
-        connection_lifecycle_id: response.connection_lifecycle_id,
-        source: 'manager',
       }),
-      'worker-1',
-      expect.arrayContaining([
-        expect.objectContaining({
-          'x-connection-lifecycle-id': response.connection_lifecycle_id,
-        }),
-      ])
+      'account-1'
     );
+    expect(deps.kafkaBaileysQueueService.ensure).not.toHaveBeenCalled();
+    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
       response
     );
+  });
+
+  it('falls back to Kafka when the direct gRPC QR request fails', async () => {
+    const deps = makeUseCase();
+    deps.workerGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
+      new Error('balancer unavailable')
+    );
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response).toMatchObject({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      qr_pending: true,
+      reason: 'queued',
+    });
+    expect(response.qrcode).toBeUndefined();
+    expect(deps.kafkaBaileysQueueService.ensure).toHaveBeenCalledWith(
+      'worker-1'
+    );
+    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
   });
 
   it('rejects when the worker is not disponible and does not enqueue', async () => {
@@ -264,17 +297,18 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
 
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
 
-    expect(response.qrcode).toBeUndefined();
+    expect(response.qrcode).toBe('data:image/png;base64,direct');
     expect(response.connection_attempt_id).not.toBe('attempt-baileys-cache');
-    expect(deps.streamProducerService.send).toHaveBeenCalledWith(
-      'worker.worker-1.connection.qrcode',
+    expect(
+      deps.workerGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalledWith(
+      'server-1',
       expect.objectContaining({
         worker_id: 'worker-1',
-        worker_type_id: EWorkerType.wwebjs,
       }),
-      'worker-1',
-      expect.any(Array)
+      'account-1'
     );
+    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
   });
 
   it('ignores cached QR code without worker type metadata', async () => {
@@ -299,9 +333,9 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
 
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
 
-    expect(response.qrcode).toBeUndefined();
+    expect(response.qrcode).toBe('data:image/png;base64,direct');
     expect(response.connection_attempt_id).not.toBe('attempt-legacy-cache');
-    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
+    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
   });
 
   it('does not reuse an already processed active QR attempt', async () => {
@@ -335,7 +369,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     expect(deps.redis.del).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:active_attempt'
     );
-    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
+    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
   });
 
   it('does not reuse an active QR attempt from a previous worker type', async () => {
@@ -366,21 +400,22 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
 
     expect(response.connection_attempt_id).not.toBe('attempt-baileys');
-    expect(deps.streamProducerService.send).toHaveBeenCalledWith(
-      'worker.worker-1.connection.qrcode',
+    expect(
+      deps.workerGrpcClientService.requestConnectionQrCode
+    ).toHaveBeenCalledWith(
+      'server-1',
       expect.objectContaining({
         worker_id: 'worker-1',
-        worker_type_id: EWorkerType.wwebjs,
       }),
-      'worker-1',
-      expect.any(Array)
+      'account-1'
     );
+    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
     expect(deps.redis.del).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:active_attempt'
     );
   });
 
-  it('requeues an old pending active attempt only when a new QR request arrives', async () => {
+  it('reuses an old pending active attempt instead of requeueing', async () => {
     const activeAttempt = {
       ack: {
         code: ECodeMessage.awaitingReadQrCode,
@@ -412,10 +447,10 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       qr_pending: true,
       reason: 'queued',
     });
-    expect(response.connection_attempt_id).not.toBe('attempt-old');
-    expect(deps.redis.del).toHaveBeenCalledWith(
+    expect(response.connection_attempt_id).toBe('attempt-old');
+    expect(deps.redis.del).not.toHaveBeenCalledWith(
       'connection:qrcode:worker-1:active_attempt'
     );
-    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
+    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
   });
 });

@@ -238,4 +238,90 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
       })
     );
   });
+
+  it('does not enqueue cleanup when same-server type change uses a warm runtime', async () => {
+    const workerService = {
+      viewWorkerType: jest.fn(async () => ({
+        worker_type_id: EWorkerType.baileys,
+      })),
+      viewWorkerBalancer: jest.fn(async () => ({
+        server_id: 'server-1',
+        server_status_id: EServerStatus.online,
+      })),
+      viewWorker: jest.fn(async () => ({
+        status: { id: EWorkerStatus.disponible },
+      })),
+      listWorkerServers: jest.fn(async () => []),
+      updateWorkerById: jest.fn(async () => true),
+    };
+    const accountService = {
+      existsAccountById: jest.fn(async () => true),
+    };
+    const workerConfigService = {
+      refreshTypingSimulationCache: jest.fn(async () => undefined),
+    };
+    const workerWarmPoolSettingsService = {
+      view: jest.fn(async () => ({
+        reservation_ttl_seconds: 90,
+        warmup_enabled: true,
+      })),
+    };
+    const workerWarmPoolRepository = {
+      releaseExpiredReservations: jest.fn(async () => 0),
+      reserveReady: jest.fn(async () => ({
+        warm_pool_id: 'warm-1',
+        server_id: 'server-1',
+        worker_type_id: EWorkerType.wwebjs,
+        container_id: 'warm-container',
+        container_name: 'warm-warm-1',
+        session_volume_name: 'warm-warm-1',
+      })),
+    };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const workerWarmPoolQueueService = {
+      publishReplenish: jest.fn(async () => undefined),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => undefined),
+      publish: jest.fn(async () => undefined),
+    };
+    const useCase = new WorkerUpdaterUseCase(
+      workerService as never,
+      accountService as never,
+      workerConfigService as never,
+      workerWarmPoolSettingsService as never,
+      workerWarmPoolRepository as never,
+      workerLifecycleQueueService as never,
+      workerWarmPoolQueueService as never,
+      centrifugoService as never
+    );
+
+    await useCase.execute(t, 'account-1', {
+      worker_id: 'worker-1',
+      name: 'Worker 1',
+      worker_type: EWorkerType.wwebjs,
+    } as never);
+
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'activate_warm',
+        worker_id: 'worker-1',
+        server_id: 'server-1',
+        worker_type_id: EWorkerType.wwebjs,
+        previous_server_id: 'server-1',
+        previous_worker_type_id: EWorkerType.baileys,
+        remove_session: true,
+        remove_volume: true,
+        warm_pool_id: 'warm-1',
+      })
+    );
+    expect(workerLifecycleQueueService.publish).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'cleanup_previous_runtime',
+      })
+    );
+  });
 });

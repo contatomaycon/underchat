@@ -420,8 +420,32 @@ export class WorkerUpdaterUseCase {
 
     const shouldCleanupPreviousRuntime =
       Boolean(currentServerId) &&
+      currentServerId !== targetServerId &&
       currentServerStatusId !== EServerStatus.offline &&
-      (shouldRecreateOnServerChange || Boolean(warmReserved));
+      shouldRecreateOnServerChange;
+
+    if (
+      warmReserved &&
+      currentServerId === targetServerId &&
+      currentServerStatusId !== EServerStatus.offline
+    ) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.manager.worker_updater.cleanup_skipped_for_same_server_warm_activation',
+        decision: 'enqueue_worker_update_lifecycle',
+        outcome: 'skipped',
+        reason: 'activate_warm_owns_same_server_runtime_replacement',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        server_id: targetServerId,
+        previous_server_id: currentServerId,
+        worker_type: targetWorkerType,
+        worker_type_id: targetWorkerType,
+        previous_worker_type_id: currentType,
+        warm_pool_id: warmReserved.warm_pool_id,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
+    }
 
     if (shouldCleanupPreviousRuntime && currentServerId) {
       const cleanupPayload: IWorkerPayload = {

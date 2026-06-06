@@ -26,6 +26,10 @@ export interface IActivateWarmWorkerRequestProto {
   server_id?: string;
   worker_type_id?: string;
   lifecycle_operation_id?: string;
+  remove_session?: boolean;
+  remove_volume?: boolean;
+  previous_worker_type_id?: string;
+  previous_worker_status_id?: string;
 }
 
 export interface IWarmWorkerCommandResponseProto {

@@ -542,20 +542,23 @@ export class WorkerCommandHandlerService {
       );
     }
 
+    await this.invalidateQrAttemptState(data.worker_id, {
+      accountId: data.account_id,
+      workerType,
+      reason: 'warm_activation_runtime_replacement',
+      recreateReason:
+        data.remove_volume === true
+          ? 'activate_warm_with_volume_reset'
+          : 'activate_warm_container_replaced',
+    });
+
     await this.kafkaBaileysQueueService.ensure(data.worker_id);
 
-    const targetInspection =
-      await this.workerService.inspectContainerWorkerById(data.worker_id);
-    if (
-      targetInspection.exists &&
-      targetInspection.container_name !== sourceContainerName
-    ) {
-      await this.workerService.recordContainerDiagnostics(
-        data.worker_id,
-        'remove_existing_container_before_warm_activation'
-      );
-      await this.workerService.removeContainerWorkerById(data.worker_id);
-    }
+    await this.removeExistingRuntimeBeforeWarmActivation(
+      data,
+      sourceContainerName,
+      workerType
+    );
 
     await this.workerService.renameContainer(
       sourceContainerName,
@@ -654,6 +657,8 @@ export class WorkerCommandHandlerService {
       server_id: data.server_id,
       worker_type: workerType,
       worker_type_id: workerType,
+      previous_worker_type_id: data.previous_worker_type_id,
+      previous_worker_status_id: data.previous_worker_status_id,
       container_id: activatedInspection.container_id ?? warm.container_id,
       container_name: data.worker_id,
       session_volume_name: sessionVolumeName,
@@ -669,6 +674,122 @@ export class WorkerCommandHandlerService {
       session_volume_name: sessionVolumeName,
       claimed: true,
     };
+  }
+
+  private async removeExistingRuntimeBeforeWarmActivation(
+    data: IActivateWarmWorkerRequestProto,
+    sourceContainerName: string,
+    workerType: EWorkerType
+  ): Promise<void> {
+    if (!data.worker_id) {
+      return;
+    }
+
+    const targetInspection =
+      await this.workerService.inspectContainerWorkerById(data.worker_id);
+    if (
+      !targetInspection.exists ||
+      targetInspection.container_name === sourceContainerName
+    ) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.old_runtime_remove_skipped',
+        decision: 'remove_existing_runtime_before_warm_activation',
+        outcome: 'skipped',
+        reason: targetInspection.exists
+          ? 'target_is_warm_source'
+          : 'target_container_missing',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        server_id: data.server_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        previous_worker_type_id: data.previous_worker_type_id,
+        warm_pool_id: data.warm_pool_id,
+        ...this.lifecycleFieldsFromInspection(targetInspection),
+      });
+      return;
+    }
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.warm_pool.old_runtime_remove_start',
+      decision: 'remove_existing_runtime_before_warm_activation',
+      outcome: 'started',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      server_id: data.server_id,
+      worker_type: workerType,
+      worker_type_id: workerType,
+      previous_worker_type_id: data.previous_worker_type_id,
+      remove_volume: data.remove_volume === true,
+      warm_pool_id: data.warm_pool_id,
+      ...this.lifecycleFieldsFromInspection(targetInspection),
+    });
+
+    await this.workerService.recordContainerDiagnostics(
+      data.worker_id,
+      'remove_existing_container_before_warm_activation'
+    );
+
+    const removed = await this.retryOperation(
+      async () =>
+        this.removeRuntimeContainer(
+          data.worker_id ?? '',
+          data.remove_volume === true
+        ),
+      (result) => !result
+    );
+
+    if (!removed) {
+      throw new Error('Worker removal failed before warm activation');
+    }
+
+    await this.waitForContainerNameReleased(data.worker_id, 10, 300);
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.warm_pool.old_runtime_remove_success',
+      decision: 'remove_existing_runtime_before_warm_activation',
+      outcome: 'success',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      server_id: data.server_id,
+      worker_type: workerType,
+      worker_type_id: workerType,
+      previous_worker_type_id: data.previous_worker_type_id,
+      remove_volume: data.remove_volume === true,
+      warm_pool_id: data.warm_pool_id,
+      ...this.lifecycleFieldsFromInspection(targetInspection),
+    });
+  }
+
+  private async waitForContainerNameReleased(
+    containerName: string,
+    maxAttempts: number,
+    delayMs: number
+  ): Promise<void> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const inspection =
+        await this.workerService.inspectContainerWorkerById(containerName);
+      if (!inspection.exists) {
+        return;
+      }
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.old_runtime_remove_wait',
+        decision: 'wait_container_name_released',
+        outcome: 'waiting',
+        reason: 'target_container_name_still_exists',
+        level: 'warn',
+        container_name: containerName,
+        attempt,
+        max_attempts: maxAttempts,
+        delay_ms: delayMs,
+        ...this.lifecycleFieldsFromInspection(inspection),
+      });
+
+      if (attempt < maxAttempts) {
+        await this.sleep(delayMs);
+      }
+    }
   }
 
   private async publishWarmActivationDisponible(
@@ -1087,9 +1208,17 @@ export class WorkerCommandHandlerService {
       'request_qrcode',
       async () => {
         const { payload, cachedState, shouldReturnCached } =
-          await this.resolveQrRequestPayload(input);
+          await this.resolveQrRequestPayload(input, accountId);
 
         if (shouldReturnCached && cachedState) {
+          if (cachedState.qrcode || cachedState.pairing_code) {
+            return this.buildQrReadyStateFromState(
+              cachedState,
+              payload,
+              accountId
+            );
+          }
+
           return this.buildQrPendingStateFromState(
             cachedState,
             payload,
@@ -1985,16 +2114,37 @@ export class WorkerCommandHandlerService {
   }
 
   private async resolveQrRequestPayload(
-    input: StatusConnectionWorkerRequest
+    input: StatusConnectionWorkerRequest,
+    accountId?: string
   ): Promise<{
     payload: StatusConnectionWorkerRequest;
     cachedState?: IBaileysConnectionState;
     shouldReturnCached: boolean;
   }> {
     const cached = await this.getCachedQrAttemptState(input.worker_id);
-    const activeCached = this.isActiveQrAttemptState(cached)
-      ? cached
+    const workerData = cached
+      ? await this.resolveWorkerDataForContainer(input.worker_id, accountId)
+      : null;
+    const cachedIdentityMismatch = cached
+      ? this.getCachedQrIdentityMismatchReason(cached, workerData)
       : undefined;
+    if (cached && cachedIdentityMismatch) {
+      await this.redis.del(this.qrAttemptCacheKey(input.worker_id));
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_cached_attempt_invalidated',
+        ...summarizeConnectionQrState(cached),
+        worker_type: workerData?.workerTypeId,
+        reason: cachedIdentityMismatch,
+        runtime_generation: workerData?.runtimeGeneration,
+        publish_source: 'qr_request_cache_validation',
+        level: 'warn',
+      });
+    }
+
+    const activeCached =
+      this.isActiveQrAttemptState(cached) && !cachedIdentityMismatch
+        ? cached
+        : undefined;
     const activeRetry = this.qrConnectionRequestPayloads.has(input.worker_id);
     const connectionAttemptId =
       activeCached?.connection_attempt_id ??
@@ -2045,6 +2195,33 @@ export class WorkerCommandHandlerService {
       cachedState: activeCached,
       shouldReturnCached: false,
     };
+  }
+
+  private getCachedQrIdentityMismatchReason(
+    cached: IBaileysConnectionState,
+    workerData: ResolvedWorkerDataForContainer | null
+  ): string | undefined {
+    if (!workerData) {
+      return undefined;
+    }
+
+    if (!cached.worker_type_id) {
+      return 'cached_qr_missing_worker_type';
+    }
+
+    if (cached.worker_type_id !== workerData.workerTypeId) {
+      return 'cached_qr_worker_type_mismatch';
+    }
+
+    if (
+      cached.runtime_generation !== undefined &&
+      workerData.runtimeGeneration !== undefined &&
+      cached.runtime_generation !== workerData.runtimeGeneration
+    ) {
+      return 'cached_qr_runtime_generation_mismatch';
+    }
+
+    return undefined;
   }
 
   private ensureQrConnectionAttemptId(
@@ -2110,18 +2287,53 @@ export class WorkerCommandHandlerService {
     return pending;
   }
 
+  private buildQrReadyStateFromState(
+    state: IBaileysConnectionState,
+    payload: StatusConnectionWorkerRequest,
+    accountId?: string
+  ): IBaileysConnectionState {
+    return {
+      ...state,
+      code: state.code ?? ECodeMessage.awaitingReadQrCode,
+      status: state.status ?? EBaileysConnectionStatus.connecting,
+      worker_id: payload.worker_id,
+      account_id: state.account_id || accountId || '',
+      connection_attempt_id:
+        state.connection_attempt_id ??
+        this.ensureQrConnectionAttemptId(payload),
+      qr_pending: false,
+      reason: state.reason ?? 'cached_qr_available',
+    };
+  }
+
   private normalizeQrWorkerResponse(
     response: IBaileysConnectionState,
     payload: StatusConnectionWorkerRequest,
-    accountId: string
+    accountId: string,
+    workerData?: ResolvedWorkerDataForContainer
   ): IBaileysConnectionState {
     const normalized: IBaileysConnectionState = {
       ...response,
       worker_id: response.worker_id || payload.worker_id,
       account_id: response.account_id || accountId,
+      worker_type_id: response.worker_type_id ?? workerData?.workerTypeId,
+      worker_status_id: response.worker_status_id ?? workerData?.workerStatusId,
       connection_attempt_id:
         response.connection_attempt_id ??
         this.ensureQrConnectionAttemptId(payload),
+      connection_lifecycle_id:
+        response.connection_lifecycle_id ?? payload.connection_lifecycle_id,
+      runtime_generation:
+        response.runtime_generation ??
+        payload.runtime_generation ??
+        workerData?.runtimeGeneration,
+      warm_pool_id:
+        response.warm_pool_id ??
+        payload.warm_pool_id ??
+        workerData?.warmPoolId ??
+        undefined,
+      container_id:
+        response.container_id ?? workerData?.containerId ?? undefined,
     };
 
     if (normalized.qrcode) {
@@ -2179,7 +2391,10 @@ export class WorkerCommandHandlerService {
     this.stopQrConnectionAttemptRetry(workerId);
 
     try {
-      await this.redis.del(this.qrAttemptCacheKey(workerId));
+      await this.redis.del(
+        this.qrAttemptCacheKey(workerId),
+        this.activeQrAttemptKey(workerId)
+      );
       recordConnectionQrSummary({
         event: 'balancer_qrcode_attempt_invalidated',
         worker_id: workerId,
@@ -2224,6 +2439,28 @@ export class WorkerCommandHandlerService {
     const cachedAttempt = cached.connection_attempt_id;
     const incomingAttempt = state.connection_attempt_id;
 
+    if (
+      cached.worker_type_id &&
+      state.worker_type_id &&
+      cached.worker_type_id !== state.worker_type_id
+    ) {
+      return {
+        ignored: true,
+        reason: 'active_worker_type_mismatch',
+      };
+    }
+
+    if (
+      cached.runtime_generation !== undefined &&
+      state.runtime_generation !== undefined &&
+      cached.runtime_generation !== state.runtime_generation
+    ) {
+      return {
+        ignored: true,
+        reason: 'active_runtime_generation_mismatch',
+      };
+    }
+
     if (cachedAttempt && incomingAttempt && cachedAttempt !== incomingAttempt) {
       return {
         ignored: true,
@@ -2257,6 +2494,21 @@ export class WorkerCommandHandlerService {
     const stateWithIdentity = await this.hydrateQrAttemptIdentity(state);
     if (options.workerType && !stateWithIdentity.worker_type_id) {
       stateWithIdentity.worker_type_id = options.workerType;
+    }
+    if (
+      options.workerType &&
+      stateWithIdentity.worker_type_id &&
+      stateWithIdentity.worker_type_id !== options.workerType
+    ) {
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_state_ignored_type_mismatch',
+        ...summarizeConnectionQrState(stateWithIdentity),
+        worker_type: options.workerType,
+        reason: 'incoming_worker_type_mismatch',
+        publish_source: options.publishSource ?? options.event,
+        level: 'warn',
+      });
+      return false;
     }
     const normalizedState = this.normalizeQrFreshness(stateWithIdentity);
     const ttlSeconds = this.qrCacheTtlForState(normalizedState);
@@ -2621,7 +2873,7 @@ export class WorkerCommandHandlerService {
       payload,
       workerData.accountIdResolved,
       {
-        reason: 'queued',
+        reason: 'qrcode_fastpath_grpc_start',
         runtimeGeneration: workerData.runtimeGeneration,
         warmPoolId: workerData.warmPoolId,
         containerId: workerData.containerId,
@@ -2629,15 +2881,103 @@ export class WorkerCommandHandlerService {
     );
 
     await this.cacheAndPublishQrAttemptState(pending, {
-      event: 'balancer_qrcode_legacy_async_ack',
+      event: 'balancer_qrcode_fastpath_pending',
       workerType: workerData.workerTypeId,
-      reason: 'connection_qrcode_requests_are_queue_driven',
-      publishSource: 'qr_legacy_async_ack',
+      reason: 'qrcode_fastpath_grpc_start',
+      publishSource: 'qr_fastpath',
       level: 'info',
     });
     this.stopQrConnectionAttemptRetry(workerId);
 
-    return pending;
+    const directPayload: StatusConnectionWorkerRequest = {
+      ...payload,
+      status: EWorkerStatus.online,
+      type: EBaileysConnectionType.qrcode,
+      runtime_generation: workerData.runtimeGeneration,
+      warm_pool_id: workerData.warmPoolId ?? undefined,
+      qr_pending: true,
+    };
+
+    try {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.qrcode_fastpath_start',
+        decision: 'grpc_request_worker_qrcode',
+        outcome: 'started',
+        worker_type: workerData.workerTypeId,
+        worker_status_id: workerData.workerStatusId,
+        connection_attempt_id: directPayload.connection_attempt_id,
+        connection_lifecycle_id: directPayload.connection_lifecycle_id,
+        runtime_generation: directPayload.runtime_generation,
+        warm_pool_id: directPayload.warm_pool_id,
+        container_id: workerData.containerId,
+      });
+
+      const response =
+        await this.workerBaileysGrpcClientService.requestConnectionQrCode(
+          workerId,
+          directPayload,
+          workerData.workerTypeId
+        );
+      const normalized = this.normalizeQrWorkerResponse(
+        response,
+        directPayload,
+        workerData.accountIdResolved,
+        workerData
+      );
+
+      await this.cacheAndPublishQrAttemptState(normalized, {
+        event: normalized.qrcode
+          ? 'balancer_qrcode_fastpath_generated'
+          : 'balancer_qrcode_fastpath_worker_pending',
+        workerType: workerData.workerTypeId,
+        reason: normalized.reason ?? 'qrcode_fastpath_grpc_response',
+        timeToFirstQrMs: normalized.time_to_first_qr_ms,
+        publishSource: 'qr_fastpath',
+        level: normalized.qrcode ? 'info' : 'warn',
+      });
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.qrcode_fastpath_success',
+        decision: 'grpc_request_worker_qrcode',
+        outcome: 'success',
+        worker_type: workerData.workerTypeId,
+        worker_status_id: workerData.workerStatusId,
+        status: normalized.status,
+        code: normalized.code,
+        connection_attempt_id: normalized.connection_attempt_id,
+        connection_lifecycle_id: normalized.connection_lifecycle_id,
+        has_qr: Boolean(normalized.qrcode),
+        has_pairing_code: Boolean(normalized.pairing_code),
+        qr_pending: normalized.qr_pending === true,
+        runtime_generation: normalized.runtime_generation,
+        warm_pool_id: normalized.warm_pool_id,
+        container_id: normalized.container_id,
+      });
+
+      return normalized;
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.qrcode_fastpath_error',
+        decision: 'grpc_request_worker_qrcode',
+        outcome: 'error',
+        reason: 'worker_qrcode_grpc_failed',
+        level: this.isRetryableQrRequestError(err) ? 'warn' : 'error',
+        worker_type: workerData.workerTypeId,
+        worker_status_id: workerData.workerStatusId,
+        connection_attempt_id: directPayload.connection_attempt_id,
+        connection_lifecycle_id: directPayload.connection_lifecycle_id,
+        runtime_generation: directPayload.runtime_generation,
+        warm_pool_id: directPayload.warm_pool_id,
+        container_id: workerData.containerId,
+        error: getErrorMessage(err),
+      });
+
+      if (this.isRetryableQrRequestError(err)) {
+        throw err;
+      }
+
+      return pending;
+    }
   }
 
   private async ensureQrContainerReady(
@@ -4475,7 +4815,21 @@ export class WorkerCommandHandlerService {
         : 'recreate_container_replaced',
     });
 
-    if (shouldRemoveSession) {
+    if (shouldRemoveSession && shouldRemoveVolume) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_disconnect_skipped',
+        decision: 'request_disconnect_before_recreate',
+        outcome: 'skipped',
+        reason: 'session_volume_will_be_removed',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        remove_session: true,
+        remove_volume: true,
+      });
+    } else if (shouldRemoveSession) {
       const disconnectPayload: StatusConnectionWorkerRequest = {
         worker_id: data.worker_id,
         status: EWorkerStatus.disponible,
@@ -4946,7 +5300,19 @@ export class WorkerCommandHandlerService {
       return;
     }
 
-    if (data.remove_session === true) {
+    const cleanupRemovesVolume = data.remove_volume !== false;
+    if (data.remove_session === true && cleanupRemovesVolume) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.command_handler.cleanup_disconnect_skipped',
+        decision: 'request_disconnect_before_cleanup',
+        outcome: 'skipped',
+        reason: 'session_volume_will_be_removed',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        remove_session: true,
+        remove_volume: cleanupRemovesVolume,
+      });
+    } else if (data.remove_session === true) {
       const disconnectPayload: StatusConnectionWorkerRequest = {
         worker_id: data.worker_id,
         status: EWorkerStatus.disponible,
@@ -4977,13 +5343,9 @@ export class WorkerCommandHandlerService {
 
     const cleaned = await this.retryOperation(
       async () =>
-        this.removeRuntimeContainer(
-          data.worker_id,
-          data.remove_volume !== false,
-          {
-            cleanup: true,
-          }
-        ),
+        this.removeRuntimeContainer(data.worker_id, cleanupRemovesVolume, {
+          cleanup: true,
+        }),
       (r) => !r
     );
 
@@ -5030,32 +5392,16 @@ export class WorkerCommandHandlerService {
       }
     }
 
-    const payload: StatusConnectionWorkerRequest = {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.delete_disconnect_skipped',
+      decision: 'request_disconnect_before_delete',
+      outcome: 'skipped',
+      reason: 'session_volume_will_be_removed',
       worker_id: data.worker_id,
-      status: EWorkerStatus.disponible,
-      type: EBaileysConnectionType.qrcode,
+      account_id: data.account_id,
       remove_session: true,
-    };
-
-    try {
-      const workerType = await this.resolveWorkerTypeForConnection(
-        data.worker_id,
-        data.account_id
-      );
-      await this.workerBaileysGrpcClientService.requestConnection(
-        data.worker_id,
-        payload,
-        workerType
-      );
-    } catch (err) {
-      if (!this.isTopicOrPartitionMissing(err)) {
-        console.error('Failed to request worker disconnect before delete', {
-          workerId: data.worker_id,
-          accountId: data.account_id,
-          error: getErrorMessage(err),
-        });
-      }
-    }
+      remove_volume: true,
+    });
 
     let containerRemoved = false;
     try {

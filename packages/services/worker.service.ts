@@ -89,6 +89,42 @@ function dockerErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function dockerErrorStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+
+  const candidate = error as {
+    statusCode?: unknown;
+    status?: unknown;
+    code?: unknown;
+  };
+  const value = candidate.statusCode ?? candidate.status ?? candidate.code;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+function isIdempotentDockerRemoveError(error: unknown): boolean {
+  const statusCode = dockerErrorStatusCode(error);
+  const message = dockerErrorMessage(error).toLowerCase();
+
+  return (
+    statusCode === 404 ||
+    statusCode === 409 ||
+    message.includes('no such container') ||
+    message.includes('not found') ||
+    message.includes('removal of container') ||
+    message.includes('is already in progress')
+  );
+}
+
 @injectable()
 export class WorkerService {
   private readonly docker: Docker;
@@ -450,6 +486,20 @@ export class WorkerService {
 
       return true;
     } catch (error) {
+      if (isIdempotentDockerRemoveError(error)) {
+        recordConnectionLifecycle({
+          stage: 'connection.balancer.docker.container_remove_idempotent',
+          decision: 'remove_container_worker_by_id',
+          outcome: 'success',
+          reason: 'container_missing_or_removal_in_progress',
+          level: 'warn',
+          container_name: workerId,
+          docker_status_code: dockerErrorStatusCode(error),
+          docker_error: dockerErrorMessage(error),
+        });
+        return true;
+      }
+
       recordConnectionLifecycle({
         stage: 'connection.balancer.docker.container_remove_error',
         decision: 'remove_container_worker_by_id',

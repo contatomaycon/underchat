@@ -510,7 +510,7 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
-  it('returns only async pending ack for QR requests without worker QR gRPC', async () => {
+  it('requests QR by worker gRPC and returns the QR response', async () => {
     const deps = buildHandler();
 
     const response = await deps.handler.handleRequestConnectionQrCode(
@@ -529,15 +529,22 @@ describe('WorkerCommandHandlerService connection', () => {
         code: ECodeMessage.awaitingReadQrCode,
         status: EBaileysConnectionStatus.connecting,
         connection_attempt_id: 'uuid-v7',
-        qr_pending: true,
-        reason: 'queued',
+        qrcode: 'data:image/png;base64,qr',
+        qr_pending: false,
       })
     );
-    expect(response.qrcode).toBeUndefined();
     expect(response.pairing_code).toBeUndefined();
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        connection_attempt_id: 'uuid-v7',
+        qr_pending: true,
+      }),
+      EWorkerType.wwebjs
+    );
     expect(
       deps.workerBaileysGrpcClientService.waitForReady
     ).not.toHaveBeenCalled();
@@ -555,12 +562,13 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_id: 'worker-1',
         account_id: 'account-1',
         connection_attempt_id: 'uuid-v7',
-        qr_pending: true,
+        qrcode: 'data:image/png;base64,qr',
+        qr_pending: false,
       })
     );
   });
 
-  it('returns the same pending ack for repeated QR requests without duplicating work', async () => {
+  it('returns the same cached QR for repeated QR requests without duplicating work', async () => {
     const deps = buildHandler();
 
     const first = await deps.handler.handleRequestConnectionQrCode(
@@ -580,17 +588,25 @@ describe('WorkerCommandHandlerService connection', () => {
       'account-1'
     );
 
-    expect(second).toEqual(first);
+    expect(second).toEqual(
+      expect.objectContaining({
+        worker_id: first.worker_id,
+        account_id: first.account_id,
+        connection_attempt_id: first.connection_attempt_id,
+        qrcode: first.qrcode,
+        qr_pending: false,
+      })
+    );
     expect(second.connection_attempt_id).toBe('uuid-v7');
-    expect(second.qrcode).toBeUndefined();
-    expect(second.qr_pending).toBe(true);
+    expect(second.qrcode).toBe('data:image/png;base64,qr');
+    expect(second.qr_pending).toBe(false);
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
-    expect(deps.redis.setex).toHaveBeenCalledTimes(1);
+    ).toHaveBeenCalledTimes(1);
+    expect(deps.redis.setex).toHaveBeenCalledTimes(2);
   });
 
-  it('does not call the old QR worker request when concurrent requests arrive', async () => {
+  it('deduplicates concurrent QR requests through the worker gRPC fast path', async () => {
     const deps = buildHandler();
     let lockTail = Promise.resolve();
     deps.workerLifecycleLockService.withLock.mockImplementation(
@@ -636,21 +652,21 @@ describe('WorkerCommandHandlerService connection', () => {
 
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(1);
 
     const [firstResponse, secondResponse] = await Promise.all([first, second]);
 
     expect(firstResponse.connection_attempt_id).toBe('uuid-v7');
     expect(secondResponse.connection_attempt_id).toBe('uuid-v7');
-    expect(firstResponse.qrcode).toBeUndefined();
-    expect(secondResponse.qrcode).toBeUndefined();
-    expect(secondResponse.qr_pending).toBe(true);
+    expect(firstResponse.qrcode).toBe('data:image/png;base64,qr');
+    expect(secondResponse.qrcode).toBe('data:image/png;base64,qr');
+    expect(secondResponse.qr_pending).toBe(false);
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(1);
   });
 
-  it('sanitizes a fresh cached QR and returns only pending ack', async () => {
+  it('returns a fresh cached QR instead of sanitizing it to pending', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-06-04T13:45:00.000Z'));
     const deps = buildHandler();
     deps.redisStore.set(
@@ -660,6 +676,7 @@ describe('WorkerCommandHandlerService connection', () => {
         status: EBaileysConnectionStatus.connecting,
         worker_id: 'worker-1',
         account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
         connection_attempt_id: 'attempt-fresh',
         qrcode: 'data:image/png;base64,qr-fresh',
         qr_pending: false,
@@ -680,11 +697,11 @@ describe('WorkerCommandHandlerService connection', () => {
       expect(response).toEqual(
         expect.objectContaining({
           connection_attempt_id: 'attempt-fresh',
-          qr_pending: true,
+          qrcode: 'data:image/png;base64,qr-fresh',
+          qr_pending: false,
         })
       );
-      expect(response.qrcode).toBeUndefined();
-      expect(response.qr_generated_at).toBeUndefined();
+      expect(response.qr_generated_at).toBe('2026-06-04T13:44:00.000Z');
       expect(
         deps.workerBaileysGrpcClientService.requestConnectionQrCode
       ).not.toHaveBeenCalled();
@@ -703,6 +720,7 @@ describe('WorkerCommandHandlerService connection', () => {
         status: EBaileysConnectionStatus.connecting,
         worker_id: 'worker-1',
         account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
         connection_attempt_id: 'attempt-expired',
         qrcode: 'data:image/png;base64,qr-expired',
         qr_pending: false,
@@ -745,7 +763,7 @@ describe('WorkerCommandHandlerService connection', () => {
     }
   });
 
-  it('does not probe a compatible container during the legacy QR request', async () => {
+  it('does not probe a compatible container before the direct QR request', async () => {
     const deps = buildHandler();
     deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
       buildContainerHealthResult({
@@ -774,13 +792,13 @@ describe('WorkerCommandHandlerService connection', () => {
     ).not.toHaveBeenCalled();
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(1);
     expect(
       deps.containerHealthService.checkServiceHealth
     ).not.toHaveBeenCalled();
   });
 
-  it('does not inspect unhealthy container readiness during the legacy QR request', async () => {
+  it('does not inspect unhealthy container readiness before the direct QR request', async () => {
     const deps = buildHandler();
     deps.containerHealthService.checkServiceHealth.mockResolvedValueOnce(
       buildContainerHealthResult({
@@ -815,7 +833,7 @@ describe('WorkerCommandHandlerService connection', () => {
     ).not.toHaveBeenCalled();
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('does not create a missing container synchronously before requesting QR', async () => {
@@ -848,7 +866,7 @@ describe('WorkerCommandHandlerService connection', () => {
     ).not.toHaveBeenCalled();
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(1);
   });
 
   it('does not recreate an incompatible existing container from QR request', async () => {
@@ -877,7 +895,7 @@ describe('WorkerCommandHandlerService connection', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('does not request QR by gRPC when readiness probe would fail', async () => {
+  it('does not run a readiness probe before the direct QR request', async () => {
     const deps = buildHandler();
     deps.workerBaileysGrpcClientService.waitForReady.mockRejectedValue(
       new Error('not ready')
@@ -894,7 +912,7 @@ describe('WorkerCommandHandlerService connection', () => {
 
     expect(
       deps.workerBaileysGrpcClientService.requestConnectionQrCode
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledTimes(1);
     expect(
       deps.workerBaileysGrpcClientService.waitForReady
     ).not.toHaveBeenCalled();
@@ -918,7 +936,7 @@ describe('WorkerCommandHandlerService connection', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('returns qr_pending without scheduling legacy retry when QR gRPC would fail', async () => {
+  it('keeps pending cached and rejects when direct QR gRPC fails', async () => {
     jest.useFakeTimers();
     const deps = buildHandler();
     deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
@@ -926,6 +944,60 @@ describe('WorkerCommandHandlerService connection', () => {
     );
 
     try {
+      await expect(
+        deps.handler.handleRequestConnectionQrCode(
+          {
+            worker_id: 'worker-1',
+            status: EWorkerStatus.online,
+            type: EBaileysConnectionType.qrcode,
+          },
+          'account-1'
+        )
+      ).rejects.toThrow('4 DEADLINE_EXCEEDED');
+
+      expect(deps.redis.setex).toHaveBeenCalledWith(
+        'connection:qrcode:worker-1:attempt',
+        expect.any(Number),
+        expect.stringContaining('"qr_pending":true')
+      );
+      expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+        'worker:account#account-1',
+        expect.objectContaining({
+          worker_id: 'worker-1',
+          account_id: 'account-1',
+          connection_attempt_id: 'uuid-v7',
+          qr_pending: true,
+        })
+      );
+      expect(
+        deps.workerBaileysGrpcClientService.requestConnectionQrCode
+      ).toHaveBeenCalledTimes(1);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('returns the cached pending attempt after direct QR gRPC failed once', async () => {
+    jest.useFakeTimers();
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
+      Object.assign(new Error('4 DEADLINE_EXCEEDED'), { code: 4 })
+    );
+
+    try {
+      await expect(
+        deps.handler.handleRequestConnectionQrCode(
+          {
+            worker_id: 'worker-1',
+            status: EWorkerStatus.online,
+            type: EBaileysConnectionType.qrcode,
+          },
+          'account-1'
+        )
+      ).rejects.toThrow('4 DEADLINE_EXCEEDED');
+
       const response = await deps.handler.handleRequestConnectionQrCode(
         {
           worker_id: 'worker-1',
@@ -946,23 +1018,9 @@ describe('WorkerCommandHandlerService connection', () => {
         })
       );
       expect(response.qrcode).toBeUndefined();
-      expect(deps.redis.setex).toHaveBeenCalledWith(
-        'connection:qrcode:worker-1:attempt',
-        expect.any(Number),
-        expect.stringContaining('"qr_pending":true')
-      );
-      expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
-        'worker:account#account-1',
-        expect.objectContaining({
-          worker_id: 'worker-1',
-          account_id: 'account-1',
-          connection_attempt_id: 'uuid-v7',
-          qr_pending: true,
-        })
-      );
       expect(
         deps.workerBaileysGrpcClientService.requestConnectionQrCode
-      ).not.toHaveBeenCalled();
+      ).toHaveBeenCalledTimes(1);
       expect(jest.getTimerCount()).toBe(0);
     } finally {
       jest.clearAllTimers();
@@ -970,7 +1028,7 @@ describe('WorkerCommandHandlerService connection', () => {
     }
   });
 
-  it('returns the active pending attempt for repeated requests without async retry timer', async () => {
+  it('does not start an async retry timer after direct QR gRPC failure', async () => {
     jest.useFakeTimers();
     const deps = buildHandler();
     deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
@@ -978,29 +1036,19 @@ describe('WorkerCommandHandlerService connection', () => {
     );
 
     try {
-      const first = await deps.handler.handleRequestConnectionQrCode(
-        {
-          worker_id: 'worker-1',
-          status: EWorkerStatus.online,
-          type: EBaileysConnectionType.qrcode,
-        },
-        'account-1'
-      );
-      const second = await deps.handler.handleRequestConnectionQrCode(
-        {
-          worker_id: 'worker-1',
-          status: EWorkerStatus.online,
-          type: EBaileysConnectionType.qrcode,
-        },
-        'account-1'
-      );
-
-      expect(first.qr_pending).toBe(true);
-      expect(second).toEqual(first);
-      expect(second.connection_attempt_id).toBe('uuid-v7');
+      await expect(
+        deps.handler.handleRequestConnectionQrCode(
+          {
+            worker_id: 'worker-1',
+            status: EWorkerStatus.online,
+            type: EBaileysConnectionType.qrcode,
+          },
+          'account-1'
+        )
+      ).rejects.toThrow('4 DEADLINE_EXCEEDED');
       expect(
         deps.workerBaileysGrpcClientService.requestConnectionQrCode
-      ).not.toHaveBeenCalled();
+      ).toHaveBeenCalledTimes(1);
       expect(jest.getTimerCount()).toBe(0);
     } finally {
       jest.clearAllTimers();
@@ -1018,6 +1066,7 @@ describe('WorkerCommandHandlerService connection', () => {
         status: EBaileysConnectionStatus.connecting,
         worker_id: 'worker-1',
         account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
         connection_attempt_id: 'attempt-cached',
         qr_pending: true,
       })
@@ -1096,7 +1145,7 @@ describe('WorkerCommandHandlerService connection', () => {
 
       expect(
         deps.workerBaileysGrpcClientService.requestConnectionQrCode
-      ).not.toHaveBeenCalled();
+      ).toHaveBeenCalledTimes(1);
       expect(deps.redis.setex).toHaveBeenLastCalledWith(
         'connection:qrcode:worker-1:attempt',
         180,
@@ -1291,7 +1340,8 @@ describe('WorkerCommandHandlerService connection', () => {
       expect.objectContaining({
         worker_id: 'worker-1',
         account_id: 'account-1',
-        qr_pending: true,
+        qrcode: 'data:image/png;base64,qr',
+        qr_pending: false,
       })
     );
   });
@@ -1529,7 +1579,8 @@ describe('WorkerCommandHandlerService connection', () => {
       'worker-1'
     );
     expect(deps.redis.del).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:attempt'
+      'connection:qrcode:worker-1:attempt',
+      'connection:qrcode:worker-1:active_attempt'
     );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
       expect.any(String),
@@ -1757,16 +1808,7 @@ describe('WorkerCommandHandlerService connection', () => {
 
     expect(
       deps.workerBaileysGrpcClientService.requestConnection
-    ).toHaveBeenCalledWith(
-      'worker-1',
-      expect.objectContaining({
-        worker_id: 'worker-1',
-        status: EWorkerStatus.disponible,
-        type: EBaileysConnectionType.qrcode,
-        remove_session: true,
-      }),
-      EWorkerType.wwebjs
-    );
+    ).not.toHaveBeenCalled();
     expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
       'worker-1',
       true
@@ -1880,16 +1922,7 @@ describe('WorkerCommandHandlerService cleanup', () => {
 
     expect(
       deps.workerBaileysGrpcClientService.requestConnection
-    ).toHaveBeenCalledWith(
-      'worker-1',
-      {
-        worker_id: 'worker-1',
-        status: EWorkerStatus.disponible,
-        type: EBaileysConnectionType.qrcode,
-        remove_session: true,
-      },
-      EWorkerType.wwebjs
-    );
+    ).not.toHaveBeenCalled();
     expect(deps.workerService.cleanupContainerWorker).toHaveBeenCalledWith(
       'worker-1',
       true

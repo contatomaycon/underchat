@@ -14,7 +14,6 @@ import {
 import { container } from 'tsyringe';
 import { balanceEnvironment } from '@core/config/environments';
 import { WorkerCommandHandlerService } from '@core/services/workerCommandHandler.service';
-import { WorkerConnectionQrCodeRequesterUseCase } from '@core/useCases/worker/WorkerConnectionQrCodeRequester.useCase';
 import {
   protoToWorkerPayload,
   protoToStatusConnectionRequest,
@@ -73,11 +72,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
   const handler = container.resolve(WorkerCommandHandlerService);
-  const connectionQrCodeRequester = container.resolve(
-    WorkerConnectionQrCodeRequesterUseCase
-  );
   const grpcServer = new Server();
-  const translateConnectionQrCodeError = ((key: string) => key) as never;
 
   const handleUnary = (
     call: ServerUnaryCall<IWorkerPayloadProto, unknown>,
@@ -247,13 +242,8 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         deadline_ms: payload.qr_request_deadline_ms,
       });
 
-      connectionQrCodeRequester
-        .execute(
-          translateConnectionQrCodeError,
-          req.account_id ?? '',
-          payload.worker_id,
-          'manager'
-        )
+      handler
+        .handleRequestConnectionQrCode(payload, req.account_id)
         .then((response) => {
           recordConnectionLifecycle({
             stage: 'connection.balancer.worker_command_grpc.qrcode_success',
