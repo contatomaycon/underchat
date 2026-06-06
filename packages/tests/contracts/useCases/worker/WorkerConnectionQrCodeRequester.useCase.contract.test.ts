@@ -38,6 +38,7 @@ function makeRedis(initial: Record<string, string> = {}) {
 function makeUseCase(
   overrides: {
     workerStatusId?: EWorkerStatus;
+    workerTypeId?: EWorkerType;
     ready?: boolean;
     redisInitial?: Record<string, string>;
   } = {}
@@ -52,7 +53,7 @@ function makeUseCase(
         id: overrides.workerStatusId ?? EWorkerStatus.disponible,
         name: 'Disponivel',
       },
-      type: { id: EWorkerType.baileys, name: 'Baileys' },
+      type: { id: overrides.workerTypeId ?? EWorkerType.baileys, name: 'Type' },
       server: { id: 'server-1', name: 'Server' },
       connection_date: null,
       created_at: null,
@@ -175,6 +176,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       queued_at: new Date().toISOString(),
       topic: 'worker.worker-1.connection.qrcode',
       source: 'manager',
+      worker_type_id: EWorkerType.baileys,
     };
     const deps = makeUseCase({
       redisInitial: {
@@ -187,6 +189,82 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
 
     expect(response).toMatchObject(activeAttempt.ack);
     expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse an already processed active QR attempt', async () => {
+    const activeAttempt = {
+      ack: {
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-processed',
+        connection_lifecycle_id: 'lifecycle-processed',
+        qr_pending: true,
+        reason: 'queued',
+      },
+      queued_at: new Date().toISOString(),
+      topic: 'worker.worker-1.connection.qrcode',
+      source: 'manager',
+      worker_type_id: EWorkerType.baileys,
+    };
+    const deps = makeUseCase({
+      redisInitial: {
+        'connection:qrcode:worker-1:active_attempt':
+          JSON.stringify(activeAttempt),
+        'connection:qrcode:worker-1:processed:attempt-processed': '1',
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response.connection_attempt_id).not.toBe('attempt-processed');
+    expect(deps.redis.del).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:active_attempt'
+    );
+    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reuse an active QR attempt from a previous worker type', async () => {
+    const activeAttempt = {
+      ack: {
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-baileys',
+        connection_lifecycle_id: 'lifecycle-baileys',
+        qr_pending: true,
+        reason: 'queued',
+      },
+      queued_at: new Date().toISOString(),
+      topic: 'worker.worker-1.connection.qrcode',
+      source: 'manager',
+      worker_type_id: EWorkerType.baileys,
+    };
+    const deps = makeUseCase({
+      workerTypeId: EWorkerType.wwebjs,
+      redisInitial: {
+        'connection:qrcode:worker-1:active_attempt':
+          JSON.stringify(activeAttempt),
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response.connection_attempt_id).not.toBe('attempt-baileys');
+    expect(deps.streamProducerService.send).toHaveBeenCalledWith(
+      'worker.worker-1.connection.qrcode',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.wwebjs,
+      }),
+      'worker-1',
+      expect.any(Array)
+    );
+    expect(deps.redis.del).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:active_attempt'
+    );
   });
 
   it('requeues an old pending active attempt only when a new QR request arrives', async () => {
@@ -204,6 +282,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       queued_at: new Date(Date.now() - 60_000).toISOString(),
       topic: 'worker.worker-1.connection.qrcode',
       source: 'manager',
+      worker_type_id: EWorkerType.baileys,
     };
     const deps = makeUseCase({
       redisInitial: {

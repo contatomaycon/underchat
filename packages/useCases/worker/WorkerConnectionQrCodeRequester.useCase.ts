@@ -33,6 +33,7 @@ interface ActiveQrAttempt {
   queued_at: string;
   topic: string;
   source: WorkerConnectionQrCodeQueueSource;
+  worker_type_id?: string;
 }
 
 @injectable()
@@ -184,7 +185,35 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       throw new Error(t('worker_qrcode_not_ready'));
     }
 
-    const existing = await this.getActiveAttempt(workerId);
+    let existing = await this.getActiveAttempt(workerId);
+    if (existing) {
+      const invalidReason = await this.getActiveAttemptInvalidReason(
+        workerId,
+        workerTypeId,
+        existing
+      );
+
+      if (invalidReason) {
+        await this.redis.del(this.activeAttemptKey(workerId));
+        recordConnectionLifecycle({
+          stage: 'connection.manager.qrcode_request.active_attempt_invalid',
+          decision: 'validate_active_qrcode_attempt',
+          outcome: 'invalidated',
+          reason: invalidReason,
+          level: 'warn',
+          server_id: serverId,
+          worker_type: workerTypeId,
+          worker_type_id: workerTypeId,
+          connection_attempt_id: existing.ack.connection_attempt_id,
+          connection_lifecycle_id: existing.ack.connection_lifecycle_id,
+          topic: existing.topic,
+          source: existing.source,
+          active_worker_type_id: existing.worker_type_id,
+        });
+        existing = null;
+      }
+    }
+
     if (existing) {
       const existingConnectionAttemptId = existing.ack.connection_attempt_id;
       if (!existingConnectionAttemptId) {
@@ -306,6 +335,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       queued_at: new Date().toISOString(),
       topic,
       source,
+      worker_type_id: workerTypeId,
     };
 
     const claimed = await this.claimActiveAttempt(workerId, activeAttempt);
@@ -415,6 +445,37 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
   private activeAttemptKey(workerId: string): string {
     return `connection:qrcode:${workerId}:active_attempt`;
+  }
+
+  private processedAttemptKey(
+    workerId: string,
+    connectionAttemptId: string
+  ): string {
+    return `connection:qrcode:${workerId}:processed:${connectionAttemptId}`;
+  }
+
+  private async getActiveAttemptInvalidReason(
+    workerId: string,
+    workerTypeId: string,
+    attempt: ActiveQrAttempt
+  ): Promise<string | undefined> {
+    const connectionAttemptId = attempt.ack.connection_attempt_id;
+    if (!connectionAttemptId) {
+      return 'active_attempt_missing_connection_attempt_id';
+    }
+
+    if (attempt.worker_type_id && attempt.worker_type_id !== workerTypeId) {
+      return 'active_attempt_worker_type_mismatch';
+    }
+
+    const processed = await this.redis.get(
+      this.processedAttemptKey(workerId, connectionAttemptId)
+    );
+    if (processed) {
+      return 'active_attempt_already_processed';
+    }
+
+    return undefined;
   }
 
   private async getActiveAttempt(
