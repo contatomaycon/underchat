@@ -2213,6 +2213,10 @@ export class WorkerCommandHandlerService {
       return { ignored: false };
     }
 
+    if (!this.isNotifyQrAttemptState(state)) {
+      return { ignored: false };
+    }
+
     const cachedAttempt = cached.connection_attempt_id;
     const incomingAttempt = state.connection_attempt_id;
 

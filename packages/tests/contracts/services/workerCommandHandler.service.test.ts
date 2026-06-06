@@ -1173,6 +1173,46 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
+  it('publishes non-QR availability events even when an old QR is cached', async () => {
+    const deps = buildHandler();
+    deps.redisStore.set(
+      'connection:qrcode:worker-1:attempt',
+      JSON.stringify({
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'old-attempt',
+        qrcode: 'data:image/png;base64,old-qr',
+        qr_pending: false,
+        qr_generated_at: new Date().toISOString(),
+      })
+    );
+
+    await (
+      deps.handler as unknown as {
+        centrifugoPublish(state: IBaileysConnectionState): Promise<unknown>;
+      }
+    ).centrifugoPublish({
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.disponible,
+      reason: 'warm_activation_disponible',
+    });
+
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_status_id: EWorkerStatus.disponible,
+        reason: 'warm_activation_disponible',
+      })
+    );
+  });
+
   it('does not evaluate proxy fallback from the legacy QR request', async () => {
     const deps = buildHandler();
     const proxyConfig = new Map<
