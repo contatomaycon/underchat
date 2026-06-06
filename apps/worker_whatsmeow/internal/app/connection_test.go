@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
 	"google.golang.org/grpc/metadata"
@@ -475,7 +476,7 @@ func TestLinkedDeviceProfileMatchesBaileysDesktopMacOS(t *testing.T) {
 	if whatsmeowPairClientDisplayName != "Desktop (Mac OS)" {
 		t.Fatalf("unexpected pairing display name %q", whatsmeowPairClientDisplayName)
 	}
-	if int(whatsmeowPairClientDesktop) != int(waCompanionReg.DeviceProps_DESKTOP) {
-		t.Fatalf("expected pairing client type to match desktop platform id")
+	if whatsmeowPairClientDesktop != whatsmeow.PairClientElectron {
+		t.Fatalf("expected pairing client type to be electron, got %q", whatsmeowPairClientDesktop)
 	}
 }

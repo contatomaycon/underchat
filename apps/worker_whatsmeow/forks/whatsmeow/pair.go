@@ -80,38 +80,39 @@ func (cli *Client) handlePairDevice(ctx context.Context, node *waBinary.Node) {
 }
 
 func (cli *Client) getQRClientType() PairClientType {
-	if cli.QRClientType == PairClientUnknown {
-		switch store.DeviceProps.GetPlatformType() {
-		case waCompanionReg.DeviceProps_CHROME:
-			return PairClientChrome
-		case waCompanionReg.DeviceProps_FIREFOX:
-			return PairClientFirefox
-		case waCompanionReg.DeviceProps_EDGE:
-			return PairClientEdge
-		case waCompanionReg.DeviceProps_IE:
-			return PairClientIE
-		case waCompanionReg.DeviceProps_OPERA:
-			return PairClientOpera
-		case waCompanionReg.DeviceProps_SAFARI:
-			return PairClientSafari
-		case waCompanionReg.DeviceProps_UWP:
-			return PairClientUWP
-		default:
-			if store.BaseClientPayload.WebInfo != nil &&
-				store.BaseClientPayload.WebInfo.WebSubPlatform != nil &&
-				store.BaseClientPayload.WebInfo.GetWebSubPlatform() == waWa6.ClientPayload_WebInfo_WEB_BROWSER {
-				return PairClientOtherWebClient
-			}
-		}
+	if cli.QRClientType != "" {
+		return cli.QRClientType
 	}
-	return cli.QRClientType
+	switch store.DeviceProps.GetPlatformType() {
+	case waCompanionReg.DeviceProps_CHROME:
+		return PairClientChrome
+	case waCompanionReg.DeviceProps_FIREFOX:
+		return PairClientFirefox
+	case waCompanionReg.DeviceProps_EDGE:
+		return PairClientEdge
+	case waCompanionReg.DeviceProps_IE:
+		return PairClientIE
+	case waCompanionReg.DeviceProps_OPERA:
+		return PairClientOpera
+	case waCompanionReg.DeviceProps_SAFARI:
+		return PairClientSafari
+	case waCompanionReg.DeviceProps_UWP:
+		return PairClientUWP
+	case waCompanionReg.DeviceProps_ANDROID_PHONE:
+		return PairClientAndroid
+	default:
+		if store.BaseClientPayload.UserAgent.GetPlatform() == waWa6.ClientPayload_UserAgent_WEB {
+			return PairClientOtherWebClient
+		}
+		return PairClientUnknown
+	}
 }
 
 func (cli *Client) makeQRData(ref []byte, clientType PairClientType) string {
 	noise := base64.StdEncoding.EncodeToString(cli.Store.NoiseKey.Pub[:])
 	identity := base64.StdEncoding.EncodeToString(cli.Store.IdentityKey.Pub[:])
 	adv := base64.StdEncoding.EncodeToString(cli.Store.AdvSecretKey)
-	return fmt.Sprintf("https://wa.me/settings/linked_devices#%s,%s,%s,%s,%d", ref, noise, identity, adv, clientType)
+	return fmt.Sprintf("https://wa.me/settings/linked_devices#%s,%s,%s,%s,%s", ref, noise, identity, adv, clientType)
 }
 
 func (cli *Client) handlePairSuccess(ctx context.Context, node *waBinary.Node) {

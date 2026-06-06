@@ -73,7 +73,7 @@ const (
 	whatsmeowPhotoFetchTimeout       = 5 * time.Second
 	whatsmeowLogoutTimeout           = 30 * time.Second
 
-	whatsmeowPairClientDesktop     whatsmeow.PairClientType = 7
+	whatsmeowPairClientDesktop     whatsmeow.PairClientType = whatsmeow.PairClientElectron
 	whatsmeowPairClientDisplayName                          = "Desktop (Mac OS)"
 	maxQRCodeGenerations                                    = 3
 )
