@@ -24,6 +24,7 @@ import { startInternalChatDirectMessageConsume } from './internalChatDirectMessa
 import { startInternalChatGroupMessageConsume } from './internalChatGroupMessage.consume';
 import { startWorkerWarmReplenishConsume } from './workerWarmReplenish.consume';
 import { startWorkerWarmDeleteConsume } from './workerWarmDelete.consume';
+import { startWorkerLifecycleConsume } from './workerLifecycle.consume';
 import fp from 'fastify-plugin';
 import { buildEnvironment } from '@core/config/environments';
 import { selectServiceApiConsumerStarters } from '@core/common/functions/selectServiceApiConsumerStarters';
@@ -65,6 +66,7 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
     () => startInternalChatGroupMessageConsume(server),
     () => startWorkerWarmReplenishConsume(server),
     () => startWorkerWarmDeleteConsume(server),
+    () => startWorkerLifecycleConsume(server),
   ];
   const buildConsumerStarters = [
     () => startBuildVersionGenerateConsume(server),

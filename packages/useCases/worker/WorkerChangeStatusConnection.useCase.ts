@@ -173,7 +173,6 @@ export class WorkerChangeStatusConnectionUseCase {
           status: input.status,
           error: err instanceof Error ? err.message : String(err),
         });
-        console.error('Failed to publish connection logout intent:', err);
       }
 
       return;
@@ -211,7 +210,6 @@ export class WorkerChangeStatusConnectionUseCase {
         status: input.status,
         error: err instanceof Error ? err.message : String(err),
       });
-      console.error('Failed to publish connection start intent:', err);
     }
   }
 

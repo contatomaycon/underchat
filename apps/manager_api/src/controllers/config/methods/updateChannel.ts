@@ -8,6 +8,16 @@ import {
   UpdateChannelBody,
   UpdateChannelParams,
 } from '@core/schema/config/updateChannel/request.schema';
+import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+
+function isLifecycleAck(value: unknown): value is IWorkerLifecycleAck {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'queued' in value &&
+    (value as { queued?: unknown }).queued === true
+  );
+}
 
 export const updateChannel = async (
   request: FastifyRequest<{
@@ -28,6 +38,14 @@ export const updateChannel = async (
     });
 
     if (response) {
+      if (isLifecycleAck(response)) {
+        return sendResponse(reply, {
+          message: t('channel_updated_successfully'),
+          httpStatusCode: EHTTPStatusCode.accepted,
+          data: response,
+        });
+      }
+
       return sendResponse(reply, {
         message: t('channel_updated_successfully'),
         httpStatusCode: EHTTPStatusCode.ok,

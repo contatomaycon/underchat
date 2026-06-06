@@ -1,4 +1,6 @@
-export interface ICreateWorkerResponse {
+import { IWorkerLifecycleAck } from './IWorkerLifecycleAck';
+
+export interface ICreateWorkerResponse extends IWorkerLifecycleAck {
   worker_id: string;
   server_id: string;
   worker_type_id: string;

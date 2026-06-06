@@ -34,6 +34,27 @@ export const editWorkerSchema = {
       },
       { description: 'Successful' }
     ),
+    202: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ const: true }),
+        message: Type.String(),
+        data: Type.Object({
+          code: Type.Literal(202),
+          status: Type.Literal('queued'),
+          queued: Type.Literal(true),
+          worker_id: Type.String(),
+          account_id: Type.String(),
+          server_id: Type.Optional(Type.String()),
+          worker_type_id: Type.Optional(Type.String()),
+          worker_status_id: Type.String(),
+          connection_lifecycle_id: Type.String(),
+          operation_id: Type.String(),
+          reason: Type.String(),
+        }),
+      },
+      { description: 'Accepted' }
+    ),
     401: Type.Object(
       {
         id: Type.Optional(Type.Union([Type.String(), Type.Null()])),

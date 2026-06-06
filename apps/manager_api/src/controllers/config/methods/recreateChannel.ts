@@ -24,7 +24,8 @@ export const recreateChannel = async (
     if (response) {
       return sendResponse(reply, {
         message: t('channel_recreate_success'),
-        httpStatusCode: EHTTPStatusCode.ok,
+        httpStatusCode: EHTTPStatusCode.accepted,
+        data: response,
       });
     }
 

@@ -56,7 +56,7 @@ export class ChannelsRecreatorAllUseCase {
   private async recreateAllChannels(
     t: TFunction<'translation', undefined>,
     channelIds: string[]
-  ): Promise<PromiseSettledResult<boolean>[]> {
+  ): Promise<PromiseSettledResult<unknown>[]> {
     const recreatePromises = channelIds.map((channelId) =>
       this.channelRecreatorUseCase.execute(t, channelId)
     );
@@ -64,7 +64,7 @@ export class ChannelsRecreatorAllUseCase {
     return Promise.allSettled(recreatePromises);
   }
 
-  private countResults(results: PromiseSettledResult<boolean>[]): {
+  private countResults(results: PromiseSettledResult<unknown>[]): {
     success: number;
     errors: number;
   } {

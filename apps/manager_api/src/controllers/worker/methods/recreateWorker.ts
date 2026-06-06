@@ -25,7 +25,8 @@ export const recreateWorker = async (
     if (response) {
       return sendResponse(reply, {
         message: t('worker_recreate_success'),
-        httpStatusCode: EHTTPStatusCode.ok,
+        httpStatusCode: EHTTPStatusCode.accepted,
+        data: response,
       });
     }
 

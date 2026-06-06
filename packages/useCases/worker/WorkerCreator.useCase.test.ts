@@ -25,6 +25,10 @@ jest.mock('@core/services/workerGrpcClient.service', () => ({
   WorkerGrpcClientService: class WorkerGrpcClientService {},
 }));
 
+jest.mock('@core/services/workerLifecycleQueue.service', () => ({
+  WorkerLifecycleQueueService: class WorkerLifecycleQueueService {},
+}));
+
 jest.mock('@core/services/workerConfig.service', () => ({
   WorkerConfigService: class WorkerConfigService {},
 }));
@@ -41,7 +45,7 @@ const flushPromises = async (): Promise<void> => {
 
 function buildUseCase(
   overrides: {
-    activateWarmWorkerError?: unknown;
+    lifecyclePublishError?: unknown;
     warmPool?: {
       warm_pool_id: string;
       container_id?: string | null;
@@ -96,10 +100,6 @@ function buildUseCase(
       return undefined;
     }),
     activateWarmWorker: jest.fn(async () => {
-      if (overrides.activateWarmWorkerError) {
-        throw overrides.activateWarmWorkerError;
-      }
-
       return {
         container_id: overrides.warmPool?.container_id ?? 'container-1',
         session_volume_name:
@@ -107,6 +107,15 @@ function buildUseCase(
       };
     }),
     deleteWarmWorker: jest.fn(async () => undefined),
+  };
+
+  const workerLifecycleQueueService = {
+    publish: jest.fn(async () => {
+      callOrder.push('lifecycle-publish');
+      if (overrides.lifecyclePublishError) {
+        throw overrides.lifecyclePublishError;
+      }
+    }),
   };
 
   const workerConfigService = {
@@ -141,9 +150,9 @@ function buildUseCase(
     accountService as never,
     centrifugoService as never,
     planAccountService as never,
-    workerGrpcClientService as never,
     workerConfigService as never,
     workerWarmPoolSettingsService as never,
+    workerLifecycleQueueService as never,
     workerWarmPoolRepository as never
   );
 
@@ -157,6 +166,7 @@ function buildUseCase(
     workerWarmPoolSettingsService,
     workerWarmPoolRepository,
     workerGrpcClientService,
+    workerLifecycleQueueService,
     workerService,
   };
 }
@@ -179,6 +189,10 @@ describe('WorkerCreatorUseCase', () => {
       worker_id: 'worker-created-id',
       server_id: 'server-1',
       worker_type_id: EWorkerType.baileys,
+      worker_status_id: EWorkerStatus.creating,
+      queued: true,
+      code: 202,
+      status: 'queued',
       fallback_created: false,
     });
 
@@ -196,33 +210,34 @@ describe('WorkerCreatorUseCase', () => {
     expect(
       deps.workerConfigService.ensureSecurityKeyDefault
     ).toHaveBeenCalledWith('worker-created-id');
-    expect(deps.workerGrpcClientService.createWorker).toHaveBeenCalledWith(
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         action: EWorkerAction.create,
         worker_id: 'worker-created-id',
         account_id: 'account-1',
         worker_status_id: EWorkerStatus.creating,
+        operation_id: 'worker-created-id',
       })
     );
     expect(deps.callOrder).toEqual([
       'create-worker',
+      'update-worker',
       'typing-default',
       'security-key-default',
       'publish',
-      'grpc-create',
+      'lifecycle-publish',
     ]);
-    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      {
+        worker_id: 'worker-created-id',
+        lifecycle_operation_id: 'worker-created-id',
+      }
+    );
   });
 
-  it('returns after publishing creating status without waiting for gRPC completion', async () => {
+  it('returns after publishing creating status and enqueueing lifecycle', async () => {
     const deps = buildUseCase();
-    let resolveCreate!: () => void;
-    deps.workerGrpcClientService.createWorker.mockImplementationOnce(() => {
-      deps.callOrder.push('grpc-create');
-      return new Promise<undefined>((resolve) => {
-        resolveCreate = () => resolve(undefined);
-      });
-    });
 
     await expect(
       deps.useCase.execute(t, 'account-1', {
@@ -234,6 +249,7 @@ describe('WorkerCreatorUseCase', () => {
       worker_id: 'worker-created-id',
       server_id: 'server-1',
       worker_type_id: EWorkerType.baileys,
+      queued: true,
       fallback_created: false,
     });
 
@@ -245,22 +261,14 @@ describe('WorkerCreatorUseCase', () => {
         worker_status_id: EWorkerStatus.creating,
       })
     );
-    expect(deps.callOrder).toContain('grpc-create');
-    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
-
-    resolveCreate();
-    await flushPromises();
+    expect(deps.callOrder).toContain('lifecycle-publish');
+    expect(deps.workerGrpcClientService.createWorker).not.toHaveBeenCalled();
   });
 
-  it('marks and publishes error when async gRPC dispatch fails', async () => {
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
-    const deps = buildUseCase();
-    deps.workerGrpcClientService.createWorker.mockImplementationOnce(
-      async () => {
-        deps.callOrder.push('grpc-create');
-        throw new Error('grpc failed');
-      }
-    );
+  it('marks and publishes error when lifecycle enqueue fails', async () => {
+    const deps = buildUseCase({
+      lifecyclePublishError: new Error('kafka failed'),
+    });
 
     await expect(
       deps.useCase.execute(t, 'account-1', {
@@ -268,19 +276,14 @@ describe('WorkerCreatorUseCase', () => {
         server_id: 'server-1',
         worker_type: EWorkerType.baileys,
       })
-    ).resolves.toMatchObject({
-      worker_id: 'worker-created-id',
-      server_id: 'server-1',
-      worker_type_id: EWorkerType.baileys,
-      fallback_created: false,
-    });
-    await flushPromises();
+    ).rejects.toThrow('kafka failed');
 
     expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
       'account-1',
       {
         worker_id: 'worker-created-id',
         worker_status_id: EWorkerStatus.error,
+        lifecycle_operation_id: null,
       }
     );
     expect(deps.centrifugoService.publishSub).toHaveBeenLastCalledWith(
@@ -290,14 +293,11 @@ describe('WorkerCreatorUseCase', () => {
         worker_status_id: EWorkerStatus.error,
       })
     );
-
-    jest.restoreAllMocks();
   });
 
-  it('does not enqueue replenish after a failed warm activation when warmup is disabled', async () => {
+  it('reserves warm worker and enqueues activation without calling gRPC', async () => {
     const resolveSpy = jest.spyOn(container, 'resolve');
     const deps = buildUseCase({
-      activateWarmWorkerError: new Error('activate failed'),
       warmPool: {
         warm_pool_id: 'warm-1',
         container_id: 'container-1',
@@ -317,17 +317,23 @@ describe('WorkerCreatorUseCase', () => {
       worker_id: 'worker-created-id',
       server_id: 'server-1',
       worker_type_id: EWorkerType.baileys,
-      fallback_created: false,
+      queued: true,
+      warm_pool_claimed: true,
+      warm_pool_id: 'warm-1',
     });
 
     expect(deps.workerWarmPoolRepository.reserveReady).toHaveBeenCalled();
-    expect(deps.workerGrpcClientService.deleteWarmWorker).toHaveBeenCalledWith(
-      'server-1',
+    expect(
+      deps.workerGrpcClientService.activateWarmWorker
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.workerGrpcClientService.deleteWarmWorker
+    ).not.toHaveBeenCalled();
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
+        action: 'activate_warm',
         warm_pool_id: 'warm-1',
-        remove_volume: true,
-      }),
-      60_000
+      })
     );
     expect(resolveSpy).not.toHaveBeenCalled();
     resolveSpy.mockRestore();

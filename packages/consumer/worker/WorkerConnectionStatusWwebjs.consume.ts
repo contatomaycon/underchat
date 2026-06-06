@@ -11,7 +11,6 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
-import { logger } from '@core/plugins/telemetry/logger';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 @singleton()
@@ -533,16 +532,6 @@ export class WorkerConnectionStatusWwebjsConsume {
     details: Record<string, unknown> = {},
     level: 'info' | 'warn' | 'error' = 'info'
   ): void {
-    const payload = {
-      module: 'worker_wwebjs',
-      component: 'worker_connection_status_consume',
-      type: 'connection_status',
-      event,
-      worker_id: wwebjsEnvironment.wwebjsWorkerId,
-      account_id: wwebjsEnvironment.wwebjsAccountId,
-      ...details,
-    };
-
     recordConnectionLifecycle({
       stage: `connection.worker_wwebjs.status_consume.${event}`,
       decision: event,
@@ -555,17 +544,5 @@ export class WorkerConnectionStatusWwebjsConsume {
       account_id: wwebjsEnvironment.wwebjsAccountId,
       ...details,
     });
-
-    if (level === 'error') {
-      logger.error(payload, 'Wwebjs worker connection status event');
-      return;
-    }
-
-    if (level === 'warn') {
-      logger.warn(payload, 'Wwebjs worker connection status event');
-      return;
-    }
-
-    logger.info(payload, 'Wwebjs worker connection status event');
   }
 }

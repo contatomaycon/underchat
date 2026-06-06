@@ -29,7 +29,8 @@ export const resetWorkerConnection = async (
     if (response) {
       return sendResponse(reply, {
         message: t('worker_connection_reset_success'),
-        httpStatusCode: EHTTPStatusCode.ok,
+        httpStatusCode: EHTTPStatusCode.accepted,
+        data: response,
       });
     }
 

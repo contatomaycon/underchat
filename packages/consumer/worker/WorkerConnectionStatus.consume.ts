@@ -11,7 +11,6 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
-import { logger } from '@core/plugins/telemetry/logger';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 @singleton()
@@ -517,16 +516,6 @@ export class WorkerConnectionStatusConsume {
     details: Record<string, unknown> = {},
     level: 'info' | 'warn' | 'error' = 'info'
   ): void {
-    const payload = {
-      module: 'worker_baileys',
-      component: 'worker_connection_status_consume',
-      type: 'connection_status',
-      event,
-      worker_id: baileysEnvironment.baileysWorkerId,
-      account_id: baileysEnvironment.baileysAccountId,
-      ...details,
-    };
-
     recordConnectionLifecycle({
       stage: `connection.worker_baileys.status_consume.${event}`,
       decision: event,
@@ -539,17 +528,5 @@ export class WorkerConnectionStatusConsume {
       account_id: baileysEnvironment.baileysAccountId,
       ...details,
     });
-
-    if (level === 'error') {
-      logger.error(payload, 'Baileys worker connection status event');
-      return;
-    }
-
-    if (level === 'warn') {
-      logger.warn(payload, 'Baileys worker connection status event');
-      return;
-    }
-
-    logger.info(payload, 'Baileys worker connection status event');
   }
 }

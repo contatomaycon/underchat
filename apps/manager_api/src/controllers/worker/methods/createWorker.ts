@@ -32,7 +32,7 @@ export const createWorker = async (
 
     return sendResponse(reply, {
       message: t('worker_creator_success'),
-      httpStatusCode: EHTTPStatusCode.ok,
+      httpStatusCode: EHTTPStatusCode.accepted,
       data: response,
     });
   } catch (error) {

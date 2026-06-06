@@ -49,6 +49,7 @@ export class KafkaServiceQueueService {
     const internalChatGroupMessage = this.internalChatGroupMessage();
     const workerWarmReplenishRequest = this.workerWarmReplenishRequest();
     const workerWarmDeleteRequest = this.workerWarmDeleteRequest();
+    const workerLifecycleRequest = this.workerLifecycleRequest();
 
     return [
       createServer,
@@ -77,6 +78,7 @@ export class KafkaServiceQueueService {
       internalChatGroupMessage,
       workerWarmReplenishRequest,
       workerWarmDeleteRequest,
+      workerLifecycleRequest,
     ];
   };
 
@@ -160,6 +162,10 @@ export class KafkaServiceQueueService {
 
   workerWarmDeleteRequest = () => {
     return 'worker.warm.delete.request';
+  };
+
+  workerLifecycleRequest = () => {
+    return 'worker.lifecycle.request';
   };
 
   aiAgentPromptEmbedding = () => {

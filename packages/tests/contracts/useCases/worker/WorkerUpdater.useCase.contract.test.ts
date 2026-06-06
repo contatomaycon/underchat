@@ -23,6 +23,15 @@ jest.mock('@core/useCases/worker/WorkerRecreator.useCase', () => ({
 jest.mock('@core/services/workerConfig.service', () => ({
   WorkerConfigService: class WorkerConfigService {},
 }));
+jest.mock('@core/services/workerLifecycleQueue.service', () => ({
+  WorkerLifecycleQueueService: class WorkerLifecycleQueueService {},
+}));
+jest.mock('@core/services/workerWarmPoolQueue.service', () => ({
+  WorkerWarmPoolQueueService: class WorkerWarmPoolQueueService {},
+}));
+jest.mock('@core/services/centrifugo.service', () => ({
+  CentrifugoService: class CentrifugoService {},
+}));
 
 const t = ((key: string) => key) as never;
 
@@ -67,15 +76,25 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
     const workerRuntimeRepository = {
       viewByWorkerId: jest.fn(async () => null),
     };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const workerWarmPoolQueueService = {
+      publishReplenish: jest.fn(async () => undefined),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => undefined),
+      publish: jest.fn(async () => undefined),
+    };
     const useCase = new WorkerUpdaterUseCase(
       workerService as never,
       accountService as never,
-      workerGrpcClientService as never,
-      workerRecreatorUseCase as never,
       workerConfigService as never,
       workerWarmPoolSettingsService as never,
       workerWarmPoolRepository as never,
-      workerRuntimeRepository as never
+      workerLifecycleQueueService as never,
+      workerWarmPoolQueueService as never,
+      centrifugoService as never
     );
 
     await expect(
@@ -84,17 +103,24 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
         name: 'Worker 1',
         worker_type: EWorkerType.wwebjs,
       } as never)
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      worker_id: 'worker-1',
+      worker_status_id: EWorkerStatus.recreating,
+      operation_id: 'operation-1',
+    });
 
     expect(workerGrpcClientService.cleanupWorker).not.toHaveBeenCalled();
-    expect(workerRecreatorUseCase.execute).toHaveBeenCalledWith(
-      t,
-      'account-1',
-      'worker-1',
+    expect(workerRecreatorUseCase.execute).not.toHaveBeenCalled();
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
+        action: 'recreate',
+        worker_id: 'worker-1',
         remove_session: true,
         remove_volume: true,
-        lifecycle_operation_id: 'operation-1',
+        operation_id: 'operation-1',
         previous_worker_status_id: EWorkerStatus.disponible,
       })
     );
@@ -140,15 +166,25 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
     const workerRuntimeRepository = {
       viewByWorkerId: jest.fn(async () => null),
     };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const workerWarmPoolQueueService = {
+      publishReplenish: jest.fn(async () => undefined),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => undefined),
+      publish: jest.fn(async () => undefined),
+    };
     const useCase = new WorkerUpdaterUseCase(
       workerService as never,
       accountService as never,
-      workerGrpcClientService as never,
-      workerRecreatorUseCase as never,
       workerConfigService as never,
       workerWarmPoolSettingsService as never,
       workerWarmPoolRepository as never,
-      workerRuntimeRepository as never
+      workerLifecycleQueueService as never,
+      workerWarmPoolQueueService as never,
+      centrifugoService as never
     );
 
     await expect(
@@ -158,7 +194,13 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
         worker_type: EWorkerType.whatsmeow,
         server_id: 'server-new',
       } as never)
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      worker_id: 'worker-1',
+      worker_status_id: EWorkerStatus.recreating,
+      operation_id: 'operation-1',
+    });
 
     expect(workerService.updateWorkerById).toHaveBeenCalledWith(
       'account-1',
@@ -170,23 +212,28 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
         lifecycle_operation_id: 'operation-1',
       })
     );
-    expect(workerGrpcClientService.cleanupWorker).toHaveBeenCalledWith(
+    expect(workerGrpcClientService.cleanupWorker).not.toHaveBeenCalled();
+    expect(workerRecreatorUseCase.execute).not.toHaveBeenCalled();
+    expect(workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
-        action: 'cleanup',
+        action: 'cleanup_previous_runtime',
         worker_id: 'worker-1',
         server_id: 'server-old',
         account_id: 'account-1',
-        lifecycle_operation_id: 'operation-1',
+        operation_id: 'operation-1',
       })
     );
-    expect(workerRecreatorUseCase.execute).toHaveBeenCalledWith(
-      t,
-      'account-1',
-      'worker-1',
+    expect(workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
+      2,
       expect.objectContaining({
+        action: 'recreate',
+        worker_id: 'worker-1',
+        server_id: 'server-new',
+        account_id: 'account-1',
         remove_session: true,
         remove_volume: true,
-        lifecycle_operation_id: 'operation-1',
+        operation_id: 'operation-1',
         previous_worker_status_id: EWorkerStatus.online,
       })
     );

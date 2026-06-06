@@ -1,4 +1,4 @@
-import { container, injectable, inject } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -12,14 +12,16 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ICreateWorker } from '@core/common/interfaces/ICreateWorker';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { PlanAccountService } from '@core/services/planAccount.service';
-import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 import { currentTime } from '@core/common/functions/currentTime';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
-import { logger } from '@core/plugins/telemetry/logger';
 import { IWorkerWarmPoolSettings } from '@core/common/interfaces/IWorkerWarmPoolSettings';
+import { WorkerLifecycleQueueService } from '@core/services/workerLifecycleQueue.service';
+import { IWorkerLifecycleQueueMessage } from '@core/common/interfaces/IWorkerLifecycleQueueMessage';
+import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
+import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -32,12 +34,12 @@ export class WorkerCreatorUseCase {
     private readonly centrifugoService: CentrifugoService,
     @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
-    @inject(WorkerGrpcClientService)
-    private readonly workerGrpcClientService: WorkerGrpcClientService,
     @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
     @inject(WorkerWarmPoolSettingsService)
     private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService,
+    @inject(WorkerLifecycleQueueService)
+    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService,
     @inject(WorkerWarmPoolRepository)
     private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never
   ) {}
@@ -56,51 +58,28 @@ export class WorkerCreatorUseCase {
     await this.planAccountService.validateCanCreateWorker(t, accountId);
   }
 
-  private async onWorkerCreated(
-    t: TFunction<'translation', undefined>,
-    payload: IWorkerPayload
-  ): Promise<void> {
-    try {
-      await this.workerGrpcClientService.createWorker(payload);
-    } catch (err) {
-      throw new Error(t('grpc_error'), { cause: err });
-    }
-  }
-
-  private dispatchWorkerCreated(
-    t: TFunction<'translation', undefined>,
-    payload: IWorkerPayload
-  ): void {
-    void this.onWorkerCreated(t, payload).catch((err) => {
-      void this.publishWorkerCreateDispatchError(payload, err).catch(
-        (publishErr) => {
-          console.error('Failed to publish worker creation dispatch error:', {
-            workerId: payload.worker_id,
-            accountId: payload.account_id,
-            error:
-              publishErr instanceof Error
-                ? publishErr.message
-                : String(publishErr),
-          });
-        }
-      );
-    });
-  }
-
-  private async publishWorkerCreateDispatchError(
+  private async publishWorkerCreateEnqueueError(
     payload: IWorkerPayload,
     error: unknown
   ): Promise<void> {
-    console.error('Failed to dispatch worker creation:', {
-      workerId: payload.worker_id,
-      accountId: payload.account_id,
-      serverId: payload.server_id,
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_creator.enqueue_error',
+      decision: 'enqueue_worker_create',
+      outcome: 'error',
+      reason: 'lifecycle_enqueue_failed',
+      level: 'error',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      server_id: payload.server_id,
+      worker_type: payload.worker_type_id,
+      lifecycle_operation_id: payload.lifecycle_operation_id,
       error: error instanceof Error ? error.message : String(error),
     });
 
     await this.workerService.updateWorkerById(payload.account_id, {
       worker_id: payload.worker_id,
       worker_status_id: EWorkerStatus.error,
+      lifecycle_operation_id: null,
     });
 
     await this.centrifugoService.publishSub(
@@ -120,6 +99,7 @@ export class WorkerCreatorUseCase {
     try {
       const { WorkerWarmPoolQueueService } =
         await import('@core/services/workerWarmPoolQueue.service');
+      const { container } = await import('tsyringe');
       const queueService = container.resolve(WorkerWarmPoolQueueService);
       await queueService.publishReplenish({
         request_id: uuidv7(),
@@ -129,23 +109,24 @@ export class WorkerCreatorUseCase {
         requested_at: currentTime(),
       });
     } catch (error) {
-      logger.error(
-        {
-          type: 'warm_pool.replenish.error',
-          server_id: serverId,
-          worker_type_id: workerType,
-          reason,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Failed to enqueue warm worker replenish'
-      );
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_creator.warm_replenish_error',
+        decision: 'enqueue_warm_replenish',
+        outcome: 'error',
+        reason,
+        level: 'warn',
+        server_id: serverId,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
-  private async tryClaimWarmWorker(
+  private async tryReserveWarmWorker(
     payload: IWorkerPayload,
     settings: IWorkerWarmPoolSettings
-  ): Promise<ICreateWorkerResponse | null> {
+  ): Promise<IWorkerWarmPool | null> {
     if (!payload.worker_type_id || !this.workerWarmPoolRepository) {
       return null;
     }
@@ -162,16 +143,17 @@ export class WorkerCreatorUseCase {
     );
 
     if (!warm) {
-      logger.warn(
-        {
-          type: 'warm_pool.miss',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type_id: payload.worker_type_id,
-        },
-        'Warm worker pool miss'
-      );
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_creator.warm_pool_miss',
+        decision: 'reserve_warm_worker',
+        outcome: 'miss',
+        level: 'warn',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        server_id: payload.server_id,
+        worker_type: payload.worker_type_id,
+        worker_type_id: payload.worker_type_id,
+      });
       if (settings.warmup_enabled) {
         await this.publishWarmReplenish(
           payload.server_id,
@@ -182,104 +164,64 @@ export class WorkerCreatorUseCase {
       return null;
     }
 
-    try {
-      const response = await this.workerGrpcClientService.activateWarmWorker(
+    if (settings.warmup_enabled) {
+      await this.publishWarmReplenish(
         payload.server_id,
-        {
-          warm_pool_id: warm.warm_pool_id,
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type_id: payload.worker_type_id,
-        },
-        60_000
+        payload.worker_type_id,
+        'claim_replenish'
       );
+    }
 
-      if (settings.warmup_enabled) {
-        await this.publishWarmReplenish(
-          payload.server_id,
-          payload.worker_type_id,
-          'claim_replenish'
-        );
-      }
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_creator.warm_pool_reserved',
+      decision: 'reserve_warm_worker',
+      outcome: 'reserved',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      server_id: payload.server_id,
+      worker_type: payload.worker_type_id,
+      worker_type_id: payload.worker_type_id,
+      warm_pool_id: warm.warm_pool_id,
+      container_id: warm.container_id,
+      container_name: warm.container_name,
+      session_volume_name: warm.session_volume_name,
+    });
 
-      logger.info(
-        {
-          type: 'warm_pool.claim',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type_id: payload.worker_type_id,
-          warm_pool_id: warm.warm_pool_id,
-          container_id: response.container_id,
-          session_volume_name: response.session_volume_name,
-        },
-        'Warm worker claimed'
-      );
+    return warm;
+  }
 
-      return {
-        worker_id: payload.worker_id,
-        server_id: payload.server_id,
-        worker_type_id: payload.worker_type_id,
-        warm_pool_claimed: true,
-        warm_pool_id: warm.warm_pool_id,
-      };
+  private buildLifecycleMessage(input: {
+    payload: IWorkerPayload;
+    action: IWorkerLifecycleQueueMessage['action'];
+    connectionLifecycleId: string;
+    operationId: string;
+    warmPoolId?: string;
+  }): IWorkerLifecycleQueueMessage {
+    return {
+      request_id: uuidv7(),
+      connection_lifecycle_id: input.connectionLifecycleId,
+      operation_id: input.operationId,
+      action: input.action,
+      worker_id: input.payload.worker_id,
+      account_id: input.payload.account_id,
+      server_id: input.payload.server_id,
+      worker_type_id: input.payload.worker_type_id,
+      worker_status_id: input.payload.worker_status_id,
+      source: 'worker_create',
+      warm_pool_id: input.warmPoolId,
+      requested_at: currentTime(),
+    };
+  }
+
+  private async enqueueLifecycleOrMarkError(
+    payload: IWorkerPayload,
+    message: IWorkerLifecycleQueueMessage
+  ): Promise<void> {
+    try {
+      await this.workerLifecycleQueueService.publish(message);
     } catch (error) {
-      logger.error(
-        {
-          type: 'warm_pool.activate.error',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type_id: payload.worker_type_id,
-          warm_pool_id: warm.warm_pool_id,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Warm worker activation failed; falling back to normal create'
-      );
-
-      try {
-        await this.workerGrpcClientService.deleteWarmWorker(
-          payload.server_id,
-          {
-            request_id: uuidv7(),
-            warm_pool_id: warm.warm_pool_id,
-            server_id: payload.server_id,
-            worker_type_id: payload.worker_type_id,
-            container_id: warm.container_id ?? undefined,
-            container_name: warm.container_name ?? undefined,
-            session_volume_name: warm.session_volume_name ?? undefined,
-            remove_volume: true,
-            reason: 'pool_reconcile',
-            requested_at: currentTime(),
-          },
-          60_000
-        );
-      } catch (deleteError) {
-        logger.error(
-          {
-            type: 'warm_pool.delete.error',
-            worker_id: payload.worker_id,
-            account_id: payload.account_id,
-            server_id: payload.server_id,
-            worker_type_id: payload.worker_type_id,
-            warm_pool_id: warm.warm_pool_id,
-            error:
-              deleteError instanceof Error
-                ? deleteError.message
-                : String(deleteError),
-          },
-          'Failed to delete failed warm worker'
-        );
-      }
-      if (settings.warmup_enabled) {
-        await this.publishWarmReplenish(
-          payload.server_id,
-          payload.worker_type_id,
-          'pool_miss'
-        );
-      }
-      return null;
+      await this.publishWorkerCreateEnqueueError(payload, error);
+      throw error;
     }
   }
 
@@ -325,6 +267,8 @@ export class WorkerCreatorUseCase {
     }
 
     const workerId = uuidv7();
+    const lifecycleOperationId = uuidv7();
+    const connectionLifecycleId = uuidv7();
 
     const createWorkerPayload: ICreateWorker = {
       worker_id: workerId,
@@ -342,6 +286,18 @@ export class WorkerCreatorUseCase {
       throw new Error(t('worker_creation_failed'));
     }
 
+    const lifecycleMarked = await this.workerService.updateWorkerById(
+      accountId,
+      {
+        worker_id: workerId,
+        lifecycle_operation_id: lifecycleOperationId,
+      }
+    );
+
+    if (!lifecycleMarked) {
+      throw new Error(t('worker_creation_failed'));
+    }
+
     await Promise.all([
       this.workerConfigService.ensureTypingSimulationDefault(workerId),
       this.workerConfigService.ensureSecurityKeyDefault(workerId),
@@ -355,6 +311,7 @@ export class WorkerCreatorUseCase {
       server_id: serverId,
       account_id: accountId,
       name: input.name.trim(),
+      lifecycle_operation_id: lifecycleOperationId,
     };
 
     await this.centrifugoService.publishSub(
@@ -363,21 +320,34 @@ export class WorkerCreatorUseCase {
     );
 
     const warmSettings = await this.workerWarmPoolSettingsService.view();
-    const warmClaim = await this.tryClaimWarmWorker(
+    const warmReserved = await this.tryReserveWarmWorker(
       payloadCreate,
       warmSettings
     );
-    if (warmClaim) {
-      return warmClaim;
-    }
-
-    this.dispatchWorkerCreated(t, payloadCreate);
+    const lifecycleMessage = this.buildLifecycleMessage({
+      payload: payloadCreate,
+      action: warmReserved ? 'activate_warm' : 'create',
+      connectionLifecycleId,
+      operationId: lifecycleOperationId,
+      warmPoolId: warmReserved?.warm_pool_id,
+    });
+    await this.enqueueLifecycleOrMarkError(payloadCreate, lifecycleMessage);
 
     return {
+      code: 202,
+      status: 'queued',
+      queued: true,
       worker_id: workerId,
+      account_id: accountId,
       server_id: serverId,
       worker_type_id: workerType,
-      fallback_created: warmSettings.warmup_enabled,
+      worker_status_id: EWorkerStatus.creating,
+      connection_lifecycle_id: connectionLifecycleId,
+      operation_id: lifecycleOperationId,
+      reason: warmReserved ? 'warm_activation_queued' : 'create_queued',
+      warm_pool_claimed: Boolean(warmReserved),
+      warm_pool_id: warmReserved?.warm_pool_id,
+      fallback_created: !warmReserved && warmSettings.warmup_enabled,
     };
   }
 }

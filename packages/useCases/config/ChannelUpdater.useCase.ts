@@ -3,6 +3,7 @@ import { TFunction } from 'i18next';
 import { ConfigService } from '@core/services/config.service';
 import { WorkerUpdaterUseCase } from '@core/useCases/worker/WorkerUpdater.useCase';
 import { UpdateChannelRequest } from '@core/schema/config/updateChannel/request.schema';
+import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
 
 @injectable()
 export class ChannelUpdaterUseCase {
@@ -16,7 +17,7 @@ export class ChannelUpdaterUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     input: UpdateChannelRequest
-  ): Promise<boolean> {
+  ): Promise<boolean | IWorkerLifecycleAck> {
     const viewWorkerBalancer = await this.configService.viewChannelBalancer(
       input.channel_id
     );

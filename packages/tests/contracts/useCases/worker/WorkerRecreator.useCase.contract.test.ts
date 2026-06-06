@@ -21,6 +21,9 @@ jest.mock('@core/services/centrifugo.service', () => ({
 jest.mock('@core/services/workerGrpcClient.service', () => ({
   WorkerGrpcClientService: class WorkerGrpcClientService {},
 }));
+jest.mock('@core/services/workerLifecycleQueue.service', () => ({
+  WorkerLifecycleQueueService: class WorkerLifecycleQueueService {},
+}));
 
 import { WorkerRecreatorUseCase } from '@core/useCases/worker/WorkerRecreator.useCase';
 
@@ -46,32 +49,41 @@ function makeSut() {
   const workerGrpcClientService = {
     recreateWorker: jest.fn(async () => undefined),
   };
+  const workerLifecycleQueueService = {
+    publish: jest.fn(async () => undefined),
+  };
 
   const sut = new WorkerRecreatorUseCase(
     workerService as never,
     accountService as never,
     centrifugoService as never,
-    workerGrpcClientService as never
+    workerLifecycleQueueService as never
   );
 
-  return { sut, workerService, centrifugoService, workerGrpcClientService };
+  return {
+    sut,
+    workerService,
+    centrifugoService,
+    workerGrpcClientService,
+    workerLifecycleQueueService,
+  };
 }
 
 describe('WorkerRecreatorUseCase', () => {
-  it('returns after publishing recreating status without waiting for gRPC completion', async () => {
-    const { sut, centrifugoService, workerGrpcClientService } = makeSut();
-    let resolveRecreate!: () => void;
-    workerGrpcClientService.recreateWorker.mockReturnValueOnce(
-      new Promise<undefined>((resolve) => {
-        resolveRecreate = () => resolve(undefined);
-      })
-    );
+  it('returns ack after publishing recreating status and enqueueing lifecycle', async () => {
+    const { sut, centrifugoService, workerLifecycleQueueService } = makeSut();
 
     await expect(
       sut.execute(t, 'account-1', 'worker-1', {
         previous_worker_status_id: EWorkerStatus.online,
       })
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      worker_id: 'worker-1',
+      worker_status_id: EWorkerStatus.recreating,
+      operation_id: 'operation-1',
+    });
 
     expect(centrifugoService.publishSub).toHaveBeenCalledWith(
       workerCentrifugoQueue('account-1'),
@@ -81,19 +93,18 @@ describe('WorkerRecreatorUseCase', () => {
         worker_status_id: EWorkerStatus.recreating,
       })
     );
-    expect(workerGrpcClientService.recreateWorker).toHaveBeenCalledWith(
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         action: EWorkerAction.recreate,
         worker_id: 'worker-1',
+        operation_id: 'operation-1',
         previous_worker_status_id: EWorkerStatus.online,
       })
     );
-
-    resolveRecreate();
   });
 
   it('publishes logout before recreating when session cleanup is requested', async () => {
-    const { sut, centrifugoService, workerGrpcClientService } = makeSut();
+    const { sut, centrifugoService, workerLifecycleQueueService } = makeSut();
 
     await sut.execute(t, 'account-1', 'worker-1', {
       remove_session: true,
@@ -122,10 +133,12 @@ describe('WorkerRecreatorUseCase', () => {
         remove_volume: true,
       })
     );
-    expect(workerGrpcClientService.recreateWorker).toHaveBeenCalledWith(
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         action: EWorkerAction.recreate,
         worker_id: 'worker-1',
+        remove_session: true,
+        remove_volume: true,
       })
     );
   });

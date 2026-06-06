@@ -19,14 +19,13 @@ jest.mock('@core/services/centrifugo.service', () => ({
 jest.mock('@core/services/workerGrpcClient.service', () => ({
   WorkerGrpcClientService: class {},
 }));
+jest.mock('@core/services/workerLifecycleQueue.service', () => ({
+  WorkerLifecycleQueueService: class {},
+}));
 
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { ChannelRecreatorUseCase } from '@core/useCases/config/ChannelRecreator.useCase';
-
-const flushPromises = async (): Promise<void> => {
-  await new Promise((resolve) => setImmediate(resolve));
-};
 
 describe('ChannelRecreatorUseCase', () => {
   it('throws when worker balancer is not found', async () => {
@@ -35,12 +34,13 @@ describe('ChannelRecreatorUseCase', () => {
     const configService = { viewChannelBalancer: jest.fn(async () => null) };
     const centrifugoService = { publishSub: jest.fn(), publish: jest.fn() };
     const workerGrpcClientService = { recreateWorker: jest.fn() };
+    const workerLifecycleQueueService = { publish: jest.fn() };
     const useCase = new ChannelRecreatorUseCase(
       workerService as never,
       accountService as never,
       configService as never,
       centrifugoService as never,
-      workerGrpcClientService as never
+      workerLifecycleQueueService as never
     );
     const t = jest.fn((key: string) => key);
 
@@ -60,12 +60,13 @@ describe('ChannelRecreatorUseCase', () => {
     };
     const centrifugoService = { publishSub: jest.fn(), publish: jest.fn() };
     const workerGrpcClientService = { recreateWorker: jest.fn() };
+    const workerLifecycleQueueService = { publish: jest.fn() };
     const useCase = new ChannelRecreatorUseCase(
       workerService as never,
       accountService as never,
       configService as never,
       centrifugoService as never,
-      workerGrpcClientService as never
+      workerLifecycleQueueService as never
     );
     const t = jest.fn((key: string) => key);
 
@@ -75,8 +76,7 @@ describe('ChannelRecreatorUseCase', () => {
     expect(workerService.updateWorkerById).not.toHaveBeenCalled();
   });
 
-  it('marks the channel as error when recreate grpc dispatch fails', async () => {
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+  it('marks the channel as error when lifecycle enqueue fails', async () => {
     const workerService = {
       viewWorker: jest.fn(async () => ({
         status: { id: EWorkerStatus.online },
@@ -99,21 +99,28 @@ describe('ChannelRecreatorUseCase', () => {
         throw new Error('grpc-fail');
       }),
     };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => {
+        throw new Error('kafka-fail');
+      }),
+    };
     const useCase = new ChannelRecreatorUseCase(
       workerService as never,
       accountService as never,
       configService as never,
       centrifugoService as never,
-      workerGrpcClientService as never
+      workerLifecycleQueueService as never
     );
     const t = jest.fn((key: string) => key);
 
-    await expect(useCase.execute(t as never, 'worker-1')).resolves.toBe(true);
-    await flushPromises();
+    await expect(useCase.execute(t as never, 'worker-1')).rejects.toThrow(
+      'kafka-fail'
+    );
 
     expect(workerService.updateWorkerById).toHaveBeenCalledWith('acc-1', {
       worker_id: 'worker-1',
       worker_status_id: EWorkerStatus.error,
+      lifecycle_operation_id: null,
     });
     expect(centrifugoService.publish).toHaveBeenCalledWith(
       'channels:config',
@@ -122,8 +129,6 @@ describe('ChannelRecreatorUseCase', () => {
         worker_status_id: EWorkerStatus.error,
       })
     );
-
-    jest.restoreAllMocks();
   });
 
   it('recreates channel successfully', async () => {
@@ -147,16 +152,26 @@ describe('ChannelRecreatorUseCase', () => {
     const workerGrpcClientService = {
       recreateWorker: jest.fn(async () => undefined),
     };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
     const useCase = new ChannelRecreatorUseCase(
       workerService as never,
       accountService as never,
       configService as never,
       centrifugoService as never,
-      workerGrpcClientService as never
+      workerLifecycleQueueService as never
     );
     const t = jest.fn((key: string) => key);
 
-    await expect(useCase.execute(t as never, 'worker-1')).resolves.toBe(true);
+    await expect(
+      useCase.execute(t as never, 'worker-1')
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      worker_id: 'worker-1',
+      worker_status_id: EWorkerStatus.recreating,
+    });
 
     const expectedPayload = {
       action: EWorkerAction.recreate,
@@ -177,14 +192,20 @@ describe('ChannelRecreatorUseCase', () => {
     );
     expect(centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#acc-1',
-      expectedPayload
+      expect.objectContaining(expectedPayload)
     );
     expect(centrifugoService.publish).toHaveBeenCalledWith(
       'channels:config',
-      expectedPayload
+      expect.objectContaining(expectedPayload)
     );
-    expect(workerGrpcClientService.recreateWorker).toHaveBeenCalledWith(
-      expectedPayload
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: EWorkerAction.recreate,
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        server_id: 'srv-1',
+        operation_id: expect.any(String),
+      })
     );
   });
 });

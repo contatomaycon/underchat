@@ -1,7 +1,5 @@
 import 'reflect-metadata';
-import { status as GrpcStatus } from '@grpc/grpc-js';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
-import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerUpdaterUseCase } from './WorkerUpdater.useCase';
@@ -14,16 +12,20 @@ jest.mock('@core/services/account.service', () => ({
   AccountService: class AccountService {},
 }));
 
-jest.mock('@core/services/workerGrpcClient.service', () => ({
-  WorkerGrpcClientService: class WorkerGrpcClientService {},
-}));
-
-jest.mock('@core/useCases/worker/WorkerRecreator.useCase', () => ({
-  WorkerRecreatorUseCase: class WorkerRecreatorUseCase {},
-}));
-
 jest.mock('@core/services/workerConfig.service', () => ({
   WorkerConfigService: class WorkerConfigService {},
+}));
+
+jest.mock('@core/services/workerLifecycleQueue.service', () => ({
+  WorkerLifecycleQueueService: class WorkerLifecycleQueueService {},
+}));
+
+jest.mock('@core/services/workerWarmPoolQueue.service', () => ({
+  WorkerWarmPoolQueueService: class WorkerWarmPoolQueueService {},
+}));
+
+jest.mock('@core/services/centrifugo.service', () => ({
+  CentrifugoService: class CentrifugoService {},
 }));
 
 jest.mock('uuid', () => ({
@@ -37,26 +39,28 @@ function buildUseCase(
     currentServerStatusId?: EServerStatus;
     currentServerId?: string;
     nextServerId?: string;
-    cleanupError?: unknown;
-    disconnectError?: unknown;
+    currentWorkerType?: EWorkerType;
+    warmPool?: {
+      warm_pool_id: string;
+      container_id?: string | null;
+      container_name?: string | null;
+      session_volume_name?: string | null;
+    } | null;
   } = {}
 ) {
   const callOrder: string[] = [];
   const currentServerId = overrides.currentServerId ?? 'server-old';
   const nextServerId = overrides.nextServerId ?? 'server-new';
+  const currentWorkerType = overrides.currentWorkerType ?? EWorkerType.wwebjs;
 
   const workerService = {
     viewWorkerType: jest.fn(async () => ({
-      worker_type_id: EWorkerType.wwebjs,
+      worker_type_id: currentWorkerType,
     })),
     viewWorkerBalancer: jest.fn(async () => ({
       server_id: currentServerId,
       server_status_id: overrides.currentServerStatusId ?? EServerStatus.online,
       account_id: 'account-1',
-      key: 'key-1',
-      web_domain: '10.0.2.21',
-      web_port: 3003,
-      web_protocol: 'http',
     })),
     viewWorker: jest.fn(async () => ({
       status: { id: EWorkerStatus.online },
@@ -77,74 +81,57 @@ function buildUseCase(
     existsAccountById: jest.fn(async () => true),
   };
 
-  const workerGrpcClientService = {
-    cleanupWorker: jest.fn(async () => {
-      callOrder.push('cleanup');
-      if (overrides.cleanupError) {
-        throw overrides.cleanupError;
-      }
-    }),
-    changeConnectionStatus: jest.fn(async () => {
-      callOrder.push('disconnect');
-      if (overrides.disconnectError) {
-        throw overrides.disconnectError;
-      }
-    }),
-  };
-
-  const workerRecreatorUseCase = {
-    execute: jest.fn(async () => {
-      callOrder.push('recreate');
-      return true;
-    }),
-  };
-
   const workerConfigService = {
     refreshTypingSimulationCache: jest.fn(async () => undefined),
   };
 
   const workerWarmPoolSettingsService = {
     view: jest.fn(async () => ({
+      warmup_enabled: false,
       reservation_ttl_seconds: 90,
     })),
   };
   const workerWarmPoolRepository = {
     releaseExpiredReservations: jest.fn(async () => 0),
-    reserveReady: jest.fn(async () => null),
+    reserveReady: jest.fn(async () => overrides.warmPool ?? null),
   };
-  const workerRuntimeRepository = {
-    viewByWorkerId: jest.fn(async () => null),
+  const workerLifecycleQueueService = {
+    publish: jest.fn(async (payload: { action: string }) => {
+      callOrder.push(payload.action);
+    }),
+  };
+  const workerWarmPoolQueueService = {
+    publishReplenish: jest.fn(async () => undefined),
+  };
+  const centrifugoService = {
+    publishSub: jest.fn(async () => undefined),
+    publish: jest.fn(async () => undefined),
   };
 
   const useCase = new WorkerUpdaterUseCase(
     workerService as never,
     accountService as never,
-    workerGrpcClientService as never,
-    workerRecreatorUseCase as never,
     workerConfigService as never,
     workerWarmPoolSettingsService as never,
     workerWarmPoolRepository as never,
-    workerRuntimeRepository as never
+    workerLifecycleQueueService as never,
+    workerWarmPoolQueueService as never,
+    centrifugoService as never
   );
 
   return {
     useCase,
     callOrder,
     workerService,
-    accountService,
-    workerGrpcClientService,
-    workerRecreatorUseCase,
-    workerConfigService,
-    workerWarmPoolSettingsService,
+    workerLifecycleQueueService,
     workerWarmPoolRepository,
-    workerRuntimeRepository,
     currentServerId,
     nextServerId,
   };
 }
 
 describe('WorkerUpdaterUseCase', () => {
-  it('cleans the previous server before updating and recreating on server change', async () => {
+  it('enqueues previous-server cleanup before recreate on server change', async () => {
     const deps = buildUseCase();
 
     await expect(
@@ -153,62 +140,42 @@ describe('WorkerUpdaterUseCase', () => {
         name: 'Wwebjs',
         server_id: deps.nextServerId,
       })
-    ).resolves.toBe(true);
-
-    expect(deps.workerGrpcClientService.cleanupWorker).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: EWorkerAction.cleanup,
-        worker_id: 'worker-1',
-        server_id: deps.currentServerId,
-        account_id: 'account-1',
-        remove_session: true,
-        remove_volume: true,
-        lifecycle_operation_id: 'uuid-v7',
-      })
-    );
-    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
-      'account-1',
-      expect.objectContaining({
-        worker_id: 'worker-1',
-        name: 'Wwebjs',
-        server_id: deps.nextServerId,
-      })
-    );
-    expect(deps.workerRecreatorUseCase.execute).toHaveBeenCalledWith(
-      t,
-      'account-1',
-      'worker-1',
-      {
-        remove_session: true,
-        remove_volume: true,
-        lifecycle_operation_id: 'uuid-v7',
-        previous_worker_status_id: EWorkerStatus.online,
-      }
-    );
-    expect(deps.callOrder).toEqual(['update', 'cleanup', 'recreate']);
-  });
-
-  it('aborts without updating when an accessible previous server fails cleanup', async () => {
-    const deps = buildUseCase({
-      cleanupError: Object.assign(new Error('docker removal failed'), {
-        code: GrpcStatus.INTERNAL,
-      }),
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      worker_id: 'worker-1',
+      server_id: deps.nextServerId,
+      worker_status_id: EWorkerStatus.recreating,
     });
 
-    await expect(
-      deps.useCase.execute(t, 'account-1', {
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        action: 'cleanup_previous_runtime',
         worker_id: 'worker-1',
-        name: 'Wwebjs',
-        server_id: deps.nextServerId,
+        server_id: deps.currentServerId,
+        operation_id: 'uuid-v7',
       })
-    ).rejects.toThrow('worker_removal_failed');
-
-    expect(deps.workerService.updateWorkerById).toHaveBeenCalled();
-    expect(deps.workerRecreatorUseCase.execute).not.toHaveBeenCalled();
-    expect(deps.callOrder).toEqual(['update', 'cleanup']);
+    );
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        action: 'recreate',
+        worker_id: 'worker-1',
+        server_id: deps.nextServerId,
+        remove_session: true,
+        remove_volume: true,
+        operation_id: 'uuid-v7',
+      })
+    );
+    expect(deps.callOrder).toEqual([
+      'update',
+      'cleanup_previous_runtime',
+      'recreate',
+    ]);
   });
 
-  it('continues the server change when the previous server is marked offline', async () => {
+  it('skips previous-server cleanup when the previous server is offline', async () => {
     const deps = buildUseCase({
       currentServerStatusId: EServerStatus.offline,
     });
@@ -219,34 +186,22 @@ describe('WorkerUpdaterUseCase', () => {
         name: 'Wwebjs',
         server_id: deps.nextServerId,
       })
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+    });
 
-    expect(deps.workerGrpcClientService.cleanupWorker).not.toHaveBeenCalled();
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'recreate',
+        server_id: deps.nextServerId,
+      })
+    );
     expect(deps.callOrder).toEqual(['update', 'recreate']);
   });
 
-  it.each([GrpcStatus.UNAVAILABLE, GrpcStatus.DEADLINE_EXCEEDED])(
-    'continues the server change when cleanup gRPC returns %s',
-    async (code) => {
-      const deps = buildUseCase({
-        cleanupError: Object.assign(new Error('server unavailable'), { code }),
-      });
-
-      await expect(
-        deps.useCase.execute(t, 'account-1', {
-          worker_id: 'worker-1',
-          name: 'Wwebjs',
-          server_id: deps.nextServerId,
-        })
-      ).resolves.toBe(true);
-
-      expect(deps.workerService.updateWorkerById).toHaveBeenCalled();
-      expect(deps.workerRecreatorUseCase.execute).toHaveBeenCalled();
-      expect(deps.callOrder).toEqual(['update', 'cleanup', 'recreate']);
-    }
-  );
-
-  it('does not cleanup or recreate when the selected server is unchanged', async () => {
+  it('does not enqueue lifecycle when the selected server is unchanged', async () => {
     const deps = buildUseCase({
       nextServerId: 'server-old',
     });
@@ -259,8 +214,7 @@ describe('WorkerUpdaterUseCase', () => {
       })
     ).resolves.toBe(true);
 
-    expect(deps.workerGrpcClientService.cleanupWorker).not.toHaveBeenCalled();
-    expect(deps.workerRecreatorUseCase.execute).not.toHaveBeenCalled();
+    expect(deps.workerLifecycleQueueService.publish).not.toHaveBeenCalled();
     expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
       'account-1',
       {
@@ -270,60 +224,68 @@ describe('WorkerUpdaterUseCase', () => {
     );
   });
 
-  it('continues type change when disconnecting the current worker fails', async () => {
-    const consoleErrorSpy = jest
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined);
-    const deps = buildUseCase({
-      disconnectError: Object.assign(new Error('worker command unavailable'), {
-        code: GrpcStatus.UNAVAILABLE,
-      }),
+  it('enqueues recreate without pre-cleanup on same-server type change without warm runtime', async () => {
+    const deps = buildUseCase();
+
+    await expect(
+      deps.useCase.execute(t, 'account-1', {
+        worker_id: 'worker-1',
+        name: 'Baileys',
+        worker_type: EWorkerType.baileys,
+      })
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      worker_status_id: EWorkerStatus.recreating,
     });
 
-    try {
-      await expect(
-        deps.useCase.execute(t, 'account-1', {
-          worker_id: 'worker-1',
-          name: 'Baileys',
-          worker_type: EWorkerType.baileys,
-        })
-      ).resolves.toBe(true);
-    } finally {
-      consoleErrorSpy.mockRestore();
-    }
-
-    expect(
-      deps.workerGrpcClientService.changeConnectionStatus
-    ).toHaveBeenCalledWith(
-      deps.currentServerId,
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
-        worker_id: 'worker-1',
-      }),
-      'account-1'
+        action: 'recreate',
+        worker_type_id: EWorkerType.baileys,
+        remove_session: true,
+        remove_volume: true,
+      })
     );
-    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
-      'account-1',
-      expect.objectContaining({
+  });
+
+  it('enqueues cleanup before warm activation when a warm runtime is reserved', async () => {
+    const deps = buildUseCase({
+      warmPool: {
+        warm_pool_id: 'warm-1',
+        container_id: 'container-warm',
+        container_name: 'warm-container',
+        session_volume_name: 'warm-1',
+      },
+    });
+
+    await expect(
+      deps.useCase.execute(t, 'account-1', {
         worker_id: 'worker-1',
+        name: 'Baileys',
+        worker_type: EWorkerType.baileys,
+      })
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      reason: 'warm_activation_queued',
+    });
+
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        action: 'cleanup_previous_runtime',
+        server_id: deps.currentServerId,
+      })
+    );
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        action: 'activate_warm',
+        warm_pool_id: 'warm-1',
         worker_type_id: EWorkerType.baileys,
       })
     );
-    expect(deps.workerRecreatorUseCase.execute).toHaveBeenCalledWith(
-      t,
-      'account-1',
-      'worker-1',
-      {
-        remove_session: true,
-        remove_volume: true,
-        lifecycle_operation_id: 'uuid-v7',
-        previous_worker_status_id: EWorkerStatus.online,
-      }
-    );
-    expect(deps.callOrder).toEqual([
-      'update',
-      'disconnect',
-      'update',
-      'recreate',
-    ]);
   });
 });

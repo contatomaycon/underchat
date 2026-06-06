@@ -10,7 +10,7 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
-import { logger } from '@core/plugins/telemetry/logger';
+import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 @singleton()
 export class WorkerWarmReplenishConsume {
@@ -34,7 +34,7 @@ export class WorkerWarmReplenishConsume {
     return this.consumer;
   }
 
-  async execute(server: FastifyInstance): Promise<void> {
+  async execute(_server: FastifyInstance): Promise<void> {
     if (this.consumer && this.isRunning) {
       return;
     }
@@ -89,30 +89,34 @@ export class WorkerWarmReplenishConsume {
           120_000
         );
 
-        logger.info(
-          {
-            type: 'warm_pool.replenish',
-            server_id: payload.server_id,
-            worker_type_id: payload.worker_type_id,
-            warm_pool_id: response.warm_pool_id || payload.request_id,
-            container_id: response.container_id,
-            container_name: response.container_name,
-            session_volume_name: response.session_volume_name,
-            reason: payload.reason,
-            duration_ms: Date.now() - startedAt,
-          },
-          'Warm worker replenish completed'
-        );
+        recordConnectionLifecycle({
+          stage: 'connection.service.warm_pool.replenish_completed',
+          decision: 'create_warm_worker',
+          outcome: 'success',
+          server_id: payload.server_id,
+          worker_type: payload.worker_type_id,
+          worker_type_id: payload.worker_type_id,
+          warm_pool_id: response.warm_pool_id || payload.request_id,
+          container_id: response.container_id,
+          container_name: response.container_name,
+          session_volume_name: response.session_volume_name,
+          reason: payload.reason,
+          duration_ms: Date.now() - startedAt,
+        });
       } catch (error) {
-        server.log.error(
-          {
-            err: error,
-            server_id: payload.server_id,
-            worker_type_id: payload.worker_type_id,
-            request_id: payload.request_id,
-          },
-          'Warm worker replenish failed'
-        );
+        recordConnectionLifecycle({
+          stage: 'connection.service.warm_pool.replenish_error',
+          decision: 'create_warm_worker',
+          outcome: 'error',
+          reason: 'warm_worker_replenish_failed',
+          level: 'error',
+          server_id: payload.server_id,
+          worker_type: payload.worker_type_id,
+          worker_type_id: payload.worker_type_id,
+          warm_pool_id: payload.request_id,
+          error: error instanceof Error ? error.message : String(error),
+          duration_ms: Date.now() - startedAt,
+        });
       } finally {
         await commitOffset(
           this.consumerOrThrow,

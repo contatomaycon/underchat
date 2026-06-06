@@ -52,6 +52,13 @@ describe('KafkaServiceQueueService', () => {
     expect(service.internalChatGroupMessage()).toBe(
       'internal.chat.group.message'
     );
+    expect(service.workerWarmReplenishRequest()).toBe(
+      'worker.warm.replenish.request'
+    );
+    expect(service.workerWarmDeleteRequest()).toBe(
+      'worker.warm.delete.request'
+    );
+    expect(service.workerLifecycleRequest()).toBe('worker.lifecycle.request');
 
     const topics = service.all();
 
@@ -80,6 +87,9 @@ describe('KafkaServiceQueueService', () => {
       'build.version.cancel.request',
       'internal.chat.direct.message',
       'internal.chat.group.message',
+      'worker.warm.replenish.request',
+      'worker.warm.delete.request',
+      'worker.lifecycle.request',
     ]);
 
     await expect(service.delete()).resolves.toBeUndefined();

@@ -283,7 +283,8 @@ const handleChannelCreated = async (data: ICreateWorkerResponse) => {
 
   channelConnectionChannel.value = data.worker_id;
   channelConnectionType.value = data.worker_type_id;
-  channelConnectionStatus.value = EWorkerStatus.disponible;
+  channelConnectionStatus.value =
+    data.worker_status_id ?? EWorkerStatus.creating;
   channelConnectionPhone.value = null;
   isDialogConnectionChannelShow.value = true;
 };
@@ -300,7 +301,7 @@ const handleChannelUpdated = async (data: {
 
   channelConnectionChannel.value = data.worker_id;
   channelConnectionType.value = data.worker_type;
-  channelConnectionStatus.value = EWorkerStatus.disponible;
+  channelConnectionStatus.value = EWorkerStatus.recreating;
   channelConnectionPhone.value = null;
   isDialogConnectionChannelShow.value = true;
 };
@@ -331,6 +332,12 @@ watch(isDialogConnectionChannelShow, (isOpen) => {
 
 const workerStatusHandler = (data: IBaileysConnectionState) => {
   channelsStore.updateStatusChannel(data);
+  if (
+    data.worker_id === channelConnectionChannel.value &&
+    data.worker_status_id
+  ) {
+    channelConnectionStatus.value = data.worker_status_id;
+  }
 };
 
 onMounted(async () => {
