@@ -400,25 +400,27 @@ func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state Connec
 		return err
 	}
 	req := newDynamicMessage(descs.commandNotifyWorkerStatus)
-	setDynamicString(req, "worker_id", state.WorkerID)
-	setDynamicString(req, "account_id", state.AccountID)
-	setDynamicString(req, "worker_status_id", state.WorkerStatusID)
-	setDynamicString(req, "phone", state.Phone)
-	setDynamicBool(req, "disconnected_user", state.DisconnectedUser)
-	setDynamicString(req, "connection_attempt_id", state.ConnectionAttemptID)
+	setConnectionStateMessage(req, state)
 
 	recordConnectionLifecycle(ctx, c.cfg, map[string]any{
-		"stage":             "connection.whatsmeow.balance.notify_start",
-		"decision":          "notify_worker_status",
-		"outcome":           "started",
-		"grpc_method":       "NotifyWorkerStatus",
-		"grpc_address":      c.cfg.BalanceGRPCAddress(),
-		"account_id":        state.AccountID,
-		"worker_id":         state.WorkerID,
-		"status":            state.Status,
-		"code":              state.Code,
-		"worker_status_id":  state.WorkerStatusID,
-		"disconnected_user": state.DisconnectedUser,
+		"stage":               "connection.whatsmeow.balance.notify_start",
+		"decision":            "notify_worker_status",
+		"outcome":             "started",
+		"grpc_method":         "NotifyWorkerStatus",
+		"grpc_address":        c.cfg.BalanceGRPCAddress(),
+		"account_id":          state.AccountID,
+		"worker_id":           state.WorkerID,
+		"status":              state.Status,
+		"code":                state.Code,
+		"worker_status_id":    state.WorkerStatusID,
+		"qrcode":              state.QRCode,
+		"pairing_code":        state.PairingCode,
+		"attempt":             state.Attempt,
+		"max_attempts":        state.MaxAttempts,
+		"qr_pending":          state.QRPending,
+		"qr_generated_at":     state.QRGeneratedAt,
+		"time_to_first_qr_ms": state.TimeToFirstQRMS,
+		"disconnected_user":   state.DisconnectedUser,
 	})
 	err = c.invoke(ctx, "/worker_command.WorkerCommand/NotifyWorkerStatus", req, newDynamicMessage(descs.commandResponse))
 	if err != nil {
@@ -435,21 +437,33 @@ func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state Connec
 			"status":           state.Status,
 			"code":             state.Code,
 			"worker_status_id": state.WorkerStatusID,
+			"qrcode":           state.QRCode,
+			"pairing_code":     state.PairingCode,
+			"attempt":          state.Attempt,
+			"max_attempts":     state.MaxAttempts,
+			"qr_pending":       state.QRPending,
 			"error":            err.Error(),
 		})
 		return err
 	}
 	recordConnectionLifecycle(ctx, c.cfg, map[string]any{
-		"stage":            "connection.whatsmeow.balance.notify_success",
-		"decision":         "notify_worker_status",
-		"outcome":          "success",
-		"grpc_method":      "NotifyWorkerStatus",
-		"grpc_address":     c.cfg.BalanceGRPCAddress(),
-		"account_id":       state.AccountID,
-		"worker_id":        state.WorkerID,
-		"status":           state.Status,
-		"code":             state.Code,
-		"worker_status_id": state.WorkerStatusID,
+		"stage":               "connection.whatsmeow.balance.notify_success",
+		"decision":            "notify_worker_status",
+		"outcome":             "success",
+		"grpc_method":         "NotifyWorkerStatus",
+		"grpc_address":        c.cfg.BalanceGRPCAddress(),
+		"account_id":          state.AccountID,
+		"worker_id":           state.WorkerID,
+		"status":              state.Status,
+		"code":                state.Code,
+		"worker_status_id":    state.WorkerStatusID,
+		"qrcode":              state.QRCode,
+		"pairing_code":        state.PairingCode,
+		"attempt":             state.Attempt,
+		"max_attempts":        state.MaxAttempts,
+		"qr_pending":          state.QRPending,
+		"qr_generated_at":     state.QRGeneratedAt,
+		"time_to_first_qr_ms": state.TimeToFirstQRMS,
 	})
 	return nil
 }

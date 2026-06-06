@@ -1283,7 +1283,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 					"time_to_first_qr_ms": timeToFirstQRMS,
 				})
 				log.Printf("whatsmeow qr code received worker_id=%s timeout=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, evt.Timeout, attempt, maxQRCodeGenerations)
-				m.publishStateWithAttempts(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", qrImage, true, attempt, maxQRCodeGenerations)
+				m.publishStateWithAttemptMetadata(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", qrImage, true, attempt, maxQRCodeGenerations, qrGeneratedAt, timeToFirstQRMS)
 				sendResult(ConnectionState{
 					Code:            CodeAwaitingReadQRCode,
 					Status:          "connecting",
@@ -1917,6 +1917,10 @@ func (m *WhatsAppManager) publishState(ctx context.Context, status string, code 
 }
 
 func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status string, code int, workerStatusID, phone, qrOrPair string, isNewLogin bool, attempt int, maxAttempts int) {
+	m.publishStateWithAttemptMetadata(ctx, status, code, workerStatusID, phone, qrOrPair, isNewLogin, attempt, maxAttempts, "", 0)
+}
+
+func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, status string, code int, workerStatusID, phone, qrOrPair string, isNewLogin bool, attempt int, maxAttempts int, qrGeneratedAt string, timeToFirstQRMS int) {
 	state := ConnectionState{
 		Code:                code,
 		Status:              status,
@@ -1927,6 +1931,8 @@ func (m *WhatsAppManager) publishStateWithAttempts(ctx context.Context, status s
 		Phone:               phone,
 		WorkerStatusID:      workerStatusID,
 		ConnectionAttemptID: m.getConnectionAttemptID(),
+		QRGeneratedAt:       qrGeneratedAt,
+		TimeToFirstQRMS:     timeToFirstQRMS,
 	}
 	if attempt > 0 {
 		state.Attempt = attempt
