@@ -116,7 +116,7 @@ func (cli *Client) PairPhone(ctx context.Context, phone string, showPushNotifica
 			Content: []waBinary.Node{
 				{Tag: "link_code_pairing_wrapped_companion_ephemeral_pub", Content: ephemeralKey},
 				{Tag: "companion_server_auth_key_pub", Content: cli.Store.NoiseKey.Pub[:]},
-				{Tag: "companion_platform_id", Content: clientType},
+				{Tag: "companion_platform_id", Content: string(clientType)},
 				{Tag: "companion_platform_display", Content: clientDisplayName},
 				{Tag: "link_code_pairing_nonce", Content: []byte{0}},
 			},
