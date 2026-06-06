@@ -46,6 +46,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     1,
     Number(process.env.CONNECTION_QRCODE_ACTIVE_ATTEMPT_REQUEUE_MS) || 30_000
   );
+  private readonly cachedQrMaxAgeMs = 120_000;
   private readonly supportedWorkerTypes = new Set<string>([
     EWorkerType.baileys,
     EWorkerType.wwebjs,
@@ -212,6 +213,53 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         });
         existing = null;
       }
+    }
+
+    const cachedQr = await this.getCachedQrAttemptState(
+      workerId,
+      accountId,
+      workerTypeId,
+      workerStatusId
+    );
+    if (cachedQr?.qrcode) {
+      const response = this.hydrateCachedQrResponse(cachedQr, existing);
+
+      await this.publishCachedQr(response, {
+        server_id: serverId,
+        worker_type_id: workerTypeId,
+        source,
+      });
+
+      recordConnectionLifecycle({
+        stage: 'connection.manager.qrcode_request.cached_qr_returned',
+        decision: 'return_cached_qrcode',
+        outcome: 'success',
+        reason: 'cached_qr_available',
+        server_id: serverId,
+        worker_type: workerTypeId,
+        worker_type_id: workerTypeId,
+        connection_attempt_id: response.connection_attempt_id,
+        connection_lifecycle_id: response.connection_lifecycle_id,
+        qr_pending: false,
+      });
+      recordConnectionAttemptTelemetry({
+        event: 'manager_qrcode_request_cached_qr_returned',
+        stage: 'connection.manager.qrcode_request.cached_qr_returned',
+        metric_event: 'qr_request',
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: serverId,
+        worker_type: workerTypeId,
+        connection_attempt_id: response.connection_attempt_id,
+        connection_lifecycle_id: response.connection_lifecycle_id,
+        status: response.status,
+        code: response.code,
+        outcome: 'success',
+        reason: 'cached_qr_available',
+        has_qr: true,
+      });
+
+      return response;
     }
 
     if (existing) {
@@ -454,6 +502,10 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     return `connection:qrcode:${workerId}:processed:${connectionAttemptId}`;
   }
 
+  private qrAttemptCacheKey(workerId: string): string {
+    return `connection:qrcode:${workerId}:attempt`;
+  }
+
   private async getActiveAttemptInvalidReason(
     workerId: string,
     workerTypeId: string,
@@ -496,6 +548,117 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       await this.redis.del(this.activeAttemptKey(workerId));
       return null;
     }
+  }
+
+  private async getCachedQrAttemptState(
+    workerId: string,
+    accountId: string,
+    workerTypeId: string,
+    workerStatusId?: string
+  ): Promise<IBaileysConnectionState | null> {
+    const raw = await this.redis.get(this.qrAttemptCacheKey(workerId));
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<IBaileysConnectionState>;
+      if (parsed.worker_id !== workerId || parsed.account_id !== accountId) {
+        return null;
+      }
+
+      if (!parsed.worker_type_id || parsed.worker_type_id !== workerTypeId) {
+        recordConnectionLifecycle({
+          stage: 'connection.manager.qrcode_request.cached_qr_ignored',
+          decision: 'validate_cached_qrcode_worker_type',
+          outcome: 'ignored',
+          reason: parsed.worker_type_id
+            ? 'cached_qr_worker_type_mismatch'
+            : 'cached_qr_missing_worker_type',
+          level: 'warn',
+          worker_type: workerTypeId,
+          worker_type_id: workerTypeId,
+          cached_worker_type_id: parsed.worker_type_id,
+          worker_status_id: workerStatusId,
+          connection_attempt_id: parsed.connection_attempt_id,
+          connection_lifecycle_id: parsed.connection_lifecycle_id,
+        });
+        return null;
+      }
+
+      if (!parsed.qrcode) {
+        return null;
+      }
+
+      if (this.isCachedQrExpired(parsed)) {
+        recordConnectionLifecycle({
+          stage: 'connection.manager.qrcode_request.cached_qr_ignored',
+          decision: 'validate_cached_qrcode',
+          outcome: 'ignored',
+          reason: 'cached_qr_expired',
+          level: 'warn',
+          worker_status_id: workerStatusId,
+          connection_attempt_id: parsed.connection_attempt_id,
+          connection_lifecycle_id: parsed.connection_lifecycle_id,
+        });
+        return null;
+      }
+
+      return {
+        ...parsed,
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerTypeId as EWorkerType,
+        worker_status_id: workerStatusId as EWorkerStatus | undefined,
+        qr_pending: false,
+      } as IBaileysConnectionState;
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.qrcode_request.cached_qr_read_error',
+        decision: 'read_cached_qrcode',
+        outcome: 'error',
+        reason: 'cached_qr_parse_failed',
+        level: 'warn',
+        error: getErrorMessage(error),
+      });
+      return null;
+    }
+  }
+
+  private isCachedQrExpired(state: Partial<IBaileysConnectionState>): boolean {
+    if (!state.qrcode) {
+      return true;
+    }
+
+    if (!state.qr_generated_at) {
+      return false;
+    }
+
+    const generatedAtMs = Date.parse(state.qr_generated_at);
+    if (!Number.isFinite(generatedAtMs)) {
+      return true;
+    }
+
+    return Date.now() - generatedAtMs >= this.cachedQrMaxAgeMs;
+  }
+
+  private hydrateCachedQrResponse(
+    cached: IBaileysConnectionState,
+    activeAttempt: ActiveQrAttempt | null
+  ): IBaileysConnectionState {
+    return {
+      ...cached,
+      connection_attempt_id:
+        cached.connection_attempt_id ??
+        activeAttempt?.ack.connection_attempt_id,
+      connection_lifecycle_id:
+        cached.connection_lifecycle_id ??
+        activeAttempt?.ack.connection_lifecycle_id,
+      qr_pending: false,
+      reason: cached.reason ?? 'cached_qr_available',
+    };
   }
 
   private async claimActiveAttempt(
@@ -605,6 +768,53 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         connection_attempt_id: ack.connection_attempt_id,
         connection_lifecycle_id: ack.connection_lifecycle_id,
         topic: context.topic,
+        error: getErrorMessage(error),
+      });
+    }
+  }
+
+  private async publishCachedQr(
+    state: IBaileysConnectionState,
+    context: {
+      server_id: string;
+      worker_type_id: string;
+      source: WorkerConnectionQrCodeQueueSource;
+    }
+  ): Promise<void> {
+    try {
+      await this.centrifugoService.publishSub(
+        workerCentrifugoQueue(state.account_id),
+        state
+      );
+      recordConnectionLifecycle({
+        stage: 'connection.manager.qrcode_request.cached_qr_published',
+        decision: 'publish_cached_qrcode',
+        outcome: 'published',
+        worker_id: state.worker_id,
+        account_id: state.account_id,
+        worker_type: context.worker_type_id,
+        worker_type_id: context.worker_type_id,
+        server_id: context.server_id,
+        connection_attempt_id: state.connection_attempt_id,
+        connection_lifecycle_id: state.connection_lifecycle_id,
+        source: context.source,
+        qr_pending: false,
+        has_qr: true,
+      });
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.qrcode_request.cached_qr_publish_error',
+        decision: 'publish_cached_qrcode',
+        outcome: 'error',
+        reason: 'centrifugo_publish_failed',
+        level: 'warn',
+        worker_id: state.worker_id,
+        account_id: state.account_id,
+        worker_type: context.worker_type_id,
+        worker_type_id: context.worker_type_id,
+        server_id: context.server_id,
+        connection_attempt_id: state.connection_attempt_id,
+        connection_lifecycle_id: state.connection_lifecycle_id,
         error: getErrorMessage(error),
       });
     }

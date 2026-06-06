@@ -191,6 +191,111 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     expect(deps.streamProducerService.send).not.toHaveBeenCalled();
   });
 
+  it('returns a cached QR code without duplicating the Kafka message', async () => {
+    const cachedQr = {
+      code: ECodeMessage.awaitingReadQrCode,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.baileys,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: 'attempt-cached',
+      connection_lifecycle_id: 'lifecycle-cached',
+      qrcode: 'data:image/png;base64,cached',
+      qr_generated_at: new Date().toISOString(),
+      qr_pending: false,
+      reason: 'cached_qr_available',
+    };
+    const deps = makeUseCase({
+      redisInitial: {
+        'connection:qrcode:worker-1:attempt': JSON.stringify(cachedQr),
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response).toMatchObject({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      connection_attempt_id: 'attempt-cached',
+      connection_lifecycle_id: 'lifecycle-cached',
+      qrcode: 'data:image/png;base64,cached',
+      qr_pending: false,
+    });
+    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_type_id: EWorkerType.baileys,
+        qrcode: 'data:image/png;base64,cached',
+        qr_pending: false,
+      })
+    );
+  });
+
+  it('ignores cached QR code from a different worker type', async () => {
+    const cachedQr = {
+      code: ECodeMessage.awaitingReadQrCode,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.baileys,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: 'attempt-baileys-cache',
+      connection_lifecycle_id: 'lifecycle-baileys-cache',
+      qrcode: 'data:image/png;base64,baileys',
+      qr_generated_at: new Date().toISOString(),
+      qr_pending: false,
+    };
+    const deps = makeUseCase({
+      workerTypeId: EWorkerType.wwebjs,
+      redisInitial: {
+        'connection:qrcode:worker-1:attempt': JSON.stringify(cachedQr),
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response.qrcode).toBeUndefined();
+    expect(response.connection_attempt_id).not.toBe('attempt-baileys-cache');
+    expect(deps.streamProducerService.send).toHaveBeenCalledWith(
+      'worker.worker-1.connection.qrcode',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.wwebjs,
+      }),
+      'worker-1',
+      expect.any(Array)
+    );
+  });
+
+  it('ignores cached QR code without worker type metadata', async () => {
+    const cachedQr = {
+      code: ECodeMessage.awaitingReadQrCode,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: 'attempt-legacy-cache',
+      connection_lifecycle_id: 'lifecycle-legacy-cache',
+      qrcode: 'data:image/png;base64,legacy',
+      qr_generated_at: new Date().toISOString(),
+      qr_pending: false,
+    };
+    const deps = makeUseCase({
+      workerTypeId: EWorkerType.wwebjs,
+      redisInitial: {
+        'connection:qrcode:worker-1:attempt': JSON.stringify(cachedQr),
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response.qrcode).toBeUndefined();
+    expect(response.connection_attempt_id).not.toBe('attempt-legacy-cache');
+    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
+  });
+
   it('does not reuse an already processed active QR attempt', async () => {
     const activeAttempt = {
       ack: {

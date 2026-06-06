@@ -1829,6 +1829,10 @@ export class WorkerCommandHandlerService {
     return `connection:qrcode:${workerId}:attempt`;
   }
 
+  private activeQrAttemptKey(workerId: string): string {
+    return `connection:qrcode:${workerId}:active_attempt`;
+  }
+
   private qrGeneratedAtMs(
     state: Partial<IBaileysConnectionState>
   ): number | undefined {
@@ -2250,7 +2254,11 @@ export class WorkerCommandHandlerService {
       level?: 'info' | 'warn' | 'error';
     }
   ): Promise<boolean> {
-    const normalizedState = this.normalizeQrFreshness(state);
+    const stateWithIdentity = await this.hydrateQrAttemptIdentity(state);
+    if (options.workerType && !stateWithIdentity.worker_type_id) {
+      stateWithIdentity.worker_type_id = options.workerType;
+    }
+    const normalizedState = this.normalizeQrFreshness(stateWithIdentity);
     const ttlSeconds = this.qrCacheTtlForState(normalizedState);
     const stale = await this.shouldIgnoreQrAttemptState(normalizedState);
     if (stale.ignored) {
@@ -2329,6 +2337,67 @@ export class WorkerCommandHandlerService {
     }
 
     return true;
+  }
+
+  private async hydrateQrAttemptIdentity(
+    state: IBaileysConnectionState
+  ): Promise<IBaileysConnectionState> {
+    if (state.connection_attempt_id && state.connection_lifecycle_id) {
+      return state;
+    }
+
+    try {
+      const raw = await this.redis.get(
+        this.activeQrAttemptKey(state.worker_id)
+      );
+      if (!raw) {
+        return state;
+      }
+
+      const parsed = JSON.parse(raw) as {
+        ack?: Partial<IBaileysConnectionState>;
+        worker_type_id?: EWorkerType;
+      };
+      const ack = parsed.ack;
+      if (!ack || ack.worker_id !== state.worker_id) {
+        return state;
+      }
+
+      const hydrated: IBaileysConnectionState = {
+        ...state,
+        connection_attempt_id:
+          state.connection_attempt_id ?? ack.connection_attempt_id,
+        connection_lifecycle_id:
+          state.connection_lifecycle_id ?? ack.connection_lifecycle_id,
+        worker_type_id:
+          state.worker_type_id ?? ack.worker_type_id ?? parsed.worker_type_id,
+      };
+
+      if (
+        hydrated.connection_attempt_id !== state.connection_attempt_id ||
+        hydrated.connection_lifecycle_id !== state.connection_lifecycle_id
+      ) {
+        recordConnectionQrSummary({
+          event: 'balancer_qrcode_attempt_identity_hydrated',
+          ...summarizeConnectionQrState(hydrated),
+          reason: 'active_attempt_identity_used',
+          publish_source: 'notify_worker_status',
+          level: 'info',
+        });
+      }
+
+      return hydrated;
+    } catch (err) {
+      recordConnectionQrSummary({
+        event: 'balancer_qrcode_attempt_identity_hydration_error',
+        ...summarizeConnectionQrState(state),
+        reason: 'active_attempt_identity_read_failed',
+        error: getErrorMessage(err),
+        publish_source: 'notify_worker_status',
+        level: 'warn',
+      });
+      return state;
+    }
   }
 
   private isRetryableQrRequestError(error: unknown): boolean {

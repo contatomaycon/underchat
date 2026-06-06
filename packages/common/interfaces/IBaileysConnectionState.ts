@@ -1,12 +1,14 @@
 import { EBaileysConnectionStatus } from '../enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '../enums/ECodeMessage';
 import { EWorkerStatus } from '../enums/EWorkerStatus';
+import { EWorkerType } from '../enums/EWorkerType';
 
 export interface IBaileysConnectionState {
   code: ECodeMessage;
   status: EBaileysConnectionStatus;
   worker_id: string;
   account_id: string;
+  worker_type_id?: EWorkerType;
   qrcode?: string;
   is_new_login?: boolean;
   time?: number;
