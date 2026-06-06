@@ -111,7 +111,21 @@ export class WorkerService {
     'WORKER_GRPC_PORT',
     'BALANCER_GRPC_HOST',
     'BALANCER_GRPC_PORT',
+    'OTEL_ENABLE',
+    'OTEL_LOG_LEVEL',
+    'OTEL_TRACE_SAMPLE_RATE',
+    'OTEL_ENVIRONMENT',
     'OTEL_SERVICE_NAME',
+    'OTEL_RESOURCE_ATTRIBUTES',
+    'OTEL_EXPORTER_OTLP_PROTOCOL',
+    'OTEL_EXPORTER_OTLP_ENDPOINT',
+    'OTEL_EXPORTER_OTLP_CONTAINER_ENDPOINT',
+    'MESSAGE_LIFECYCLE_DEBUG_ENABLED',
+    'MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT',
+    'MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT',
+    'CONNECTION_LIFECYCLE_DEBUG_ENABLED',
+    'CONNECTION_LIFECYCLE_DEBUG_VALUE_LIMIT',
+    'CONNECTION_LIFECYCLE_DEBUG_RAW_LIMIT',
     'PROXY_PROTOCOL',
     'PROXY_HOST',
     'PROXY_PORT',
@@ -225,6 +239,15 @@ export class WorkerService {
     }
 
     return [...envMap.entries()].map(([key, value]) => `${key}=${value}`);
+  }
+
+  private applyContainerOtelEndpoint(overrides: string[]): void {
+    const endpoint = process.env.OTEL_EXPORTER_OTLP_CONTAINER_ENDPOINT?.trim();
+    if (!endpoint) {
+      return;
+    }
+
+    overrides.push(`OTEL_EXPORTER_OTLP_ENDPOINT=${endpoint}`);
   }
 
   private buildContainerLabels(input: {
@@ -666,6 +689,8 @@ export class WorkerService {
       envOverrides.push('OTEL_SERVICE_NAME=whatsmeow');
     }
 
+    this.applyContainerOtelEndpoint(envOverrides);
+
     if (grpcHost !== undefined && grpcPort !== undefined) {
       envOverrides.push(
         `BALANCER_GRPC_HOST=${grpcHost}`,
@@ -820,6 +845,8 @@ export class WorkerService {
     if (input.imageName === EWorkerImage.whatsmeow) {
       envOverrides.push('OTEL_SERVICE_NAME=whatsmeow');
     }
+
+    this.applyContainerOtelEndpoint(envOverrides);
 
     if (input.grpcHost !== undefined && input.grpcPort !== undefined) {
       envOverrides.push(

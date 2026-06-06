@@ -1,4 +1,18 @@
 services:
+  under-otel-lgtm:
+    image: grafana/otel-lgtm:0.28.0
+    container_name: under-otel-lgtm
+    ports:
+      - '3000:3000'
+      - '4317:4317'
+      - '4318:4318'
+    volumes:
+      - ./infra/otel/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      - otel_lgtm_data:/data
+    networks:
+      - underchat
+    restart: unless-stopped
+
   under-db:
     image: postgres:latest
     container_name: under-db
@@ -295,6 +309,7 @@ services:
 
 networks:
   underchat:
+    name: underchat
 
 volumes:
   postgresql:
@@ -307,3 +322,4 @@ volumes:
   kafka_data_2:
   kafka_data_3:
   minio_data:
+  otel_lgtm_data:
