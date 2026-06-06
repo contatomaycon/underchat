@@ -135,7 +135,7 @@ func LoadConfig() (Config, error) {
 		ConnectionQRFirstQRTimeout:             envMillisDurationDefault("CONNECTION_QR_FIRST_QR_TIMEOUT_MS", 75*time.Second),
 		KafkaPollInterval:                      250 * time.Millisecond,
 		OutboundReadyTimeout:                   envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
-		KafkaSendConsumerIdleRecreateInterval:  envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 2*time.Minute),
+		KafkaSendConsumerIdleRecreateInterval:  envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
 		KafkaHandlerErrorBackoff:               envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
 		OutboundFailureReconnectThreshold:      envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
 		OutboundFailureReconnectCooldown:       envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
@@ -198,9 +198,6 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.OutboundReadyTimeout <= 0 {
 		cfg.OutboundReadyTimeout = 60 * time.Second
-	}
-	if cfg.KafkaSendConsumerIdleRecreateInterval <= 0 {
-		cfg.KafkaSendConsumerIdleRecreateInterval = 2 * time.Minute
 	}
 	if cfg.KafkaHandlerErrorBackoff <= 0 {
 		cfg.KafkaHandlerErrorBackoff = time.Second

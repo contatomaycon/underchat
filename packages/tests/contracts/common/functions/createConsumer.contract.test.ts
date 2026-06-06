@@ -169,6 +169,26 @@ describe('createConsumer managed kafka consumer', () => {
     expect(onConnected).toHaveBeenCalledTimes(1);
   });
 
+  it('does not restart a worker send consumer just because it is idle', async () => {
+    const firstConsumer = new FakeKafkaConsumer();
+    const kafka = {
+      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+
+    await connectConsumer(consumer, 'worker.w1.send.message', jest.fn());
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+
+    jest.advanceTimersByTime(5 * 60 * 1000);
+    await flushPromises();
+
+    expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
+    expect(firstConsumer.disconnect).not.toHaveBeenCalled();
+  });
+
   it('waits for QR topic assignment before reporting connected', async () => {
     const topic = 'worker.w1.connection.qrcode';
     const firstConsumer = new FakeKafkaConsumer(false);

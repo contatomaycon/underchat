@@ -105,7 +105,7 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if cfg.OutboundReadyTimeout != time.Minute {
 		t.Fatalf("unexpected outbound ready timeout %s", cfg.OutboundReadyTimeout)
 	}
-	if cfg.KafkaSendConsumerIdleRecreateInterval != 2*time.Minute {
+	if cfg.KafkaSendConsumerIdleRecreateInterval != 0 {
 		t.Fatalf("unexpected kafka send idle recreate interval %s", cfg.KafkaSendConsumerIdleRecreateInterval)
 	}
 	if cfg.KafkaHandlerErrorBackoff != time.Second {

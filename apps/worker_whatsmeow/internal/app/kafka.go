@@ -496,9 +496,6 @@ func (k *KafkaClient) consumerIdleRecreateInterval(topic string) time.Duration {
 	if !isWorkerSendTopic(topic) {
 		return 0
 	}
-	if k.cfg.KafkaSendConsumerIdleRecreateInterval <= 0 {
-		return 2 * time.Minute
-	}
 	return k.cfg.KafkaSendConsumerIdleRecreateInterval
 }
 

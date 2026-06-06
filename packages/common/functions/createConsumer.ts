@@ -48,7 +48,7 @@ const ASSIGNMENT_READY_TIMEOUT_MS = readPositiveIntegerEnv(
 const RESTART_BASE_MS = 1000;
 const RESTART_MAX_MS = 30000;
 const SEND_IDLE_RESTART_MS = Number(
-  process.env.KAFKA_CONSUMER_SEND_IDLE_RESTART_MS ?? 120000
+  process.env.KAFKA_CONSUMER_SEND_IDLE_RESTART_MS ?? 0
 );
 
 function isWorkerSendTopic(topic: string): boolean {
