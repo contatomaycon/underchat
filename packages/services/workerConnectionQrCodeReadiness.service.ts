@@ -20,6 +20,10 @@ export interface WorkerConnectionQrCodeConsumerReadinessInput {
   group_id: string;
 }
 
+export interface WorkerConnectionQrCodeReadinessHeartbeatOptions {
+  isHealthy?: () => boolean;
+}
+
 @injectable()
 export class WorkerConnectionQrCodeReadinessService {
   static readonly TTL_SECONDS = 30;
@@ -65,7 +69,8 @@ export class WorkerConnectionQrCodeReadinessService {
   }
 
   startHeartbeat(
-    input: WorkerConnectionQrCodeConsumerReadinessInput
+    input: WorkerConnectionQrCodeConsumerReadinessInput,
+    options: WorkerConnectionQrCodeReadinessHeartbeatOptions = {}
   ): () => void {
     let stopped = false;
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -74,6 +79,28 @@ export class WorkerConnectionQrCodeReadinessService {
       if (stopped) {
         return;
       }
+
+      if (!this.isHeartbeatHealthy(input, options)) {
+        void this.clearReady(input, 'consumer_health_not_ready').catch(
+          (error) => {
+            recordConnectionLifecycle({
+              stage: 'connection.worker.qrcode_consumer.readiness_error',
+              decision: 'clear_qrcode_consumer_ready',
+              outcome: 'error',
+              level: 'warn',
+              worker_id: input.worker_id,
+              account_id: input.account_id,
+              worker_type: input.worker_type_id,
+              worker_type_id: input.worker_type_id,
+              topic: input.topic,
+              group_id: input.group_id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        );
+        return;
+      }
+
       void this.markReady(input).catch((error) => {
         recordConnectionLifecycle({
           stage: 'connection.worker.qrcode_consumer.readiness_error',
@@ -104,6 +131,55 @@ export class WorkerConnectionQrCodeReadinessService {
         clearInterval(interval);
       }
     };
+  }
+
+  private isHeartbeatHealthy(
+    input: WorkerConnectionQrCodeConsumerReadinessInput,
+    options: WorkerConnectionQrCodeReadinessHeartbeatOptions
+  ): boolean {
+    if (!options.isHealthy) {
+      return true;
+    }
+
+    try {
+      return options.isHealthy();
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.worker.qrcode_consumer.readiness_health_error',
+        decision: 'check_qrcode_consumer_health',
+        outcome: 'error',
+        level: 'warn',
+        worker_id: input.worker_id,
+        account_id: input.account_id,
+        worker_type: input.worker_type_id,
+        worker_type_id: input.worker_type_id,
+        topic: input.topic,
+        group_id: input.group_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  private async clearReady(
+    input: WorkerConnectionQrCodeConsumerReadinessInput,
+    reason: string
+  ): Promise<void> {
+    await this.redis.del(this.key(input.worker_id));
+
+    recordConnectionLifecycle({
+      stage: 'connection.worker.qrcode_consumer.readiness_not_ready',
+      decision: 'clear_qrcode_consumer_ready',
+      outcome: 'not_ready',
+      level: 'warn',
+      reason,
+      worker_id: input.worker_id,
+      account_id: input.account_id,
+      worker_type: input.worker_type_id,
+      worker_type_id: input.worker_type_id,
+      topic: input.topic,
+      group_id: input.group_id,
+    });
   }
 
   async read(

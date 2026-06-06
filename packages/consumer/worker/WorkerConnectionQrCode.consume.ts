@@ -21,6 +21,7 @@ import {
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
 import { runWithKafkaTraceContext } from '@core/plugins/telemetry/messageLifecycleDebug';
 import { startHeartbeat } from '@core/common/functions/startHeartbeat';
+import { getManagedKafkaConsumerHealthSnapshot } from '@core/common/functions/kafkaConsumerHealth';
 import Redis from 'ioredis';
 
 interface ActiveQrAttemptEnvelope {
@@ -113,14 +114,27 @@ export class WorkerConnectionQrCodeConsume {
 
     connectConsumer(consumer, topic, () => {
       this.isRunning = true;
-      this.stopReadinessHeartbeat = this.readinessService.startHeartbeat({
-        worker_id: workerId,
-        account_id: baileysEnvironment.baileysAccountId,
-        worker_type_id: EWorkerType.baileys,
-        topic,
-        group_id: groupId,
-      });
+      this.stopReadinessHeartbeat = this.readinessService.startHeartbeat(
+        {
+          worker_id: workerId,
+          account_id: baileysEnvironment.baileysAccountId,
+          worker_type_id: EWorkerType.baileys,
+          topic,
+          group_id: groupId,
+        },
+        {
+          isHealthy: () => this.isConsumerReadyForTopic(topic),
+        }
+      );
     });
+  }
+
+  private isConsumerReadyForTopic(topic: string): boolean {
+    const health = getManagedKafkaConsumerHealthSnapshot(this.consumer);
+
+    return Boolean(
+      health?.connected && health.consuming && health.topics.includes(topic)
+    );
   }
 
   private async handleMessage(

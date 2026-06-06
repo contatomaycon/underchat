@@ -37,7 +37,10 @@ interface ActiveQrAttempt {
 
 @injectable()
 export class WorkerConnectionQrCodeRequesterUseCase {
-  private readonly activeAttemptTtlSeconds = 180;
+  private readonly activeAttemptTtlSeconds = Math.max(
+    180,
+    Number(process.env.CONNECTION_QRCODE_ACTIVE_ATTEMPT_TTL_SECONDS) || 600
+  );
   private readonly activeAttemptRequeueAfterMs = Math.max(
     1,
     Number(process.env.CONNECTION_QRCODE_ACTIVE_ATTEMPT_REQUEUE_MS) || 30_000
