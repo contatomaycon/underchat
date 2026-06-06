@@ -631,8 +631,13 @@ export const fetchRecentHistoryAndProcess = async (
     return 0;
   }
 
-  const historyResult = await sub.history({ limit });
-  const publications = historyResult.publications ?? [];
+  const historyResult = await sub.history({ limit, reverse: true });
+  const publications = [...(historyResult.publications ?? [])].sort((a, b) => {
+    if (a.offset && b.offset) return a.offset - b.offset;
+    if (a.offset) return -1;
+    if (b.offset) return 1;
+    return 0;
+  });
   let processed = 0;
 
   for (const pub of publications) {

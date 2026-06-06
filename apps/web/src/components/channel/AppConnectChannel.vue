@@ -77,6 +77,7 @@ const secondsNextAttempt = shallowRef(0);
 const intervalIdNextAttempt = shallowRef<number | null>(null);
 const pairingStartedAt = shallowRef<number | null>(null);
 const connectedStateDelayTimeout = shallowRef<number | null>(null);
+const lastConnectionPublicationOffset = shallowRef(0);
 
 const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   status: statusConnection.value,
@@ -113,6 +114,12 @@ const isConnectionPreparing = computed(
 );
 const isWorkerReadyForQr = computed(
   () => workerStatusId.value === EWorkerStatus.disponible
+);
+const hasActiveConnectionCode = computed(
+  () =>
+    Boolean(qrcode.value) ||
+    Boolean(pairingCodePrimary.value) ||
+    Boolean(pairingCodeSecondary.value)
 );
 const isActionLocked = computed(
   () =>
@@ -434,6 +441,10 @@ async function requestQrCodeIfReady(
     return;
   }
 
+  if (!options.force && hasActiveConnectionCode.value) {
+    return;
+  }
+
   isRequestingQr.value = true;
   prepareConnectionStart({ preserveQr: options.preserveQr });
 
@@ -653,8 +664,28 @@ function handleCentrifugoRecoveryFailed(event: Event) {
   void recoverQrAfterCentrifugoRecoveryFailure();
 }
 
-function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+function shouldProcessConnectionPublication(ctx?: { offset?: number }): boolean {
+  if (!ctx?.offset) {
+    return true;
+  }
+
+  if (ctx.offset <= lastConnectionPublicationOffset.value) {
+    return false;
+  }
+
+  lastConnectionPublicationOffset.value = ctx.offset;
+  return true;
+}
+
+function handleWorkerConnectionMessage(
+  data: IBaileysConnectionState,
+  ctx?: { offset?: number }
+) {
   if (!channelId.value || data.worker_id !== channelId.value) {
+    return;
+  }
+
+  if (!shouldProcessConnectionPublication(ctx)) {
     return;
   }
 
@@ -676,6 +707,10 @@ function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
   }
 
   if (data.worker_status_id === EWorkerStatus.creating) {
+    if (hasActiveConnectionCode.value || qrPending.value) {
+      return;
+    }
+
     isResetting.value = false;
     prepareConnectionStart();
     return;

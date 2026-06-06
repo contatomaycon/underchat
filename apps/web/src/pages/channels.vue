@@ -16,7 +16,11 @@ import { getUser } from '@/@webcore/localStorage/user';
 import { DataTableHeader } from 'vuetify';
 import { ListWorkerResponse } from '@core/schema/worker/listWorker/response.schema';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
-import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
+import {
+  fetchRecentHistoryAndProcess,
+  onMessage,
+  unsubscribe,
+} from '@/@webcore/centrifugo';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
@@ -122,6 +126,7 @@ const channelConnectionType = ref<string | null>(null);
 const channelConnectionStatus = ref<string | null>(null);
 const channelConnectionPhone = ref<string | null>(null);
 const isDialogConnectionChannelShow = ref(false);
+const workerStatusOffsets = new Map<string, number>();
 
 const channelConnectionLogs = ref<string | null>(null);
 const isDialogConnectionLogsShow = ref(false);
@@ -336,7 +341,31 @@ watch(isDialogConnectionChannelShow, (isOpen) => {
   }
 });
 
-const workerStatusHandler = (data: IBaileysConnectionState) => {
+const shouldProcessWorkerStatusEvent = (
+  data: IBaileysConnectionState,
+  ctx?: { offset?: number }
+): boolean => {
+  if (!ctx?.offset) {
+    return true;
+  }
+
+  const currentOffset = workerStatusOffsets.get(data.worker_id);
+  if (currentOffset && ctx.offset <= currentOffset) {
+    return false;
+  }
+
+  workerStatusOffsets.set(data.worker_id, ctx.offset);
+  return true;
+};
+
+const workerStatusHandler = (
+  data: IBaileysConnectionState,
+  ctx?: { offset?: number }
+) => {
+  if (!shouldProcessWorkerStatusEvent(data, ctx)) {
+    return;
+  }
+
   channelsStore.updateStatusChannel(data);
   if (
     data.worker_id === channelConnectionChannel.value &&
@@ -348,10 +377,9 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
 
 onMounted(async () => {
   if (user?.account_id) {
-    await onMessage(
-      workerCentrifugoQueue(user.account_id),
-      workerStatusHandler
-    );
+    const channel = workerCentrifugoQueue(user.account_id);
+    await onMessage(channel, workerStatusHandler);
+    await fetchRecentHistoryAndProcess(channel, workerStatusHandler);
   }
 });
 
