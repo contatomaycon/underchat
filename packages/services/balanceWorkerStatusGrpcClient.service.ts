@@ -10,6 +10,7 @@ import {
 } from '@grpc/grpc-js';
 import { balanceEnvironment } from '@core/config/environments';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 import { IResolveIncomingCallActionRequestProto } from '@core/common/interfaces/IResolveIncomingCallActionRequestProto';
 import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces/IResolveIncomingCallActionResponseProto';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
@@ -61,14 +62,12 @@ export class BalanceWorkerStatusGrpcClientService {
       );
     }
 
-    const protoPayload = {
+    const protoPayload = connectionStateToProto({
+      ...payload,
       worker_id: workerId,
       account_id: accountId,
       worker_status_id: workerStatusId,
-      phone: payload.phone ?? '',
-      disconnected_user: payload.disconnected_user ?? false,
-      connection_attempt_id: payload.connection_attempt_id ?? '',
-    };
+    });
 
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
     const metadata = injectGrpcConnectionMetadata(new Metadata());
@@ -88,7 +87,11 @@ export class BalanceWorkerStatusGrpcClientService {
       code: payload.code,
       has_qr: Boolean(payload.qrcode),
       has_pairing_code: Boolean(payload.pairing_code),
+      qr_pending: payload.qr_pending === true,
       connection_attempt_id: payload.connection_attempt_id,
+      connection_lifecycle_id: payload.connection_lifecycle_id,
+      qr_generated_at: payload.qr_generated_at,
+      time_to_first_qr_ms: payload.time_to_first_qr_ms,
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -112,6 +115,7 @@ export class BalanceWorkerStatusGrpcClientService {
               worker_id: workerId,
               worker_status_id: workerStatusId,
               connection_attempt_id: payload.connection_attempt_id,
+              connection_lifecycle_id: payload.connection_lifecycle_id,
               error: err.message,
             });
             reject(err);
@@ -128,6 +132,9 @@ export class BalanceWorkerStatusGrpcClientService {
             worker_id: workerId,
             worker_status_id: workerStatusId,
             connection_attempt_id: payload.connection_attempt_id,
+            connection_lifecycle_id: payload.connection_lifecycle_id,
+            has_qr: Boolean(payload.qrcode),
+            qr_pending: payload.qr_pending === true,
           });
           resolve();
         }

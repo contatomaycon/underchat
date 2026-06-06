@@ -476,6 +476,40 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
   });
 
+  it('preserves QR state from worker status notifications', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.disponible,
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      qrcode: 'data:image/png;base64,qr',
+      connection_attempt_id: 'attempt-1',
+      qr_generated_at: new Date().toISOString(),
+      time_to_first_qr_ms: 1335,
+    });
+
+    expect(deps.redis.setex).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:attempt',
+      expect.any(Number),
+      expect.stringContaining('"qrcode":"data:image/png;base64,qr"')
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        qrcode: 'data:image/png;base64,qr',
+        connection_attempt_id: 'attempt-1',
+        qr_pending: false,
+      })
+    );
+  });
+
   it('returns only async pending ack for QR requests without worker QR gRPC', async () => {
     const deps = buildHandler();
 

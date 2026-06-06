@@ -59,6 +59,28 @@ message NotifyWorkerStatusRequest {
   string phone = 4;
   bool disconnected_user = 5;
   string connection_attempt_id = 6;
+  int32 code = 7;
+  string status = 8;
+  string qrcode = 9;
+  bool is_new_login = 10;
+  int64 time = 11;
+  string pairing_code = 12;
+  int32 seconds_until_next_attempt = 13;
+  int32 attempt = 14;
+  int32 max_attempts = 15;
+  bool qr_pending = 16;
+  string proxy_status = 17;
+  string proxy_error_code = 18;
+  string proxy_fallback = 19;
+  bool proxy_bypassed = 20;
+  string qr_generated_at = 21;
+  string connection_lifecycle_id = 22;
+  string reason = 23;
+  string error = 24;
+  int32 time_to_first_qr_ms = 25;
+  string container_id = 26;
+  int32 runtime_generation = 27;
+  string warm_pool_id = 28;
 }
 
 message WorkerConnectionState {

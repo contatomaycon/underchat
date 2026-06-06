@@ -1165,8 +1165,14 @@ export class WorkerCommandHandlerService {
       decision: 'notify_worker_status',
       outcome: 'received',
       worker_status_id: workerStatusId,
+      status: input.status,
+      code: input.code,
       connection_attempt_id: input.connection_attempt_id,
+      connection_lifecycle_id: input.connection_lifecycle_id,
       has_phone: Boolean(input.phone),
+      has_qr: Boolean(input.qrcode),
+      has_pairing_code: Boolean(input.pairing_code),
+      qr_pending: input.qr_pending === true,
       disconnected_user: input.disconnected_user === true,
     });
 
@@ -1179,26 +1185,41 @@ export class WorkerCommandHandlerService {
         level: 'warn',
         worker_status_id: workerStatusId,
         connection_attempt_id: input.connection_attempt_id,
+        connection_lifecycle_id: input.connection_lifecycle_id,
       });
       throw new Error(
         'Missing required fields: worker_id, account_id, worker_status_id'
       );
     }
 
+    const payload = this.buildNotifyWorkerStatusPayload(
+      input,
+      workerId,
+      accountId,
+      workerStatusId
+    );
+    const shouldPublishAsQrAttempt = this.isNotifyQrAttemptState(payload);
     const isDisponibleWithDisconnectedUser =
       workerStatusId === EWorkerStatus.disponible &&
       input.disconnected_user === true;
 
-    const payload: IBaileysConnectionState = {
-      code: ECodeMessage.info,
-      status: EBaileysConnectionStatus.info,
-      worker_id: workerId,
-      account_id: accountId,
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.command_handler.notify_status_payload_built',
+      decision: 'notify_worker_status',
+      outcome: 'success',
       worker_status_id: workerStatusId,
-      phone: input.phone ?? undefined,
-      disconnected_user: input.disconnected_user ?? undefined,
-      connection_attempt_id: input.connection_attempt_id ?? undefined,
-    };
+      status: payload.status,
+      code: payload.code,
+      connection_attempt_id: payload.connection_attempt_id,
+      connection_lifecycle_id: payload.connection_lifecycle_id,
+      has_phone: Boolean(payload.phone),
+      has_qr: Boolean(payload.qrcode),
+      has_pairing_code: Boolean(payload.pairing_code),
+      qr_pending: payload.qr_pending === true,
+      publish_source: shouldPublishAsQrAttempt
+        ? 'notify_qrcode_attempt'
+        : 'notify_worker_status',
+    });
 
     if (isDisponibleWithDisconnectedUser) {
       const updateInput: IUpdateWorker = {
@@ -1219,7 +1240,10 @@ export class WorkerCommandHandlerService {
         decision: 'notify_worker_status',
         outcome: 'success',
         worker_status_id: workerStatusId,
-        connection_attempt_id: input.connection_attempt_id,
+        status: payload.status,
+        code: payload.code,
+        connection_attempt_id: payload.connection_attempt_id,
+        connection_lifecycle_id: payload.connection_lifecycle_id,
         disconnected_user: true,
       });
 
@@ -1239,6 +1263,11 @@ export class WorkerCommandHandlerService {
         outcome: 'deferred',
         reason: 'worker_lifecycle_readiness_pending',
         worker_status_id: workerStatusId,
+        status: payload.status,
+        code: payload.code,
+        connection_attempt_id: payload.connection_attempt_id,
+        connection_lifecycle_id: payload.connection_lifecycle_id,
+        has_qr: Boolean(payload.qrcode),
       });
       return;
     }
@@ -1246,7 +1275,7 @@ export class WorkerCommandHandlerService {
     const view =
       await this.workerService.viewWorkerPhoneConnectionDate(workerId);
 
-    const inputPhone = input.phone?.trim() || null;
+    const inputPhone = payload.phone?.trim() || null;
     const phoneNumber = inputPhone ?? view?.number ?? null;
 
     let connectionDate = view?.connection_date;
@@ -1261,18 +1290,172 @@ export class WorkerCommandHandlerService {
       connection_date: connectionDate,
     });
 
-    await Promise.all([
-      this.centrifugoPublish(payload),
-      this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
-    ]);
+    let qrAttemptPublished: boolean | undefined;
+    if (shouldPublishAsQrAttempt) {
+      qrAttemptPublished = await this.cacheAndPublishQrAttemptState(payload, {
+        event: payload.qrcode
+          ? 'balancer_qrcode_notify_status_generated'
+          : 'balancer_qrcode_notify_status_pending',
+        reason: payload.reason ?? 'notify_worker_status',
+        timeToFirstQrMs: payload.time_to_first_qr_ms,
+        publishSource: 'notify_worker_status',
+        level: payload.qrcode ? 'info' : 'warn',
+      });
+
+      if (qrAttemptPublished) {
+        await this.centrifugoService.publish(
+          channelsConfigCentrifugo(),
+          payload
+        );
+      }
+    } else {
+      await Promise.all([
+        this.centrifugoPublish(payload),
+        this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
+      ]);
+    }
+
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.notify_status_success',
       decision: 'notify_worker_status',
       outcome: 'success',
       worker_status_id: workerStatusId,
-      connection_attempt_id: input.connection_attempt_id,
+      status: payload.status,
+      code: payload.code,
+      connection_attempt_id: payload.connection_attempt_id,
+      connection_lifecycle_id: payload.connection_lifecycle_id,
       has_phone: Boolean(phoneNumber),
+      has_qr: Boolean(payload.qrcode),
+      has_pairing_code: Boolean(payload.pairing_code),
+      qr_pending: payload.qr_pending === true,
+      qr_attempt_published: qrAttemptPublished,
     });
+  }
+
+  private buildNotifyWorkerStatusPayload(
+    input: INotifyWorkerStatusRequestProto,
+    workerId: string,
+    accountId: string,
+    workerStatusId: EWorkerStatus
+  ): IBaileysConnectionState {
+    const payload: IBaileysConnectionState = {
+      code: this.normalizeNotifyCode(input.code),
+      status: this.normalizeNotifyStatus(input.status),
+      worker_id: workerId,
+      account_id: accountId,
+      worker_status_id: workerStatusId,
+      phone: input.phone || undefined,
+      disconnected_user: input.disconnected_user ?? undefined,
+      connection_attempt_id: input.connection_attempt_id || undefined,
+      connection_lifecycle_id: input.connection_lifecycle_id || undefined,
+      qrcode: input.qrcode || undefined,
+      pairing_code: input.pairing_code || undefined,
+      qr_pending: input.qr_pending === true ? true : undefined,
+      qr_generated_at: input.qr_generated_at || undefined,
+      reason: input.reason || undefined,
+      error: input.error || undefined,
+      container_id: input.container_id || undefined,
+      warm_pool_id: input.warm_pool_id || undefined,
+    };
+
+    if (input.proxy_status) {
+      payload.proxy_status =
+        input.proxy_status as IBaileysConnectionState['proxy_status'];
+    }
+    if (input.proxy_error_code) {
+      payload.proxy_error_code = input.proxy_error_code;
+    }
+    if (input.proxy_fallback) {
+      payload.proxy_fallback =
+        input.proxy_fallback as IBaileysConnectionState['proxy_fallback'];
+    }
+    if (input.proxy_bypassed === true) {
+      payload.proxy_bypassed = true;
+    }
+    if (input.is_new_login === true) {
+      payload.is_new_login = true;
+    }
+
+    const attempt = this.normalizeNotifyOptionalNumber(input.attempt);
+    const maxAttempts = this.normalizeNotifyOptionalNumber(input.max_attempts);
+    const time = this.normalizeNotifyOptionalNumber(input.time);
+    const secondsUntilNextAttempt = this.normalizeNotifyOptionalNumber(
+      input.seconds_until_next_attempt
+    );
+    const timeToFirstQrMs = this.normalizeNotifyOptionalNumber(
+      input.time_to_first_qr_ms
+    );
+    const runtimeGeneration = this.normalizeNotifyOptionalNumber(
+      input.runtime_generation
+    );
+
+    if (attempt !== undefined) payload.attempt = attempt;
+    if (maxAttempts !== undefined) payload.max_attempts = maxAttempts;
+    if (time !== undefined) payload.time = time;
+    if (secondsUntilNextAttempt !== undefined) {
+      payload.seconds_until_next_attempt = secondsUntilNextAttempt;
+    }
+    if (timeToFirstQrMs !== undefined) {
+      payload.time_to_first_qr_ms = timeToFirstQrMs;
+    }
+    if (runtimeGeneration !== undefined) {
+      payload.runtime_generation = runtimeGeneration;
+    }
+    if (payload.qrcode && payload.qr_pending !== true) {
+      payload.qr_pending = false;
+    }
+
+    return payload;
+  }
+
+  private normalizeNotifyCode(code: unknown): ECodeMessage {
+    const value = this.normalizeNotifyOptionalNumber(code);
+    const validCodes = Object.values(ECodeMessage).filter(
+      (candidate): candidate is ECodeMessage => typeof candidate === 'number'
+    );
+
+    return value !== undefined && validCodes.includes(value as ECodeMessage)
+      ? (value as ECodeMessage)
+      : ECodeMessage.info;
+  }
+
+  private normalizeNotifyStatus(
+    statusValue: unknown
+  ): EBaileysConnectionStatus {
+    if (
+      typeof statusValue === 'string' &&
+      Object.values(EBaileysConnectionStatus).includes(
+        statusValue as EBaileysConnectionStatus
+      )
+    ) {
+      return statusValue as EBaileysConnectionStatus;
+    }
+
+    return EBaileysConnectionStatus.info;
+  }
+
+  private normalizeNotifyOptionalNumber(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value) && value !== 0) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number.parseInt(value, 10);
+      return Number.isFinite(parsed) && parsed !== 0 ? parsed : undefined;
+    }
+
+    return undefined;
+  }
+
+  private isNotifyQrAttemptState(payload: IBaileysConnectionState): boolean {
+    return (
+      Boolean(payload.qrcode) ||
+      Boolean(payload.pairing_code) ||
+      payload.qr_pending === true ||
+      payload.code === ECodeMessage.awaitingReadQrCode ||
+      payload.code === ECodeMessage.awaitingPairingCode ||
+      payload.code === ECodeMessage.pairingInProgress
+    );
   }
 
   private async shouldDeferDisponibleWorkerNotification(

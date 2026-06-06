@@ -323,8 +323,14 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         outcome: 'received',
         grpc_method: 'NotifyWorkerStatus',
         worker_status_id: req.worker_status_id,
+        status: req.status,
+        code: req.code,
         connection_attempt_id: req.connection_attempt_id,
+        connection_lifecycle_id: req.connection_lifecycle_id,
         has_phone: Boolean(req.phone),
+        has_qr: Boolean(req.qrcode),
+        has_pairing_code: Boolean(req.pairing_code),
+        qr_pending: req.qr_pending === true,
         disconnected_user: req.disconnected_user === true,
       });
 
@@ -338,7 +344,12 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
             outcome: 'success',
             grpc_method: 'NotifyWorkerStatus',
             worker_status_id: req.worker_status_id,
+            status: req.status,
+            code: req.code,
             connection_attempt_id: req.connection_attempt_id,
+            connection_lifecycle_id: req.connection_lifecycle_id,
+            has_qr: Boolean(req.qrcode),
+            qr_pending: req.qr_pending === true,
           });
           callback(null, {});
         })
@@ -353,6 +364,12 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
             level: 'error',
             grpc_method: 'NotifyWorkerStatus',
             worker_status_id: req.worker_status_id,
+            status: req.status,
+            code: req.code,
+            connection_attempt_id: req.connection_attempt_id,
+            connection_lifecycle_id: req.connection_lifecycle_id,
+            has_qr: Boolean(req.qrcode),
+            qr_pending: req.qr_pending === true,
             error: msg,
           });
           fastify.log.error(
