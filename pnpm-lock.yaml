@@ -137,11 +137,11 @@ importers:
         specifier: ^3.6.4
         version: 3.6.4
       '@whiskeysockets/baileys':
-        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/229
-        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/229(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
+        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/232
+        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/232(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)
       '@wwebjs/whatsapp-web.js':
-        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/230
-        version: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/230(typescript@5.9.3)
+        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/231
+        version: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/231(typescript@5.9.3)
       audio-decode:
         specifier: ^2.2.3
         version: 2.2.3
@@ -1711,6 +1711,9 @@ packages:
 
   '@borewit/text-codec@0.2.1':
     resolution: {integrity: sha512-k7vvKPbf7J2fZ5klGRD9AeKfUvojuZIQ3BT5u7Jfv+puwXkUBUT5PVyMDfJZpy30CBDXGMgw7fguK/lpOMBvgw==}
+
+  '@borewit/text-codec@0.2.2':
+    resolution: {integrity: sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==}
 
   '@cacheable/memory@2.0.7':
     resolution: {integrity: sha512-RbxnxAMf89Tp1dLhXMS7ceft/PGsDl1Ip7T20z5nZ+pwIAsQ1p2izPjVG69oCLv/jfQ7HDPHTWK0c9rcAWXN3A==}
@@ -5784,13 +5787,13 @@ packages:
   '@wasm-audio-decoders/opus-ml@0.0.2':
     resolution: {integrity: sha512-58rWEqDGg+CKCyEeKm2KoxxSwTWtHh/NLTW9ObR4K8CGF6VwuuGudEI1CtniS/oSRmL1nJq/eh8MKARiluw4DQ==}
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/229':
-    resolution: {integrity: sha512-ZgaC4WS3Juo+h/HaZNgfF+XmLj1xRQzA35foizHcPziuW9qudxUbcZXPWUmpaVJJViikdiFRPMHey3uqk7gt/Q==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/229}
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/232':
+    resolution: {integrity: sha512-qbYUCOtHxw7b/xCXXKguKiO8u9iL74UmrNJtZJ3JhYa4TwpgGa2MSM0cH7PMXRMB51Rf/nUPy8urwbeoQm7GIA==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/232}
     version: 1.0.1
     engines: {node: '>=20.0.0'}
     peerDependencies:
       audio-decode: ^2.1.3
-      jimp: ^1.6.0
+      jimp: ^1.6.1
       link-preview-js: ^3.0.0
       sharp: '*'
     peerDependenciesMeta:
@@ -5801,8 +5804,8 @@ packages:
       link-preview-js:
         optional: true
 
-  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/230':
-    resolution: {integrity: sha512-s1wtFTeTNsAsqrsIO7GvQEJkqA0NBNDk5v96vcB37Bux5huIgiPXSa3y6uIr+fMCD86jv0DCcYwK4QQkiELAig==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/230}
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/231':
+    resolution: {integrity: sha512-tAUbNgjKFz7eGKPWZCGEfLcneVhCFo5dJnWmG3IyGJPE4LfrREZhVT08bGAWzGr9YYA58zy1nv8fsdoKEZGBPA==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/231}
     version: 1.34.8
     engines: {node: '>=18.0.0'}
 
@@ -8294,6 +8297,10 @@ packages:
     resolution: {integrity: sha512-8kPJMIGz1Yt/aPEwOsrR97ZyZaD1Iqm8PClb1nYFclUCkBi0Ma5IsYNQzvSFS9ib51lWyIw5mIT9rWzI/xjpzA==}
     engines: {node: '>=20'}
 
+  file-type@21.3.4:
+    resolution: {integrity: sha512-Ievi/yy8DS3ygGvT47PjSfdFoX+2isQueoYP1cntFW1JLYAuS4GD7NUPGg4zv2iZfV52uDyk5w5Z0TdpRS6Q1g==}
+    engines: {node: '>=20'}
+
   file-uri-to-path@1.0.0:
     resolution: {integrity: sha512-0Zt+s3L7Vf1biwWZ29aARiVYLx7iMGnEUl9x33fbB/j3jR81u/O2LbqK+Bm1CDSNDKVtJ/YjwY7TUd5SkeLQLw==}
 
@@ -9554,9 +9561,8 @@ packages:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
 
-  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
-    resolution: {tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7}
-    version: 6.0.0
+  libsignal@6.0.0:
+    resolution: {integrity: sha512-d/5V3YFtDljbFMufz4ncyUYGYhJl+vzAe+c2EFFBQ6bz1h8Q3IOMEGXYMzlibU60I+e8GagMMpji18iez3P1hA==}
 
   lie@3.3.0:
     resolution: {integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==}
@@ -10233,8 +10239,8 @@ packages:
   murmurhash-js@1.0.0:
     resolution: {integrity: sha512-TvmkNhkv8yct0SVBSy+o8wYzXjE4Zz3PCesbfs8HiCXXdcTuocApFv11UWlNFWKYsP2okqrhb7JNlSm9InBhIw==}
 
-  music-metadata@11.12.1:
-    resolution: {integrity: sha512-j++ltLxHDb5VCXET9FzQ8bnueiLHwQKgCO7vcbkRH/3F7fRjPkv6qncGEJ47yFhmemcYtgvsOAlcQ1dRBTkDjg==}
+  music-metadata@11.12.3:
+    resolution: {integrity: sha512-n6hSTZkuD59qWgHh6IP5dtDlDZQXoxk/bcA85Jywg8Z1iFrlNgl2+GTFgjZyn52W5UgQpV42V4XqrQZZAMbZTQ==}
     engines: {node: '>=18'}
 
   mustache@4.2.0:
@@ -13068,8 +13074,8 @@ packages:
   webpack-virtual-modules@0.6.2:
     resolution: {integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==}
 
-  whatsapp-rust-bridge@0.5.3:
-    resolution: {integrity: sha512-Xb3GAgtWQQJ30oI4a4pjM4+YUeli9CMLTwTIewUrb+AJMFElIkiT5uo+j1Zhc+amiV0Jj+LfX76c/EEZirJbGA==}
+  whatsapp-rust-bridge@0.5.4:
+    resolution: {integrity: sha512-yYO1qSs0Fe7tGtnxOFHomocUD6IZtoAgmA4oDFyGIRZ67D3QZk3w7swA6XXFXNQngiyrg2k7tul6IrM3eUFh7A==}
 
   whatwg-fetch@3.6.20:
     resolution: {integrity: sha512-EqhiFU6daOA8kpjOWTL0olhVOF3i7OrFzSYiGsEMB8GcXS+RrzauAERX65xMeNWVqxA6HXH2m69Z9LaKKdisfg==}
@@ -14595,6 +14601,8 @@ snapshots:
   '@bcoe/v8-coverage@0.2.3': {}
 
   '@borewit/text-codec@0.2.1': {}
+
+  '@borewit/text-codec@0.2.2': {}
 
   '@cacheable/memory@2.0.7':
     dependencies:
@@ -19649,19 +19657,19 @@ snapshots:
     dependencies:
       '@wasm-audio-decoders/common': 9.0.7
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/229(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)':
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/232(audio-decode@2.2.3)(link-preview-js@4.0.0)(sharp@0.34.5)':
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
       async-mutex: 0.5.0
-      libsignal: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7
+      libsignal: 6.0.0
       lru-cache: 11.2.6
-      music-metadata: 11.12.1
+      music-metadata: 11.12.3
       p-queue: 9.1.2
       pino: 9.14.0
-      protobufjs: 7.5.4
+      protobufjs: 7.6.2
       sharp: 0.34.5
-      whatsapp-rust-bridge: 0.5.3
+      whatsapp-rust-bridge: 0.5.4
       ws: 8.19.0
     optionalDependencies:
       audio-decode: 2.2.3
@@ -19671,7 +19679,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/230(typescript@5.9.3)':
+  '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/231(typescript@5.9.3)':
     dependencies:
       archiver: 7.0.1
       fluent-ffmpeg: 2.1.3
@@ -22630,6 +22638,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  file-type@21.3.4:
+    dependencies:
+      '@tokenizer/inflate': 0.4.1
+      strtok3: 10.3.4
+      token-types: 6.1.2
+      uint8array-extras: 1.5.0
+    transitivePeerDependencies:
+      - supports-color
+
   file-uri-to-path@1.0.0: {}
 
   filelist@1.0.6:
@@ -24208,7 +24225,7 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
 
-  libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
+  libsignal@6.0.0:
     dependencies:
       curve25519-js: 0.0.4
       protobufjs: 7.6.2
@@ -25151,13 +25168,13 @@ snapshots:
 
   murmurhash-js@1.0.0: {}
 
-  music-metadata@11.12.1:
+  music-metadata@11.12.3:
     dependencies:
-      '@borewit/text-codec': 0.2.1
+      '@borewit/text-codec': 0.2.2
       '@tokenizer/token': 0.3.0
       content-type: 1.0.5
       debug: 4.4.3
-      file-type: 21.3.0
+      file-type: 21.3.4
       media-typer: 1.1.0
       strtok3: 10.3.4
       token-types: 6.1.2
@@ -28440,7 +28457,7 @@ snapshots:
 
   webpack-virtual-modules@0.6.2: {}
 
-  whatsapp-rust-bridge@0.5.3: {}
+  whatsapp-rust-bridge@0.5.4: {}
 
   whatwg-fetch@3.6.20: {}
 
