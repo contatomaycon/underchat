@@ -110,9 +110,16 @@ class KafkaStreamsClient implements KafkaClient {
       'fetch.min.bytes': 1, // Responde imediatamente com qualquer dado
       'fetch.error.backoff.ms': 100, // Backoff curto para fetch.wait.max.ms baixo
 
-      // Queue - otimizado para menor consumo de memória
-      'queued.min.messages': 1000,
+      // Queue - comandos locais usam tópicos de baixa volumetria; não espere lote.
+      'queued.min.messages': Math.max(
+        1,
+        Number(process.env.KAFKA_CONSUMER_QUEUED_MIN_MESSAGES) || 1
+      ),
       'queued.max.messages.kbytes': 65536, // 64MB ao invés de 1GB
+      'fetch.queue.backoff.ms': Math.max(
+        1,
+        Number(process.env.KAFKA_CONSUMER_FETCH_QUEUE_BACKOFF_MS) || 10
+      ),
 
       ...securityConfig,
     };

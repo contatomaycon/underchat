@@ -184,6 +184,8 @@ export class WorkerConnectionQrCodeWwebjsConsume {
     partition: number,
     offset: number
   ): Promise<void> {
+    const queueLatencyMs = this.getQueueLatencyMs(data);
+
     recordConnectionLifecycle({
       stage: 'connection.wwebjs.qrcode_queue.received',
       decision: 'consume_connection_qrcode_request',
@@ -195,6 +197,8 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       connection_attempt_id: data.connection_attempt_id,
       connection_lifecycle_id: data.connection_lifecycle_id,
       source: data.source,
+      requested_at: data.requested_at,
+      queue_latency_ms: queueLatencyMs,
     });
 
     if (!this.isMessageForThisWorker(data)) {
@@ -260,6 +264,8 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         offset,
         connection_attempt_id: data.connection_attempt_id,
         connection_lifecycle_id: data.connection_lifecycle_id,
+        requested_at: data.requested_at,
+        queue_latency_ms: queueLatencyMs,
       });
 
       await this.markProcessed(data);
@@ -292,6 +298,17 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       data.worker_id === wwebjsEnvironment.wwebjsWorkerId &&
       data.account_id === wwebjsEnvironment.wwebjsAccountId
     );
+  }
+
+  private getQueueLatencyMs(
+    data: IWorkerConnectionQrCodeQueueMessage
+  ): number | undefined {
+    const requestedAtMs = Date.parse(data.requested_at);
+    if (!Number.isFinite(requestedAtMs)) {
+      return undefined;
+    }
+
+    return Math.max(0, Date.now() - requestedAtMs);
   }
 
   private activeAttemptKey(workerId: string): string {
