@@ -59,6 +59,7 @@ import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { defaultTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
 import {
   buildConnectionLifecycleContext,
+  getConnectionLifecycleContext,
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
@@ -1032,6 +1033,7 @@ export class WorkerCommandHandlerService {
     accountId?: string
   ): Promise<void> {
     const contextData = buildConnectionLifecycleContext({
+      connection_lifecycle_id: input.connection_lifecycle_id,
       account_id: accountId,
       worker_id: input.worker_id,
       channel_id: input.worker_id,
@@ -1039,9 +1041,17 @@ export class WorkerCommandHandlerService {
       connection_type: input.type,
       connection_action: 'change_status',
     });
+    const inputWithLifecycle: StatusConnectionWorkerRequest = {
+      ...input,
+      connection_lifecycle_id:
+        input.connection_lifecycle_id ?? contextData.connection_lifecycle_id,
+    };
 
     await runWithConnectionLifecycleContext(contextData, async () => {
-      await this.handleChangeConnectionStatusWithLifecycle(input, accountId);
+      await this.handleChangeConnectionStatusWithLifecycle(
+        inputWithLifecycle,
+        accountId
+      );
     });
   }
 
@@ -1055,6 +1065,12 @@ export class WorkerCommandHandlerService {
       type: input.type,
       phone_connection: input.phone_connection,
       remove_session: input.remove_session,
+      connection_attempt_id: input.connection_attempt_id,
+      connection_lifecycle_id: input.connection_lifecycle_id,
+      qr_request_deadline_ms: input.qr_request_deadline_ms,
+      runtime_generation: input.runtime_generation,
+      warm_pool_id: input.warm_pool_id,
+      qr_pending: input.qr_pending,
     };
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.status_change_received',
@@ -1063,6 +1079,10 @@ export class WorkerCommandHandlerService {
       status: payload.status,
       connection_type: payload.type,
       remove_session: payload.remove_session === true,
+      connection_attempt_id: payload.connection_attempt_id,
+      connection_lifecycle_id: payload.connection_lifecycle_id,
+      runtime_generation: payload.runtime_generation,
+      warm_pool_id: payload.warm_pool_id,
     });
 
     if (
@@ -1105,6 +1125,10 @@ export class WorkerCommandHandlerService {
             worker_type: workerType,
             status: payload.status,
             connection_type: payload.type,
+            connection_attempt_id: payload.connection_attempt_id,
+            connection_lifecycle_id: payload.connection_lifecycle_id,
+            runtime_generation: payload.runtime_generation,
+            warm_pool_id: payload.warm_pool_id,
           });
           await this.workerBaileysGrpcClientService.requestConnection(
             input.worker_id,
@@ -1118,6 +1142,10 @@ export class WorkerCommandHandlerService {
             worker_type: workerType,
             status: payload.status,
             connection_type: payload.type,
+            connection_attempt_id: payload.connection_attempt_id,
+            connection_lifecycle_id: payload.connection_lifecycle_id,
+            runtime_generation: payload.runtime_generation,
+            warm_pool_id: payload.warm_pool_id,
           });
         } catch (err) {
           if (this.isTopicOrPartitionMissing(err)) {
@@ -1129,6 +1157,8 @@ export class WorkerCommandHandlerService {
               level: 'warn',
               status: payload.status,
               connection_type: payload.type,
+              connection_attempt_id: payload.connection_attempt_id,
+              connection_lifecycle_id: payload.connection_lifecycle_id,
             });
             return;
           }
@@ -1141,6 +1171,10 @@ export class WorkerCommandHandlerService {
             level: 'error',
             status: payload.status,
             connection_type: payload.type,
+            connection_attempt_id: payload.connection_attempt_id,
+            connection_lifecycle_id: payload.connection_lifecycle_id,
+            runtime_generation: payload.runtime_generation,
+            warm_pool_id: payload.warm_pool_id,
             error: err instanceof Error ? err.message : String(err),
           });
           throw err;
@@ -1154,6 +1188,7 @@ export class WorkerCommandHandlerService {
     accountId?: string
   ): Promise<IBaileysConnectionState> {
     const contextData = buildConnectionLifecycleContext({
+      connection_lifecycle_id: input.connection_lifecycle_id,
       account_id: accountId,
       worker_id: input.worker_id,
       channel_id: input.worker_id,
@@ -1161,9 +1196,17 @@ export class WorkerCommandHandlerService {
       connection_type: EBaileysConnectionType.qrcode,
       connection_action: 'request_qrcode',
     });
+    const inputWithLifecycle: StatusConnectionWorkerRequest = {
+      ...input,
+      connection_lifecycle_id:
+        input.connection_lifecycle_id ?? contextData.connection_lifecycle_id,
+    };
 
     return runWithConnectionLifecycleContext(contextData, async () => {
-      return this.handleRequestConnectionQrCodeWithLifecycle(input, accountId);
+      return this.handleRequestConnectionQrCodeWithLifecycle(
+        inputWithLifecycle,
+        accountId
+      );
     });
   }
 
@@ -1177,6 +1220,12 @@ export class WorkerCommandHandlerService {
       outcome: 'received',
       status: input.status,
       connection_type: input.type,
+      connection_attempt_id: input.connection_attempt_id,
+      connection_lifecycle_id: input.connection_lifecycle_id,
+      qr_request_deadline_ms: input.qr_request_deadline_ms,
+      runtime_generation: input.runtime_generation,
+      warm_pool_id: input.warm_pool_id,
+      qr_pending: input.qr_pending === true,
     });
     if (input.type === EBaileysConnectionType.phone) {
       recordConnectionLifecycle({
@@ -2137,12 +2186,18 @@ export class WorkerCommandHandlerService {
       activeCached?.connection_attempt_id ??
       input.connection_attempt_id ??
       uuidv7();
+    const connectionLifecycleId =
+      activeCached?.connection_lifecycle_id ??
+      input.connection_lifecycle_id ??
+      getConnectionLifecycleContext()?.connection_lifecycle_id ??
+      uuidv7();
 
     const payload: StatusConnectionWorkerRequest = {
       worker_id: input.worker_id,
       status: EWorkerStatus.online,
       type: EBaileysConnectionType.qrcode,
       connection_attempt_id: connectionAttemptId,
+      connection_lifecycle_id: connectionLifecycleId,
     };
 
     if (!activeCached) {
@@ -2221,6 +2276,17 @@ export class WorkerCommandHandlerService {
     return payload.connection_attempt_id;
   }
 
+  private ensureQrConnectionLifecycleId(
+    payload: StatusConnectionWorkerRequest
+  ): string {
+    if (!payload.connection_lifecycle_id) {
+      payload.connection_lifecycle_id =
+        getConnectionLifecycleContext()?.connection_lifecycle_id ?? uuidv7();
+    }
+
+    return payload.connection_lifecycle_id;
+  }
+
   private buildQrPendingState(
     payload: StatusConnectionWorkerRequest,
     accountId: string,
@@ -2239,6 +2305,7 @@ export class WorkerCommandHandlerService {
       worker_id: payload.worker_id,
       account_id: accountId,
       connection_attempt_id: this.ensureQrConnectionAttemptId(payload),
+      connection_lifecycle_id: this.ensureQrConnectionLifecycleId(payload),
       qr_pending: true,
       reason: options.reason,
       runtime_generation: options.runtimeGeneration,
@@ -2265,6 +2332,9 @@ export class WorkerCommandHandlerService {
       connection_attempt_id:
         state.connection_attempt_id ??
         this.ensureQrConnectionAttemptId(payload),
+      connection_lifecycle_id:
+        state.connection_lifecycle_id ??
+        this.ensureQrConnectionLifecycleId(payload),
       qr_pending: true,
       reason: state.reason ?? 'queued',
     };
@@ -2288,6 +2358,9 @@ export class WorkerCommandHandlerService {
       connection_attempt_id:
         state.connection_attempt_id ??
         this.ensureQrConnectionAttemptId(payload),
+      connection_lifecycle_id:
+        state.connection_lifecycle_id ??
+        this.ensureQrConnectionLifecycleId(payload),
       qr_pending: false,
       reason: state.reason ?? 'cached_qr_available',
     };
@@ -2802,7 +2875,7 @@ export class WorkerCommandHandlerService {
   ): Promise<IBaileysConnectionState> {
     const workerId = payload.worker_id;
     this.ensureQrConnectionAttemptId(payload);
-    payload.connection_lifecycle_id ??= uuidv7();
+    this.ensureQrConnectionLifecycleId(payload);
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_workflow_start',
       decision: 'run_connection_qrcode_workflow',
@@ -2810,6 +2883,7 @@ export class WorkerCommandHandlerService {
       status: payload.status,
       connection_type: payload.type,
       connection_attempt_id: payload.connection_attempt_id,
+      connection_lifecycle_id: payload.connection_lifecycle_id,
     });
     const workerData = await this.resolveWorkerDataForContainer(
       workerId,
@@ -2974,7 +3048,7 @@ export class WorkerCommandHandlerService {
     const queuePayload: IWorkerConnectionQrCodeQueueMessage = {
       request_id: uuidv7(),
       connection_attempt_id: this.ensureQrConnectionAttemptId(payload),
-      connection_lifecycle_id: payload.connection_lifecycle_id ?? uuidv7(),
+      connection_lifecycle_id: this.ensureQrConnectionLifecycleId(payload),
       worker_id: payload.worker_id,
       account_id: workerData.accountIdResolved,
       worker_type_id: workerData.workerTypeId,

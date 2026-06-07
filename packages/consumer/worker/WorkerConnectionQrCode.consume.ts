@@ -164,6 +164,17 @@ export class WorkerConnectionQrCodeConsume {
   ): Promise<void> {
     const data = this.parseMessage(message.value);
     if (!data) {
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_queue.invalid_payload',
+        decision: 'parse_connection_qrcode_request',
+        outcome: 'ignored',
+        reason: message.value ? 'invalid_payload' : 'empty_payload',
+        level: 'warn',
+        topic,
+        group_id: groupId,
+        partition: message.partition,
+        offset: message.offset,
+      });
       await this.commitNext(topic, message.partition, message.offset);
       return;
     }
@@ -268,13 +279,49 @@ export class WorkerConnectionQrCodeConsume {
     const stop = startHeartbeat(heartbeat);
 
     try {
-      await this.workerConnectionStatusConsume.requestConnection({
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_queue.local_request_start',
+        decision: 'request_local_connection_qrcode',
+        outcome: 'started',
+        topic,
+        group_id: groupId,
+        partition,
+        offset,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+        requested_at: data.requested_at,
+        queue_latency_ms: queueLatencyMs,
+      });
+      const state = await this.workerConnectionStatusConsume.requestConnection({
         worker_id: data.worker_id,
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
         connection_attempt_id: data.connection_attempt_id,
         connection_lifecycle_id: data.connection_lifecycle_id,
         qr_pending: true,
+      });
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_queue.local_request_success',
+        decision: 'request_local_connection_qrcode',
+        outcome: 'success',
+        topic,
+        group_id: groupId,
+        partition,
+        offset,
+        status: state.status,
+        code: state.code,
+        worker_status_id: state.worker_status_id,
+        connection_attempt_id:
+          state.connection_attempt_id ?? data.connection_attempt_id,
+        connection_lifecycle_id:
+          state.connection_lifecycle_id ?? data.connection_lifecycle_id,
+        requested_at: data.requested_at,
+        queue_latency_ms: queueLatencyMs,
+        has_qr: Boolean(state.qrcode),
+        has_pairing_code: Boolean(state.pairing_code),
+        qr_pending: state.qr_pending === true,
+        reason: state.reason,
+        time_to_first_qr_ms: state.time_to_first_qr_ms,
       });
 
       recordConnectionLifecycle({
@@ -298,6 +345,17 @@ export class WorkerConnectionQrCodeConsume {
         offset,
       });
       await this.commitNext(topic, partition, offset);
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_queue.commit_success',
+        decision: 'commit_connection_qrcode_request',
+        outcome: 'success',
+        topic,
+        group_id: groupId,
+        partition,
+        offset,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+      });
     } catch (error) {
       recordConnectionLifecycle({
         stage: 'connection.baileys.qrcode_queue.process_error',
@@ -498,6 +556,19 @@ export class WorkerConnectionQrCodeConsume {
       await this.runRedisWithTimeout('SET processed_attempt', () =>
         this.redis.set(this.processedAttemptKey(data), '1', 'EX', 300)
       );
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_queue.mark_processed_success',
+        decision: 'mark_qrcode_attempt_processed',
+        outcome: 'success',
+        topic: context.topic,
+        group_id: context.groupId,
+        partition: context.partition,
+        offset: context.offset,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+        worker_type: EWorkerType.baileys,
+        worker_type_id: EWorkerType.baileys,
+      });
     } catch (error) {
       recordConnectionLifecycle({
         stage: 'connection.baileys.qrcode_queue.mark_processed_error',

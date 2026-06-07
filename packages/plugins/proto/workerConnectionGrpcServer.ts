@@ -182,6 +182,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
     const accountId = getAccountId();
     const contextData = buildConnectionLifecycleContext({
+      connection_lifecycle_id: payload.connection_lifecycle_id,
       account_id: accountId,
       worker_id: payload.worker_id,
       channel_id: payload.worker_id,
@@ -206,6 +207,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         connection_type: payload.type,
         remove_session: payload.remove_session === true,
         connection_attempt_id: payload.connection_attempt_id,
+        connection_lifecycle_id: payload.connection_lifecycle_id,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
         qr_request_deadline_ms: payload.qr_request_deadline_ms,
@@ -224,6 +226,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         connection_type: payload.type,
         remove_session: payload.remove_session === true,
         connection_attempt_id: payload.connection_attempt_id,
+        connection_lifecycle_id: payload.connection_lifecycle_id,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
         deadline_ms: payload.qr_request_deadline_ms,
@@ -252,6 +255,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
               ...response,
               connection_attempt_id:
                 response.connection_attempt_id ?? payload.connection_attempt_id,
+              connection_lifecycle_id:
+                response.connection_lifecycle_id ??
+                payload.connection_lifecycle_id,
             });
           recordConnectionLifecycle({
             stage: 'connection.worker.grpc.request_success',
@@ -266,6 +272,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             has_pairing_code: Boolean(response.pairing_code),
             connection_attempt_id:
               response.connection_attempt_id ?? payload.connection_attempt_id,
+            connection_lifecycle_id:
+              response.connection_lifecycle_id ??
+              payload.connection_lifecycle_id,
             runtime_generation:
               response.runtime_generation ?? payload.runtime_generation,
             warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
@@ -286,6 +295,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             library: sourceProvider,
             connection_attempt_id:
               response.connection_attempt_id ?? payload.connection_attempt_id,
+            connection_lifecycle_id:
+              response.connection_lifecycle_id ??
+              payload.connection_lifecycle_id,
             status: response.status,
             code: response.code,
             outcome: response.qrcode
@@ -320,6 +332,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
               has_qr: Boolean(response.qrcode),
               connection_attempt_id:
                 response.connection_attempt_id ?? payload.connection_attempt_id,
+              connection_lifecycle_id:
+                response.connection_lifecycle_id ??
+                payload.connection_lifecycle_id,
               runtime_generation:
                 response.runtime_generation ?? payload.runtime_generation,
               warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
@@ -343,6 +358,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             connection_type: payload.type,
             error: msg,
             connection_attempt_id: payload.connection_attempt_id,
+            connection_lifecycle_id: payload.connection_lifecycle_id,
             runtime_generation: payload.runtime_generation,
             warm_pool_id: payload.warm_pool_id,
             duration_ms: Date.now() - startedAt,
@@ -356,6 +372,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             worker_type: sourceProvider,
             library: sourceProvider,
             connection_attempt_id: payload.connection_attempt_id,
+            connection_lifecycle_id: payload.connection_lifecycle_id,
             status: payload.status,
             outcome: 'error',
             reason: 'handler_error',
@@ -378,6 +395,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
               connection_type: payload.type,
               remove_session: payload.remove_session === true,
               connection_attempt_id: payload.connection_attempt_id,
+              connection_lifecycle_id: payload.connection_lifecycle_id,
               runtime_generation: payload.runtime_generation,
               warm_pool_id: payload.warm_pool_id,
             },

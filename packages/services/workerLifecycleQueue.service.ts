@@ -62,12 +62,33 @@ export class WorkerLifecycleQueueService {
       source: payload.source,
     });
 
-    await this.streamProducerService.send(
-      this.topic(),
-      payload,
-      payload.worker_id,
-      headers
-    );
+    try {
+      await this.streamProducerService.send(
+        this.topic(),
+        payload,
+        payload.worker_id,
+        headers
+      );
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.lifecycle_queue.enqueue_error',
+        decision: 'enqueue_worker_lifecycle',
+        outcome: 'error',
+        reason: 'kafka_publish_failed',
+        level: 'error',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        server_id: payload.server_id,
+        worker_type: payload.worker_type_id,
+        worker_status_id: payload.worker_status_id,
+        lifecycle_operation_id: payload.operation_id,
+        lifecycle_action: payload.action,
+        queue_topic: this.topic(),
+        source: payload.source,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
 
     recordConnectionLifecycle({
       stage: 'connection.manager.lifecycle_queue.enqueue_success',

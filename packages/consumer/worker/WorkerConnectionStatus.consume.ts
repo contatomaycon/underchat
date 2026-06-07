@@ -39,6 +39,9 @@ export class WorkerConnectionStatusConsume {
       connection_type: payload.type,
       remove_session: payload.remove_session === true,
       has_phone_connection: Boolean(payload.phone_connection),
+      connection_attempt_id: payload.connection_attempt_id,
+      connection_lifecycle_id: payload.connection_lifecycle_id,
+      qr_pending: payload.qr_pending === true,
     });
 
     if (payload.type === EBaileysConnectionType.phone) {
@@ -73,17 +76,46 @@ export class WorkerConnectionStatusConsume {
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
+    this.logConnectionEvent('handle_online_start', {
+      status: data.status,
+      connection_type: data.type,
+      connection_attempt_id: data.connection_attempt_id,
+      connection_lifecycle_id: data.connection_lifecycle_id,
+      qr_pending: data.qr_pending === true,
+    });
     this.stopConnectionRetry();
 
     if (this.baileysService.isConnected()) {
+      this.logConnectionEvent('handle_online_short_circuit', {
+        reason: 'already_connected',
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+      });
       return this.publishConnectedStatus();
     }
 
     if (this.baileysService.hasSession()) {
+      this.logConnectionEvent('handle_online_restore_wait_start', {
+        reason: 'existing_session_found',
+        wait_ms: 3000,
+        interval_ms: 500,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+      });
       await this.waitForReconnection(3000, 500);
       if (this.baileysService.isConnected()) {
+        this.logConnectionEvent('handle_online_restore_wait_success', {
+          reason: 'connected_after_existing_session_wait',
+          connection_attempt_id: data.connection_attempt_id,
+          connection_lifecycle_id: data.connection_lifecycle_id,
+        });
         return this.publishConnectedStatus();
       }
+      this.logConnectionEvent('handle_online_restore_wait_timeout', {
+        reason: 'existing_session_not_connected_after_wait',
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+      });
     }
 
     const currentStatus = this.baileysService.getStatus();
@@ -100,6 +132,14 @@ export class WorkerConnectionStatusConsume {
       hasActiveSocket &&
       pairingInProgress
     ) {
+      this.logConnectionEvent('handle_online_short_circuit', {
+        reason: 'pairing_in_progress_republish',
+        status: currentStatus,
+        code: currentCode,
+        has_active_socket: hasActiveSocket,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+      });
       this.baileysService.republishLastState();
       return this.currentState(currentCode);
     }
@@ -113,6 +153,8 @@ export class WorkerConnectionStatusConsume {
         status: currentStatus,
         code: currentCode,
         has_active_socket: hasActiveSocket,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
       });
       try {
         return await this.baileysService.connect({
@@ -122,6 +164,7 @@ export class WorkerConnectionStatusConsume {
           type: data.type as EBaileysConnectionType,
           phone_connection: data.phone_connection,
           connection_attempt_id: data.connection_attempt_id,
+          connection_lifecycle_id: data.connection_lifecycle_id,
         });
       } catch (error) {
         const errorMessage =
@@ -130,6 +173,8 @@ export class WorkerConnectionStatusConsume {
           'connection_reopening_user_action_error',
           {
             reason: errorMessage,
+            connection_attempt_id: data.connection_attempt_id,
+            connection_lifecycle_id: data.connection_lifecycle_id,
           },
           'error'
         );
@@ -145,6 +190,8 @@ export class WorkerConnectionStatusConsume {
         status: currentStatus,
         code: currentCode,
         has_active_socket: hasActiveSocket,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
       });
       try {
         return await this.baileysService.connect({
@@ -154,6 +201,7 @@ export class WorkerConnectionStatusConsume {
           type: data.type as EBaileysConnectionType,
           phone_connection: data.phone_connection,
           connection_attempt_id: data.connection_attempt_id,
+          connection_lifecycle_id: data.connection_lifecycle_id,
         });
       } catch (error) {
         const errorMessage =
@@ -162,6 +210,8 @@ export class WorkerConnectionStatusConsume {
           'connection_restart_stale_startup_error',
           {
             reason: errorMessage,
+            connection_attempt_id: data.connection_attempt_id,
+            connection_lifecycle_id: data.connection_lifecycle_id,
           },
           'error'
         );
@@ -170,17 +220,53 @@ export class WorkerConnectionStatusConsume {
     }
 
     if (this.activeConnectionRequest) {
+      this.logConnectionEvent('handle_online_short_circuit', {
+        reason: 'active_connection_request_exists',
+        status: currentStatus,
+        code: currentCode,
+        has_active_socket: hasActiveSocket,
+        active_connection_attempt_id:
+          this.activeConnectionRequest.connection_attempt_id,
+        active_connection_lifecycle_id:
+          this.activeConnectionRequest.connection_lifecycle_id,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+      });
       return this.currentState(currentCode);
     }
 
-    return this.baileysService.connect({
+    this.logConnectionEvent('handle_online_connect_start', {
+      status: currentStatus,
+      code: currentCode,
+      has_active_socket: hasActiveSocket,
+      has_session: this.baileysService.hasSession(),
+      connection_attempt_id: data.connection_attempt_id,
+      connection_lifecycle_id: data.connection_lifecycle_id,
+    });
+    const state = await this.baileysService.connect({
       initial_connection: true,
       force_new: false,
       requested_by_user: true,
       type: data.type as EBaileysConnectionType,
       phone_connection: data.phone_connection,
       connection_attempt_id: data.connection_attempt_id,
+      connection_lifecycle_id: data.connection_lifecycle_id,
     });
+    this.logConnectionEvent('handle_online_connect_success', {
+      status: state.status,
+      code: state.code,
+      worker_status_id: state.worker_status_id,
+      has_qr: Boolean(state.qrcode),
+      has_pairing_code: Boolean(state.pairing_code),
+      qr_pending: state.qr_pending === true,
+      reason: state.reason,
+      connection_attempt_id:
+        state.connection_attempt_id ?? data.connection_attempt_id,
+      connection_lifecycle_id:
+        state.connection_lifecycle_id ?? data.connection_lifecycle_id,
+      time_to_first_qr_ms: state.time_to_first_qr_ms,
+    });
+    return state;
   }
 
   private handleRecreating(): IBaileysConnectionState {
@@ -300,6 +386,8 @@ export class WorkerConnectionStatusConsume {
       max_attempts: this.connectionRetryMinAttempts,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
+      connection_lifecycle_id:
+        this.activeConnectionRequest?.connection_lifecycle_id,
     };
 
     void this.centrifugoService
@@ -329,6 +417,8 @@ export class WorkerConnectionStatusConsume {
       worker_status_id: EWorkerStatus.online,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
+      connection_lifecycle_id:
+        this.activeConnectionRequest?.connection_lifecycle_id,
     };
 
     await this.centrifugoService
@@ -365,6 +455,8 @@ export class WorkerConnectionStatusConsume {
       account_id: baileysEnvironment.baileysAccountId,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
+      connection_lifecycle_id:
+        this.activeConnectionRequest?.connection_lifecycle_id,
     };
   }
 
@@ -465,6 +557,7 @@ export class WorkerConnectionStatusConsume {
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
         connection_attempt_id: request.connection_attempt_id,
+        connection_lifecycle_id: request.connection_lifecycle_id,
       })
       .then((state) => {
         this.logConnectionEvent('connection_connect_result', {
@@ -526,6 +619,10 @@ export class WorkerConnectionStatusConsume {
       worker_id: baileysEnvironment.baileysWorkerId,
       channel_id: baileysEnvironment.baileysWorkerId,
       account_id: baileysEnvironment.baileysAccountId,
+      connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
+      connection_lifecycle_id:
+        this.activeConnectionRequest?.connection_lifecycle_id,
       ...details,
     });
   }

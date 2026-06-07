@@ -987,12 +987,21 @@ describe('WorkerCommandHandlerService connection', () => {
       expect(
         deps.kafkaBaileysQueueService.workerConnectionQrCode
       ).toHaveBeenCalledWith('worker-1');
+      const kafkaSendCall = deps.streamProducerService.send.mock
+        .calls[0] as unknown as [
+        string,
+        { connection_lifecycle_id?: string },
+        string,
+        Array<Record<string, string>>,
+      ];
+      const kafkaPayload = kafkaSendCall[1];
+
       expect(deps.streamProducerService.send).toHaveBeenCalledWith(
         'worker.worker-1.connection.qrcode',
         expect.objectContaining({
           request_id: 'uuid-v7',
           connection_attempt_id: 'uuid-v7',
-          connection_lifecycle_id: 'uuid-v7',
+          connection_lifecycle_id: expect.any(String),
           worker_id: 'worker-1',
           account_id: 'account-1',
           worker_type_id: EWorkerType.wwebjs,
@@ -1001,7 +1010,7 @@ describe('WorkerCommandHandlerService connection', () => {
         'worker-1',
         [
           {
-            'x-connection-lifecycle-id': 'uuid-v7',
+            'x-connection-lifecycle-id': kafkaPayload.connection_lifecycle_id,
           },
         ]
       );

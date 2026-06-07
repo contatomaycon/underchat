@@ -575,12 +575,35 @@ export class WorkerService {
   }
 
   public async removeVolumeByName(volumeName: string): Promise<boolean> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.volume_remove_start',
+      decision: 'remove_volume_by_name',
+      outcome: 'started',
+      volume_name: volumeName,
+    });
+
     try {
       const volume = this.docker.getVolume(volumeName);
       await volume.remove();
 
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.volume_remove_success',
+        decision: 'remove_volume_by_name',
+        outcome: 'success',
+        volume_name: volumeName,
+      });
+
       return true;
-    } catch {
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.volume_remove_error',
+        decision: 'remove_volume_by_name',
+        outcome: 'error',
+        reason: 'docker_volume_remove_failed',
+        level: 'error',
+        volume_name: volumeName,
+        error: dockerErrorMessage(error),
+      });
       throw new Error('The worker volume removal failed');
     }
   }
@@ -590,12 +613,34 @@ export class WorkerService {
   }
 
   public async existsVolumeByName(volumeName: string): Promise<boolean> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.volume_inspect_start',
+      decision: 'inspect_volume_by_name',
+      outcome: 'started',
+      volume_name: volumeName,
+    });
+
     try {
       const volume = this.docker.getVolume(volumeName);
       await volume.inspect();
 
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.volume_inspect_success',
+        decision: 'inspect_volume_by_name',
+        outcome: 'exists',
+        volume_name: volumeName,
+      });
+
       return true;
-    } catch {
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.volume_inspect_missing',
+        decision: 'inspect_volume_by_name',
+        outcome: 'missing',
+        level: 'warn',
+        volume_name: volumeName,
+        docker_error: dockerErrorMessage(error),
+      });
       return false;
     }
   }
@@ -614,8 +659,50 @@ export class WorkerService {
     const getVolume = await this.existsVolumeByName(volumeName);
 
     if (!getVolume || isCreateVolume) {
-      await this.docker.createVolume({
-        Name: volumeName,
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.volume_create_start',
+        decision: 'ensure_volume_by_name',
+        outcome: 'started',
+        reason: getVolume ? 'force_create_requested' : 'volume_missing',
+        volume_name: volumeName,
+        volume_exists: getVolume,
+        force_create: isCreateVolume,
+      });
+      try {
+        await this.docker.createVolume({
+          Name: volumeName,
+        });
+      } catch (error) {
+        recordConnectionLifecycle({
+          stage: 'connection.balancer.docker.volume_create_error',
+          decision: 'ensure_volume_by_name',
+          outcome: 'error',
+          reason: 'docker_volume_create_failed',
+          level: 'error',
+          volume_name: volumeName,
+          volume_exists: getVolume,
+          force_create: isCreateVolume,
+          error: dockerErrorMessage(error),
+        });
+        throw error;
+      }
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.volume_create_success',
+        decision: 'ensure_volume_by_name',
+        outcome: 'success',
+        volume_name: volumeName,
+        volume_exists: getVolume,
+        force_create: isCreateVolume,
+      });
+    } else {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.volume_create_skipped',
+        decision: 'ensure_volume_by_name',
+        outcome: 'skipped',
+        reason: 'volume_already_exists',
+        volume_name: volumeName,
+        volume_exists: getVolume,
+        force_create: isCreateVolume,
       });
     }
   }
@@ -625,6 +712,15 @@ export class WorkerService {
     volumeName?: string | null,
     isRemoveVolume: boolean = true
   ): Promise<boolean> {
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.container_volume_cleanup_start',
+      decision: 'remove_container_by_name_and_volume',
+      outcome: 'started',
+      container_name: containerName,
+      volume_name: volumeName ?? undefined,
+      remove_volume: isRemoveVolume,
+    });
+
     const existsContainerById =
       await this.existsContainerWorkerById(containerName);
 
@@ -649,6 +745,16 @@ export class WorkerService {
       }
     }
 
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.container_volume_cleanup_success',
+      decision: 'remove_container_by_name_and_volume',
+      outcome: 'success',
+      container_name: containerName,
+      volume_name: volumeName ?? undefined,
+      remove_volume: isRemoveVolume,
+      container_existed: existsContainerById,
+    });
+
     return true;
   }
 
@@ -657,14 +763,38 @@ export class WorkerService {
     nextName: string
   ): Promise<boolean> {
     if (currentName === nextName) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.container_rename_skipped',
+        decision: 'rename_container',
+        outcome: 'skipped',
+        reason: 'same_name',
+        container_name: currentName,
+        next_container_name: nextName,
+      });
       return true;
     }
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.container_rename_start',
+      decision: 'rename_container',
+      outcome: 'started',
+      container_name: currentName,
+      next_container_name: nextName,
+    });
 
     const container = this.docker.getContainer(currentName);
     await (
       container as unknown as { rename(input: { name: string }): Promise<void> }
     ).rename({
       name: nextName,
+    });
+
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.container_rename_success',
+      decision: 'rename_container',
+      outcome: 'success',
+      container_name: currentName,
+      next_container_name: nextName,
     });
 
     return true;
@@ -705,15 +835,89 @@ export class WorkerService {
     }
 
     if (!existingVolume || isCreateVolume) {
-      await this.docker.createVolume({
-        Name: volumeName,
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.worker_volume_create_start',
+        decision: 'create_container_worker',
+        outcome: 'started',
+        reason: existingVolume ? 'force_create_requested' : 'volume_missing',
+        container_name: workerId,
+        worker_type: imageName,
+        worker_type_id: metadata?.workerTypeId,
+        session_volume_name: volumeName,
+        volume_exists: existingVolume,
+        force_create: isCreateVolume,
+      });
+      try {
+        await this.docker.createVolume({
+          Name: volumeName,
+        });
+      } catch (error) {
+        recordConnectionLifecycle({
+          stage: 'connection.balancer.docker.worker_volume_create_error',
+          decision: 'create_container_worker',
+          outcome: 'error',
+          reason: 'docker_volume_create_failed',
+          level: 'error',
+          container_name: workerId,
+          worker_type: imageName,
+          worker_type_id: metadata?.workerTypeId,
+          session_volume_name: volumeName,
+          volume_exists: existingVolume,
+          force_create: isCreateVolume,
+          error: dockerErrorMessage(error),
+        });
+        throw error;
+      }
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.worker_volume_create_success',
+        decision: 'create_container_worker',
+        outcome: 'success',
+        container_name: workerId,
+        worker_type: imageName,
+        worker_type_id: metadata?.workerTypeId,
+        session_volume_name: volumeName,
+        volume_exists: existingVolume,
+        force_create: isCreateVolume,
+      });
+    } else {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.worker_volume_create_skipped',
+        decision: 'create_container_worker',
+        outcome: 'skipped',
+        reason: 'volume_already_exists',
+        container_name: workerId,
+        worker_type: imageName,
+        worker_type_id: metadata?.workerTypeId,
+        session_volume_name: volumeName,
+        volume_exists: existingVolume,
+        force_create: isCreateVolume,
       });
     }
 
     const getVolume = await this.existsVolumeByName(volumeName);
     if (!getVolume) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.docker.worker_volume_verify_error',
+        decision: 'create_container_worker',
+        outcome: 'error',
+        reason: 'volume_creation_failed',
+        level: 'error',
+        container_name: workerId,
+        worker_type: imageName,
+        worker_type_id: metadata?.workerTypeId,
+        session_volume_name: volumeName,
+      });
       throw new Error('Volume creation failed');
     }
+    recordConnectionLifecycle({
+      stage: 'connection.balancer.docker.worker_volume_verify_success',
+      decision: 'create_container_worker',
+      outcome: 'success',
+      container_name: workerId,
+      worker_type: imageName,
+      worker_type_id: metadata?.workerTypeId,
+      session_volume_name: volumeName,
+    });
 
     const envOverrides = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
     envOverrides.push(`WORKER_IMAGE=${imageName}`);

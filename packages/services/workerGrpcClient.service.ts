@@ -144,6 +144,7 @@ export class WorkerGrpcClientService {
     accountId: string
   ): Promise<void> {
     const contextData = buildConnectionLifecycleContext({
+      connection_lifecycle_id: payload.connection_lifecycle_id,
       account_id: accountId,
       worker_id: payload.worker_id,
       channel_id: payload.worker_id,
@@ -225,6 +226,7 @@ export class WorkerGrpcClientService {
     accountId: string
   ): Promise<IBaileysConnectionState> {
     const contextData = buildConnectionLifecycleContext({
+      connection_lifecycle_id: payload.connection_lifecycle_id,
       account_id: accountId,
       worker_id: payload.worker_id,
       channel_id: payload.worker_id,

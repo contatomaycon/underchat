@@ -168,7 +168,57 @@ export class WorkerRecreatorUseCase {
       previous_worker_status_id?: EWorkerStatus;
     }
   ): Promise<IWorkerLifecycleAck> {
-    await this.validate(t, accountId);
+    const lifecycleOperationId = options?.lifecycle_operation_id ?? uuidv7();
+    const connectionLifecycleId = uuidv7();
+
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.received',
+      decision: 'recreate_worker',
+      outcome: 'received',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: workerId,
+      account_id: accountId,
+      lifecycle_operation_id: lifecycleOperationId,
+      remove_session: options?.remove_session === true,
+      remove_volume: options?.remove_volume === true,
+      previous_worker_status_id: options?.previous_worker_status_id,
+    });
+
+    try {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.validation_start',
+        decision: 'validate_recreate_worker',
+        outcome: 'started',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: workerId,
+        account_id: accountId,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
+      await this.validate(t, accountId);
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.validation_success',
+        decision: 'validate_recreate_worker',
+        outcome: 'success',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: workerId,
+        account_id: accountId,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.validation_error',
+        decision: 'validate_recreate_worker',
+        outcome: 'error',
+        reason: 'validation_failed',
+        level: 'error',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: workerId,
+        account_id: accountId,
+        lifecycle_operation_id: lifecycleOperationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
 
     const [viewWorkerBalancer, viewWorker] = await Promise.all([
       this.workerService.viewWorkerBalancer(accountId, workerId),
@@ -176,11 +226,34 @@ export class WorkerRecreatorUseCase {
     ]);
 
     if (!viewWorkerBalancer) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.current_runtime_missing',
+        decision: 'resolve_worker_runtime',
+        outcome: 'error',
+        reason: 'worker_balancer_not_available',
+        level: 'error',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: workerId,
+        account_id: accountId,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
       throw new Error(t('worker_balancer_not_available'));
     }
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.current_runtime_resolved',
+      decision: 'resolve_worker_runtime',
+      outcome: 'resolved',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: workerId,
+      account_id: accountId,
+      server_id: viewWorkerBalancer.server_id,
+      worker_type: viewWorker?.type?.id,
+      worker_type_id: viewWorker?.type?.id,
+      previous_worker_status_id:
+        options?.previous_worker_status_id ?? viewWorker?.status?.id,
+      lifecycle_operation_id: lifecycleOperationId,
+    });
 
-    const lifecycleOperationId = options?.lifecycle_operation_id ?? uuidv7();
-    const connectionLifecycleId = uuidv7();
     const inputRecreate: IWorkerPayload = {
       action: EWorkerAction.recreate,
       worker_id: workerId,
@@ -197,7 +270,31 @@ export class WorkerRecreatorUseCase {
     };
 
     if (options?.remove_session === true) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.logout_intent_start',
+        decision: 'publish_connection_logout_intent',
+        outcome: 'started',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: viewWorkerBalancer.server_id,
+        worker_type: inputRecreate.worker_type_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
       await this.publishLogoutInProgress(accountId, workerId);
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.logout_intent_success',
+        decision: 'publish_connection_logout_intent',
+        outcome: 'success',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: viewWorkerBalancer.server_id,
+        worker_type: inputRecreate.worker_type_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+      });
     }
 
     const inputUpdate: IUpdateWorker = {
@@ -209,12 +306,67 @@ export class WorkerRecreatorUseCase {
         : {}),
     };
 
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.db_update_start',
+      decision: 'persist_worker_recreating_state',
+      outcome: 'started',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: workerId,
+      account_id: accountId,
+      server_id: viewWorkerBalancer.server_id,
+      worker_type: inputRecreate.worker_type_id,
+      worker_type_id: inputRecreate.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+      remove_session: options?.remove_session === true,
+    });
     await this.workerService.updateWorkerById(accountId, inputUpdate);
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.db_update_success',
+      decision: 'persist_worker_recreating_state',
+      outcome: 'success',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: workerId,
+      account_id: accountId,
+      server_id: viewWorkerBalancer.server_id,
+      worker_type: inputRecreate.worker_type_id,
+      worker_type_id: inputRecreate.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+      remove_session: options?.remove_session === true,
+    });
 
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.centrifugo_publish_start',
+      decision: 'publish_worker_recreating_state',
+      outcome: 'started',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: workerId,
+      account_id: accountId,
+      server_id: viewWorkerBalancer.server_id,
+      worker_type: inputRecreate.worker_type_id,
+      worker_type_id: inputRecreate.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+      centrifugo_channel: workerCentrifugoQueue(inputRecreate.account_id),
+    });
     await this.centrifugoService.publishSub(
       workerCentrifugoQueue(inputRecreate.account_id),
       inputRecreate
     );
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.centrifugo_publish_success',
+      decision: 'publish_worker_recreating_state',
+      outcome: 'success',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: workerId,
+      account_id: accountId,
+      server_id: viewWorkerBalancer.server_id,
+      worker_type: inputRecreate.worker_type_id,
+      worker_type_id: inputRecreate.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+    });
 
     await this.enqueueLifecycleOrMarkError(
       inputRecreate,
@@ -225,7 +377,7 @@ export class WorkerRecreatorUseCase {
       })
     );
 
-    return {
+    const ack: IWorkerLifecycleAck = {
       code: 202,
       status: 'queued',
       queued: true,
@@ -239,5 +391,23 @@ export class WorkerRecreatorUseCase {
       reason:
         options?.remove_session === true ? 'reset_queued' : 'recreate_queued',
     };
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.ack_returned',
+      decision: 'recreate_worker',
+      outcome: 'queued',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: workerId,
+      account_id: viewWorkerBalancer.account_id,
+      server_id: viewWorkerBalancer.server_id,
+      worker_type: inputRecreate.worker_type_id,
+      worker_type_id: inputRecreate.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+      remove_session: options?.remove_session === true,
+      remove_volume: options?.remove_volume === true,
+      reason: ack.reason,
+    });
+
+    return ack;
   }
 }

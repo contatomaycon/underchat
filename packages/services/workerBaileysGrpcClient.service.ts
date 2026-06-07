@@ -751,6 +751,7 @@ export class WorkerBaileysGrpcClientService {
     const protoPayload = this.buildConnectionProtoPayload(payload);
 
     const contextData = buildConnectionLifecycleContext({
+      connection_lifecycle_id: payload.connection_lifecycle_id,
       worker_id: workerId,
       channel_id: workerId,
       worker_type: workerType,
@@ -774,6 +775,7 @@ export class WorkerBaileysGrpcClientService {
     const protoPayload = this.buildConnectionProtoPayload(payload);
 
     const contextData = buildConnectionLifecycleContext({
+      connection_lifecycle_id: payload.connection_lifecycle_id,
       worker_id: workerId,
       channel_id: workerId,
       worker_type: workerType,
