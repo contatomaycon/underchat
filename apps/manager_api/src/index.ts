@@ -1,3 +1,4 @@
+import '@core/plugins/telemetry/instrumentation';
 import 'reflect-metadata';
 import fastify from 'fastify';
 import telemetryPlugin from '@core/plugins/telemetry';

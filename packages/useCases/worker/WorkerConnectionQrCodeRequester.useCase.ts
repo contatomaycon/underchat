@@ -29,6 +29,7 @@ interface ActiveQrAttempt {
   ack: IBaileysConnectionState;
   queued_at: string;
   stream_key: string;
+  stream_id?: string;
   consumer_group: string;
   source: WorkerConnectionQrCodeQueueSource;
   worker_type_id?: string;
@@ -40,11 +41,21 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     180,
     Number(process.env.CONNECTION_QRCODE_ACTIVE_ATTEMPT_TTL_SECONDS) || 600
   );
+  private readonly activeAttemptDedupeMaxAgeMs = Math.max(
+    30_000,
+    Number(process.env.CONNECTION_QRCODE_ACTIVE_ATTEMPT_DEDUPE_MAX_AGE_MS) ||
+      120_000
+  );
   private readonly cachedQrMaxAgeMs = 120_000;
   private readonly supportedWorkerTypes = new Set<string>([
     EWorkerType.baileys,
     EWorkerType.wwebjs,
     EWorkerType.whatsmeow,
+  ]);
+  private readonly qrRequestableWorkerStatuses = new Set<string>([
+    EWorkerStatus.disponible,
+    EWorkerStatus.creating,
+    EWorkerStatus.recreating,
   ]);
 
   constructor(
@@ -141,12 +152,17 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       throw new Error(t('worker_type_invalid'));
     }
 
-    if (workerStatusId !== EWorkerStatus.disponible) {
+    if (
+      !workerStatusId ||
+      !this.qrRequestableWorkerStatuses.has(workerStatusId)
+    ) {
       recordConnectionLifecycle({
         stage: 'connection.manager.qrcode_request.worker_status_validation',
-        decision: 'validate_worker_status_disponible',
+        decision: 'validate_worker_status_qrcode_requestable',
         outcome: 'not_ready',
-        reason: 'worker_status_not_disponible',
+        reason: workerStatusId
+          ? 'worker_status_not_qrcode_requestable'
+          : 'worker_status_missing',
         level: 'warn',
         server_id: serverId,
         worker_type: workerTypeId,
@@ -155,6 +171,21 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       });
       throw new Error(t('worker_qrcode_not_ready'));
     }
+
+    recordConnectionLifecycle({
+      stage: 'connection.manager.qrcode_request.worker_status_validation',
+      decision: 'validate_worker_status_qrcode_requestable',
+      outcome: 'success',
+      reason:
+        workerStatusId === EWorkerStatus.creating ||
+        workerStatusId === EWorkerStatus.recreating
+          ? 'worker_runtime_startup_pending'
+          : 'worker_disponible',
+      server_id: serverId,
+      worker_type: workerTypeId,
+      worker_type_id: workerTypeId,
+      worker_status_id: workerStatusId,
+    });
 
     recordConnectionLifecycle({
       stage: 'connection.manager.qrcode_request.redis_stream_selected',
@@ -212,9 +243,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           connection_attempt_id: existing.ack.connection_attempt_id,
           connection_lifecycle_id: existing.ack.connection_lifecycle_id,
           stream_key: existing.stream_key,
+          stream_id: existing.stream_id,
           consumer_group: existing.consumer_group,
           source: existing.source,
           active_worker_type_id: existing.worker_type_id,
+          qr_pending_age_ms: this.getActiveAttemptAgeMs(existing),
         });
         existing = null;
       }
@@ -413,6 +446,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           connection_lifecycle_id: current.ack.connection_lifecycle_id,
           active_worker_type_id: current.worker_type_id,
           stream_key: current.stream_key,
+          stream_id: current.stream_id,
           consumer_group: current.consumer_group,
           source: current.source,
         });
@@ -483,6 +517,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         source,
       });
       const streamId = await this.redisQueueService.enqueue(payload);
+      await this.storeActiveAttemptStreamId(
+        workerId,
+        connectionAttemptId,
+        streamId
+      );
 
       recordConnectionLifecycle({
         stage: 'connection.manager.qrcode_request.redis_enqueued',
@@ -580,7 +619,47 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       return 'active_attempt_already_processed';
     }
 
+    const activeAttemptAgeMs = this.getActiveAttemptAgeMs(attempt);
+    if (
+      activeAttemptAgeMs !== undefined &&
+      activeAttemptAgeMs >= this.activeAttemptDedupeMaxAgeMs
+    ) {
+      return 'active_attempt_pending_too_old';
+    }
+
     return undefined;
+  }
+
+  private async storeActiveAttemptStreamId(
+    workerId: string,
+    connectionAttemptId: string,
+    streamId: string
+  ): Promise<void> {
+    const current = await this.getActiveAttempt(workerId);
+    if (current?.ack.connection_attempt_id !== connectionAttemptId) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.qrcode_request.active_attempt_stream_id_skip',
+        decision: 'store_active_qrcode_attempt_stream_id',
+        outcome: 'skipped',
+        reason: current
+          ? 'active_attempt_changed'
+          : 'active_attempt_missing_after_enqueue',
+        connection_attempt_id: connectionAttemptId,
+        current_connection_attempt_id: current?.ack.connection_attempt_id,
+        stream_id: streamId,
+      });
+      return;
+    }
+
+    await this.redis.set(
+      this.activeAttemptKey(workerId),
+      JSON.stringify({
+        ...current,
+        stream_id: streamId,
+      }),
+      'EX',
+      this.activeAttemptTtlSeconds
+    );
   }
 
   private async getActiveAttempt(

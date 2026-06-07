@@ -661,6 +661,30 @@ func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamK
 		"reason":                state.Reason,
 		"time_to_first_qr_ms":   state.TimeToFirstQRMS,
 	})
+	if !connectionQRCodeRequestComplete(state) {
+		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+			"stage":                 "connection.whatsmeow.qrcode_redis_stream.local_request_pending_retry",
+			"decision":              "request_local_connection_qrcode",
+			"outcome":               "pending",
+			"reason":                firstNonEmpty(state.Reason, "qrcode_not_available_yet"),
+			"level":                 "warn",
+			"stream_key":            streamKey,
+			"stream_id":             message.ID,
+			"consumer_group":        groupID,
+			"consumer_name":         consumerName,
+			"delivery_count":        deliveryCount,
+			"connection_attempt_id": firstNonEmpty(state.ConnectionAttemptID, data.ConnectionAttemptID),
+			"status":                state.Status,
+			"code":                  state.Code,
+			"has_qr":                false,
+			"has_pairing_code":      false,
+			"qr_pending":            state.QRPending,
+			"reason_detail":         state.Reason,
+			"time_to_first_qr_ms":   state.TimeToFirstQRMS,
+			"retry_after_idle_ms":   3000,
+		})
+		return false, nil
+	}
 	if err = w.markConnectionQRCodeAttemptProcessed(ctx, data); err != nil {
 		return false, err
 	}
@@ -675,6 +699,16 @@ func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamK
 		"connection_attempt_id": data.ConnectionAttemptID,
 	})
 	return true, nil
+}
+
+func connectionQRCodeRequestComplete(state ConnectionState) bool {
+	if state.QRCode != "" || state.PairingCode != "" {
+		return true
+	}
+	if state.Status == "connected" {
+		return true
+	}
+	return !state.QRPending && (state.Status == "disconnected" || state.Status == "info")
 }
 
 func workerConnectionQRCodeQueueMessageFromRedis(message redis.XMessage) (WorkerConnectionQRCodeQueueMessage, error) {

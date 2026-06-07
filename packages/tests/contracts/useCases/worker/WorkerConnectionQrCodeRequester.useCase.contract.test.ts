@@ -152,14 +152,30 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       expect.any(Number),
       'NX'
     );
+    expect(
+      deps.redis.store.get('connection:qrcode:worker-1:active_attempt')
+    ).toContain('"stream_id":"1710000000000-0"');
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
       response
     );
   });
 
-  it('does not enqueue when worker is not disponible', async () => {
+  it('enqueues while worker is still creating because Redis Streams is durable', async () => {
     const deps = makeUseCase({ workerStatusId: EWorkerStatus.creating });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response).toMatchObject({
+      worker_status_id: EWorkerStatus.creating,
+      qr_pending: true,
+      reason: 'queued',
+    });
+    expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not enqueue when worker status cannot request QR', async () => {
+    const deps = makeUseCase({ workerStatusId: EWorkerStatus.offline });
 
     await expect(
       deps.useCase.execute(t, 'account-1', 'worker-1')
@@ -312,6 +328,41 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
 
     expect(response.connection_attempt_id).not.toBe('attempt-processed');
+    expect(deps.redis.del).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:active_attempt'
+    );
+    expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reuse an old pending active QR attempt without a QR', async () => {
+    const activeAttempt = {
+      ack: {
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-old',
+        connection_lifecycle_id: 'lifecycle-old',
+        qr_pending: true,
+        reason: 'queued',
+      },
+      queued_at: new Date(Date.now() - 121_000).toISOString(),
+      stream_key: 'connection:qrcode:worker-1:requests',
+      stream_id: '1710000000000-0',
+      consumer_group: 'connection:qrcode:worker-1:group',
+      source: 'manager',
+      worker_type_id: EWorkerType.baileys,
+    };
+    const deps = makeUseCase({
+      redisInitial: {
+        'connection:qrcode:worker-1:active_attempt':
+          JSON.stringify(activeAttempt),
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response.connection_attempt_id).not.toBe('attempt-old');
     expect(deps.redis.del).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:active_attempt'
     );

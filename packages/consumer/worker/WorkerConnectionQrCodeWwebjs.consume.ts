@@ -3,9 +3,11 @@ import Redis from 'ioredis';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { WorkerConnectionStatusWwebjsConsume } from '@core/consumer/worker/WorkerConnectionStatusWwebjs.consume';
 import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import {
   buildConnectionLifecycleContext,
   recordConnectionLifecycle,
@@ -310,6 +312,38 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         time_to_first_qr_ms: state.time_to_first_qr_ms,
       });
 
+      if (!this.shouldCompleteQrRequest(state)) {
+        recordConnectionLifecycle({
+          stage:
+            'connection.wwebjs.qrcode_redis_stream.local_request_pending_retry',
+          decision: 'request_local_connection_qrcode',
+          outcome: 'pending',
+          reason: state.reason ?? 'qrcode_not_available_yet',
+          level: 'warn',
+          stream_key: message.stream_key,
+          stream_id: message.stream_id,
+          consumer_group: message.consumer_group,
+          consumer_name: message.consumer_name,
+          delivery_count: message.delivery_count,
+          status: state.status,
+          code: state.code,
+          worker_status_id: state.worker_status_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? data.connection_attempt_id,
+          connection_lifecycle_id:
+            state.connection_lifecycle_id ?? data.connection_lifecycle_id,
+          requested_at: data.requested_at,
+          queue_latency_ms: message.queue_latency_ms,
+          has_qr: false,
+          has_pairing_code: false,
+          qr_pending: state.qr_pending === true,
+          time_to_first_qr_ms: state.time_to_first_qr_ms,
+          retry_after_idle_ms:
+            WorkerConnectionQrCodeRedisQueueService.CLAIM_MIN_IDLE_MS,
+        });
+        return;
+      }
+
       await this.redisQueueService.markProcessed(data);
       recordConnectionLifecycle({
         stage: 'connection.wwebjs.qrcode_redis_stream.mark_processed_success',
@@ -343,6 +377,22 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
+    if (state.qrcode || state.pairing_code) {
+      return true;
+    }
+
+    if (state.status === EBaileysConnectionStatus.connected) {
+      return true;
+    }
+
+    return (
+      state.qr_pending !== true &&
+      (state.status === EBaileysConnectionStatus.disconnected ||
+        state.status === EBaileysConnectionStatus.info)
+    );
   }
 
   private isMessageForThisWorker(

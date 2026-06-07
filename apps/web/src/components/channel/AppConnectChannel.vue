@@ -56,6 +56,11 @@ const QR_HISTORY_RECOVERY_LIMIT = 250;
 const QR_HISTORY_RECOVERY_DELAYS_MS = [
   1_500, 5_000, 10_000, 20_000, 40_000, 80_000, 120_000, 180_000, 240_000,
 ] as const;
+const QR_REQUESTABLE_WORKER_STATUSES = new Set<string>([
+  EWorkerStatus.disponible,
+  EWorkerStatus.creating,
+  EWorkerStatus.recreating,
+]);
 const qrHistoryRecoveryTimeouts = new Set<number>();
 let qrHistoryRecoveryAttemptId: string | undefined;
 
@@ -120,7 +125,9 @@ const isConnectionPreparing = computed(
   () => modalState.value === 'starting' || modalState.value === 'qrPreparing'
 );
 const isWorkerReadyForQr = computed(
-  () => workerStatusId.value === EWorkerStatus.disponible
+  () =>
+    Boolean(workerStatusId.value) &&
+    QR_REQUESTABLE_WORKER_STATUSES.has(workerStatusId.value as string)
 );
 const hasActiveConnectionCode = computed(
   () =>
