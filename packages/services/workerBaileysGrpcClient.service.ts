@@ -29,15 +29,7 @@ import {
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
-import {
-  recordConnectionQrSummary,
-  summarizeConnectionQrState,
-} from '@core/plugins/telemetry/connectionQrSummary';
-import {
-  getConnectionQrGrpcFastPathDeadlineMs,
-  getConnectionQrFirstQrTimeoutMs,
-  recordConnectionAttemptTelemetry,
-} from '@core/plugins/telemetry/connectionAttemptTelemetry';
+import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -63,26 +55,7 @@ if (!WorkerConnectionClient) {
 }
 
 const GRPC_DEADLINE_MS = 10_000;
-const CONNECTION_QR_GRPC_DEADLINE_MS = Math.max(
-  30_000,
-  getConnectionQrFirstQrTimeoutMs() + 5_000
-);
-const CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS =
-  getConnectionQrGrpcFastPathDeadlineMs();
 const GRPC_READY_DEADLINE_MS = 10_000;
-
-function resolveConnectionQrGrpcDeadlineMs(
-  requestedDeadlineMs?: number
-): number {
-  if (!Number.isFinite(requestedDeadlineMs) || !requestedDeadlineMs) {
-    return CONNECTION_QR_GRPC_DEADLINE_MS;
-  }
-
-  return Math.min(
-    CONNECTION_QR_GRPC_DEADLINE_MS,
-    Math.max(CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS, requestedDeadlineMs)
-  );
-}
 
 @injectable()
 export class WorkerBaileysGrpcClientService {
@@ -94,7 +67,6 @@ export class WorkerBaileysGrpcClientService {
     remove_session?: boolean;
     connection_attempt_id?: string;
     connection_lifecycle_id?: string;
-    qr_request_deadline_ms?: number;
     runtime_generation?: number;
     warm_pool_id?: string;
   } {
@@ -119,11 +91,6 @@ export class WorkerBaileysGrpcClientService {
       (
         protoPayload as { connection_lifecycle_id?: string }
       ).connection_lifecycle_id = payload.connection_lifecycle_id;
-    }
-    if (payload.qr_request_deadline_ms) {
-      (
-        protoPayload as { qr_request_deadline_ms?: number }
-      ).qr_request_deadline_ms = payload.qr_request_deadline_ms;
     }
     if (payload.runtime_generation) {
       (protoPayload as { runtime_generation?: number }).runtime_generation =
@@ -190,7 +157,6 @@ export class WorkerBaileysGrpcClientService {
       remove_session?: boolean;
       connection_attempt_id?: string;
       connection_lifecycle_id?: string;
-      qr_request_deadline_ms?: number;
       runtime_generation?: number;
       warm_pool_id?: string;
     }
@@ -280,190 +246,6 @@ export class WorkerBaileysGrpcClientService {
             warm_pool_id: state.warm_pool_id ?? protoPayload.warm_pool_id,
             container_id: state.container_id,
             duration_ms: Date.now() - startedAt,
-          });
-          resolve(state);
-        }
-      );
-    });
-  }
-
-  private async requestConnectionQrCodeByAddress(
-    address: string,
-    protoPayload: {
-      worker_id: string;
-      status: string;
-      type: string;
-      phone_connection?: string;
-      remove_session?: boolean;
-      connection_attempt_id?: string;
-      connection_lifecycle_id?: string;
-      qr_request_deadline_ms?: number;
-      runtime_generation?: number;
-      warm_pool_id?: string;
-    }
-  ): Promise<IBaileysConnectionState> {
-    const startedAt = Date.now();
-    const client = new WorkerConnectionClient(
-      address,
-      credentials.createInsecure()
-    );
-    const deadlineMs = resolveConnectionQrGrpcDeadlineMs(
-      protoPayload.qr_request_deadline_ms
-    );
-    const deadline = new Date(Date.now() + deadlineMs);
-    const metadata = injectGrpcConnectionMetadata(new Metadata());
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.worker_connection_grpc.qrcode_start',
-      decision: 'grpc_request_connection_qrcode',
-      outcome: 'started',
-      grpc_method: 'RequestConnection',
-      grpc_address: address,
-      deadline_ms: deadlineMs,
-      requested_deadline_ms: protoPayload.qr_request_deadline_ms,
-      status: protoPayload.status,
-      connection_type: protoPayload.type,
-      connection_attempt_id: protoPayload.connection_attempt_id,
-      runtime_generation: protoPayload.runtime_generation,
-      warm_pool_id: protoPayload.warm_pool_id,
-    });
-    recordConnectionAttemptTelemetry({
-      event: 'balancer_worker_grpc_qrcode_start',
-      stage: 'connection.balancer.worker_connection_grpc.qrcode_start',
-      metric_event: 'grpc_request',
-      worker_id: protoPayload.worker_id,
-      connection_attempt_id: protoPayload.connection_attempt_id,
-      grpc_method: 'RequestConnection',
-      grpc_address: address,
-      status: protoPayload.status,
-      outcome: 'started',
-      deadline_ms: deadlineMs,
-      requested_deadline_ms: protoPayload.qr_request_deadline_ms,
-    });
-
-    return new Promise<IBaileysConnectionState>((resolve, reject) => {
-      (client as any).RequestConnection(
-        protoPayload,
-        metadata,
-        { deadline },
-        (
-          err: ServiceError | null,
-          response?: IWorkerConnectionStateProto
-        ): void => {
-          client.close();
-          if (err) {
-            recordConnectionLifecycle({
-              stage: 'connection.balancer.worker_connection_grpc.qrcode_error',
-              decision: 'grpc_request_connection_qrcode',
-              outcome: 'error',
-              reason: 'grpc_error',
-              level: 'error',
-              grpc_method: 'RequestConnection',
-              grpc_address: address,
-              deadline_ms: deadlineMs,
-              requested_deadline_ms: protoPayload.qr_request_deadline_ms,
-              connection_attempt_id: protoPayload.connection_attempt_id,
-              runtime_generation: protoPayload.runtime_generation,
-              warm_pool_id: protoPayload.warm_pool_id,
-              duration_ms: Date.now() - startedAt,
-              error: err.message,
-            });
-            recordConnectionQrSummary({
-              event: 'balancer_worker_qrcode_grpc_error',
-              worker_id: protoPayload.worker_id,
-              connection_attempt_id: protoPayload.connection_attempt_id,
-              worker_type: undefined,
-              grpc_address: address,
-              status: protoPayload.status,
-              reason: 'grpc_error',
-              error: err.message,
-              level: 'error',
-            });
-            recordConnectionAttemptTelemetry({
-              event: 'balancer_worker_qrcode_grpc_error',
-              stage: 'connection.balancer.worker_connection_grpc.qrcode_error',
-              metric_event: 'qr_outcome',
-              level: 'error',
-              worker_id: protoPayload.worker_id,
-              connection_attempt_id: protoPayload.connection_attempt_id,
-              grpc_method: 'RequestConnection',
-              grpc_address: address,
-              status: protoPayload.status,
-              outcome: 'error',
-              reason: 'grpc_error',
-              error: err.message,
-              deadline_ms: deadlineMs,
-              requested_deadline_ms: protoPayload.qr_request_deadline_ms,
-              duration_ms: Date.now() - startedAt,
-              runtime_generation: protoPayload.runtime_generation,
-              warm_pool_id: protoPayload.warm_pool_id,
-            });
-            reject(err);
-            return;
-          }
-
-          const state = protoToConnectionState(response ?? {});
-          state.connection_attempt_id ??= protoPayload.connection_attempt_id;
-          recordConnectionLifecycle({
-            stage: 'connection.balancer.worker_connection_grpc.qrcode_success',
-            decision: 'grpc_request_connection_qrcode',
-            outcome: 'success',
-            grpc_method: 'RequestConnection',
-            grpc_address: address,
-            deadline_ms: deadlineMs,
-            requested_deadline_ms: protoPayload.qr_request_deadline_ms,
-            status: state.status,
-            code: state.code,
-            qrcode: state.qrcode,
-            pairing_code: state.pairing_code,
-            has_qr: Boolean(state.qrcode),
-            has_pairing_code: Boolean(state.pairing_code),
-            connection_attempt_id: state.connection_attempt_id,
-            runtime_generation:
-              state.runtime_generation ?? protoPayload.runtime_generation,
-            warm_pool_id: state.warm_pool_id ?? protoPayload.warm_pool_id,
-            container_id: state.container_id,
-            reason: state.reason,
-            qr_pending: state.qr_pending === true,
-            time_to_first_qr_ms: state.time_to_first_qr_ms,
-            duration_ms: Date.now() - startedAt,
-          });
-          recordConnectionQrSummary({
-            event: state.qrcode
-              ? 'balancer_worker_qrcode_grpc_success'
-              : 'balancer_worker_qrcode_grpc_no_qr',
-            ...summarizeConnectionQrState(state),
-            grpc_address: address,
-            qr_pending: state.qr_pending,
-            level: state.qrcode ? 'info' : 'warn',
-          });
-          recordConnectionAttemptTelemetry({
-            event: state.qrcode
-              ? 'balancer_worker_qrcode_grpc_success'
-              : 'balancer_worker_qrcode_grpc_pending',
-            stage: 'connection.balancer.worker_connection_grpc.qrcode_success',
-            metric_event: 'qr_outcome',
-            level: state.qrcode ? 'info' : 'warn',
-            worker_id: protoPayload.worker_id,
-            connection_attempt_id: state.connection_attempt_id,
-            grpc_method: 'RequestConnection',
-            grpc_address: address,
-            status: state.status,
-            code: state.code,
-            outcome: state.qrcode ? 'qr_generated' : 'pending',
-            reason: state.qrcode
-              ? 'qr_generated'
-              : (state.reason ?? 'worker_response_without_qr'),
-            qrcode: state.qrcode,
-            has_qr: Boolean(state.qrcode),
-            deadline_ms: deadlineMs,
-            requested_deadline_ms: protoPayload.qr_request_deadline_ms,
-            duration_ms: Date.now() - startedAt,
-            time_to_first_qr_ms: state.time_to_first_qr_ms,
-            runtime_generation:
-              state.runtime_generation ?? protoPayload.runtime_generation,
-            warm_pool_id: state.warm_pool_id ?? protoPayload.warm_pool_id,
-            container_id: state.container_id,
           });
           resolve(state);
         }
@@ -765,30 +547,6 @@ export class WorkerBaileysGrpcClientService {
         this.requestConnectionByAddress(address, protoPayload)
       );
     });
-  }
-
-  async requestConnectionQrCode(
-    workerId: string,
-    payload: StatusConnectionWorkerRequest,
-    workerType?: EWorkerType
-  ): Promise<IBaileysConnectionState> {
-    const protoPayload = this.buildConnectionProtoPayload(payload);
-
-    const contextData = buildConnectionLifecycleContext({
-      connection_lifecycle_id: payload.connection_lifecycle_id,
-      worker_id: workerId,
-      channel_id: workerId,
-      worker_type: workerType,
-      source_provider: 'balancer',
-      connection_type: payload.type,
-      connection_action: 'request_qrcode',
-    });
-
-    return runWithConnectionLifecycleContext(contextData, () =>
-      this.callWithFallback(workerId, workerType, (address) =>
-        this.requestConnectionQrCodeByAddress(address, protoPayload)
-      )
-    );
   }
 
   async waitForReady(

@@ -89,7 +89,6 @@ type StatusConnectionRequest struct {
 	RemoveSession         bool   `json:"remove_session"`
 	ConnectionAttemptID   string `json:"connection_attempt_id"`
 	ConnectionLifecycleID string `json:"connection_lifecycle_id"`
-	QRRequestDeadlineMS   int    `json:"qr_request_deadline_ms"`
 	RuntimeGeneration     int    `json:"runtime_generation"`
 	WarmPoolID            string `json:"warm_pool_id"`
 }

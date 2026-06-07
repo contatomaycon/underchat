@@ -28,8 +28,6 @@ import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
-import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
-import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
   IActivateWarmWorkerRequestProto,
   ICreateWarmWorkerRequestProto,
@@ -189,104 +187,6 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
           fastify.log.error(
             { err, workerId: req.worker_id },
             'ChangeConnectionStatus gRPC handler error'
-          );
-          callback({ code: status.INTERNAL, message: msg, details: msg }, null);
-        });
-    });
-  };
-
-  const handleRequestConnectionQrCode = (
-    call: ServerUnaryCall<
-      IChangeConnectionStatusRequestProto,
-      IWorkerConnectionStateProto
-    >,
-    callback: sendUnaryData<IWorkerConnectionStateProto>
-  ) => {
-    const req = call.request;
-    const contextData = buildConnectionLifecycleContext({
-      account_id: req.account_id,
-      worker_id: req.worker_id,
-      channel_id: req.worker_id,
-      source_provider: 'balancer',
-      connection_type: req.type,
-      connection_action: 'request_qrcode',
-    });
-    let payload;
-    try {
-      payload = protoToStatusConnectionRequest(req);
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      callback(
-        {
-          code: status.INVALID_ARGUMENT,
-          message: e.message,
-          details: e.message,
-        },
-        null
-      );
-      return;
-    }
-
-    runWithGrpcConnectionContext(call.metadata, contextData, () => {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.worker_command_grpc.qrcode_received',
-        decision: 'grpc_request_connection_qrcode',
-        outcome: 'received',
-        grpc_method: 'RequestConnectionQrCode',
-        status: payload.status,
-        connection_type: payload.type,
-        connection_attempt_id: payload.connection_attempt_id,
-        connection_lifecycle_id: payload.connection_lifecycle_id,
-        runtime_generation: payload.runtime_generation,
-        warm_pool_id: payload.warm_pool_id,
-        deadline_ms: payload.qr_request_deadline_ms,
-      });
-
-      handler
-        .handleRequestConnectionQrCode(payload, req.account_id)
-        .then((response) => {
-          recordConnectionLifecycle({
-            stage: 'connection.balancer.worker_command_grpc.qrcode_success',
-            decision: 'grpc_request_connection_qrcode',
-            outcome: 'success',
-            grpc_method: 'RequestConnectionQrCode',
-            status: response.status,
-            code: response.code,
-            qrcode: response.qrcode,
-            pairing_code: response.pairing_code,
-            has_qr: Boolean(response.qrcode),
-            has_pairing_code: Boolean(response.pairing_code),
-            connection_attempt_id:
-              response.connection_attempt_id ?? payload.connection_attempt_id,
-            runtime_generation:
-              response.runtime_generation ?? payload.runtime_generation,
-            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
-            container_id: response.container_id,
-            reason: response.reason,
-            qr_pending: response.qr_pending === true,
-            time_to_first_qr_ms: response.time_to_first_qr_ms,
-          });
-          callback(null, connectionStateToProto(response));
-        })
-        .catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          recordConnectionLifecycle({
-            stage: 'connection.balancer.worker_command_grpc.qrcode_error',
-            decision: 'grpc_request_connection_qrcode',
-            outcome: 'error',
-            reason: 'handler_error',
-            level: 'error',
-            grpc_method: 'RequestConnectionQrCode',
-            status: payload.status,
-            connection_type: payload.type,
-            error: msg,
-            connection_attempt_id: payload.connection_attempt_id,
-            runtime_generation: payload.runtime_generation,
-            warm_pool_id: payload.warm_pool_id,
-          });
-          fastify.log.error(
-            { err, workerId: req.worker_id },
-            'RequestConnectionQrCode gRPC handler error'
           );
           callback({ code: status.INTERNAL, message: msg, details: msg }, null);
         });
@@ -610,7 +510,6 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       cb: sendUnaryData<unknown>
     ) => handleUnary(call, cb, 'cleanup'),
     ChangeConnectionStatus: handleChangeConnectionStatus,
-    RequestConnectionQrCode: handleRequestConnectionQrCode,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
     ResolveIncomingCallAction: handleResolveIncomingCallAction,
     GetTypingSimulationConfig: handleGetTypingSimulationConfig,

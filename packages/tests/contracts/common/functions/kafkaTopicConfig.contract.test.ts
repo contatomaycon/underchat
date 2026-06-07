@@ -11,10 +11,6 @@ describe('kafkaTopicConfig', () => {
       numPartitions: 1,
       replicationFactor: 2,
     });
-    expect(resolveKafkaTopicConfig('worker.w1.connection.qrcode')).toEqual({
-      numPartitions: 1,
-      replicationFactor: 2,
-    });
   });
 
   it('resolves global topics to 30 partitions and replication factor 3', () => {

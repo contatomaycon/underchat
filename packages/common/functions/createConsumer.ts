@@ -41,10 +41,6 @@ const METADATA_REFRESH_TIMEOUT_MS = readPositiveIntegerEnv(
   'KAFKA_CONSUMER_METADATA_REFRESH_TIMEOUT_MS',
   5000
 );
-const ASSIGNMENT_READY_TIMEOUT_MS = readPositiveIntegerEnv(
-  'KAFKA_CONSUMER_ASSIGNMENT_READY_TIMEOUT_MS',
-  10000
-);
 const RESTART_BASE_MS = 1000;
 const RESTART_MAX_MS = 30000;
 const SEND_IDLE_RESTART_MS = Number(
@@ -422,41 +418,8 @@ class ManagedKafkaConsumer extends EventEmitter {
       consumer.subscribe(this.topics);
     }
 
-    const waitForAssignments = this.shouldWaitForTopicAssignments();
-    if (this.consuming && !waitForAssignments) {
+    if (this.consuming) {
       if (!this.startConsuming(consumer, 'ready')) {
-        callback?.(new Error(this.lastError));
-        return;
-      }
-    }
-
-    if (waitForAssignments) {
-      try {
-        await this.waitForTopicAssignments(consumer);
-      } catch (error) {
-        if (this.closed || this.current !== consumer) {
-          return;
-        }
-
-        this.connecting = false;
-        this.connected = false;
-        this.lastError = getErrorMessage(error);
-        logger.warn(
-          {
-            type: 'kafka.consumer.assignment.timeout',
-            group_id: this.groupId,
-            topics: this.topics,
-            timeout_ms: ASSIGNMENT_READY_TIMEOUT_MS,
-            error: this.lastError,
-          },
-          'Kafka consumer topic assignment not ready'
-        );
-        callback?.(error instanceof Error ? error : new Error(this.lastError));
-        this.scheduleRestart('assignment_timeout', error);
-        return;
-      }
-
-      if (this.consuming && !this.startConsuming(consumer, 'post_assignment')) {
         callback?.(new Error(this.lastError));
         return;
       }
@@ -582,108 +545,6 @@ class ManagedKafkaConsumer extends EventEmitter {
     } catch {
       return [];
     }
-  }
-
-  private hasAllTopicAssignments(consumer: KafkaConsumer): boolean {
-    const assignedTopics = new Set(
-      this.readAssignments(consumer).map((assignment) => assignment.topic)
-    );
-
-    return this.topics.every((topic) => assignedTopics.has(topic));
-  }
-
-  private shouldWaitForTopicAssignments(): boolean {
-    return this.topics.some((topic) => {
-      const parts = topic.split('.');
-      return (
-        parts.length === 4 &&
-        parts[0] === 'worker' &&
-        parts[1].length > 0 &&
-        parts[2] === 'connection' &&
-        parts[3] === 'qrcode'
-      );
-    });
-  }
-
-  private async waitForTopicAssignments(
-    consumer: KafkaConsumer
-  ): Promise<void> {
-    if (this.topics.length === 0 || !this.consuming) {
-      return;
-    }
-
-    if (this.hasAllTopicAssignments(consumer)) {
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      let interval: NodeJS.Timeout | undefined;
-      let timeout: NodeJS.Timeout | undefined;
-      let onRebalance = () => {};
-
-      const cleanup = () => {
-        consumer.removeListener('rebalance', onRebalance);
-        if (interval) {
-          clearInterval(interval);
-        }
-        if (timeout) {
-          clearTimeout(timeout);
-        }
-      };
-
-      const done = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        resolve();
-      };
-
-      const fail = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        cleanup();
-        reject(
-          new Error(
-            `Kafka consumer assignment timeout for topics ${this.topics.join(',')}`
-          )
-        );
-      };
-
-      onRebalance = () => {
-        if (this.hasAllTopicAssignments(consumer)) {
-          done();
-        }
-      };
-
-      timeout = setTimeout(fail, ASSIGNMENT_READY_TIMEOUT_MS);
-      interval = setInterval(() => {
-        if (this.hasAllTopicAssignments(consumer)) {
-          done();
-        }
-      }, 100);
-      consumer.on('rebalance', onRebalance);
-
-      setImmediate(() => {
-        if (this.hasAllTopicAssignments(consumer)) {
-          done();
-        }
-      });
-    });
-
-    logger.info(
-      {
-        type: 'kafka.consumer.assignment.ready',
-        group_id: this.groupId,
-        topics: this.topics,
-        assignments: this.readAssignments(consumer),
-      },
-      'Kafka consumer topic assignment ready'
-    );
   }
 
   private async ensureKnownTopics(): Promise<void> {

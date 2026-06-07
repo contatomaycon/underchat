@@ -1,15 +1,12 @@
 import 'reflect-metadata';
-jest.mock('@core/common/vendors/nodeRdkafka', () => ({ rdkafka: {} }));
 jest.mock('uuid', () => ({ v7: jest.fn(() => 'uuid-mock') }));
-jest.mock('@core/services/workerGrpcClient.service', () => ({
-  WorkerGrpcClientService: class WorkerGrpcClientService {},
-}));
 
 import { WorkerConnectionQrCodeRequesterUseCase } from '@core/useCases/worker/WorkerConnectionQrCodeRequester.useCase';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
 
 const t = ((key: string) => {
   const messages: Record<string, string> = {
@@ -23,17 +20,26 @@ const t = ((key: string) => {
 function makeRedis(initial: Record<string, string> = {}) {
   const store = new Map(Object.entries(initial));
   return {
+    store,
     get: jest.fn(async (key: string) => store.get(key) ?? null),
-    set: jest.fn(async (key: string, value: string, ...args: string[]) => {
-      if (args.includes('NX') && store.has(key)) {
-        return null;
+    set: jest.fn(
+      async (
+        key: string,
+        value: string,
+        _ex?: string,
+        _ttl?: number,
+        nx?: string
+      ) => {
+        if (nx === 'NX' && store.has(key)) {
+          return null;
+        }
+        store.set(key, value);
+        return 'OK';
       }
-      store.set(key, value);
-      return 'OK';
-    }),
+    ),
     del: jest.fn(async (key: string) => {
-      store.delete(key);
-      return 1;
+      const existed = store.delete(key);
+      return existed ? 1 : 0;
     }),
   };
 }
@@ -41,11 +47,13 @@ function makeRedis(initial: Record<string, string> = {}) {
 function makeUseCase(
   overrides: {
     workerStatusId?: EWorkerStatus;
-    workerTypeId?: EWorkerType;
-    ready?: boolean;
+    workerTypeId?: EWorkerType | string;
     redisInitial?: Record<string, string>;
+    enqueueError?: Error;
   } = {}
 ) {
+  const workerTypeId = overrides.workerTypeId ?? EWorkerType.baileys;
+  const workerStatusId = overrides.workerStatusId ?? EWorkerStatus.disponible;
   const workerService = {
     existsWorkerById: jest.fn(async () => true),
     viewWorker: jest.fn(async () => ({
@@ -53,67 +61,48 @@ function makeUseCase(
       name: 'Worker',
       number: null,
       status: {
-        id: overrides.workerStatusId ?? EWorkerStatus.disponible,
+        id: workerStatusId,
         name: 'Disponivel',
       },
-      type: { id: overrides.workerTypeId ?? EWorkerType.baileys, name: 'Type' },
+      type: { id: workerTypeId, name: 'Type' },
       server: { id: 'server-1', name: 'Server' },
       connection_date: null,
       created_at: null,
       updated_at: null,
     })),
   };
-  const kafkaBaileysQueueService = {
-    workerConnectionQrCode: jest.fn(
-      (workerId: string) => `worker.${workerId}.connection.qrcode`
-    ),
-    ensure: jest.fn(async () => undefined),
-  };
-  const streamProducerService = {
-    send: jest.fn(async () => undefined),
-  };
   const centrifugoService = {
     publishSub: jest.fn(async () => ({})),
   };
-  const readinessService = {
-    isReady: jest.fn(async () => overrides.ready ?? true),
-  };
-  const workerGrpcClientService = {
-    requestConnectionQrCode: jest.fn(async () => ({
-      code: ECodeMessage.awaitingReadQrCode,
-      status: EBaileysConnectionStatus.connecting,
-      worker_id: 'worker-1',
-      account_id: 'account-1',
-      worker_type_id: overrides.workerTypeId ?? EWorkerType.baileys,
-      worker_status_id: overrides.workerStatusId ?? EWorkerStatus.disponible,
-      connection_attempt_id: 'uuid-mock',
-      connection_lifecycle_id: 'uuid-mock',
-      qrcode: 'data:image/png;base64,direct',
-      qr_generated_at: new Date().toISOString(),
-      qr_pending: false,
-      reason: 'qrcode_fastpath_grpc_success',
-    })),
-  };
   const redis = makeRedis(overrides.redisInitial);
+  const redisQueueService = {
+    streamKey: jest.fn((workerId: string) => {
+      return `connection:qrcode:${workerId}:requests`;
+    }),
+    consumerGroup: jest.fn((workerId: string) => {
+      return `connection:qrcode:${workerId}:group`;
+    }),
+    enqueue: jest.fn(async (_payload: IWorkerConnectionQrCodeQueueMessage) => {
+      if (overrides.enqueueError) {
+        throw overrides.enqueueError;
+      }
+      return '1710000000000-0';
+    }),
+  };
+
   const useCase = new WorkerConnectionQrCodeRequesterUseCase(
     workerService as never,
-    kafkaBaileysQueueService as never,
-    streamProducerService as never,
     centrifugoService as never,
-    readinessService as never,
-    workerGrpcClientService as never,
-    redis as never
+    redis as never,
+    redisQueueService as never
   );
 
   return {
     useCase,
     workerService,
-    kafkaBaileysQueueService,
-    streamProducerService,
     centrifugoService,
-    readinessService,
-    workerGrpcClientService,
     redis,
+    redisQueueService,
   };
 }
 
@@ -122,7 +111,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'false';
   });
 
-  it('requests QR by gRPC and returns the fast path response without Kafka', async () => {
+  it('enqueues a QR request in Redis Streams and publishes pending state', async () => {
     const deps = makeUseCase();
 
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
@@ -134,70 +123,52 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       account_id: 'account-1',
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
-      qrcode: 'data:image/png;base64,direct',
-      qr_pending: false,
-      reason: 'qrcode_fastpath_grpc_success',
+      connection_attempt_id: 'uuid-mock',
+      connection_lifecycle_id: expect.any(String),
+      qr_pending: true,
+      reason: 'queued',
     });
+    expect(response.qrcode).toBeUndefined();
     expect(response.pairing_code).toBeUndefined();
-    expect(response.connection_attempt_id).toBeTruthy();
-    expect(response.connection_lifecycle_id).toBeTruthy();
 
-    expect(deps.readinessService.isReady).toHaveBeenCalledWith({
-      worker_id: 'worker-1',
-      account_id: 'account-1',
-      worker_type_id: EWorkerType.baileys,
-    });
-    expect(
-      deps.workerGrpcClientService.requestConnectionQrCode
-    ).toHaveBeenCalledWith(
-      'server-1',
+    expect(deps.redisQueueService.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        worker_id: 'worker-1',
+        request_id: 'uuid-mock',
         connection_attempt_id: response.connection_attempt_id,
-        qr_request_deadline_ms: 5000,
-      }),
-      'account-1'
+        connection_lifecycle_id: response.connection_lifecycle_id,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.baileys,
+        source: 'manager',
+        requested_at: expect.any(String),
+      })
     );
-    expect(deps.kafkaBaileysQueueService.ensure).not.toHaveBeenCalled();
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.redis.set).toHaveBeenCalledWith(
+      'connection:qrcode:worker-1:active_attempt',
+      expect.stringContaining(
+        '"stream_key":"connection:qrcode:worker-1:requests"'
+      ),
+      'EX',
+      expect.any(Number),
+      'NX'
+    );
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
       response
     );
   });
 
-  it('falls back to Kafka when the direct gRPC QR request fails', async () => {
-    const deps = makeUseCase();
-    deps.workerGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
-      new Error('balancer unavailable')
-    );
-
-    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
-
-    expect(response).toMatchObject({
-      worker_id: 'worker-1',
-      account_id: 'account-1',
-      qr_pending: true,
-      reason: 'queued',
-    });
-    expect(response.qrcode).toBeUndefined();
-    expect(deps.kafkaBaileysQueueService.ensure).toHaveBeenCalledWith(
-      'worker-1'
-    );
-    expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejects when the worker is not disponible and does not enqueue', async () => {
+  it('does not enqueue when worker is not disponible', async () => {
     const deps = makeUseCase({ workerStatusId: EWorkerStatus.creating });
 
     await expect(
       deps.useCase.execute(t, 'account-1', 'worker-1')
     ).rejects.toThrow('Worker not ready!');
 
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.redisQueueService.enqueue).not.toHaveBeenCalled();
   });
 
-  it('returns an active attempt without duplicating the Kafka message', async () => {
+  it('returns an active attempt without duplicating the Redis stream message', async () => {
     const activeAttempt = {
       ack: {
         code: ECodeMessage.awaitingReadQrCode,
@@ -212,7 +183,8 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         reason: 'queued',
       },
       queued_at: new Date().toISOString(),
-      topic: 'worker.worker-1.connection.qrcode',
+      stream_key: 'connection:qrcode:worker-1:requests',
+      consumer_group: 'connection:qrcode:worker-1:group',
       source: 'manager',
       worker_type_id: EWorkerType.baileys,
     };
@@ -230,10 +202,17 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
     });
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.redisQueueService.enqueue).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        connection_attempt_id: 'attempt-1',
+        qr_pending: true,
+      })
+    );
   });
 
-  it('returns a cached QR code without duplicating the Kafka message', async () => {
+  it('returns a cached QR code without duplicating the Redis stream message', async () => {
     const cachedQr = {
       code: ECodeMessage.awaitingReadQrCode,
       status: EBaileysConnectionStatus.connecting,
@@ -264,7 +243,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       qrcode: 'data:image/png;base64,cached',
       qr_pending: false,
     });
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.redisQueueService.enqueue).not.toHaveBeenCalled();
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
       expect.objectContaining({
@@ -275,7 +254,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     );
   });
 
-  it('ignores cached QR code from a different worker type', async () => {
+  it('does not reuse cached QR from a previous worker type', async () => {
     const cachedQr = {
       code: ECodeMessage.awaitingReadQrCode,
       status: EBaileysConnectionStatus.connecting,
@@ -298,45 +277,10 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
 
     const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
 
-    expect(response.qrcode).toBe('data:image/png;base64,direct');
+    expect(response.qrcode).toBeUndefined();
+    expect(response.worker_type_id).toBe(EWorkerType.wwebjs);
     expect(response.connection_attempt_id).not.toBe('attempt-baileys-cache');
-    expect(
-      deps.workerGrpcClientService.requestConnectionQrCode
-    ).toHaveBeenCalledWith(
-      'server-1',
-      expect.objectContaining({
-        worker_id: 'worker-1',
-      }),
-      'account-1'
-    );
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
-  });
-
-  it('ignores cached QR code without worker type metadata', async () => {
-    const cachedQr = {
-      code: ECodeMessage.awaitingReadQrCode,
-      status: EBaileysConnectionStatus.connecting,
-      worker_id: 'worker-1',
-      account_id: 'account-1',
-      worker_status_id: EWorkerStatus.disponible,
-      connection_attempt_id: 'attempt-legacy-cache',
-      connection_lifecycle_id: 'lifecycle-legacy-cache',
-      qrcode: 'data:image/png;base64,legacy',
-      qr_generated_at: new Date().toISOString(),
-      qr_pending: false,
-    };
-    const deps = makeUseCase({
-      workerTypeId: EWorkerType.wwebjs,
-      redisInitial: {
-        'connection:qrcode:worker-1:attempt': JSON.stringify(cachedQr),
-      },
-    });
-
-    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
-
-    expect(response.qrcode).toBe('data:image/png;base64,direct');
-    expect(response.connection_attempt_id).not.toBe('attempt-legacy-cache');
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it('does not reuse an already processed active QR attempt', async () => {
@@ -352,7 +296,8 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         reason: 'queued',
       },
       queued_at: new Date().toISOString(),
-      topic: 'worker.worker-1.connection.qrcode',
+      stream_key: 'connection:qrcode:worker-1:requests',
+      consumer_group: 'connection:qrcode:worker-1:group',
       source: 'manager',
       worker_type_id: EWorkerType.baileys,
     };
@@ -370,88 +315,21 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     expect(deps.redis.del).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:active_attempt'
     );
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
   });
 
-  it('does not reuse an active QR attempt from a previous worker type', async () => {
-    const activeAttempt = {
-      ack: {
-        code: ECodeMessage.awaitingReadQrCode,
-        status: EBaileysConnectionStatus.connecting,
-        worker_id: 'worker-1',
-        account_id: 'account-1',
-        connection_attempt_id: 'attempt-baileys',
-        connection_lifecycle_id: 'lifecycle-baileys',
-        qr_pending: true,
-        reason: 'queued',
-      },
-      queued_at: new Date().toISOString(),
-      topic: 'worker.worker-1.connection.qrcode',
-      source: 'manager',
-      worker_type_id: EWorkerType.baileys,
-    };
+  it('clears active attempt when Redis Stream enqueue fails', async () => {
     const deps = makeUseCase({
-      workerTypeId: EWorkerType.wwebjs,
-      redisInitial: {
-        'connection:qrcode:worker-1:active_attempt':
-          JSON.stringify(activeAttempt),
-      },
+      enqueueError: new Error('xadd failed'),
     });
 
-    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+    await expect(
+      deps.useCase.execute(t, 'account-1', 'worker-1')
+    ).rejects.toThrow('xadd failed');
 
-    expect(response.connection_attempt_id).not.toBe('attempt-baileys');
-    expect(
-      deps.workerGrpcClientService.requestConnectionQrCode
-    ).toHaveBeenCalledWith(
-      'server-1',
-      expect.objectContaining({
-        worker_id: 'worker-1',
-      }),
-      'account-1'
-    );
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
     expect(deps.redis.del).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:active_attempt'
     );
-  });
-
-  it('reuses an old pending active attempt instead of requeueing', async () => {
-    const activeAttempt = {
-      ack: {
-        code: ECodeMessage.awaitingReadQrCode,
-        status: EBaileysConnectionStatus.connecting,
-        worker_id: 'worker-1',
-        account_id: 'account-1',
-        connection_attempt_id: 'attempt-old',
-        connection_lifecycle_id: 'lifecycle-old',
-        qr_pending: true,
-        reason: 'queued',
-      },
-      queued_at: new Date(Date.now() - 60_000).toISOString(),
-      topic: 'worker.worker-1.connection.qrcode',
-      source: 'manager',
-      worker_type_id: EWorkerType.baileys,
-    };
-    const deps = makeUseCase({
-      redisInitial: {
-        'connection:qrcode:worker-1:active_attempt':
-          JSON.stringify(activeAttempt),
-      },
-    });
-
-    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
-
-    expect(response).toMatchObject({
-      worker_id: 'worker-1',
-      account_id: 'account-1',
-      qr_pending: true,
-      reason: 'queued',
-    });
-    expect(response.connection_attempt_id).toBe('attempt-old');
-    expect(deps.redis.del).not.toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:active_attempt'
-    );
-    expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
   });
 });

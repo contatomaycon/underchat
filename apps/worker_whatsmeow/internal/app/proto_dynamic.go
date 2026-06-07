@@ -58,7 +58,6 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				boolField("remove_session", 5),
 				stringField("connection_attempt_id", 6),
 				stringField("connection_lifecycle_id", 7),
-				int32Field("qr_request_deadline_ms", 8),
 				int32Field("runtime_generation", 9),
 				stringField("warm_pool_id", 10),
 			),

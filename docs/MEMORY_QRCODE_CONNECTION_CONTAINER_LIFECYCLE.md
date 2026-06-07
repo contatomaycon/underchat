@@ -24,8 +24,8 @@ Tentativas observadas no Manager:
 Eventos `connection_lifecycle` do Balancer:
 
 ```text
-stage=connection.balancer.worker_connection_grpc.qrcode_error
-decision=grpc_request_connection_qrcode
+stage=connection.balancer.qrcode_legacy_sync_error
+decision=legacy_sync_qrcode_request
 outcome=error
 reason=grpc_error
 grpc_method=RequestConnection
@@ -36,7 +36,7 @@ error=4 DEADLINE_EXCEEDED: Deadline exceeded after 30s ... Waiting for LB pick
 Na terceira tentativa tambem apareceu:
 
 ```text
-stage=connection.balancer.worker_command_grpc.qrcode_error
+stage=connection.balancer.qrcode_legacy_command_error
 reason=handler_error
 error=Worker service is not healthy
 ```
@@ -56,16 +56,17 @@ Ha tambem um problema no fluxo externo da tela: `apps/web/src/pages/connection/e
 ## Onde Olhar No Codigo
 
 - `packages/useCases/worker/WorkerConnectionQrCodeRequester.useCase.ts`
-  - Manager valida worker, pega `server_id` e chama `WorkerGrpcClientService.requestConnectionQrCode`.
-- `packages/services/workerGrpcClient.service.ts`
-  - Manager chama o Balancer via `RequestConnectionQrCode`.
-- `packages/plugins/proto/workerGrpcServer.ts`
-  - Balancer recebe `RequestConnectionQrCode` e chama `WorkerCommandHandlerService.handleRequestConnectionQrCode`.
+  - Manager valida worker/account/status/tipo, deduplica tentativa ativa e publica a solicitacao na stream Redis do worker.
+- `packages/services/workerConnectionQrCodeRedisQueue.service.ts`
+  - Centraliza a fila Redis Streams `connection:qrcode:{worker_id}:requests`, consumer group, retry de pendentes, ack/delete e telemetria.
+- `packages/consumer/worker/WorkerConnectionQrCode.consume.ts`
+  - Worker Baileys consome a stream Redis, valida a tentativa ativa e chama o provider local.
+- `packages/consumer/worker/WorkerConnectionQrCodeWwebjs.consume.ts`
+  - Worker WWebJS consome a stream Redis, valida a tentativa ativa e chama o provider local.
+- `apps/worker_whatsmeow/internal/app/worker.go`
+  - Worker Whatsmeow consome a mesma stream Redis e publica o QR pelo fluxo existente.
 - `packages/services/workerCommandHandler.service.ts`
-  - Fluxo principal de QR esta em `runConnectionQrCodeWorkflow`.
-  - O fluxo verifica container existente, tenta gRPC direto, valida saude, cria/recria container e chama o worker.
-- `packages/services/workerBaileysGrpcClient.service.ts`
-  - Balancer chama o worker em `${workerId}:50052`.
+  - Fluxo principal de QR do Balancer esta em `runConnectionQrCodeWorkflow`, tambem publicando em Redis Streams quando o pedido entra por ele.
 - `packages/services/containerHealth.service.ts`
   - Saude atual usa HTTP interno `/v1/health/check` via Docker exec.
 - `apps/web/src/pages/connection/external/[token].vue`

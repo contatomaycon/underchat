@@ -76,7 +76,6 @@ interface IStatusConnectionRequestProto {
   remove_session?: boolean;
   connection_attempt_id?: string;
   connection_lifecycle_id?: string;
-  qr_request_deadline_ms?: number;
   runtime_generation?: number;
   warm_pool_id?: string;
 }
@@ -171,9 +170,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     if (req.connection_lifecycle_id) {
       payload.connection_lifecycle_id = req.connection_lifecycle_id;
     }
-    if (req.qr_request_deadline_ms) {
-      payload.qr_request_deadline_ms = req.qr_request_deadline_ms;
-    }
     if (req.runtime_generation) {
       payload.runtime_generation = req.runtime_generation;
     }
@@ -210,7 +206,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         connection_lifecycle_id: payload.connection_lifecycle_id,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
-        qr_request_deadline_ms: payload.qr_request_deadline_ms,
       },
       'Worker connection request received'
     );
@@ -229,7 +224,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         connection_lifecycle_id: payload.connection_lifecycle_id,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
-        deadline_ms: payload.qr_request_deadline_ms,
       });
       recordConnectionAttemptTelemetry({
         event: 'worker_grpc_request_received',
@@ -242,7 +236,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         status: payload.status,
         outcome: 'received',
         grpc_method: 'RequestConnection',
-        deadline_ms: payload.qr_request_deadline_ms,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
       });

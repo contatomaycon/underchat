@@ -182,6 +182,9 @@ func (w *Worker) startActivatedRuntimeLocked(ctx context.Context) error {
 		return fmt.Errorf("whatsmeow runtime is not initialized")
 	}
 	w.whatsapp.Bootstrap(ctx)
+	if err := w.startConnectionQRCodeRedisStream(ctx); err != nil {
+		return err
+	}
 	if err := w.startConsumers(ctx); err != nil {
 		return err
 	}
@@ -350,7 +353,6 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 		{topicWorkerValidatePhone(workerID), workerTopicConfig},
 		{topicWorkerNotification(workerID), workerTopicConfig},
 		{topicWorkerWebhook(workerID), workerTopicConfig},
-		{topicWorkerConnectionQRCode(workerID), workerTopicConfig},
 		{topicMarkMessageRead, globalTopicConfig},
 		{topicWorkerConfigUpdate, globalTopicConfig},
 	}
@@ -373,7 +375,6 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 		{topicWorkerValidatePhone(workerID), "group-underchat-whatsmeow-validate-phone-" + workerID, workerTopicConfig, w.handlePhoneValidation},
 		{topicWorkerNotification(workerID), "group-underchat-whatsmeow-notification-send-" + workerID, workerTopicConfig, w.handleNotification},
 		{topicWorkerWebhook(workerID), "group-underchat-webhook-integration-whatsmeow-" + workerID, workerTopicConfig, w.handleWebhookIntegration},
-		{topicWorkerConnectionQRCode(workerID), "group-underchat-whatsmeow-connection-qrcode-" + workerID, workerTopicConfig, w.handleConnectionQRCode},
 		{topicMarkMessageRead, "group-underchat-mark-read-whatsmeow-" + workerID, globalTopicConfig, w.handleMarkRead},
 		{topicWorkerConfigUpdate, "group-underchat-worker-config-update-whatsmeow-" + workerID, globalTopicConfig, w.handleWorkerConfigUpdate},
 	}
@@ -382,101 +383,152 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 			return err
 		}
 		log.Printf("kafka consumer started topic=%s group=%s partitions=%d replication_factor=%d", consumer.topic, consumer.group, consumer.config.Partitions, consumer.config.ReplicationFactor)
-		if consumer.topic == topicWorkerConnectionQRCode(workerID) {
-			w.startConnectionQRCodeReadinessHeartbeat(ctx, consumer.topic, consumer.group)
-		}
 		time.Sleep(500 * time.Millisecond)
 	}
 	return nil
 }
 
-func (w *Worker) connectionQRCodeReadinessKey() string {
-	return "worker:" + w.cfg.WorkerID + ":connection:qrcode:consumer:ready"
+func (w *Worker) connectionQRCodeRedisStreamKey(workerID string) string {
+	return "connection:qrcode:" + workerID + ":requests"
 }
 
-func (w *Worker) markConnectionQRCodeConsumerReady(ctx context.Context, topic, groupID string) {
+func (w *Worker) connectionQRCodeRedisStreamGroup(workerID string) string {
+	return "connection:qrcode:" + workerID + ":group"
+}
+
+func (w *Worker) connectionQRCodeRedisStreamConsumer(workerID string) string {
+	return "whatsmeow:" + workerID
+}
+
+func (w *Worker) startConnectionQRCodeRedisStream(ctx context.Context) error {
 	if w.redis == nil {
-		return
+		return fmt.Errorf("redis client is required for connection QR stream")
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	payload := map[string]any{
+	streamKey := w.connectionQRCodeRedisStreamKey(w.cfg.WorkerID)
+	groupID := w.connectionQRCodeRedisStreamGroup(w.cfg.WorkerID)
+	consumerName := w.connectionQRCodeRedisStreamConsumer(w.cfg.WorkerID)
+
+	err := w.redis.XGroupCreateMkStream(ctx, streamKey, groupID, "0").Err()
+	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+			"stage":          "connection.whatsmeow.qrcode_redis_stream.group_error",
+			"decision":       "ensure_qrcode_redis_stream_group",
+			"outcome":        "error",
+			"reason":         "redis_xgroup_create_failed",
+			"level":          "error",
+			"stream_key":     streamKey,
+			"consumer_group": groupID,
+			"consumer_name":  consumerName,
+			"worker_id":      w.cfg.WorkerID,
+			"account_id":     w.cfg.AccountID,
+			"error":          err.Error(),
+		})
+		return err
+	}
+
+	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+		"stage":          "connection.whatsmeow.qrcode_redis_stream.listener_start",
+		"decision":       "start_qrcode_redis_stream_listener",
+		"outcome":        "started",
+		"stream_key":     streamKey,
+		"consumer_group": groupID,
+		"consumer_name":  consumerName,
 		"worker_id":      w.cfg.WorkerID,
 		"account_id":     w.cfg.AccountID,
 		"worker_type_id": WorkerTypeWhatsmeow,
-		"topic":          topic,
-		"group_id":       groupID,
-		"ready_at":       now,
-		"last_seen_at":   now,
-	}
-	if raw, err := w.redis.Get(ctx, w.connectionQRCodeReadinessKey()).Result(); err == nil && raw != "" {
-		var existing map[string]any
-		if json.Unmarshal([]byte(raw), &existing) == nil {
-			if readyAt, ok := existing["ready_at"].(string); ok && strings.TrimSpace(readyAt) != "" {
-				payload["ready_at"] = readyAt
-			}
-		}
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	if err := w.redis.Set(ctx, w.connectionQRCodeReadinessKey(), string(encoded), 30*time.Second).Err(); err != nil {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":      "connection.whatsmeow.qrcode_consumer.readiness_error",
-			"decision":   "mark_qrcode_consumer_ready",
-			"outcome":    "error",
-			"reason":     "redis_set_failed",
-			"level":      "warn",
-			"topic":      topic,
-			"group_id":   groupID,
-			"worker_id":  w.cfg.WorkerID,
-			"account_id": w.cfg.AccountID,
-			"error":      err.Error(),
-		})
-		return
-	}
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":      "connection.whatsmeow.qrcode_consumer.readiness_heartbeat",
-		"decision":   "mark_qrcode_consumer_ready",
-		"outcome":    "ready",
-		"topic":      topic,
-		"group_id":   groupID,
-		"worker_id":  w.cfg.WorkerID,
-		"account_id": w.cfg.AccountID,
 	})
+
+	go w.consumeConnectionQRCodeRedisStream(ctx, streamKey, groupID, consumerName)
+	return nil
 }
 
-func (w *Worker) startConnectionQRCodeReadinessHeartbeat(ctx context.Context, topic, groupID string) {
-	w.markConnectionQRCodeConsumerReady(ctx, topic, groupID)
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				w.markConnectionQRCodeConsumerReady(ctx, topic, groupID)
-			}
+func (w *Worker) consumeConnectionQRCodeRedisStream(ctx context.Context, streamKey, groupID, consumerName string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
-	}()
+
+		claimed, _, err := w.redis.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+			Stream:   streamKey,
+			Group:    groupID,
+			Consumer: consumerName,
+			MinIdle:  3 * time.Second,
+			Start:    "0-0",
+			Count:    10,
+		}).Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			w.logConnectionQRCodeRedisReadError(ctx, streamKey, groupID, consumerName, err)
+			time.Sleep(time.Second)
+			continue
+		}
+		if len(claimed) > 0 {
+			w.processConnectionQRCodeRedisMessages(ctx, streamKey, groupID, consumerName, claimed, true)
+			continue
+		}
+
+		streams, err := w.redis.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group:    groupID,
+			Consumer: consumerName,
+			Streams:  []string{streamKey, ">"},
+			Count:    10,
+			Block:    time.Second,
+		}).Result()
+		if errors.Is(err, redis.Nil) {
+			continue
+		}
+		if err != nil {
+			w.logConnectionQRCodeRedisReadError(ctx, streamKey, groupID, consumerName, err)
+			time.Sleep(time.Second)
+			continue
+		}
+		for _, stream := range streams {
+			w.processConnectionQRCodeRedisMessages(ctx, streamKey, groupID, consumerName, stream.Messages, false)
+		}
+	}
 }
 
-func (w *Worker) handleConnectionQRCode(ctx context.Context, msg kafka.Message) (err error) {
-	var data WorkerConnectionQRCodeQueueMessage
-	if err := json.Unmarshal(msg.Value, &data); err != nil {
+func (w *Worker) processConnectionQRCodeRedisMessages(ctx context.Context, streamKey, groupID, consumerName string, messages []redis.XMessage, reclaimed bool) {
+	for _, message := range messages {
+		ack, err := w.handleConnectionQRCodeRedisMessage(ctx, streamKey, groupID, consumerName, message, reclaimed)
+		if err != nil {
+			recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+				"stage":          "connection.whatsmeow.qrcode_redis_stream.process_error",
+				"decision":       "request_local_connection_qrcode",
+				"outcome":        "error",
+				"reason":         "local_connection_request_failed",
+				"level":          "error",
+				"stream_key":     streamKey,
+				"stream_id":      message.ID,
+				"consumer_group": groupID,
+				"consumer_name":  consumerName,
+				"error":          err.Error(),
+			})
+			continue
+		}
+		if ack {
+			w.ackDeleteConnectionQRCodeRedisMessage(ctx, streamKey, groupID, consumerName, message.ID)
+		}
+	}
+}
+
+func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamKey, groupID, consumerName string, message redis.XMessage, reclaimed bool) (ack bool, err error) {
+	data, err := workerConnectionQRCodeQueueMessageFromRedis(message)
+	if err != nil {
 		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":     "connection.whatsmeow.qrcode_queue.decode_error",
-			"decision":  "consume_connection_qrcode_request",
-			"outcome":   "ignored",
-			"reason":    "invalid_payload",
-			"level":     "warn",
-			"topic":     msg.Topic,
-			"partition": msg.Partition,
-			"offset":    msg.Offset,
-			"error":     err.Error(),
+			"stage":          "connection.whatsmeow.qrcode_redis_stream.decode_error",
+			"decision":       "consume_connection_qrcode_request",
+			"outcome":        "ignored",
+			"reason":         "invalid_payload",
+			"level":          "warn",
+			"stream_key":     streamKey,
+			"stream_id":      message.ID,
+			"consumer_group": groupID,
+			"consumer_name":  consumerName,
+			"error":          err.Error(),
 		})
-		return nil
+		return true, nil
 	}
 
 	req := StatusConnectionRequest{
@@ -498,97 +550,242 @@ func (w *Worker) handleConnectionQRCode(ctx context.Context, msg kafka.Message) 
 		finishLifecycleSpan(err)
 	}()
 
+	deliveryCount := w.connectionQRCodeRedisDeliveryCount(ctx, streamKey, groupID, message.ID)
+	queueLatencyMS := connectionQRCodeQueueLatencyMS(data.RequestedAt)
 	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":                   "connection.whatsmeow.qrcode_queue.received",
+		"stage":                   "connection.whatsmeow.qrcode_redis_stream.received",
 		"decision":                "consume_connection_qrcode_request",
 		"outcome":                 "received",
-		"topic":                   msg.Topic,
-		"partition":               msg.Partition,
-		"offset":                  msg.Offset,
+		"stream_key":              streamKey,
+		"stream_id":               message.ID,
+		"consumer_group":          groupID,
+		"consumer_name":           consumerName,
+		"delivery_count":          deliveryCount,
+		"reclaimed":               reclaimed,
 		"request_id":              data.RequestID,
 		"connection_attempt_id":   data.ConnectionAttemptID,
 		"connection_lifecycle_id": data.ConnectionLifecycleID,
 		"source":                  data.Source,
+		"requested_at":            data.RequestedAt,
+		"queue_latency_ms":        queueLatencyMS,
 	})
 
-	if data.WorkerID != w.cfg.WorkerID || data.AccountID != w.cfg.AccountID {
+	if data.WorkerID != w.cfg.WorkerID || data.AccountID != w.cfg.AccountID || data.WorkerTypeID != WorkerTypeWhatsmeow {
 		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":              "connection.whatsmeow.qrcode_queue.ignored_foreign",
-			"decision":           "validate_connection_qrcode_request_scope",
-			"outcome":            "ignored",
-			"reason":             "worker_or_account_mismatch",
-			"level":              "warn",
-			"topic":              msg.Topic,
-			"partition":          msg.Partition,
-			"offset":             msg.Offset,
-			"request_worker_id":  data.WorkerID,
-			"request_account_id": data.AccountID,
-			"worker_id":          w.cfg.WorkerID,
-			"account_id":         w.cfg.AccountID,
+			"stage":                  "connection.whatsmeow.qrcode_redis_stream.ignored_foreign",
+			"decision":               "validate_connection_qrcode_request_scope",
+			"outcome":                "ignored",
+			"reason":                 "worker_or_account_or_type_mismatch",
+			"level":                  "warn",
+			"stream_key":             streamKey,
+			"stream_id":              message.ID,
+			"consumer_group":         groupID,
+			"consumer_name":          consumerName,
+			"delivery_count":         deliveryCount,
+			"request_worker_id":      data.WorkerID,
+			"request_account_id":     data.AccountID,
+			"request_worker_type_id": data.WorkerTypeID,
+			"worker_id":              w.cfg.WorkerID,
+			"account_id":             w.cfg.AccountID,
+			"worker_type_id":         WorkerTypeWhatsmeow,
 		})
-		return nil
+		return true, nil
 	}
 
 	active, activeErr := w.isActiveConnectionQRCodeAttempt(ctx, data)
 	if activeErr != nil {
 		err = activeErr
 		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                 "connection.whatsmeow.qrcode_queue.active_attempt_error",
+			"stage":                 "connection.whatsmeow.qrcode_redis_stream.active_attempt_error",
 			"decision":              "validate_active_connection_attempt",
 			"outcome":               "error",
 			"reason":                "redis_read_failed",
 			"level":                 "error",
-			"topic":                 msg.Topic,
-			"partition":             msg.Partition,
-			"offset":                msg.Offset,
+			"stream_key":            streamKey,
+			"stream_id":             message.ID,
+			"consumer_group":        groupID,
+			"consumer_name":         consumerName,
+			"delivery_count":        deliveryCount,
 			"connection_attempt_id": data.ConnectionAttemptID,
 			"error":                 activeErr.Error(),
 		})
-		return activeErr
+		return false, activeErr
 	}
 	if !active {
 		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                 "connection.whatsmeow.qrcode_queue.ignored_stale",
+			"stage":                 "connection.whatsmeow.qrcode_redis_stream.ignored_stale",
 			"decision":              "validate_active_connection_attempt",
 			"outcome":               "ignored",
 			"reason":                "stale_or_duplicate_connection_attempt",
 			"level":                 "warn",
-			"topic":                 msg.Topic,
-			"partition":             msg.Partition,
-			"offset":                msg.Offset,
+			"stream_key":            streamKey,
+			"stream_id":             message.ID,
+			"consumer_group":        groupID,
+			"consumer_name":         consumerName,
+			"delivery_count":        deliveryCount,
 			"connection_attempt_id": data.ConnectionAttemptID,
 		})
-		return nil
+		return true, nil
 	}
 
-	if _, err = w.RequestConnection(ctx, req); err != nil {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                 "connection.whatsmeow.qrcode_queue.process_error",
-			"decision":              "request_local_connection_qrcode",
-			"outcome":               "error",
-			"reason":                "local_connection_request_failed",
-			"level":                 "error",
-			"topic":                 msg.Topic,
-			"partition":             msg.Partition,
-			"offset":                msg.Offset,
-			"connection_attempt_id": data.ConnectionAttemptID,
-			"error":                 err.Error(),
-		})
-		return err
-	}
-	if err = w.markConnectionQRCodeAttemptProcessed(ctx, data); err != nil {
-		return err
+	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+		"stage":                 "connection.whatsmeow.qrcode_redis_stream.local_request_start",
+		"decision":              "request_local_connection_qrcode",
+		"outcome":               "started",
+		"stream_key":            streamKey,
+		"stream_id":             message.ID,
+		"consumer_group":        groupID,
+		"consumer_name":         consumerName,
+		"delivery_count":        deliveryCount,
+		"connection_attempt_id": data.ConnectionAttemptID,
+		"queue_latency_ms":      queueLatencyMS,
+	})
+	state, err := w.RequestConnection(ctx, req)
+	if err != nil {
+		return false, err
 	}
 	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":                 "connection.whatsmeow.qrcode_queue.processed",
+		"stage":                 "connection.whatsmeow.qrcode_redis_stream.local_request_success",
 		"decision":              "request_local_connection_qrcode",
-		"outcome":               "processed",
-		"topic":                 msg.Topic,
-		"partition":             msg.Partition,
-		"offset":                msg.Offset,
+		"outcome":               "success",
+		"stream_key":            streamKey,
+		"stream_id":             message.ID,
+		"consumer_group":        groupID,
+		"consumer_name":         consumerName,
+		"delivery_count":        deliveryCount,
+		"connection_attempt_id": firstNonEmpty(state.ConnectionAttemptID, data.ConnectionAttemptID),
+		"status":                state.Status,
+		"code":                  state.Code,
+		"has_qr":                state.QRCode != "",
+		"qr_pending":            state.QRPending,
+		"reason":                state.Reason,
+		"time_to_first_qr_ms":   state.TimeToFirstQRMS,
+	})
+	if err = w.markConnectionQRCodeAttemptProcessed(ctx, data); err != nil {
+		return false, err
+	}
+	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+		"stage":                 "connection.whatsmeow.qrcode_redis_stream.mark_processed_success",
+		"decision":              "mark_qrcode_attempt_processed",
+		"outcome":               "success",
+		"stream_key":            streamKey,
+		"stream_id":             message.ID,
+		"consumer_group":        groupID,
+		"consumer_name":         consumerName,
 		"connection_attempt_id": data.ConnectionAttemptID,
 	})
-	return nil
+	return true, nil
+}
+
+func workerConnectionQRCodeQueueMessageFromRedis(message redis.XMessage) (WorkerConnectionQRCodeQueueMessage, error) {
+	data := WorkerConnectionQRCodeQueueMessage{
+		RequestID:             redisStreamString(message.Values, "request_id"),
+		ConnectionAttemptID:   redisStreamString(message.Values, "connection_attempt_id"),
+		ConnectionLifecycleID: redisStreamString(message.Values, "connection_lifecycle_id"),
+		WorkerID:              redisStreamString(message.Values, "worker_id"),
+		AccountID:             redisStreamString(message.Values, "account_id"),
+		WorkerTypeID:          redisStreamString(message.Values, "worker_type_id"),
+		Source:                redisStreamString(message.Values, "source"),
+		RequestedAt:           redisStreamString(message.Values, "requested_at"),
+	}
+	if data.RequestID == "" || data.ConnectionAttemptID == "" || data.ConnectionLifecycleID == "" || data.WorkerID == "" || data.AccountID == "" || data.WorkerTypeID == "" || data.RequestedAt == "" {
+		return data, fmt.Errorf("missing required redis stream fields")
+	}
+	return data, nil
+}
+
+func redisStreamString(values map[string]interface{}, key string) string {
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func connectionQRCodeQueueLatencyMS(requestedAt string) int64 {
+	parsed, err := time.Parse(time.RFC3339Nano, requestedAt)
+	if err != nil {
+		return 0
+	}
+	return time.Since(parsed).Milliseconds()
+}
+
+func (w *Worker) connectionQRCodeRedisDeliveryCount(ctx context.Context, streamKey, groupID, streamID string) int64 {
+	pending, err := w.redis.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: streamKey,
+		Group:  groupID,
+		Start:  streamID,
+		End:    streamID,
+		Count:  1,
+	}).Result()
+	if err != nil || len(pending) == 0 {
+		return 0
+	}
+	return pending[0].RetryCount
+}
+
+func (w *Worker) ackDeleteConnectionQRCodeRedisMessage(ctx context.Context, streamKey, groupID, consumerName, streamID string) {
+	acked, ackErr := w.redis.XAck(ctx, streamKey, groupID, streamID).Result()
+	deleted, deleteErr := w.redis.XDel(ctx, streamKey, streamID).Result()
+	if ackErr != nil || deleteErr != nil {
+		errMsg := ""
+		if ackErr != nil {
+			errMsg = ackErr.Error()
+		}
+		if deleteErr != nil {
+			errMsg = strings.TrimSpace(errMsg + " " + deleteErr.Error())
+		}
+		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+			"stage":              "connection.whatsmeow.qrcode_redis_stream.ack_delete_error",
+			"decision":           "ack_delete_qrcode_redis_stream_message",
+			"outcome":            "error",
+			"reason":             "redis_ack_delete_failed",
+			"level":              "warn",
+			"stream_key":         streamKey,
+			"stream_id":          streamID,
+			"consumer_group":     groupID,
+			"consumer_name":      consumerName,
+			"redis_ack_count":    acked,
+			"redis_delete_count": deleted,
+			"error":              errMsg,
+		})
+		return
+	}
+	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+		"stage":              "connection.whatsmeow.qrcode_redis_stream.ack_delete_success",
+		"decision":           "ack_delete_qrcode_redis_stream_message",
+		"outcome":            "success",
+		"stream_key":         streamKey,
+		"stream_id":          streamID,
+		"consumer_group":     groupID,
+		"consumer_name":      consumerName,
+		"redis_ack_count":    acked,
+		"redis_delete_count": deleted,
+	})
+}
+
+func (w *Worker) logConnectionQRCodeRedisReadError(ctx context.Context, streamKey, groupID, consumerName string, err error) {
+	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+		"stage":          "connection.whatsmeow.qrcode_redis_stream.read_error",
+		"decision":       "read_qrcode_redis_stream",
+		"outcome":        "error",
+		"reason":         "redis_stream_read_failed",
+		"level":          "warn",
+		"stream_key":     streamKey,
+		"consumer_group": groupID,
+		"consumer_name":  consumerName,
+		"worker_id":      w.cfg.WorkerID,
+		"account_id":     w.cfg.AccountID,
+		"worker_type_id": WorkerTypeWhatsmeow,
+		"error":          err.Error(),
+	})
 }
 
 type activeConnectionQRCodeAttemptEnvelope struct {

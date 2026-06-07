@@ -1,6 +1,5 @@
 import { injectable, inject } from 'tsyringe';
 import Redis from 'ioredis';
-import type { MessageHeader } from 'node-rdkafka';
 import { v7 as uuidv7 } from 'uuid';
 import {
   WorkerContainerInspection,
@@ -16,7 +15,6 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ChatService } from '@core/services/chat.service';
 import { PublishResult } from 'centrifuge';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
-import { StreamProducerService } from '@core/services/streamProducer.service';
 import {
   ContainerHealthService,
   type ContainerHealthCheckOptions,
@@ -67,10 +65,7 @@ import {
   recordConnectionQrSummary,
   summarizeConnectionQrState,
 } from '@core/plugins/telemetry/connectionQrSummary';
-import {
-  getConnectionQrGrpcFastPathDeadlineMs,
-  recordConnectionAttemptTelemetry,
-} from '@core/plugins/telemetry/connectionAttemptTelemetry';
+import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
 import { WorkerLifecycleLockService } from '@core/services/workerLifecycleLock.service';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
@@ -82,8 +77,8 @@ import {
   IDeleteWarmWorkerRequestProto,
   IWarmWorkerCommandResponseProto,
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
-import { WorkerConnectionQrCodeReadinessService } from '@core/services/workerConnectionQrCodeReadiness.service';
 import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
+import { WorkerConnectionQrCodeRedisQueueService } from '@core/services/workerConnectionQrCodeRedisQueue.service';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -112,17 +107,19 @@ interface RecreateConnectionReconciliation {
   connectionState?: IBaileysConnectionState;
 }
 
-interface QrConnectionAttemptRetryContext {
-  payload: StatusConnectionWorkerRequest;
-  accountId: string;
-  workerData: ResolvedWorkerDataForContainer;
-  startedAtMs: number;
-}
-
 interface CreateWorkerOptions {
   healthOptions?: ContainerHealthCheckOptions;
   proxyOverride?: ResolvedWorkerProxyConfig | null;
   proxyMode?: 'proxy' | 'direct' | 'direct_fallback';
+}
+
+interface ActiveQrAttempt {
+  ack: IBaileysConnectionState;
+  queued_at: string;
+  stream_key: string;
+  consumer_group: string;
+  source: 'manager';
+  worker_type_id: EWorkerType;
 }
 
 interface RecreateSessionVolumeResolution {
@@ -158,19 +155,11 @@ export class WorkerCommandHandlerService {
   private readonly qrAttemptTtlSeconds = 180;
   private readonly qrCacheTtlSeconds = 115;
   private readonly qrMaxAgeMs = 120_000;
-  private readonly qrRetryIntervalMs = 3_000;
-  private readonly qrRetryMaxAttempts = 20;
   private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
   private connectionRequestAttempts = new Map<string, number>();
   private connectionRequestPayloads = new Map<
     string,
     StatusConnectionWorkerRequest
-  >();
-  private qrConnectionRequestTimers = new Map<string, NodeJS.Timeout>();
-  private qrConnectionRequestAttempts = new Map<string, number>();
-  private qrConnectionRequestPayloads = new Map<
-    string,
-    QrConnectionAttemptRetryContext
   >();
   private readonly defaultCallAction: IResolveIncomingCallActionResponseProto =
     {
@@ -188,8 +177,6 @@ export class WorkerCommandHandlerService {
     private readonly chatService: ChatService,
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    @inject(StreamProducerService)
-    private readonly streamProducerService: StreamProducerService,
     @inject(ContainerHealthService)
     private readonly containerHealthService: ContainerHealthService,
     @inject(WorkerBaileysGrpcClientService)
@@ -206,10 +193,12 @@ export class WorkerCommandHandlerService {
     private readonly workerConfigService: WorkerConfigService,
     @inject(WorkerLifecycleLockService)
     private readonly workerLifecycleLockService: WorkerLifecycleLockService,
-    @inject(WorkerConnectionQrCodeReadinessService)
-    private readonly workerConnectionQrCodeReadinessService: WorkerConnectionQrCodeReadinessService,
     @inject('Redis')
     private readonly redis: Redis,
+    @inject(WorkerConnectionQrCodeRedisQueueService)
+    private readonly redisQueueService: WorkerConnectionQrCodeRedisQueueService = new WorkerConnectionQrCodeRedisQueueService(
+      redis
+    ),
     @inject(WorkerWarmPoolRepository)
     private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never,
     @inject(WorkerRuntimeRepository)
@@ -582,24 +571,6 @@ export class WorkerCommandHandlerService {
       warm_pool_id: data.warm_pool_id,
       activated_at: currentTime(),
     });
-
-    try {
-      await this.waitForConnectionQrCodeConsumerReady(
-        data.worker_id,
-        data.account_id,
-        workerType,
-        'activate_warm_worker'
-      );
-    } catch (error) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        EWorkerAction.create,
-        data.server_id,
-        data.lifecycle_operation_id
-      );
-      throw error;
-    }
 
     await this.workerWarmPoolRepository.markAssigned(
       data.warm_pool_id,
@@ -1067,7 +1038,6 @@ export class WorkerCommandHandlerService {
       remove_session: input.remove_session,
       connection_attempt_id: input.connection_attempt_id,
       connection_lifecycle_id: input.connection_lifecycle_id,
-      qr_request_deadline_ms: input.qr_request_deadline_ms,
       runtime_generation: input.runtime_generation,
       warm_pool_id: input.warm_pool_id,
       qr_pending: input.qr_pending,
@@ -1098,7 +1068,9 @@ export class WorkerCommandHandlerService {
         status: payload.status,
         connection_type: payload.type,
       });
-      throw new Error('Use RequestConnectionQrCode for QR Code connections.');
+      throw new Error(
+        'Use the QR Code request endpoint for QR Code connections.'
+      );
     }
 
     this.publishConnectionIntent(payload, accountId);
@@ -1222,7 +1194,6 @@ export class WorkerCommandHandlerService {
       connection_type: input.type,
       connection_attempt_id: input.connection_attempt_id,
       connection_lifecycle_id: input.connection_lifecycle_id,
-      qr_request_deadline_ms: input.qr_request_deadline_ms,
       runtime_generation: input.runtime_generation,
       warm_pool_id: input.warm_pool_id,
       qr_pending: input.qr_pending === true,
@@ -2089,23 +2060,17 @@ export class WorkerCommandHandlerService {
 
       const state = parsed as IBaileysConnectionState;
       if (this.isQrExpired(state)) {
-        const pending = this.buildPendingStateFromExpiredQr(state);
-        const ttlSeconds = this.qrCacheTtlForState(pending);
-        await this.redis.setex(
-          this.qrAttemptCacheKey(workerId),
-          ttlSeconds,
-          JSON.stringify(pending)
-        );
+        await this.redis.del(this.qrAttemptCacheKey(workerId));
         recordConnectionQrSummary({
           event: 'balancer_qrcode_cache_expired',
           ...summarizeConnectionQrState(state),
           reason: 'qr_cache_age_exceeded',
           qr_age_ms: this.qrAgeMs(state),
-          qr_cache_ttl_seconds: ttlSeconds,
+          qr_cache_ttl_seconds: 0,
           qr_expired: true,
           level: 'warn',
         });
-        return pending;
+        return undefined;
       }
 
       return state;
@@ -2181,7 +2146,6 @@ export class WorkerCommandHandlerService {
       this.isActiveQrAttemptState(cached) && !cachedIdentityMismatch
         ? cached
         : undefined;
-    const activeRetry = this.qrConnectionRequestPayloads.has(input.worker_id);
     const connectionAttemptId =
       activeCached?.connection_attempt_id ??
       input.connection_attempt_id ??
@@ -2204,21 +2168,15 @@ export class WorkerCommandHandlerService {
       return { payload, shouldReturnCached: false };
     }
 
-    if (
-      activeCached.qrcode ||
-      activeCached.qr_pending === true ||
-      activeRetry
-    ) {
-      const pendingReason = activeRetry
-        ? 'active_retry_in_progress'
-        : 'active_attempt_pending';
-
+    if (activeCached.qrcode || activeCached.qr_pending === true) {
       recordConnectionQrSummary({
         event: activeCached.qrcode
           ? 'balancer_qrcode_active_attempt_cache_hit'
           : 'balancer_qrcode_active_attempt_pending',
         ...summarizeConnectionQrState(activeCached),
-        reason: activeCached.qrcode ? 'active_attempt_has_qr' : pendingReason,
+        reason: activeCached.qrcode
+          ? 'active_attempt_has_qr'
+          : 'active_attempt_pending',
         qr_age_ms: this.qrAgeMs(activeCached),
         qr_cache_ttl_seconds: this.qrCacheTtlForState(activeCached),
         qr_expired: this.isQrExpired(activeCached),
@@ -2425,6 +2383,55 @@ export class WorkerCommandHandlerService {
     );
   }
 
+  private async getActiveQrAttempt(
+    workerId: string
+  ): Promise<ActiveQrAttempt | null> {
+    const raw = await this.redis.get(this.activeQrAttemptKey(workerId));
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as ActiveQrAttempt;
+      if (!parsed?.ack?.connection_attempt_id) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      await this.redis.del(this.activeQrAttemptKey(workerId));
+      return null;
+    }
+  }
+
+  private async claimActiveQrAttempt(
+    workerId: string,
+    attempt: ActiveQrAttempt
+  ): Promise<boolean> {
+    const result = await this.redis.set(
+      this.activeQrAttemptKey(workerId),
+      JSON.stringify(attempt),
+      'EX',
+      this.qrAttemptTtlSeconds,
+      'NX'
+    );
+    return result === 'OK';
+  }
+
+  private async clearQrAttemptAfterEnqueueFailure(
+    workerId: string,
+    connectionAttemptId?: string
+  ): Promise<void> {
+    await this.redis.del(this.qrAttemptCacheKey(workerId));
+    if (!connectionAttemptId) {
+      return;
+    }
+
+    const active = await this.getActiveQrAttempt(workerId);
+    if (active?.ack.connection_attempt_id === connectionAttemptId) {
+      await this.redis.del(this.activeQrAttemptKey(workerId));
+    }
+  }
+
   private async invalidateQrAttemptState(
     workerId: string,
     options: {
@@ -2434,8 +2441,6 @@ export class WorkerCommandHandlerService {
       recreateReason?: string;
     }
   ): Promise<void> {
-    this.stopQrConnectionAttemptRetry(workerId);
-
     try {
       await this.redis.del(
         this.qrAttemptCacheKey(workerId),
@@ -2698,177 +2703,6 @@ export class WorkerCommandHandlerService {
     }
   }
 
-  private isRetryableQrRequestError(error: unknown): boolean {
-    const message = getErrorMessage(error).toLowerCase();
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? Number((error as { code?: unknown }).code)
-        : undefined;
-
-    return (
-      code === 4 ||
-      code === 14 ||
-      message.includes('deadline') ||
-      message.includes('deadline_exceeded') ||
-      message.includes('unavailable') ||
-      message.includes('failed to connect before the deadline') ||
-      message.includes('econnrefused') ||
-      message.includes('no connection established') ||
-      message.includes('name resolution') ||
-      message.includes('enotfound')
-    );
-  }
-
-  private startQrConnectionAttemptRetry(
-    payload: StatusConnectionWorkerRequest,
-    accountId: string,
-    workerData: ResolvedWorkerDataForContainer
-  ): void {
-    const existingStartedAtMs = this.qrConnectionRequestPayloads.get(
-      payload.worker_id
-    )?.startedAtMs;
-    this.stopQrConnectionAttemptRetry(payload.worker_id);
-    this.rememberQrConnectionAttempt(
-      payload,
-      accountId,
-      workerData,
-      existingStartedAtMs
-    );
-    this.qrConnectionRequestAttempts.set(payload.worker_id, 0);
-    this.scheduleNextQrConnectionAttempt(payload.worker_id);
-  }
-
-  private rememberQrConnectionAttempt(
-    payload: StatusConnectionWorkerRequest,
-    accountId: string,
-    workerData: ResolvedWorkerDataForContainer,
-    startedAtMs = Date.now()
-  ): void {
-    this.qrConnectionRequestPayloads.set(payload.worker_id, {
-      payload: { ...payload },
-      accountId,
-      workerData,
-      startedAtMs,
-    });
-  }
-
-  private async resumePendingQrAttempt(
-    payload: StatusConnectionWorkerRequest,
-    cachedState: IBaileysConnectionState,
-    accountId?: string
-  ): Promise<void> {
-    try {
-      const workerData = await this.resolveWorkerDataForContainer(
-        payload.worker_id,
-        accountId ?? cachedState.account_id
-      );
-
-      if (!workerData) {
-        recordConnectionQrSummary({
-          event: 'balancer_qrcode_pending_resume_skipped',
-          ...summarizeConnectionQrState(cachedState),
-          reason: 'worker_data_not_found',
-          level: 'warn',
-        });
-        return;
-      }
-
-      this.startQrConnectionAttemptRetry(
-        payload,
-        accountId || cachedState.account_id || workerData.accountIdResolved,
-        workerData
-      );
-      recordConnectionQrSummary({
-        event: 'balancer_qrcode_pending_resume_scheduled',
-        ...summarizeConnectionQrState(cachedState),
-        worker_type: workerData.workerTypeId,
-        reason: 'active_pending_without_in_memory_retry',
-        publish_source: 'qr_pending_resume',
-        level: 'warn',
-      });
-    } catch (err) {
-      recordConnectionQrSummary({
-        event: 'balancer_qrcode_pending_resume_error',
-        ...summarizeConnectionQrState(cachedState),
-        reason: 'resume_pending_retry_failed',
-        error: getErrorMessage(err),
-        level: 'error',
-      });
-    }
-  }
-
-  private stopQrConnectionAttemptRetry(workerId: string): void {
-    const timer = this.qrConnectionRequestTimers.get(workerId);
-    if (timer) {
-      clearTimeout(timer);
-      this.qrConnectionRequestTimers.delete(workerId);
-    }
-    this.qrConnectionRequestPayloads.delete(workerId);
-    this.qrConnectionRequestAttempts.delete(workerId);
-  }
-
-  private scheduleNextQrConnectionAttempt(workerId: string): void {
-    const timer = setTimeout(() => {
-      void this.runQrConnectionAttempt(workerId);
-    }, this.qrRetryIntervalMs);
-    this.qrConnectionRequestTimers.set(workerId, timer);
-  }
-
-  private async runQrConnectionAttempt(workerId: string): Promise<void> {
-    const context = this.qrConnectionRequestPayloads.get(workerId);
-    if (!context) {
-      return;
-    }
-
-    const attempt = (this.qrConnectionRequestAttempts.get(workerId) ?? 0) + 1;
-    this.qrConnectionRequestAttempts.set(workerId, attempt);
-
-    if (attempt > this.qrRetryMaxAttempts) {
-      const pending = this.buildQrPendingState(
-        context.payload,
-        context.accountId,
-        {
-          attempt: this.qrRetryMaxAttempts,
-          maxAttempts: this.qrRetryMaxAttempts,
-          reason: 'retry_exhausted',
-          runtimeGeneration: context.workerData.runtimeGeneration,
-          warmPoolId: context.workerData.warmPoolId,
-          containerId: context.workerData.containerId,
-        }
-      );
-      await this.cacheAndPublishQrAttemptState(pending, {
-        event: 'balancer_qrcode_retry_exhausted',
-        workerType: context.workerData.workerTypeId,
-        reason: 'retry_exhausted',
-        publishSource: 'qr_retry',
-        level: 'warn',
-      });
-      this.stopQrConnectionAttemptRetry(workerId);
-      return;
-    }
-
-    const pending = this.buildQrPendingState(
-      context.payload,
-      context.accountId,
-      {
-        attempt,
-        maxAttempts: this.qrRetryMaxAttempts,
-        reason: 'legacy_grpc_qr_retry_disabled',
-        runtimeGeneration: context.workerData.runtimeGeneration,
-        warmPoolId: context.workerData.warmPoolId,
-        containerId: context.workerData.containerId,
-      }
-    );
-    await this.cacheAndPublishQrAttemptState(pending, {
-      event: 'balancer_qrcode_legacy_retry_disabled',
-      workerType: context.workerData.workerTypeId,
-      reason: 'connection_qrcode_requests_are_queue_driven',
-      publishSource: 'qr_retry_disabled',
-      level: 'warn',
-    });
-    this.stopQrConnectionAttemptRetry(workerId);
-  }
-
   private async runConnectionQrCodeWorkflow(
     payload: StatusConnectionWorkerRequest,
     accountId?: string
@@ -2921,128 +2755,113 @@ export class WorkerCommandHandlerService {
       payload,
       workerData.accountIdResolved,
       {
-        reason: 'qrcode_fastpath_grpc_start',
+        reason: 'qrcode_redis_stream_start',
         runtimeGeneration: workerData.runtimeGeneration,
         warmPoolId: workerData.warmPoolId,
         containerId: workerData.containerId,
       }
     );
+    pending.worker_type_id = workerData.workerTypeId;
+    pending.worker_status_id = workerData.workerStatusId;
+
+    const streamKey = this.redisQueueService.streamKey(workerId);
+    const consumerGroup = this.redisQueueService.consumerGroup(workerId);
+    const activeAttempt: ActiveQrAttempt = {
+      ack: pending,
+      queued_at: new Date().toISOString(),
+      stream_key: streamKey,
+      consumer_group: consumerGroup,
+      source: 'manager',
+      worker_type_id: workerData.workerTypeId,
+    };
+    const claimed = await this.claimActiveQrAttempt(workerId, activeAttempt);
+    if (!claimed) {
+      const current = await this.getActiveQrAttempt(workerId);
+      if (current) {
+        recordConnectionLifecycle({
+          stage:
+            'connection.balancer.command_handler.qrcode_active_attempt_conflict',
+          decision: 'claim_active_qrcode_attempt',
+          outcome: 'deduped',
+          reason: 'active_attempt_claim_conflict_current_found',
+          worker_type: current.worker_type_id,
+          worker_type_id: current.worker_type_id,
+          worker_status_id: workerData.workerStatusId,
+          stream_key: current.stream_key,
+          consumer_group: current.consumer_group,
+          connection_attempt_id: current.ack.connection_attempt_id,
+          connection_lifecycle_id: current.ack.connection_lifecycle_id,
+        });
+        return {
+          ...current.ack,
+          worker_type_id: workerData.workerTypeId,
+          worker_status_id: workerData.workerStatusId,
+          qr_pending: true,
+          qrcode: undefined,
+          pairing_code: undefined,
+          reason: current.ack.reason ?? 'queued',
+        };
+      }
+
+      const reclaimed = await this.claimActiveQrAttempt(
+        workerId,
+        activeAttempt
+      );
+      if (!reclaimed) {
+        throw new Error('Unable to claim active QR Code attempt.');
+      }
+    }
 
     await this.cacheAndPublishQrAttemptState(pending, {
-      event: 'balancer_qrcode_fastpath_pending',
+      event: 'balancer_qrcode_redis_stream_pending',
       workerType: workerData.workerTypeId,
-      reason: 'qrcode_fastpath_grpc_start',
-      publishSource: 'qr_fastpath',
+      reason: 'qrcode_redis_stream_start',
+      publishSource: 'qr_redis_stream',
       level: 'info',
     });
-    this.stopQrConnectionAttemptRetry(workerId);
 
-    const directPayload: StatusConnectionWorkerRequest = {
+    const queueRequest: StatusConnectionWorkerRequest = {
       ...payload,
       status: EWorkerStatus.online,
       type: EBaileysConnectionType.qrcode,
-      qr_request_deadline_ms: getConnectionQrGrpcFastPathDeadlineMs(),
       runtime_generation: workerData.runtimeGeneration,
       warm_pool_id: workerData.warmPoolId ?? undefined,
       qr_pending: true,
     };
 
     try {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.command_handler.qrcode_fastpath_start',
-        decision: 'grpc_request_worker_qrcode',
-        outcome: 'started',
-        worker_type: workerData.workerTypeId,
-        worker_status_id: workerData.workerStatusId,
-        connection_attempt_id: directPayload.connection_attempt_id,
-        connection_lifecycle_id: directPayload.connection_lifecycle_id,
-        deadline_ms: directPayload.qr_request_deadline_ms,
-        runtime_generation: directPayload.runtime_generation,
-        warm_pool_id: directPayload.warm_pool_id,
-        container_id: workerData.containerId,
-      });
-
-      const response =
-        await this.workerBaileysGrpcClientService.requestConnectionQrCode(
-          workerId,
-          directPayload,
-          workerData.workerTypeId
-        );
-      const normalized = this.normalizeQrWorkerResponse(
-        response,
-        directPayload,
-        workerData.accountIdResolved,
-        workerData
-      );
-
-      await this.cacheAndPublishQrAttemptState(normalized, {
-        event: normalized.qrcode
-          ? 'balancer_qrcode_fastpath_generated'
-          : 'balancer_qrcode_fastpath_worker_pending',
-        workerType: workerData.workerTypeId,
-        reason: normalized.reason ?? 'qrcode_fastpath_grpc_response',
-        timeToFirstQrMs: normalized.time_to_first_qr_ms,
-        publishSource: 'qr_fastpath',
-        level: normalized.qrcode ? 'info' : 'warn',
-      });
-
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.command_handler.qrcode_fastpath_success',
-        decision: 'grpc_request_worker_qrcode',
-        outcome: 'success',
-        worker_type: workerData.workerTypeId,
-        worker_status_id: workerData.workerStatusId,
-        status: normalized.status,
-        code: normalized.code,
-        connection_attempt_id: normalized.connection_attempt_id,
-        connection_lifecycle_id: normalized.connection_lifecycle_id,
-        deadline_ms: directPayload.qr_request_deadline_ms,
-        has_qr: Boolean(normalized.qrcode),
-        has_pairing_code: Boolean(normalized.pairing_code),
-        qr_pending: normalized.qr_pending === true,
-        runtime_generation: normalized.runtime_generation,
-        warm_pool_id: normalized.warm_pool_id,
-        container_id: normalized.container_id,
-      });
-
-      return normalized;
+      await this.enqueueQrCodeRedisStream(queueRequest, workerData);
+      return pending;
     } catch (err) {
       recordConnectionLifecycle({
-        stage: 'connection.balancer.command_handler.qrcode_fastpath_error',
-        decision: 'grpc_request_worker_qrcode',
+        stage: 'connection.balancer.command_handler.qrcode_redis_enqueue_error',
+        decision: 'enqueue_worker_qrcode_redis_stream',
         outcome: 'error',
-        reason: 'worker_qrcode_grpc_failed',
-        level: this.isRetryableQrRequestError(err) ? 'warn' : 'error',
+        reason: 'redis_stream_enqueue_failed',
+        level: 'error',
         worker_type: workerData.workerTypeId,
         worker_status_id: workerData.workerStatusId,
-        connection_attempt_id: directPayload.connection_attempt_id,
-        connection_lifecycle_id: directPayload.connection_lifecycle_id,
-        deadline_ms: directPayload.qr_request_deadline_ms,
-        runtime_generation: directPayload.runtime_generation,
-        warm_pool_id: directPayload.warm_pool_id,
+        connection_attempt_id: queueRequest.connection_attempt_id,
+        connection_lifecycle_id: queueRequest.connection_lifecycle_id,
+        runtime_generation: queueRequest.runtime_generation,
+        warm_pool_id: queueRequest.warm_pool_id,
         container_id: workerData.containerId,
         error: getErrorMessage(err),
       });
-
-      if (this.isRetryableQrRequestError(err)) {
-        await this.enqueueQrCodeFastPathFallback(
-          directPayload,
-          workerData,
-          err
-        );
-        return pending;
-      }
-
-      return pending;
+      await this.clearQrAttemptAfterEnqueueFailure(
+        workerId,
+        queueRequest.connection_attempt_id
+      );
+      throw err;
     }
   }
 
-  private async enqueueQrCodeFastPathFallback(
+  private async enqueueQrCodeRedisStream(
     payload: StatusConnectionWorkerRequest,
-    workerData: ResolvedWorkerDataForContainer,
-    cause: unknown
+    workerData: ResolvedWorkerDataForContainer
   ): Promise<void> {
-    const topic = this.kafkaBaileysQueueService.workerConnectionQrCode(
+    const streamKey = this.redisQueueService.streamKey(payload.worker_id);
+    const consumerGroup = this.redisQueueService.consumerGroup(
       payload.worker_id
     );
     const queuePayload: IWorkerConnectionQrCodeQueueMessage = {
@@ -3058,56 +2877,43 @@ export class WorkerCommandHandlerService {
     const startedAt = Date.now();
 
     recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueue_start',
-      decision: 'enqueue_worker_qrcode_after_grpc_failure',
+      stage: 'connection.balancer.command_handler.qrcode_redis_enqueue_start',
+      decision: 'enqueue_worker_qrcode_redis_stream',
       outcome: 'started',
       worker_type: workerData.workerTypeId,
       worker_status_id: workerData.workerStatusId,
-      topic,
-      kafka_key: payload.worker_id,
+      stream_key: streamKey,
+      consumer_group: consumerGroup,
       connection_attempt_id: queuePayload.connection_attempt_id,
       connection_lifecycle_id: queuePayload.connection_lifecycle_id,
-      deadline_ms: payload.qr_request_deadline_ms,
       runtime_generation: payload.runtime_generation,
       warm_pool_id: payload.warm_pool_id,
       container_id: workerData.containerId,
-      error: getErrorMessage(cause),
     });
 
     try {
-      await this.kafkaBaileysQueueService.ensure(payload.worker_id);
-      await this.streamProducerService.send(
-        topic,
-        queuePayload,
-        payload.worker_id,
-        this.buildConnectionLifecycleKafkaHeaders(
-          queuePayload.connection_lifecycle_id
-        )
-      );
+      const streamId = await this.redisQueueService.enqueue(queuePayload);
 
       const durationMs = Date.now() - startedAt;
       recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueued',
-        decision: 'enqueue_worker_qrcode_after_grpc_failure',
+        stage: 'connection.balancer.command_handler.qrcode_redis_enqueued',
+        decision: 'enqueue_worker_qrcode_redis_stream',
         outcome: 'queued',
         worker_type: workerData.workerTypeId,
         worker_status_id: workerData.workerStatusId,
-        topic,
-        kafka_key: payload.worker_id,
+        stream_key: streamKey,
+        stream_id: streamId,
+        consumer_group: consumerGroup,
         connection_attempt_id: queuePayload.connection_attempt_id,
         connection_lifecycle_id: queuePayload.connection_lifecycle_id,
-        deadline_ms: payload.qr_request_deadline_ms,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
         container_id: workerData.containerId,
         duration_ms: durationMs,
       });
       recordConnectionAttemptTelemetry({
-        event: 'balancer_qrcode_fastpath_fallback_queued',
-        stage:
-          'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueued',
+        event: 'balancer_qrcode_redis_stream_queued',
+        stage: 'connection.balancer.command_handler.qrcode_redis_enqueued',
         metric_event: 'qr_request',
         worker_id: payload.worker_id,
         account_id: workerData.accountIdResolved,
@@ -3115,31 +2921,28 @@ export class WorkerCommandHandlerService {
         worker_type: workerData.workerTypeId,
         connection_attempt_id: queuePayload.connection_attempt_id,
         connection_lifecycle_id: queuePayload.connection_lifecycle_id,
-        deadline_ms: payload.qr_request_deadline_ms,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
         container_id: workerData.containerId ?? undefined,
         status: EBaileysConnectionStatus.connecting,
         code: ECodeMessage.awaitingReadQrCode,
         outcome: 'queued',
-        reason: 'grpc_fastpath_unavailable',
+        reason: 'redis_stream_queued',
         duration_ms: durationMs,
       });
     } catch (error) {
       recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueue_error',
-        decision: 'enqueue_worker_qrcode_after_grpc_failure',
+        stage: 'connection.balancer.command_handler.qrcode_redis_enqueue_error',
+        decision: 'enqueue_worker_qrcode_redis_stream',
         outcome: 'error',
-        reason: 'kafka_fallback_enqueue_failed',
+        reason: 'redis_stream_enqueue_failed',
         level: 'error',
         worker_type: workerData.workerTypeId,
         worker_status_id: workerData.workerStatusId,
-        topic,
-        kafka_key: payload.worker_id,
+        stream_key: streamKey,
+        consumer_group: consumerGroup,
         connection_attempt_id: queuePayload.connection_attempt_id,
         connection_lifecycle_id: queuePayload.connection_lifecycle_id,
-        deadline_ms: payload.qr_request_deadline_ms,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
         container_id: workerData.containerId,
@@ -3148,16 +2951,6 @@ export class WorkerCommandHandlerService {
       });
       throw error;
     }
-  }
-
-  private buildConnectionLifecycleKafkaHeaders(
-    connectionLifecycleId: string
-  ): MessageHeader[] {
-    return [
-      {
-        'x-connection-lifecycle-id': connectionLifecycleId,
-      },
-    ];
   }
 
   private lifecycleFieldsFromInspection(
@@ -3647,60 +3440,6 @@ export class WorkerCommandHandlerService {
         ),
       (r) => !r
     );
-  }
-
-  private async waitForConnectionQrCodeConsumerReady(
-    workerId: string,
-    accountId: string,
-    workerType: EWorkerType | undefined,
-    operation: string
-  ): Promise<void> {
-    if (
-      workerType !== EWorkerType.baileys &&
-      workerType !== EWorkerType.wwebjs &&
-      workerType !== EWorkerType.whatsmeow
-    ) {
-      return;
-    }
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.qrcode_consumer.readiness_wait_start',
-      decision: 'wait_connection_qrcode_consumer_ready',
-      outcome: 'started',
-      worker_id: workerId,
-      account_id: accountId,
-      worker_type: workerType,
-      worker_type_id: workerType,
-      operation,
-    });
-
-    const ready =
-      await this.workerConnectionQrCodeReadinessService.waitUntilReady(
-        {
-          worker_id: workerId,
-          account_id: accountId,
-          worker_type_id: workerType,
-        },
-        45_000,
-        500
-      );
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.qrcode_consumer.readiness_wait_result',
-      decision: 'wait_connection_qrcode_consumer_ready',
-      outcome: ready ? 'ready' : 'timeout',
-      level: ready ? 'info' : 'error',
-      reason: ready ? undefined : 'qrcode_consumer_not_ready',
-      worker_id: workerId,
-      account_id: accountId,
-      worker_type: workerType,
-      worker_type_id: workerType,
-      operation,
-    });
-
-    if (!ready) {
-      throw new Error('Worker connection QR consumer is not ready');
-    }
   }
 
   private async createWorkerWithPayload(
@@ -4474,24 +4213,6 @@ export class WorkerCommandHandlerService {
       workerType
     );
 
-    try {
-      await this.waitForConnectionQrCodeConsumerReady(
-        data.worker_id,
-        data.account_id,
-        workerType,
-        'recreate_worker'
-      );
-    } catch (error) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.action,
-        data.server_id,
-        data.lifecycle_operation_id
-      );
-      throw error;
-    }
-
     const inputUpdate = this.buildRecreateFinalWorkerUpdate(
       data,
       workerType,
@@ -5126,24 +4847,6 @@ export class WorkerCommandHandlerService {
       throw lastError instanceof Error
         ? lastError
         : new Error('Failed to create worker container');
-    }
-
-    try {
-      await this.waitForConnectionQrCodeConsumerReady(
-        data.worker_id,
-        data.account_id,
-        workerType,
-        'create_worker'
-      );
-    } catch (error) {
-      await this.updateWorkerErrorStatus(
-        data.worker_id,
-        data.account_id,
-        data.action,
-        data.server_id,
-        data.lifecycle_operation_id
-      );
-      throw error;
     }
 
     const inputUpdate: IUpdateWorker = {

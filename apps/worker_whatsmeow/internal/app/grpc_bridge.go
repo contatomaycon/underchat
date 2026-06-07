@@ -73,7 +73,6 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		RemoveSession:         dynamicBool(msg, "remove_session"),
 		ConnectionAttemptID:   dynamicString(msg, "connection_attempt_id"),
 		ConnectionLifecycleID: dynamicString(msg, "connection_lifecycle_id"),
-		QRRequestDeadlineMS:   int(dynamicInt32(msg, "qr_request_deadline_ms")),
 		RuntimeGeneration:     int(dynamicInt32(msg, "runtime_generation")),
 		WarmPoolID:            dynamicString(msg, "warm_pool_id"),
 	}

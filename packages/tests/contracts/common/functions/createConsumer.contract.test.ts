@@ -60,10 +60,6 @@ class FakeKafkaConsumer extends EventEmitter {
   assignments = jest.fn(() =>
     this.assignedTopics.map((topic) => ({ topic, partition: 0 }))
   );
-
-  setAssignments(topics: string[]): void {
-    this.assignedTopics = topics;
-  }
 }
 
 async function flushPromises(times = 6): Promise<void> {
@@ -189,8 +185,8 @@ describe('createConsumer managed kafka consumer', () => {
     expect(firstConsumer.disconnect).not.toHaveBeenCalled();
   });
 
-  it('waits for QR topic assignment before reporting connected', async () => {
-    const topic = 'worker.w1.connection.qrcode';
+  it('starts consuming when ready without waiting for legacy QR topic assignment', async () => {
+    const topic = 'worker.w1.send.message';
     const firstConsumer = new FakeKafkaConsumer(false);
     const kafka = {
       createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
@@ -205,13 +201,6 @@ describe('createConsumer managed kafka consumer', () => {
     await flushPromises();
 
     expect(firstConsumer.subscribe).toHaveBeenCalledWith([topic]);
-    expect(firstConsumer.consume).not.toHaveBeenCalled();
-    expect(onConnected).not.toHaveBeenCalled();
-
-    firstConsumer.setAssignments([topic]);
-    firstConsumer.emit('rebalance', null, [{ topic, partition: 0 }]);
-    await flushPromises();
-
     expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
     expect(onConnected).toHaveBeenCalledTimes(1);
   });

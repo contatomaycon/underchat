@@ -18,9 +18,6 @@ import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
-import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
-import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
-import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
   IActivateWarmWorkerRequestProto,
   ICreateWarmWorkerRequestProto,
@@ -33,15 +30,7 @@ import {
   recordConnectionLifecycle,
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
-import {
-  recordConnectionQrSummary,
-  summarizeConnectionQrState,
-} from '@core/plugins/telemetry/connectionQrSummary';
-import {
-  getConnectionQrGrpcFastPathDeadlineMs,
-  getConnectionQrFirstQrTimeoutMs,
-  recordConnectionAttemptTelemetry,
-} from '@core/plugins/telemetry/connectionAttemptTelemetry';
+import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -62,28 +51,6 @@ if (!WorkerCommandClient) {
 }
 
 const GRPC_DEADLINE_MS = 10_000;
-const CONNECTION_QR_GRPC_DEADLINE_MS = Math.max(
-  90_000,
-  getConnectionQrFirstQrTimeoutMs() + 15_000
-);
-const CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS =
-  getConnectionQrGrpcFastPathDeadlineMs();
-
-function resolveConnectionQrCommandGrpcDeadlineMs(
-  requestedDeadlineMs?: number
-): number {
-  if (!Number.isFinite(requestedDeadlineMs) || !requestedDeadlineMs) {
-    return CONNECTION_QR_GRPC_DEADLINE_MS;
-  }
-
-  return Math.min(
-    CONNECTION_QR_GRPC_DEADLINE_MS,
-    Math.max(
-      CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS + 2_000,
-      requestedDeadlineMs + 2_000
-    )
-  );
-}
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -214,125 +181,6 @@ export class WorkerGrpcClientService {
               deadline_ms: GRPC_DEADLINE_MS,
             });
             resolve();
-          }
-        );
-      });
-    });
-  }
-
-  async requestConnectionQrCode(
-    serverId: string,
-    payload: StatusConnectionWorkerRequest,
-    accountId: string
-  ): Promise<IBaileysConnectionState> {
-    const contextData = buildConnectionLifecycleContext({
-      connection_lifecycle_id: payload.connection_lifecycle_id,
-      account_id: accountId,
-      worker_id: payload.worker_id,
-      channel_id: payload.worker_id,
-      source_provider: 'manager',
-      connection_type: payload.type,
-      connection_action: 'request_qrcode',
-    });
-
-    return runWithConnectionLifecycleContext(contextData, async () => {
-      const { host, port } =
-        await this.workerGrpcRegistryService.getAddress(serverId);
-      const address = `${host}:${port}`;
-      const client = new WorkerCommandClient(
-        address,
-        credentials.createInsecure()
-      );
-
-      const protoPayload = statusConnectionRequestToProto(payload, accountId);
-      const metadata = injectGrpcConnectionMetadata(
-        new Metadata(),
-        contextData
-      );
-      const deadlineMs = resolveConnectionQrCommandGrpcDeadlineMs(
-        payload.qr_request_deadline_ms
-      );
-      const deadline = new Date(Date.now() + deadlineMs);
-
-      recordConnectionLifecycle({
-        stage: 'connection.manager.worker_command_grpc.qrcode_start',
-        decision: 'grpc_request_connection_qrcode',
-        outcome: 'started',
-        grpc_method: 'RequestConnectionQrCode',
-        grpc_address: address,
-        deadline_ms: deadlineMs,
-        requested_deadline_ms: payload.qr_request_deadline_ms,
-        server_id: serverId,
-        status: payload.status,
-        connection_type: payload.type,
-      });
-
-      return new Promise<IBaileysConnectionState>((resolve, reject) => {
-        (client as any).RequestConnectionQrCode(
-          protoPayload,
-          metadata,
-          { deadline },
-          (
-            err: ServiceError | null,
-            response?: IWorkerConnectionStateProto
-          ): void => {
-            client.close();
-            if (err) {
-              recordConnectionLifecycle({
-                stage: 'connection.manager.worker_command_grpc.qrcode_error',
-                decision: 'grpc_request_connection_qrcode',
-                outcome: 'error',
-                reason: 'grpc_error',
-                level: 'error',
-                grpc_method: 'RequestConnectionQrCode',
-                grpc_address: address,
-                deadline_ms: deadlineMs,
-                requested_deadline_ms: payload.qr_request_deadline_ms,
-                error: err.message,
-              });
-              recordConnectionQrSummary({
-                event: 'manager_balancer_qrcode_grpc_error',
-                worker_id: payload.worker_id,
-                account_id: accountId,
-                connection_attempt_id: payload.connection_attempt_id,
-                grpc_address: address,
-                server_id: serverId,
-                status: payload.status,
-                reason: 'grpc_error',
-                error: err.message,
-                level: 'error',
-              });
-              reject(err);
-              return;
-            }
-
-            const state = protoToConnectionState(response ?? {});
-            state.connection_attempt_id ??= payload.connection_attempt_id;
-            recordConnectionLifecycle({
-              stage: 'connection.manager.worker_command_grpc.qrcode_success',
-              decision: 'grpc_request_connection_qrcode',
-              outcome: 'success',
-              grpc_method: 'RequestConnectionQrCode',
-              grpc_address: address,
-              deadline_ms: deadlineMs,
-              requested_deadline_ms: payload.qr_request_deadline_ms,
-              status: state.status,
-              code: state.code,
-              qrcode: state.qrcode,
-              pairing_code: state.pairing_code,
-              has_qr: Boolean(state.qrcode),
-              has_pairing_code: Boolean(state.pairing_code),
-            });
-            recordConnectionQrSummary({
-              event: state.qrcode
-                ? 'manager_balancer_qrcode_grpc_success'
-                : 'manager_balancer_qrcode_grpc_no_qr',
-              ...summarizeConnectionQrState(state),
-              grpc_address: address,
-              server_id: serverId,
-              level: state.qrcode ? 'info' : 'warn',
-            });
-            resolve(state);
           }
         );
       });
