@@ -68,7 +68,6 @@ export default [
       'prefer-promise-reject-errors': 'error',
       'no-return-await': 'error',
       'no-duplicate-imports': 'error',
-      'no-use-before-define': 'error',
     },
   },
   {

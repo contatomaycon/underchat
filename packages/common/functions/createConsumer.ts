@@ -421,11 +421,16 @@ class ManagedKafkaConsumer extends EventEmitter {
     if (this.topics.length > 0) {
       consumer.subscribe(this.topics);
     }
-    if (this.consuming) {
-      consumer.consume();
+
+    const waitForAssignments = this.shouldWaitForTopicAssignments();
+    if (this.consuming && !waitForAssignments) {
+      if (!this.startConsuming(consumer, 'ready')) {
+        callback?.(new Error(this.lastError));
+        return;
+      }
     }
 
-    if (this.shouldWaitForTopicAssignments()) {
+    if (waitForAssignments) {
       try {
         await this.waitForTopicAssignments(consumer);
       } catch (error) {
@@ -450,6 +455,11 @@ class ManagedKafkaConsumer extends EventEmitter {
         this.scheduleRestart('assignment_timeout', error);
         return;
       }
+
+      if (this.consuming && !this.startConsuming(consumer, 'post_assignment')) {
+        callback?.(new Error(this.lastError));
+        return;
+      }
     }
 
     this.connected = true;
@@ -470,6 +480,38 @@ class ManagedKafkaConsumer extends EventEmitter {
     callback?.(null);
     this.emit('ready');
     this.armWatchdog();
+  }
+
+  private startConsuming(consumer: KafkaConsumer, phase: string): boolean {
+    try {
+      consumer.consume();
+      logger.info(
+        {
+          type: 'kafka.consumer.consume.start',
+          group_id: this.groupId,
+          topics: this.topics,
+          phase,
+        },
+        'Kafka consumer consume loop started'
+      );
+      return true;
+    } catch (error) {
+      this.connecting = false;
+      this.connected = false;
+      this.lastError = getErrorMessage(error);
+      logger.error(
+        {
+          type: 'kafka.consumer.consume.error',
+          group_id: this.groupId,
+          topics: this.topics,
+          phase,
+          error: this.lastError,
+        },
+        'Kafka consumer consume loop failed to start'
+      );
+      this.scheduleRestart('consume_error', error);
+      return false;
+    }
   }
 
   private async refreshTopicMetadata(consumer: KafkaConsumer): Promise<void> {

@@ -4,6 +4,9 @@ jest.mock('@whiskeysockets/baileys', () => ({
   Browsers: {
     macOS: jest.fn(() => ['Underchat', 'Desktop', '1.0.0']),
   },
+  DEFAULT_CONNECTION_CONFIG: {
+    version: [2, 3000, 1035194821],
+  },
   fetchLatestBaileysVersion: jest.fn(async () => ({
     version: [2, 3000, 0],
   })),
@@ -61,6 +64,11 @@ import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionTyp
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { BaileysConnectionService } from '@core/services/baileys/methods/connection.service';
+import {
+  fetchLatestBaileysVersion,
+  fetchLatestWaWebVersion,
+  makeWASocket,
+} from '@whiskeysockets/baileys';
 
 type BaileysConnectionServicePrivate = {
   connecting: boolean;
@@ -156,5 +164,30 @@ describe('BaileysConnectionService', () => {
 
     expect(cancelAttemptSpy).toHaveBeenCalled();
     expect(createSocketSpy).toHaveBeenCalled();
+  });
+
+  it('uses the bundled Baileys version when remote version resolution fails', async () => {
+    const { servicePrivate } = makeService();
+    const socket = { ev: { on: jest.fn() } };
+
+    (fetchLatestWaWebVersion as jest.Mock).mockResolvedValueOnce({
+      version: [2, 3000, 0],
+      isLatest: false,
+      error: new Error('wa web unavailable'),
+    });
+    (fetchLatestBaileysVersion as jest.Mock).mockResolvedValueOnce({
+      version: [2, 3000, 0],
+      isLatest: false,
+      error: new Error('github unavailable'),
+    });
+    (makeWASocket as jest.Mock).mockReturnValueOnce(socket);
+
+    await servicePrivate.createSocket();
+
+    expect(makeWASocket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        version: [2, 3000, 1035194821],
+      })
+    );
   });
 });

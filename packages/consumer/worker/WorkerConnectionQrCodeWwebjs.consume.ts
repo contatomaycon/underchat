@@ -291,7 +291,12 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         queue_latency_ms: queueLatencyMs,
       });
 
-      await this.markProcessed(data);
+      await this.markProcessed(data, {
+        topic,
+        groupId,
+        partition,
+        offset,
+      });
       await this.commitNext(topic, partition, offset);
     } catch (error) {
       recordConnectionLifecycle({
@@ -362,6 +367,26 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       worker_type: EWorkerType.wwebjs,
       worker_type_id: EWorkerType.wwebjs,
     });
+
+    if (!this.isRedisReady()) {
+      recordConnectionLifecycle({
+        stage: 'connection.wwebjs.qrcode_queue.active_attempt_check_error',
+        decision: 'validate_active_connection_attempt',
+        outcome: 'error',
+        reason: 'redis_not_ready',
+        level: 'warn',
+        topic: context.topic,
+        group_id: context.groupId,
+        partition: context.partition,
+        offset: context.offset,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+        worker_type: EWorkerType.wwebjs,
+        worker_type_id: EWorkerType.wwebjs,
+        redis_status: (this.redis as unknown as { status?: string }).status,
+      });
+      return true;
+    }
 
     try {
       const processed = await this.redisGetWithTimeout(
@@ -460,32 +485,84 @@ export class WorkerConnectionQrCodeWwebjsConsume {
     key: string,
     operation: string
   ): Promise<string | null> {
-    let timeout: NodeJS.Timeout | undefined;
-    try {
-      return await Promise.race([
-        this.redis.get(key),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => {
-            reject(
-              new Error(
-                `Redis GET timeout after ${WorkerConnectionQrCodeWwebjsConsume.ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS}ms (${operation})`
-              )
-            );
-          }, WorkerConnectionQrCodeWwebjsConsume.ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS);
-          timeout.unref?.();
-        }),
-      ]);
-    } finally {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    }
+    return this.runRedisWithTimeout(`GET ${operation}`, () =>
+      this.redis.get(key)
+    );
   }
 
   private async markProcessed(
-    data: IWorkerConnectionQrCodeQueueMessage
+    data: IWorkerConnectionQrCodeQueueMessage,
+    context: QrCodeQueueMessageContext
   ): Promise<void> {
-    await this.redis.set(this.processedAttemptKey(data), '1', 'EX', 300);
+    try {
+      await this.runRedisWithTimeout('SET processed_attempt', () =>
+        this.redis.set(this.processedAttemptKey(data), '1', 'EX', 300)
+      );
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.wwebjs.qrcode_queue.mark_processed_error',
+        decision: 'mark_qrcode_attempt_processed',
+        outcome: 'error',
+        reason: 'redis_unavailable',
+        level: 'warn',
+        topic: context.topic,
+        group_id: context.groupId,
+        partition: context.partition,
+        offset: context.offset,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+        worker_type: EWorkerType.wwebjs,
+        worker_type_id: EWorkerType.wwebjs,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private isRedisReady(): boolean {
+    return (this.redis as unknown as { status?: string }).status === 'ready';
+  }
+
+  private runRedisWithTimeout<T>(
+    operation: string,
+    action: () => Promise<T>
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        fail(
+          new Error(
+            `Redis ${operation} timeout after ${WorkerConnectionQrCodeWwebjsConsume.ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS}ms`
+          )
+        );
+      }, WorkerConnectionQrCodeWwebjsConsume.ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS);
+
+      const finish = (): boolean => {
+        if (settled) {
+          return false;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        return true;
+      };
+
+      const succeed = (value: T): void => {
+        if (finish()) {
+          resolve(value);
+        }
+      };
+
+      const fail = (error: unknown): void => {
+        if (finish()) {
+          reject(error);
+        }
+      };
+
+      try {
+        action().then(succeed, fail);
+      } catch (error) {
+        fail(error);
+      }
+    });
   }
 
   private async commitNext(

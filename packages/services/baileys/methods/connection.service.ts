@@ -1,5 +1,6 @@
 import {
   Browsers,
+  DEFAULT_CONNECTION_CONFIG,
   fetchLatestBaileysVersion,
   fetchLatestWaWebVersion,
   makeWASocket,
@@ -71,6 +72,18 @@ const WA_VERSION_TIMEOUT_MS = readBoundedIntEnv(
   5_000,
   60_000
 );
+const WA_VERSION_FETCH_TIMEOUT_MS = readBoundedIntEnv(
+  'BAILEYS_WA_VERSION_FETCH_TIMEOUT_MS',
+  2_500,
+  500,
+  15_000
+);
+const WA_VERSION_FALLBACK_TTL_MS = readBoundedIntEnv(
+  'BAILEYS_WA_VERSION_FALLBACK_TTL_MS',
+  15 * 60 * 1000,
+  60_000,
+  60 * 60 * 1000
+);
 const SOCKET_CREATE_TIMEOUT_MS = readBoundedIntEnv(
   'BAILEYS_SOCKET_CREATE_TIMEOUT_MS',
   15_000,
@@ -81,10 +94,90 @@ const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const SHOULD_LOG_CONNECTION_IP =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
+type WaVersion = [number, number, number];
+
+const DEFAULT_WA_VERSION = [
+  DEFAULT_CONNECTION_CONFIG.version[0],
+  DEFAULT_CONNECTION_CONFIG.version[1],
+  DEFAULT_CONNECTION_CONFIG.version[2],
+] as WaVersion;
+
 let cachedWaVersion: {
-  version: [number, number, number];
+  version: WaVersion;
   fetchedAt: number;
+  ttlMs: number;
+  source: string;
 } | null = null;
+
+function cloneWaVersion(version: readonly number[]): WaVersion {
+  return [version[0] ?? 2, version[1] ?? 3000, version[2] ?? 0];
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+
+  return String(error);
+}
+
+function getWaVersionResultError(result: unknown): string | undefined {
+  if (!result || typeof result !== 'object' || !('error' in result)) {
+    return undefined;
+  }
+
+  return getErrorMessage((result as { error?: unknown }).error);
+}
+
+function withWaVersionFetchDeadline<T>(
+  source: string,
+  task: () => Promise<T>
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      fail(
+        new Error(
+          `${source}_version_fetch_timeout after ${WA_VERSION_FETCH_TIMEOUT_MS}ms`
+        )
+      );
+    }, WA_VERSION_FETCH_TIMEOUT_MS);
+
+    const finish = (): boolean => {
+      if (settled) {
+        return false;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      return true;
+    };
+
+    const succeed = (value: T): void => {
+      if (finish()) {
+        resolve(value);
+      }
+    };
+
+    const fail = (error: unknown): void => {
+      if (finish()) {
+        reject(error);
+      }
+    };
+
+    try {
+      task().then(succeed, fail);
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
 
 function getFolder(): string {
   return `/app/data/storage/${baileysEnvironment.baileysWorkerId}`;
@@ -147,23 +240,79 @@ function createProxyAgent(config: {
   return new HttpsProxyAgent(config.url) as unknown as HttpsAgent;
 }
 
-async function getCachedWaWebVersion(): Promise<[number, number, number]> {
+async function getCachedWaWebVersion(): Promise<WaVersion> {
   if (
     cachedWaVersion &&
-    Date.now() - cachedWaVersion.fetchedAt < WA_VERSION_TTL_MS
+    Date.now() - cachedWaVersion.fetchedAt < cachedWaVersion.ttlMs
   ) {
     return cachedWaVersion.version;
   }
 
-  const waResult = await fetchLatestWaWebVersion();
-  if (!('error' in waResult)) {
-    cachedWaVersion = { version: waResult.version, fetchedAt: Date.now() };
-    return waResult.version;
+  const staleVersion = cachedWaVersion?.version;
+  const errors: string[] = [];
+
+  try {
+    const waResult = await withWaVersionFetchDeadline('wa_web', () =>
+      fetchLatestWaWebVersion()
+    );
+    const resultError = getWaVersionResultError(waResult);
+    if (!resultError) {
+      const version = cloneWaVersion(waResult.version);
+      cachedWaVersion = {
+        version,
+        fetchedAt: Date.now(),
+        ttlMs: WA_VERSION_TTL_MS,
+        source: 'wa_web',
+      };
+      return version;
+    }
+    errors.push(`wa_web:${resultError}`);
+  } catch (error) {
+    errors.push(`wa_web:${getErrorMessage(error)}`);
   }
 
-  const baileysResult = await fetchLatestBaileysVersion();
-  cachedWaVersion = { version: baileysResult.version, fetchedAt: Date.now() };
-  return baileysResult.version;
+  try {
+    const baileysResult = await withWaVersionFetchDeadline('baileys', () =>
+      fetchLatestBaileysVersion()
+    );
+    const resultError = getWaVersionResultError(baileysResult);
+    if (!resultError) {
+      const version = cloneWaVersion(baileysResult.version);
+      cachedWaVersion = {
+        version,
+        fetchedAt: Date.now(),
+        ttlMs: WA_VERSION_TTL_MS,
+        source: 'baileys',
+      };
+      return version;
+    }
+    errors.push(`baileys:${resultError}`);
+  } catch (error) {
+    errors.push(`baileys:${getErrorMessage(error)}`);
+  }
+
+  const fallbackVersion = staleVersion ?? DEFAULT_WA_VERSION;
+  const fallbackSource = staleVersion ? 'stale_cache' : 'default_config';
+  cachedWaVersion = {
+    version: fallbackVersion,
+    fetchedAt: Date.now(),
+    ttlMs: WA_VERSION_FALLBACK_TTL_MS,
+    source: fallbackSource,
+  };
+  logger.warn(
+    {
+      type: 'connection.baileys.wa_version.fallback',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      source: fallbackSource,
+      version: fallbackVersion.join('.'),
+      fetch_timeout_ms: WA_VERSION_FETCH_TIMEOUT_MS,
+      retry_after_ms: WA_VERSION_FALLBACK_TTL_MS,
+      errors,
+    },
+    'Baileys WA version fetch failed; using fallback version'
+  );
+  return fallbackVersion;
 }
 
 class BaileysConnectionPhaseError extends Error {

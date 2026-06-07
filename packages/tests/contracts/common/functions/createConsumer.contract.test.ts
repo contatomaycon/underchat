@@ -205,13 +205,14 @@ describe('createConsumer managed kafka consumer', () => {
     await flushPromises();
 
     expect(firstConsumer.subscribe).toHaveBeenCalledWith([topic]);
-    expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
+    expect(firstConsumer.consume).not.toHaveBeenCalled();
     expect(onConnected).not.toHaveBeenCalled();
 
     firstConsumer.setAssignments([topic]);
     firstConsumer.emit('rebalance', null, [{ topic, partition: 0 }]);
     await flushPromises();
 
+    expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
     expect(onConnected).toHaveBeenCalledTimes(1);
   });
 });
