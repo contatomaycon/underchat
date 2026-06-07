@@ -25,6 +25,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
       {
         contact_id: 'ct-1',
         name: 'John',
+        nickname: 'Johnny',
         phone: '11999999999',
         phone_ddi: '55',
         phone_partial: '***9999',
@@ -46,6 +47,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
       {
         contact_id: 'ct-1',
         name: 'John',
+        nickname: 'Johnny',
         phone: '11999999999',
         phone_ddi: '55',
         phone_partial: '***9999',
@@ -75,6 +77,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
           {
             contact_id: 'ct-1',
             name: 'John',
+            nickname: 'Johnny',
             phone: '11999999999',
             phone_ddi: '55',
             phone_partial: '***9999',
@@ -83,6 +86,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
           {
             contact_id: 'ct-2',
             name: 'Mary',
+            nickname: null,
             phone: '11888888888',
             phone_ddi: '55',
             phone_partial: '***8888',
@@ -91,6 +95,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
           {
             contact_id: 'ct-3',
             name: 'Paul',
+            nickname: 'Paulie',
             phone: '11777777777',
             phone_ddi: '55',
             phone_partial: '***7777',
@@ -113,6 +118,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
       {
         contact_id: 'ct-1',
         name: 'John',
+        nickname: 'Johnny',
         phone: '11999999999',
         phone_ddi: '55',
         phone_partial: '***9999',
@@ -121,6 +127,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
       {
         contact_id: 'ct-2',
         name: 'Mary',
+        nickname: null,
         phone: '11888888888',
         phone_ddi: '55',
         phone_partial: '***8888',
@@ -129,6 +136,7 @@ describe('ScheduleContactsValidatedListerRepository', () => {
       {
         contact_id: 'ct-3',
         name: 'Paul',
+        nickname: 'Paulie',
         phone: '11777777777',
         phone_ddi: '55',
         phone_partial: '***7777',

@@ -316,7 +316,7 @@ const createChatSocket = () => {
     }
   };
 
-  const flushChatUpdateBatch = (shouldScheduleKanbanRefresh = true) => {
+  const flushChatUpdateBatch = async (shouldScheduleKanbanRefresh = true) => {
     if (chatUpdateBatchBuffer.length === 0) return;
 
     const updates = [...chatUpdateBatchBuffer];
@@ -365,7 +365,7 @@ const createChatSocket = () => {
       }
 
       if (!isActiveChat) {
-        const handledTransfer = handleChatTransfer(
+        const handledTransfer = await handleChatTransfer(
           chatData,
           previousChatSnapshot
         );
@@ -447,15 +447,14 @@ const createChatSocket = () => {
         clearTimeout(chatUpdateBatchTimer);
         chatUpdateBatchTimer = null;
       }
-      flushChatUpdateBatch();
+      void flushChatUpdateBatch();
       return;
     }
 
     if (!chatUpdateBatchTimer) {
-      chatUpdateBatchTimer = setTimeout(
-        flushChatUpdateBatch,
-        CHAT_UPDATE_BATCH_DELAY_MS
-      );
+      chatUpdateBatchTimer = setTimeout(() => {
+        void flushChatUpdateBatch();
+      }, CHAT_UPDATE_BATCH_DELAY_MS);
     }
   };
 
@@ -473,7 +472,7 @@ const createChatSocket = () => {
       kanbanFilteredRefreshTimer = null;
     }
     flushMessageBatch();
-    flushChatUpdateBatch(false);
+    void flushChatUpdateBatch(false);
   };
 
   const removeVisibilityHandler = () => {

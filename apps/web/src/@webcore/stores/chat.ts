@@ -1474,8 +1474,26 @@ export const useChatStore = defineStore('chat', {
       const isCurrentUserParticipant =
         this.isCurrentUserParticipant(resolvedChat);
       const hasParticipants = this.hasAnyParticipants(resolvedChat);
+      const userSectors = getSectors();
+      const sectorId = resolvedChat.sector?.id ?? null;
+      const isChatInUserSectors =
+        !sectorId || userSectors.includes(sectorId);
+      const canViewBySector =
+        canListAllChatsInSector && isChatInUserSectors;
 
       if (hasParticipants && !isCurrentUserParticipant) {
+        if (canViewBySector) {
+          return true;
+        }
+
+        const isAlreadyVisible =
+          this.activeChat?.chat_id === resolvedChat.chat_id ||
+          this.isChatInAnyList(resolvedChat.chat_id);
+
+        if (canListAllChatsInSector && isAlreadyVisible) {
+          return true;
+        }
+
         this.removeChatIfNotAuthorized(resolvedChat);
         return false;
       }
@@ -1484,7 +1502,6 @@ export const useChatStore = defineStore('chat', {
         return true;
       }
 
-      const userSectors = getSectors();
       if (
         !this.shouldRemoveQueueChat(
           resolvedChat,
@@ -1495,10 +1512,6 @@ export const useChatStore = defineStore('chat', {
         return true;
       }
 
-      const sectorId = resolvedChat.sector?.id ?? null;
-      const isChatInUserSectors =
-        (!!sectorId && userSectors.includes(sectorId)) ||
-        (canListAllChatsInSector && !sectorId);
       const isAlreadyVisible =
         this.activeChat?.chat_id === resolvedChat.chat_id ||
         this.isChatInAnyList(resolvedChat.chat_id);

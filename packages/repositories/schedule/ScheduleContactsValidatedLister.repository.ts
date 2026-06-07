@@ -90,6 +90,7 @@ export class ScheduleContactsValidatedListerRepository {
       .select({
         contact_id: contact.contact_id,
         name: contact.name,
+        nickname: contact.nickname,
         phone: contact.phone,
         phone_ddi: contact.phone_ddi,
         phone_partial: contact.phone_partial,
@@ -102,6 +103,7 @@ export class ScheduleContactsValidatedListerRepository {
     return contacts.map((c) => ({
       contact_id: c.contact_id,
       name: c.name,
+      nickname: c.nickname ?? null,
       phone: c.phone,
       phone_ddi: c.phone_ddi,
       phone_partial: c.phone_partial,
