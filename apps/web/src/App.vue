@@ -35,9 +35,16 @@ const internalChatSocket = useInternalChatSocket();
 const chatStore = useChatStore();
 const internalChatStore = useInternalChatStore();
 const authStore = useAuthStore();
-const { activeNotification, hideToast } = useChatNotificationToast();
+const {
+  activeNotification,
+  pendingTransferNotifications,
+  hideToast,
+  restorePendingTransferNotifications,
+  consumeTransferNotificationById,
+} = useChatNotificationToast();
 const attendanceGuardStore = useAttendanceGuardStore();
 useInternalChatNotifications();
+let restoreTransferNotificationKey = '';
 
 const isRegisterPage = computed(() => route.path.startsWith('/register'));
 
@@ -146,6 +153,24 @@ onMounted(async () => {
   await attendanceGuardStore.bootstrap();
 });
 
+watch(
+  [() => chatStore.user?.account_id, () => chatStore.user?.user_id],
+  ([accountId, userId]) => {
+    if (!accountId || !userId) {
+      return;
+    }
+
+    const nextKey = `${accountId}:${userId}`;
+    if (restoreTransferNotificationKey === nextKey) {
+      return;
+    }
+
+    restoreTransferNotificationKey = nextKey;
+    restorePendingTransferNotifications();
+  },
+  { immediate: true }
+);
+
 onUnmounted(async () => {
   attendanceGuardStore.shutdown();
   chatStore.resetUnreadSummary();
@@ -165,13 +190,45 @@ onUnmounted(async () => {
 
       <ScrollToTop v-if="!isRegisterPage" />
 
-      <ChatNotificationToast
-        v-if="activeNotification"
-        :notification="activeNotification"
-        :visible="!!activeNotification"
-        @close="hideToast"
-        @click="hideToast"
-      />
+      <div
+        v-if="
+          pendingTransferNotifications.length > 0 ||
+          (activeNotification && activeNotification.type !== 'transfer')
+        "
+        class="chat-notification-toast-stack"
+      >
+        <template v-if="pendingTransferNotifications.length > 0">
+          <ChatNotificationToast
+            v-for="notification in pendingTransferNotifications"
+            :key="notification.id"
+            :notification="notification"
+            :visible="true"
+            @close="consumeTransferNotificationById(notification.id)"
+          />
+        </template>
+
+        <ChatNotificationToast
+          v-else-if="activeNotification"
+          :notification="activeNotification"
+          :visible="true"
+          @close="hideToast"
+          @click="hideToast"
+        />
+      </div>
     </VApp>
   </VLocaleProvider>
 </template>
+
+<style lang="scss" scoped>
+.chat-notification-toast-stack {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  width: min(400px, calc(100vw - 48px));
+}
+</style>
