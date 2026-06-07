@@ -91,6 +91,13 @@ const SOCKET_CREATE_TIMEOUT_MS = readBoundedIntEnv(
   5_000,
   60_000
 );
+const QR_DATA_URL_GENERATION_TIMEOUT_MS = readBoundedIntEnv(
+  'CONNECTION_QR_DATAURL_TIMEOUT_MS',
+  1_500,
+  250,
+  10_000
+);
+const QR_SVG_MARGIN_MODULES = 4;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const SHOULD_LOG_CONNECTION_IP =
@@ -127,6 +134,40 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function escapeSvgAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+function renderQrSvgDataUrl(qr: string): string {
+  const qrModel = QRCode.create(qr, { errorCorrectionLevel: 'M' });
+  const size = qrModel.modules.size;
+  const dimension = size + QR_SVG_MARGIN_MODULES * 2;
+  const paths: string[] = [];
+
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      if (!qrModel.modules.get(row, col)) {
+        continue;
+      }
+
+      const x = col + QR_SVG_MARGIN_MODULES;
+      const y = row + QR_SVG_MARGIN_MODULES;
+      paths.push(`M${x} ${y}h1v1H${x}z`);
+    }
+  }
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${dimension} ${dimension}" shape-rendering="crispEdges" role="img" aria-label="${escapeSvgAttribute('WhatsApp QR Code')}">` +
+    `<path fill="#fff" d="M0 0h${dimension}v${dimension}H0z"/>` +
+    `<path fill="#000" d="${paths.join('')}"/></svg>`;
+
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 }
 
 function getWaVersionResultError(result: unknown): string | undefined {
@@ -1462,57 +1503,100 @@ export class BaileysConnectionService {
       time_to_first_qr_ms: timeToFirstQrMs,
     });
     let img: string;
+    let qrImageRenderer = 'png';
+    let qrImageFallback = false;
     try {
-      img = await QRCode.toDataURL(qr);
+      img = await this.withDeadline(
+        QRCode.toDataURL(qr),
+        QR_DATA_URL_GENERATION_TIMEOUT_MS,
+        'qr_dataurl_generation_timeout'
+      );
       this.logConnectionEvent('qr_dataurl_generate_success', {
         attempt: this.qrGenerationCount,
         max_attempts: this.maxQrGenerations,
         duration_ms: Date.now() - qrDataUrlStartedAt,
         time_to_first_qr_ms: timeToFirstQrMs,
+        renderer: qrImageRenderer,
+        fallback_used: qrImageFallback,
       });
     } catch (error) {
+      const errorMessage = this.errorMessage(error);
       this.logConnectionEvent(
-        'qr_dataurl_generate_error',
+        'qr_dataurl_generate_primary_error',
         {
-          reason: 'qr_dataurl_generation_failed',
-          error: this.errorMessage(error),
+          reason: 'qr_png_dataurl_generation_failed',
+          error: errorMessage,
           duration_ms: Date.now() - qrDataUrlStartedAt,
+          timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
           time_to_first_qr_ms: timeToFirstQrMs,
         },
-        'error'
+        'warn'
       );
-      recordConnectionAttemptTelemetry({
-        event: 'worker_baileys_qr_dataurl_generation_error',
-        stage: 'connection.baileys.service.qr_dataurl_generate_error',
-        metric_event: 'qr_outcome',
-        level: 'error',
-        worker_id: getWorker(),
-        account_id: getAccount(),
-        worker_type: 'baileys',
-        library: 'baileys',
-        connection_attempt_id: this.connectionAttemptId,
-        status: this.status,
-        code: this.code,
-        outcome: 'error',
-        reason: 'qr_dataurl_generation_failed',
-        error: this.errorMessage(error),
-        time_to_first_qr_ms: timeToFirstQrMs,
-      });
-      const payload = this.state(undefined, undefined, {
-        qr_pending: true,
-        reason: 'qr_dataurl_generation_failed',
-        error: this.errorMessage(error),
-        time_to_first_qr_ms: timeToFirstQrMs,
-        worker_status_id: EWorkerStatus.disponible,
-      });
-      this.publishSub(payload, true);
-      void this.notifyWorkerStatusSafely(
-        payload,
-        'qr_dataurl_generation_failed'
-      );
-      resolve(payload);
-      this.pendingResolve = undefined;
-      return;
+      const fallbackStartedAt = Date.now();
+      try {
+        img = renderQrSvgDataUrl(qr);
+        qrImageRenderer = 'svg';
+        qrImageFallback = true;
+        this.logConnectionEvent('qr_dataurl_generate_success', {
+          reason: 'qr_svg_fallback_used',
+          attempt: this.qrGenerationCount,
+          max_attempts: this.maxQrGenerations,
+          duration_ms: Date.now() - qrDataUrlStartedAt,
+          fallback_duration_ms: Date.now() - fallbackStartedAt,
+          timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
+          time_to_first_qr_ms: timeToFirstQrMs,
+          renderer: qrImageRenderer,
+          fallback_used: qrImageFallback,
+        });
+      } catch (fallbackError) {
+        const fallbackErrorMessage = this.errorMessage(fallbackError);
+        this.logConnectionEvent(
+          'qr_dataurl_generate_error',
+          {
+            reason: 'qr_dataurl_generation_failed',
+            error: errorMessage,
+            fallback_error: fallbackErrorMessage,
+            duration_ms: Date.now() - qrDataUrlStartedAt,
+            fallback_duration_ms: Date.now() - fallbackStartedAt,
+            timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
+            time_to_first_qr_ms: timeToFirstQrMs,
+          },
+          'error'
+        );
+        recordConnectionAttemptTelemetry({
+          event: 'worker_baileys_qr_dataurl_generation_error',
+          stage: 'connection.baileys.service.qr_dataurl_generate_error',
+          metric_event: 'qr_outcome',
+          level: 'error',
+          worker_id: getWorker(),
+          account_id: getAccount(),
+          worker_type: 'baileys',
+          library: 'baileys',
+          connection_attempt_id: this.connectionAttemptId,
+          status: this.status,
+          code: this.code,
+          outcome: 'error',
+          reason: 'qr_dataurl_generation_failed',
+          error: errorMessage,
+          fallback_error: fallbackErrorMessage,
+          time_to_first_qr_ms: timeToFirstQrMs,
+        });
+        const payload = this.state(undefined, undefined, {
+          qr_pending: true,
+          reason: 'qr_dataurl_generation_failed',
+          error: errorMessage,
+          time_to_first_qr_ms: timeToFirstQrMs,
+          worker_status_id: EWorkerStatus.disponible,
+        });
+        this.publishSub(payload, true);
+        void this.notifyWorkerStatusSafely(
+          payload,
+          'qr_dataurl_generation_failed'
+        );
+        resolve(payload);
+        this.pendingResolve = undefined;
+        return;
+      }
     }
     if (id !== this.socketId) {
       this.logConnectionEvent(
@@ -1549,6 +1633,8 @@ export class BaileysConnectionService {
       worker_status_id: payload.worker_status_id,
       has_qr: true,
       time_to_first_qr_ms: timeToFirstQrMs,
+      renderer: qrImageRenderer,
+      fallback_used: qrImageFallback,
     });
     this.publishSub(payload, true);
     void this.notifyWorkerStatusSafely(payload, 'qr');
