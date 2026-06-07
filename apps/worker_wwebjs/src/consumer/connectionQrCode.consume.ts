@@ -4,14 +4,16 @@ import { WorkerConnectionQrCodeWwebjsConsume } from '@core/consumer/worker/Worke
 
 export function startConnectionQrCodeWwebjsConsume(
   server: FastifyInstance
-): WorkerConnectionQrCodeWwebjsConsume {
+): Promise<WorkerConnectionQrCodeWwebjsConsume> {
   const connectionQrCodeConsume = container.resolve(
     WorkerConnectionQrCodeWwebjsConsume
   );
 
-  connectionQrCodeConsume.execute().catch((error: unknown) => {
-    server.log.error({ err: error }, 'Error starting connection QR consume');
-  });
-
-  return connectionQrCodeConsume;
+  return connectionQrCodeConsume
+    .execute()
+    .then(() => connectionQrCodeConsume)
+    .catch((error: unknown) => {
+      server.log.error({ err: error }, 'Error starting connection QR consume');
+      throw error;
+    });
 }

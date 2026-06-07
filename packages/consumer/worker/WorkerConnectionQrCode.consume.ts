@@ -389,8 +389,11 @@ export class WorkerConnectionQrCodeConsume {
     }
 
     return (
-      state.qr_pending !== true &&
-      state.status === EBaileysConnectionStatus.disconnected
+      state.status === EBaileysConnectionStatus.disconnected &&
+      typeof state.attempt === 'number' &&
+      typeof state.max_attempts === 'number' &&
+      state.max_attempts > 0 &&
+      state.attempt > state.max_attempts
     );
   }
 

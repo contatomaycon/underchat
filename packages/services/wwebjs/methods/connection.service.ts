@@ -2352,6 +2352,10 @@ export class WwebjsConnectionService {
 
     this.lastPayload = data;
     const startedAt = Date.now();
+    const hasConnectionCredential = Boolean(
+      payloadWithLifecycle.qrcode || payloadWithLifecycle.pairing_code
+    );
+    const publishMode = hasConnectionCredential ? 'immediate' : 'standard';
     recordConnectionLifecycle({
       stage: 'connection.wwebjs.centrifugo.publish_start',
       decision: 'publish_sub',
@@ -2368,10 +2372,14 @@ export class WwebjsConnectionService {
       connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
       has_qr: Boolean(payloadWithLifecycle.qrcode),
       has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
+      publish_mode: publishMode,
       force,
     });
-    void this.centrifugo
-      .publishSub(getChannel(), payloadWithLifecycle)
+    const publishPromise = hasConnectionCredential
+      ? this.centrifugo.publishSubImmediate(getChannel(), payloadWithLifecycle)
+      : this.centrifugo.publishSub(getChannel(), payloadWithLifecycle);
+
+    void publishPromise
       .then(() => {
         recordConnectionLifecycle({
           stage: 'connection.wwebjs.centrifugo.publish_success',
@@ -2387,6 +2395,9 @@ export class WwebjsConnectionService {
           worker_status_id: payloadWithLifecycle.worker_status_id,
           connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
           connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
+          has_qr: Boolean(payloadWithLifecycle.qrcode),
+          has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
+          publish_mode: publishMode,
           duration_ms: Date.now() - startedAt,
         });
       })
@@ -2409,6 +2420,9 @@ export class WwebjsConnectionService {
           worker_status_id: payloadWithLifecycle.worker_status_id,
           connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
           connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
+          has_qr: Boolean(payloadWithLifecycle.qrcode),
+          has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
+          publish_mode: publishMode,
           duration_ms: Date.now() - startedAt,
           error: errorMessage,
         });

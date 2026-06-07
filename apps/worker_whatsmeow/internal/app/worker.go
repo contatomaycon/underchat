@@ -185,10 +185,22 @@ func (w *Worker) startActivatedRuntimeLocked(ctx context.Context) error {
 	if err := w.startConnectionQRCodeRedisStream(ctx); err != nil {
 		return err
 	}
-	if err := w.startConsumers(ctx); err != nil {
-		return err
-	}
 	w.runtimeStarted = true
+	go func() {
+		if err := w.startConsumers(ctx); err != nil {
+			log.Printf("whatsmeow kafka consumers async start failed worker_id=%s error=%v", w.cfg.WorkerID, err)
+			recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+				"stage":      "connection.whatsmeow.runtime.kafka_consumers_async_error",
+				"decision":   "start_non_qr_consumers_async",
+				"outcome":    "error",
+				"reason":     "kafka_consumers_start_failed",
+				"level":      "error",
+				"worker_id":  w.cfg.WorkerID,
+				"account_id": w.cfg.AccountID,
+				"error":      err.Error(),
+			})
+		}
+	}()
 	return nil
 }
 
@@ -708,7 +720,7 @@ func connectionQRCodeRequestComplete(state ConnectionState) bool {
 	if state.Status == "connected" {
 		return true
 	}
-	return !state.QRPending && state.Status == "disconnected"
+	return state.Status == "disconnected" && state.MaxAttempts > 0 && state.Attempt > state.MaxAttempts
 }
 
 func workerConnectionQRCodeQueueMessageFromRedis(message redis.XMessage) (WorkerConnectionQRCodeQueueMessage, error) {

@@ -21,6 +21,17 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function startConsumers(server: FastifyInstance): Promise<void> {
+  try {
+    registerWorkerConsumer(await startConnectionQrCodeConsume(server));
+  } catch (err) {
+    server.log.error({ err }, 'Erro ao iniciar consumidor Redis de QR');
+    throw err;
+  }
+
+  void startDeferredConsumers(server);
+}
+
+async function startDeferredConsumers(server: FastifyInstance): Promise<void> {
   if (server.baileysInitialized) {
     try {
       await server.baileysInitialized;
@@ -28,7 +39,6 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
   }
 
   const starters = [
-    () => startConnectionQrCodeConsume(server),
     () => startSendMessageConsume(server),
     () => startMarkMessageReadConsume(server),
     () => startPhoneValidationConsume(server),

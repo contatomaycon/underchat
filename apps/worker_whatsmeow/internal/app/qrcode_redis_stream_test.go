@@ -60,10 +60,20 @@ func TestConnectionQRCodeRequestComplete(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "terminal disconnected without pending is complete",
+			name: "transient disconnected without qr is not complete",
 			state: ConnectionState{
 				Status: "disconnected",
 				Code:   CodeConnectionClosed,
+			},
+			want: false,
+		},
+		{
+			name: "qr generation exhausted is complete",
+			state: ConnectionState{
+				Status:      "disconnected",
+				Code:        CodeConnectionClosed,
+				Attempt:     4,
+				MaxAttempts: 3,
 			},
 			want: true,
 		},
