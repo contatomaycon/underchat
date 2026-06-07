@@ -457,6 +457,68 @@ async function recoverQrFromRecentHistory(reason: string): Promise<number> {
   }
 }
 
+async function recoverQrFromCachedRequest(reason: string): Promise<boolean> {
+  if (!channelId.value || !canRecoverQrFromRecentHistory()) {
+    return false;
+  }
+
+  const currentConnectionAttemptId = connectionAttemptId.value;
+  const startedAt = Date.now();
+
+  recordMessage('connection.qrcode.cache_recovery_start', 'debug', {
+    source: 'connection_dialog',
+    worker_id: channelId.value,
+    account_id: accountId.value,
+    worker_type_id: channelType.value,
+    connection_attempt_id: currentConnectionAttemptId,
+    reason,
+  });
+
+  try {
+    const state = await channelStore.requestConnectionQrCode(channelId.value, {
+      silent: true,
+    });
+
+    if (state) {
+      applyDirectConnectionResponse(state);
+    }
+
+    recordMessage('connection.qrcode.cache_recovery_processed', 'debug', {
+      source: 'connection_dialog',
+      worker_id: channelId.value,
+      account_id: accountId.value,
+      worker_type_id: channelType.value,
+      connection_attempt_id:
+        state?.connection_attempt_id ?? currentConnectionAttemptId,
+      connection_lifecycle_id: state?.connection_lifecycle_id,
+      reason,
+      has_state: Boolean(state),
+      has_qrcode: Boolean(state?.qrcode),
+      qrcode_len: state?.qrcode?.length,
+      qr_pending: state?.qr_pending === true,
+      recovered_qrcode: Boolean(qrcode.value),
+      duration_ms: Date.now() - startedAt,
+    });
+
+    if (!qrcode.value && state?.qr_pending === true) {
+      scheduleQrHistoryRecovery('cache_recovery_pending');
+    }
+
+    return Boolean(qrcode.value);
+  } catch (error) {
+    recordException(error, {
+      source: 'connection_dialog.qrcode_cache_recovery',
+      worker_id: channelId.value,
+      account_id: accountId.value,
+      worker_type_id: channelType.value,
+      connection_attempt_id: currentConnectionAttemptId,
+      reason,
+      duration_ms: Date.now() - startedAt,
+    });
+    return false;
+  }
+}
+
 function scheduleQrHistoryRecovery(reason = 'pending_ack') {
   const attemptId = connectionAttemptId.value;
 
@@ -479,19 +541,24 @@ function scheduleQrHistoryRecovery(reason = 'pending_ack') {
         return;
       }
 
-      void recoverQrFromRecentHistory(`${reason}:${delayMs}ms`).catch(
-        (error) => {
-          recordException(error, {
-            source: 'connection_dialog.qrcode_history_recovery',
-            worker_id: channelId.value,
-            account_id: accountId.value,
-            channel: workerConnectionChannel.value,
-            connection_attempt_id: connectionAttemptId.value,
-            reason,
-            delay_ms: delayMs,
-          });
+      void (async () => {
+        const recoveryReason = `${reason}:${delayMs}ms`;
+        await recoverQrFromRecentHistory(recoveryReason);
+
+        if (!qrcode.value && canRecoverQrFromRecentHistory()) {
+          await recoverQrFromCachedRequest(recoveryReason);
         }
-      );
+      })().catch((error) => {
+        recordException(error, {
+          source: 'connection_dialog.qrcode_history_recovery',
+          worker_id: channelId.value,
+          account_id: accountId.value,
+          channel: workerConnectionChannel.value,
+          connection_attempt_id: connectionAttemptId.value,
+          reason,
+          delay_ms: delayMs,
+        });
+      });
     }, delayMs);
 
     qrHistoryRecoveryTimeouts.add(timeoutId);

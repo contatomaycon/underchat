@@ -36,6 +36,12 @@ type Worker struct {
 	runtimeStarted bool
 }
 
+const (
+	connectionQRCodeMissingActiveAcceptAge = 60 * time.Second
+	connectionQRCodeCacheTTL               = 115 * time.Second
+	connectionQRCodeMaxAge                 = 120 * time.Second
+)
+
 func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
 	log.Printf("initializing kafka client brokers=%s protocol=%s", strings.Join(cfg.KafkaBrokers, ","), cfg.KafkaProtocol)
 	kafkaClient, err := NewKafkaClient(cfg)
@@ -673,6 +679,7 @@ func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamK
 		"reason":                state.Reason,
 		"time_to_first_qr_ms":   state.TimeToFirstQRMS,
 	})
+	w.cacheConnectionQRCodeAttemptState(ctx, state, data)
 	if !connectionQRCodeRequestComplete(state) {
 		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
 			"stage":                 "connection.whatsmeow.qrcode_redis_stream.local_request_pending_retry",
@@ -844,6 +851,10 @@ func (w *Worker) activeConnectionQRCodeAttemptKey(workerID string) string {
 	return "connection:qrcode:" + workerID + ":active_attempt"
 }
 
+func (w *Worker) connectionQRCodeAttemptCacheKey(workerID string) string {
+	return "connection:qrcode:" + workerID + ":attempt"
+}
+
 func (w *Worker) processedConnectionQRCodeAttemptKey(data WorkerConnectionQRCodeQueueMessage) string {
 	return "connection:qrcode:" + data.WorkerID + ":processed:" + data.ConnectionAttemptID
 }
@@ -862,7 +873,7 @@ func (w *Worker) isActiveConnectionQRCodeAttempt(ctx context.Context, data Worke
 
 	raw, err := w.redis.Get(ctx, w.activeConnectionQRCodeAttemptKey(data.WorkerID)).Result()
 	if errors.Is(err, redis.Nil) {
-		return false, nil
+		return connectionQRCodeRequestRecent(data), nil
 	}
 	if err != nil {
 		return false, err
@@ -873,6 +884,122 @@ func (w *Worker) isActiveConnectionQRCodeAttempt(ctx context.Context, data Worke
 		return false, nil
 	}
 	return envelope.Ack.ConnectionAttemptID == data.ConnectionAttemptID, nil
+}
+
+func connectionQRCodeRequestRecent(data WorkerConnectionQRCodeQueueMessage) bool {
+	requestedAt, err := time.Parse(time.RFC3339Nano, data.RequestedAt)
+	if err != nil {
+		return false
+	}
+	return time.Since(requestedAt) <= connectionQRCodeMissingActiveAcceptAge
+}
+
+func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state ConnectionState, data WorkerConnectionQRCodeQueueMessage) {
+	if w.redis == nil || (state.QRCode == "" && state.PairingCode == "") {
+		return
+	}
+
+	normalized := state
+	if normalized.WorkerID == "" {
+		normalized.WorkerID = data.WorkerID
+	}
+	if normalized.AccountID == "" {
+		normalized.AccountID = data.AccountID
+	}
+	normalized.WorkerTypeID = WorkerTypeWhatsmeow
+	if normalized.ConnectionAttemptID == "" {
+		normalized.ConnectionAttemptID = data.ConnectionAttemptID
+	}
+	if normalized.ConnectionLifecycleID == "" {
+		normalized.ConnectionLifecycleID = data.ConnectionLifecycleID
+	}
+	if normalized.QRGeneratedAt == "" {
+		normalized.QRGeneratedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	normalized.QRPending = false
+
+	ttl := connectionQRCodeCacheTTLForState(normalized)
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+			"stage":                 "connection.whatsmeow.qrcode_redis_stream.qr_cache_write_error",
+			"decision":              "cache_connection_qrcode_attempt",
+			"outcome":               "error",
+			"reason":                "json_encode_failed",
+			"level":                 "warn",
+			"worker_id":             normalized.WorkerID,
+			"account_id":            normalized.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": normalized.ConnectionAttemptID,
+			"has_qr":                normalized.QRCode != "",
+			"has_pairing_code":      normalized.PairingCode != "",
+			"qrcode_len":            len(normalized.QRCode),
+			"pairing_code_len":      len(normalized.PairingCode),
+			"error":                 err.Error(),
+		})
+		return
+	}
+
+	started := time.Now()
+	if err := w.redis.Set(ctx, w.connectionQRCodeAttemptCacheKey(normalized.WorkerID), string(payload), ttl).Err(); err != nil {
+		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+			"stage":                   "connection.whatsmeow.qrcode_redis_stream.qr_cache_write_error",
+			"decision":                "cache_connection_qrcode_attempt",
+			"outcome":                 "error",
+			"reason":                  "redis_cache_write_failed",
+			"level":                   "warn",
+			"worker_id":               normalized.WorkerID,
+			"account_id":              normalized.AccountID,
+			"worker_type_id":          WorkerTypeWhatsmeow,
+			"connection_attempt_id":   normalized.ConnectionAttemptID,
+			"connection_lifecycle_id": normalized.ConnectionLifecycleID,
+			"has_qr":                  normalized.QRCode != "",
+			"has_pairing_code":        normalized.PairingCode != "",
+			"qrcode_len":              len(normalized.QRCode),
+			"pairing_code_len":        len(normalized.PairingCode),
+			"qr_cache_ttl_seconds":    int(ttl.Seconds()),
+			"duration_ms":             int(time.Since(started).Milliseconds()),
+			"error":                   err.Error(),
+		})
+		return
+	}
+
+	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
+		"stage":                   "connection.whatsmeow.qrcode_redis_stream.qr_cache_write_success",
+		"decision":                "cache_connection_qrcode_attempt",
+		"outcome":                 "success",
+		"worker_id":               normalized.WorkerID,
+		"account_id":              normalized.AccountID,
+		"worker_type_id":          WorkerTypeWhatsmeow,
+		"connection_attempt_id":   normalized.ConnectionAttemptID,
+		"connection_lifecycle_id": normalized.ConnectionLifecycleID,
+		"has_qr":                  normalized.QRCode != "",
+		"has_pairing_code":        normalized.PairingCode != "",
+		"qrcode_len":              len(normalized.QRCode),
+		"pairing_code_len":        len(normalized.PairingCode),
+		"qr_cache_ttl_seconds":    int(ttl.Seconds()),
+		"duration_ms":             int(time.Since(started).Milliseconds()),
+	})
+}
+
+func connectionQRCodeCacheTTLForState(state ConnectionState) time.Duration {
+	if state.QRCode == "" || state.QRGeneratedAt == "" {
+		return connectionQRCodeCacheTTL
+	}
+
+	generatedAt, err := time.Parse(time.RFC3339Nano, state.QRGeneratedAt)
+	if err != nil {
+		return connectionQRCodeCacheTTL
+	}
+
+	remaining := connectionQRCodeMaxAge - time.Since(generatedAt)
+	if remaining < time.Second {
+		return time.Second
+	}
+	if remaining < connectionQRCodeCacheTTL {
+		return remaining
+	}
+	return connectionQRCodeCacheTTL
 }
 
 func (w *Worker) markConnectionQRCodeAttemptProcessed(ctx context.Context, data WorkerConnectionQRCodeQueueMessage) error {

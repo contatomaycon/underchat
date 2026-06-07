@@ -27,6 +27,27 @@ interface ActiveQrAttemptEnvelope {
 @singleton()
 export class WorkerConnectionQrCodeConsume {
   private static readonly ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS = 1_000;
+  private static readonly ACTIVE_ATTEMPT_MISSING_ACCEPT_MS = Math.max(
+    5_000,
+    Math.min(
+      600_000,
+      Number(process.env.CONNECTION_QRCODE_MISSING_ACTIVE_ACCEPT_MS) || 60_000
+    )
+  );
+  private static readonly QR_CACHE_TTL_SECONDS = Math.max(
+    1,
+    Math.min(
+      600,
+      Number(process.env.CONNECTION_QRCODE_CACHE_TTL_SECONDS) || 115
+    )
+  );
+  private static readonly QR_MAX_AGE_MS = Math.max(
+    30_000,
+    Math.min(
+      600_000,
+      Number(process.env.CONNECTION_QRCODE_MAX_AGE_MS) || 120_000
+    )
+  );
   private isRunning = false;
   private stopped = true;
   private loopPromise: Promise<void> | null = null;
@@ -312,6 +333,8 @@ export class WorkerConnectionQrCodeConsume {
         time_to_first_qr_ms: state.time_to_first_qr_ms,
       });
 
+      await this.cacheQrAttemptState(state, data, message);
+
       if (!this.shouldCompleteQrRequest(state)) {
         recordConnectionLifecycle({
           stage:
@@ -411,6 +434,10 @@ export class WorkerConnectionQrCodeConsume {
     return `connection:qrcode:${workerId}:active_attempt`;
   }
 
+  private qrAttemptCacheKey(workerId: string): string {
+    return `connection:qrcode:${workerId}:attempt`;
+  }
+
   private async isActiveAttempt(
     data: IWorkerConnectionQrCodeQueueMessage,
     message: WorkerConnectionQrCodeRedisStreamMessage
@@ -474,11 +501,19 @@ export class WorkerConnectionQrCodeConsume {
         'active_attempt'
       );
       if (!raw) {
+        const queueLatencyMs = this.getQueueLatencyMs(data, message);
+        const acceptMissingActive =
+          queueLatencyMs !== undefined &&
+          queueLatencyMs <=
+            WorkerConnectionQrCodeConsume.ACTIVE_ATTEMPT_MISSING_ACCEPT_MS;
         this.logActiveAttemptCheckResult(data, message, {
-          active: false,
-          reason: 'active_attempt_missing',
+          active: acceptMissingActive,
+          reason: acceptMissingActive
+            ? 'active_attempt_missing_recent_message'
+            : 'active_attempt_missing',
+          queue_latency_ms: queueLatencyMs,
         });
-        return false;
+        return acceptMissingActive;
       }
 
       try {
@@ -529,6 +564,7 @@ export class WorkerConnectionQrCodeConsume {
       active: boolean;
       reason: string;
       active_connection_attempt_id?: string;
+      queue_latency_ms?: number;
       error?: string;
     }
   ): void {
@@ -549,8 +585,128 @@ export class WorkerConnectionQrCodeConsume {
       connection_lifecycle_id: data.connection_lifecycle_id,
       worker_type: EWorkerType.baileys,
       worker_type_id: EWorkerType.baileys,
+      queue_latency_ms: result.queue_latency_ms,
       error: result.error,
     });
+  }
+
+  private async cacheQrAttemptState(
+    state: IBaileysConnectionState,
+    data: IWorkerConnectionQrCodeQueueMessage,
+    message: WorkerConnectionQrCodeRedisStreamMessage
+  ): Promise<void> {
+    if (!state.qrcode && !state.pairing_code) {
+      return;
+    }
+
+    const normalized: IBaileysConnectionState = {
+      ...state,
+      worker_id: state.worker_id || data.worker_id,
+      account_id: state.account_id || data.account_id,
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id:
+        state.connection_attempt_id || data.connection_attempt_id,
+      connection_lifecycle_id:
+        state.connection_lifecycle_id || data.connection_lifecycle_id,
+      qr_pending: false,
+      qr_generated_at: state.qr_generated_at || new Date().toISOString(),
+    };
+    const ttlSeconds = this.qrCacheTtlForState(normalized);
+    const startedAt = Date.now();
+
+    try {
+      await this.redis.set(
+        this.qrAttemptCacheKey(normalized.worker_id),
+        JSON.stringify(normalized),
+        'EX',
+        ttlSeconds
+      );
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_redis_stream.qr_cache_write_success',
+        decision: 'cache_connection_qrcode_attempt',
+        outcome: 'success',
+        stream_key: message.stream_key,
+        stream_id: message.stream_id,
+        consumer_group: message.consumer_group,
+        consumer_name: message.consumer_name,
+        connection_attempt_id: normalized.connection_attempt_id,
+        connection_lifecycle_id: normalized.connection_lifecycle_id,
+        worker_type: EWorkerType.baileys,
+        worker_type_id: EWorkerType.baileys,
+        has_qr: Boolean(normalized.qrcode),
+        has_pairing_code: Boolean(normalized.pairing_code),
+        qrcode_len: normalized.qrcode?.length,
+        pairing_code_len: normalized.pairing_code?.length,
+        qr_cache_ttl_seconds: ttlSeconds,
+        queue_latency_ms: message.queue_latency_ms,
+        duration_ms: Date.now() - startedAt,
+      });
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_redis_stream.qr_cache_write_error',
+        decision: 'cache_connection_qrcode_attempt',
+        outcome: 'error',
+        reason: 'redis_cache_write_failed',
+        level: 'warn',
+        stream_key: message.stream_key,
+        stream_id: message.stream_id,
+        consumer_group: message.consumer_group,
+        consumer_name: message.consumer_name,
+        connection_attempt_id: normalized.connection_attempt_id,
+        connection_lifecycle_id: normalized.connection_lifecycle_id,
+        worker_type: EWorkerType.baileys,
+        worker_type_id: EWorkerType.baileys,
+        has_qr: Boolean(normalized.qrcode),
+        has_pairing_code: Boolean(normalized.pairing_code),
+        qrcode_len: normalized.qrcode?.length,
+        pairing_code_len: normalized.pairing_code?.length,
+        qr_cache_ttl_seconds: ttlSeconds,
+        queue_latency_ms: message.queue_latency_ms,
+        duration_ms: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private qrCacheTtlForState(state: IBaileysConnectionState): number {
+    if (!state.qrcode || !state.qr_generated_at) {
+      return WorkerConnectionQrCodeConsume.QR_CACHE_TTL_SECONDS;
+    }
+
+    const generatedAtMs = Date.parse(state.qr_generated_at);
+    if (!Number.isFinite(generatedAtMs)) {
+      return WorkerConnectionQrCodeConsume.QR_CACHE_TTL_SECONDS;
+    }
+
+    const remainingSeconds = Math.max(
+      1,
+      Math.floor(
+        (WorkerConnectionQrCodeConsume.QR_MAX_AGE_MS -
+          Math.max(0, Date.now() - generatedAtMs)) /
+          1000
+      )
+    );
+
+    return Math.min(
+      WorkerConnectionQrCodeConsume.QR_CACHE_TTL_SECONDS,
+      remainingSeconds
+    );
+  }
+
+  private getQueueLatencyMs(
+    data: IWorkerConnectionQrCodeQueueMessage,
+    message: WorkerConnectionQrCodeRedisStreamMessage
+  ): number | undefined {
+    if (message.queue_latency_ms !== undefined) {
+      return message.queue_latency_ms;
+    }
+
+    const requestedAtMs = Date.parse(data.requested_at);
+    if (!Number.isFinite(requestedAtMs)) {
+      return undefined;
+    }
+
+    return Math.max(0, Date.now() - requestedAtMs);
   }
 
   private async ackAndDelete(
