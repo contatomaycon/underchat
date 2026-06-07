@@ -30,8 +30,16 @@ interface ActiveQrAttemptEnvelope {
   };
 }
 
+interface QrCodeQueueMessageContext {
+  topic: string;
+  groupId: string;
+  partition: number;
+  offset: number;
+}
+
 @singleton()
 export class WorkerConnectionQrCodeConsume {
+  private static readonly ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS = 1_000;
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
   private stopReadinessHeartbeat: (() => void) | null = null;
@@ -221,14 +229,22 @@ export class WorkerConnectionQrCodeConsume {
         offset,
         request_worker_id: data.worker_id,
         request_account_id: data.account_id,
+        request_worker_type_id: data.worker_type_id,
         worker_id: baileysEnvironment.baileysWorkerId,
         account_id: baileysEnvironment.baileysAccountId,
+        worker_type: EWorkerType.baileys,
+        worker_type_id: EWorkerType.baileys,
       });
       await this.commitNext(topic, partition, offset);
       return;
     }
 
-    const active = await this.isActiveAttempt(data);
+    const active = await this.isActiveAttempt(data, {
+      topic,
+      groupId,
+      partition,
+      offset,
+    });
     if (!active) {
       recordConnectionLifecycle({
         stage: 'connection.baileys.qrcode_queue.ignored_stale',
@@ -303,7 +319,8 @@ export class WorkerConnectionQrCodeConsume {
   ): boolean {
     return (
       data.worker_id === baileysEnvironment.baileysWorkerId &&
-      data.account_id === baileysEnvironment.baileysAccountId
+      data.account_id === baileysEnvironment.baileysAccountId &&
+      data.worker_type_id === EWorkerType.baileys
     );
   }
 
@@ -329,23 +346,139 @@ export class WorkerConnectionQrCodeConsume {
   }
 
   private async isActiveAttempt(
-    data: IWorkerConnectionQrCodeQueueMessage
+    data: IWorkerConnectionQrCodeQueueMessage,
+    context: QrCodeQueueMessageContext
   ): Promise<boolean> {
-    const processed = await this.redis.get(this.processedAttemptKey(data));
-    if (processed) {
-      return false;
-    }
-
-    const raw = await this.redis.get(this.activeAttemptKey(data.worker_id));
-    if (!raw) {
-      return false;
-    }
+    recordConnectionLifecycle({
+      stage: 'connection.baileys.qrcode_queue.active_attempt_check_start',
+      decision: 'validate_active_connection_attempt',
+      outcome: 'started',
+      topic: context.topic,
+      group_id: context.groupId,
+      partition: context.partition,
+      offset: context.offset,
+      connection_attempt_id: data.connection_attempt_id,
+      connection_lifecycle_id: data.connection_lifecycle_id,
+      worker_type: EWorkerType.baileys,
+      worker_type_id: EWorkerType.baileys,
+    });
 
     try {
-      const parsed = JSON.parse(raw) as ActiveQrAttemptEnvelope;
-      return parsed.ack?.connection_attempt_id === data.connection_attempt_id;
-    } catch {
-      return false;
+      const processed = await this.redisGetWithTimeout(
+        this.processedAttemptKey(data),
+        'processed_attempt'
+      );
+      if (processed) {
+        this.logActiveAttemptCheckResult(data, context, {
+          active: false,
+          reason: 'already_processed_attempt',
+        });
+        return false;
+      }
+
+      const raw = await this.redisGetWithTimeout(
+        this.activeAttemptKey(data.worker_id),
+        'active_attempt'
+      );
+      if (!raw) {
+        this.logActiveAttemptCheckResult(data, context, {
+          active: false,
+          reason: 'active_attempt_missing',
+        });
+        return false;
+      }
+
+      try {
+        const parsed = JSON.parse(raw) as ActiveQrAttemptEnvelope;
+        const active =
+          parsed.ack?.connection_attempt_id === data.connection_attempt_id;
+        this.logActiveAttemptCheckResult(data, context, {
+          active,
+          reason: active ? 'active_attempt_matches' : 'active_attempt_mismatch',
+          active_connection_attempt_id: parsed.ack?.connection_attempt_id,
+        });
+        return active;
+      } catch (error) {
+        this.logActiveAttemptCheckResult(data, context, {
+          active: false,
+          reason: 'active_attempt_parse_error',
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      }
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.baileys.qrcode_queue.active_attempt_check_error',
+        decision: 'validate_active_connection_attempt',
+        outcome: 'error',
+        reason: 'active_attempt_validation_unavailable',
+        level: 'warn',
+        topic: context.topic,
+        group_id: context.groupId,
+        partition: context.partition,
+        offset: context.offset,
+        connection_attempt_id: data.connection_attempt_id,
+        connection_lifecycle_id: data.connection_lifecycle_id,
+        worker_type: EWorkerType.baileys,
+        worker_type_id: EWorkerType.baileys,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return true;
+    }
+  }
+
+  private logActiveAttemptCheckResult(
+    data: IWorkerConnectionQrCodeQueueMessage,
+    context: QrCodeQueueMessageContext,
+    result: {
+      active: boolean;
+      reason: string;
+      active_connection_attempt_id?: string;
+      error?: string;
+    }
+  ): void {
+    recordConnectionLifecycle({
+      stage: 'connection.baileys.qrcode_queue.active_attempt_check_result',
+      decision: 'validate_active_connection_attempt',
+      outcome: result.active ? 'active' : 'ignored',
+      reason: result.reason,
+      level: result.active ? 'info' : 'warn',
+      topic: context.topic,
+      group_id: context.groupId,
+      partition: context.partition,
+      offset: context.offset,
+      connection_attempt_id: data.connection_attempt_id,
+      active_connection_attempt_id: result.active_connection_attempt_id,
+      connection_lifecycle_id: data.connection_lifecycle_id,
+      worker_type: EWorkerType.baileys,
+      worker_type_id: EWorkerType.baileys,
+      error: result.error,
+    });
+  }
+
+  private async redisGetWithTimeout(
+    key: string,
+    operation: string
+  ): Promise<string | null> {
+    let timeout: NodeJS.Timeout | undefined;
+    try {
+      return await Promise.race([
+        this.redis.get(key),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => {
+            reject(
+              new Error(
+                `Redis GET timeout after ${WorkerConnectionQrCodeConsume.ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS}ms (${operation})`
+              )
+            );
+          }, WorkerConnectionQrCodeConsume.ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS);
+          timeout.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
     }
   }
 

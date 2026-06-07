@@ -1,5 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import Redis from 'ioredis';
+import type { MessageHeader } from 'node-rdkafka';
 import { v7 as uuidv7 } from 'uuid';
 import {
   WorkerContainerInspection,
@@ -15,6 +16,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { ChatService } from '@core/services/chat.service';
 import { PublishResult } from 'centrifuge';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
+import { StreamProducerService } from '@core/services/streamProducer.service';
 import {
   ContainerHealthService,
   type ContainerHealthCheckOptions,
@@ -65,16 +67,10 @@ import {
   summarizeConnectionQrState,
 } from '@core/plugins/telemetry/connectionQrSummary';
 import {
-  getConnectionQrFirstQrTimeoutMs,
   getConnectionQrGrpcFastPathDeadlineMs,
-  getConnectionQrRecreateCooldownMs,
   recordConnectionAttemptTelemetry,
 } from '@core/plugins/telemetry/connectionAttemptTelemetry';
 import { WorkerLifecycleLockService } from '@core/services/workerLifecycleLock.service';
-import {
-  ProxyConnectivityResult,
-  ProxyConnectivityService,
-} from '@core/services/proxyConnectivity.service';
 import { WorkerWarmPoolRepository } from '@core/repositories/worker/WorkerWarmPool.repository';
 import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
@@ -86,6 +82,7 @@ import {
   IWarmWorkerCommandResponseProto,
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
 import { WorkerConnectionQrCodeReadinessService } from '@core/services/workerConnectionQrCodeReadiness.service';
+import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -119,13 +116,6 @@ interface QrConnectionAttemptRetryContext {
   accountId: string;
   workerData: ResolvedWorkerDataForContainer;
   startedAtMs: number;
-}
-
-interface QrProxyDecision {
-  proxy: ResolvedWorkerProxyConfig | undefined;
-  fallbackDirect: boolean;
-  status: 'healthy' | 'unhealthy' | 'disabled';
-  errorCode?: string;
 }
 
 interface CreateWorkerOptions {
@@ -181,10 +171,6 @@ export class WorkerCommandHandlerService {
     string,
     QrConnectionAttemptRetryContext
   >();
-  private qrContainerRecreateCooldowns = new Map<
-    string,
-    { reason: string; untilMs: number }
-  >();
   private readonly defaultCallAction: IResolveIncomingCallActionResponseProto =
     {
       reject_call: false,
@@ -201,6 +187,8 @@ export class WorkerCommandHandlerService {
     private readonly chatService: ChatService,
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(StreamProducerService)
+    private readonly streamProducerService: StreamProducerService,
     @inject(ContainerHealthService)
     private readonly containerHealthService: ContainerHealthService,
     @inject(WorkerBaileysGrpcClientService)
@@ -217,8 +205,6 @@ export class WorkerCommandHandlerService {
     private readonly workerConfigService: WorkerConfigService,
     @inject(WorkerLifecycleLockService)
     private readonly workerLifecycleLockService: WorkerLifecycleLockService,
-    @inject(ProxyConnectivityService)
-    private readonly proxyConnectivityService: ProxyConnectivityService,
     @inject(WorkerConnectionQrCodeReadinessService)
     private readonly workerConnectionQrCodeReadinessService: WorkerConnectionQrCodeReadinessService,
     @inject('Redis')
@@ -2355,20 +2341,6 @@ export class WorkerCommandHandlerService {
     return normalized;
   }
 
-  private applyProxyDecisionToState(
-    state: IBaileysConnectionState,
-    proxyDecision: QrProxyDecision
-  ): void {
-    state.proxy_status = proxyDecision.status;
-    if (proxyDecision.errorCode) {
-      state.proxy_error_code = proxyDecision.errorCode;
-    }
-    if (proxyDecision.fallbackDirect) {
-      state.proxy_fallback = 'direct';
-      state.proxy_bypassed = true;
-    }
-  }
-
   private async cacheQrAttemptState(
     state: IBaileysConnectionState
   ): Promise<void> {
@@ -2830,6 +2802,7 @@ export class WorkerCommandHandlerService {
   ): Promise<IBaileysConnectionState> {
     const workerId = payload.worker_id;
     this.ensureQrConnectionAttemptId(payload);
+    payload.connection_lifecycle_id ??= uuidv7();
     recordConnectionLifecycle({
       stage: 'connection.balancer.command_handler.qrcode_workflow_start',
       decision: 'run_connection_qrcode_workflow',
@@ -2978,422 +2951,139 @@ export class WorkerCommandHandlerService {
       });
 
       if (this.isRetryableQrRequestError(err)) {
-        throw err;
+        await this.enqueueQrCodeFastPathFallback(
+          directPayload,
+          workerData,
+          err
+        );
+        return pending;
       }
 
       return pending;
     }
   }
 
-  private async ensureQrContainerReady(
-    workerId: string,
-    workerData: ResolvedWorkerDataForContainer
-  ): Promise<QrProxyDecision> {
-    const proxyDecision = await this.resolveQrProxyDecision(
-      workerId,
-      workerData
+  private async enqueueQrCodeFastPathFallback(
+    payload: StatusConnectionWorkerRequest,
+    workerData: ResolvedWorkerDataForContainer,
+    cause: unknown
+  ): Promise<void> {
+    const topic = this.kafkaBaileysQueueService.workerConnectionQrCode(
+      payload.worker_id
     );
-
-    if (
-      !proxyDecision.fallbackDirect &&
-      (workerData.workerStatusId === EWorkerStatus.creating ||
-        workerData.workerStatusId === EWorkerStatus.recreating)
-    ) {
-      const ready = await this.waitForExistingQrContainerReady(
-        workerId,
-        workerData,
-        { maxAttempts: 10, delayMs: 2000, grpcReadyTimeoutMs: 2000 }
-      );
-      if (ready) {
-        return proxyDecision;
-      }
-    }
-
-    const inspection = await this.inspectWorkerContainerForQr(
-      workerId,
-      workerData
-    );
-    let recreateReason = this.qrContainerRecreateReason(inspection);
-
-    if (inspection.exists && inspection.running === true) {
-      const compatibilityIssue = this.qrContainerCompatibilityIssue(
-        workerId,
-        workerData,
-        inspection
-      );
-
-      if (compatibilityIssue) {
-        recreateReason = compatibilityIssue;
-        recordConnectionLifecycle({
-          stage:
-            'connection.balancer.command_handler.qrcode_container_incompatible',
-          decision: 'validate_existing_container_compatibility',
-          outcome: 'incompatible',
-          reason: compatibilityIssue,
-          recreate_reason: compatibilityIssue,
-          level: 'warn',
-          worker_type: workerData.workerTypeId,
-          expected_image: getImageWorker(workerData.workerTypeId),
-          expected_grpc_port: this.getExpectedWorkerGrpcPort(
-            workerData.workerTypeId
-          ),
-          ...this.lifecycleFieldsFromInspection(inspection),
-        });
-      } else if (
-        proxyDecision.fallbackDirect &&
-        this.containerHasProxy(inspection)
-      ) {
-        recreateReason = 'proxy_unhealthy_direct_fallback';
-        recordConnectionLifecycle({
-          stage:
-            'connection.balancer.command_handler.qrcode_container_proxy_unhealthy',
-          decision: 'validate_existing_container_proxy',
-          outcome: 'unhealthy',
-          reason: recreateReason,
-          recreate_reason: recreateReason,
-          level: 'warn',
-          worker_type: workerData.workerTypeId,
-          proxy_status: proxyDecision.status,
-          proxy_error_code: proxyDecision.errorCode,
-          proxy_fallback: 'direct',
-          ...this.lifecycleFieldsFromInspection(inspection),
-        });
-      } else {
-        const containerId = inspection.container_id ?? workerId;
-        const healthy = await this.isExistingContainerHealthy(containerId, {
-          maxAttempts: 2,
-          delayMs: 1000,
-          requiredConsecutiveSuccesses: 1,
-        });
-        recordConnectionLifecycle({
-          stage:
-            'connection.balancer.command_handler.qrcode_existing_container_health',
-          decision: 'is_existing_container_healthy',
-          outcome: healthy ? 'healthy' : 'unhealthy',
-          reason: healthy ? undefined : 'existing_container_health_failed',
-          recreate_reason: healthy
-            ? undefined
-            : 'existing_container_health_failed',
-          worker_type: workerData.workerTypeId,
-          ...this.lifecycleFieldsFromInspection(inspection),
-        });
-
-        if (healthy) {
-          try {
-            await this.waitForWorkerGrpcReady(
-              workerId,
-              workerData.workerTypeId
-            );
-            return proxyDecision;
-          } catch (err) {
-            recordConnectionLifecycle({
-              stage:
-                'connection.balancer.command_handler.qrcode_existing_container_grpc_unready',
-              decision: 'wait_worker_grpc_ready',
-              outcome: 'not_ready',
-              reason: 'healthy_container_grpc_not_ready',
-              recreate_reason: 'container_grpc_not_ready',
-              level: 'warn',
-              worker_type: workerData.workerTypeId,
-              error: getErrorMessage(err),
-              ...this.lifecycleFieldsFromInspection(inspection),
-            });
-            recreateReason = 'container_grpc_not_ready';
-          }
-        } else {
-          const grpcReadyAfterHealthFailure =
-            await this.tryExistingWorkerGrpcReady(workerId, workerData, {
-              timeoutMs: 5_000,
-              reason: 'existing_container_health_failed',
-            });
-
-          if (grpcReadyAfterHealthFailure) {
-            recordConnectionLifecycle({
-              stage:
-                'connection.balancer.command_handler.qrcode_existing_container_grpc_ready_after_health_failure',
-              decision: 'reuse_existing_container',
-              outcome: 'ready',
-              reason: 'grpc_ready_after_http_health_failed',
-              worker_type: workerData.workerTypeId,
-              ...this.lifecycleFieldsFromInspection(inspection),
-            });
-            return proxyDecision;
-          }
-
-          recreateReason = 'existing_container_health_failed';
-        }
-      }
-    }
-
-    if (inspection.exists) {
-      await this.recordContainerDiagnosticsSafely(workerId, recreateReason);
-    }
-
-    if (
-      this.shouldSuppressQrContainerRecreate(
-        workerId,
-        workerData,
-        recreateReason,
-        inspection
-      )
-    ) {
-      return proxyDecision;
-    }
-
-    if (
-      inspection.exists &&
-      this.shouldResetQrVolumeForRecreateReason(recreateReason, workerData)
-    ) {
-      recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.qrcode_container_volume_reset',
-        decision: 'remove_incompatible_worker_volume',
-        outcome: 'started',
-        reason: recreateReason,
-        recreate_reason: recreateReason,
-        worker_type: workerData.workerTypeId,
-        worker_status_id: workerData.workerStatusId,
-        ...this.lifecycleFieldsFromInspection(inspection),
-      });
-      recordConnectionQrSummary({
-        event: 'balancer_qrcode_container_volume_reset',
-        worker_id: workerId,
-        account_id: workerData.accountIdResolved,
-        worker_type: workerData.workerTypeId,
-        recreate_reason: recreateReason,
-        reason: 'incompatible_container_for_qr',
-        level: 'warn',
-      });
-      await this.workerService.cleanupContainerWorker(workerId, true);
-    }
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.command_handler.qrcode_container_recreate',
-      decision: 'create_worker_with_payload',
-      outcome: 'started',
-      reason: recreateReason,
-      recreate_reason: recreateReason,
-      worker_type: workerData.workerTypeId,
-      worker_status_id: workerData.workerStatusId,
-      ...this.lifecycleFieldsFromInspection(inspection),
-    });
-    this.markQrContainerRecreateCooldown(workerId, recreateReason);
-    recordConnectionAttemptTelemetry({
-      event: 'balancer_qrcode_container_recreate',
-      stage: 'connection.balancer.command_handler.qrcode_container_recreate',
-      metric_event: 'container_recreate',
-      level: 'warn',
-      worker_id: workerId,
+    const queuePayload: IWorkerConnectionQrCodeQueueMessage = {
+      request_id: uuidv7(),
+      connection_attempt_id: this.ensureQrConnectionAttemptId(payload),
+      connection_lifecycle_id: payload.connection_lifecycle_id ?? uuidv7(),
+      worker_id: payload.worker_id,
       account_id: workerData.accountIdResolved,
-      server_id: workerData.serverId,
-      worker_type: workerData.workerTypeId,
-      runtime_generation: workerData.runtimeGeneration,
-      warm_pool_id: workerData.warmPoolId ?? undefined,
-      container_id: inspection.container_id,
-      container_name: inspection.container_name,
-      outcome: 'started',
-      reason: recreateReason,
-      recreate_reason: recreateReason,
-    });
+      worker_type_id: workerData.workerTypeId,
+      source: 'manager',
+      requested_at: new Date().toISOString(),
+    };
+    const startedAt = Date.now();
 
-    await this.createWorkerWithPayload(workerId, workerData, undefined, {
-      healthOptions: {
-        maxAttempts: 30,
-        delayMs: 1000,
-        requiredConsecutiveSuccesses: 3,
-      },
-      proxyOverride: proxyDecision.fallbackDirect ? null : proxyDecision.proxy,
-      proxyMode: proxyDecision.fallbackDirect
-        ? 'direct_fallback'
-        : proxyDecision.proxy
-          ? 'proxy'
-          : 'direct',
-    });
-
-    const createdInspection = await this.inspectWorkerContainerForQr(
-      workerId,
-      workerData
-    );
     recordConnectionLifecycle({
       stage:
-        'connection.balancer.command_handler.qrcode_container_recreate_success',
-      decision: 'create_worker_with_payload',
-      outcome: 'success',
-      worker_type: workerData.workerTypeId,
-      worker_status_id: workerData.workerStatusId,
-      ...this.lifecycleFieldsFromInspection(createdInspection),
-    });
-
-    return proxyDecision;
-  }
-
-  private shouldResetQrVolumeForRecreateReason(
-    recreateReason: string,
-    workerData: ResolvedWorkerDataForContainer
-  ): boolean {
-    if (workerData.workerStatusId === EWorkerStatus.online) {
-      return false;
-    }
-
-    return [
-      'image_mismatch',
-      'worker_type_mismatch',
-      'worker_grpc_port_mismatch',
-    ].includes(recreateReason);
-  }
-
-  private async waitForExistingQrContainerReady(
-    workerId: string,
-    workerData: ResolvedWorkerDataForContainer,
-    options: {
-      maxAttempts: number;
-      delayMs: number;
-      grpcReadyTimeoutMs: number;
-    }
-  ): Promise<boolean> {
-    recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.qrcode_wait_existing_container_start',
-      decision: 'wait_existing_container_ready',
+        'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueue_start',
+      decision: 'enqueue_worker_qrcode_after_grpc_failure',
       outcome: 'started',
       worker_type: workerData.workerTypeId,
       worker_status_id: workerData.workerStatusId,
-      max_attempts: options.maxAttempts,
-      health_delay_ms: options.delayMs,
-    });
-
-    for (let attempt = 1; attempt <= options.maxAttempts; attempt++) {
-      const inspection = await this.inspectWorkerContainerForQr(
-        workerId,
-        workerData
-      );
-      const containerId = inspection.container_id ?? workerId;
-      const healthy =
-        inspection.exists && inspection.running === true
-          ? await this.isExistingContainerHealthy(containerId, {
-              maxAttempts: 1,
-              delayMs: 0,
-            })
-          : false;
-
-      recordConnectionLifecycle({
-        stage:
-          'connection.balancer.command_handler.qrcode_wait_existing_container_attempt',
-        decision: 'wait_existing_container_ready',
-        outcome: healthy ? 'healthy' : 'unhealthy',
-        worker_type: workerData.workerTypeId,
-        worker_status_id: workerData.workerStatusId,
-        attempt,
-        max_attempts: options.maxAttempts,
-        health_delay_ms: options.delayMs,
-        ...this.lifecycleFieldsFromInspection(inspection),
-      });
-
-      if (healthy) {
-        try {
-          await this.workerBaileysGrpcClientService.waitForReady(
-            workerId,
-            workerData.workerTypeId,
-            options.grpcReadyTimeoutMs
-          );
-          return true;
-        } catch {
-          // Keep waiting while another recreate/create request is still booting.
-        }
-      }
-
-      if (attempt < options.maxAttempts) {
-        await this.sleep(options.delayMs);
-      }
-    }
-
-    recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.qrcode_wait_existing_container_timeout',
-      decision: 'wait_existing_container_ready',
-      outcome: 'timeout',
-      reason: 'container_not_ready_during_worker_create_or_recreate',
-      level: 'warn',
-      worker_type: workerData.workerTypeId,
-      worker_status_id: workerData.workerStatusId,
-      max_attempts: options.maxAttempts,
-      health_delay_ms: options.delayMs,
-    });
-
-    return false;
-  }
-
-  private async tryExistingWorkerGrpcReady(
-    workerId: string,
-    workerData: ResolvedWorkerDataForContainer,
-    options: { timeoutMs: number; reason: string }
-  ): Promise<boolean> {
-    recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.qrcode_existing_container_grpc_probe_start',
-      decision: 'wait_worker_grpc_ready',
-      outcome: 'started',
-      reason: options.reason,
-      worker_type: workerData.workerTypeId,
-      worker_status_id: workerData.workerStatusId,
-      deadline_ms: options.timeoutMs,
+      topic,
+      kafka_key: payload.worker_id,
+      connection_attempt_id: queuePayload.connection_attempt_id,
+      connection_lifecycle_id: queuePayload.connection_lifecycle_id,
+      deadline_ms: payload.qr_request_deadline_ms,
+      runtime_generation: payload.runtime_generation,
+      warm_pool_id: payload.warm_pool_id,
+      container_id: workerData.containerId,
+      error: getErrorMessage(cause),
     });
 
     try {
-      const grpcAddress =
-        await this.workerBaileysGrpcClientService.waitForReady(
-          workerId,
-          workerData.workerTypeId,
-          options.timeoutMs
-        );
+      await this.kafkaBaileysQueueService.ensure(payload.worker_id);
+      await this.streamProducerService.send(
+        topic,
+        queuePayload,
+        payload.worker_id,
+        this.buildConnectionLifecycleKafkaHeaders(
+          queuePayload.connection_lifecycle_id
+        )
+      );
+
+      const durationMs = Date.now() - startedAt;
       recordConnectionLifecycle({
         stage:
-          'connection.balancer.command_handler.qrcode_existing_container_grpc_probe_success',
-        decision: 'wait_worker_grpc_ready',
-        outcome: 'ready',
-        reason: options.reason,
+          'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueued',
+        decision: 'enqueue_worker_qrcode_after_grpc_failure',
+        outcome: 'queued',
         worker_type: workerData.workerTypeId,
         worker_status_id: workerData.workerStatusId,
-        grpc_address: grpcAddress,
-        grpc_probe_address: grpcAddress,
-        grpc_ready: true,
-        deadline_ms: options.timeoutMs,
+        topic,
+        kafka_key: payload.worker_id,
+        connection_attempt_id: queuePayload.connection_attempt_id,
+        connection_lifecycle_id: queuePayload.connection_lifecycle_id,
+        deadline_ms: payload.qr_request_deadline_ms,
+        runtime_generation: payload.runtime_generation,
+        warm_pool_id: payload.warm_pool_id,
+        container_id: workerData.containerId,
+        duration_ms: durationMs,
       });
-      return true;
-    } catch (err) {
+      recordConnectionAttemptTelemetry({
+        event: 'balancer_qrcode_fastpath_fallback_queued',
+        stage:
+          'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueued',
+        metric_event: 'qr_request',
+        worker_id: payload.worker_id,
+        account_id: workerData.accountIdResolved,
+        server_id: workerData.serverId,
+        worker_type: workerData.workerTypeId,
+        connection_attempt_id: queuePayload.connection_attempt_id,
+        connection_lifecycle_id: queuePayload.connection_lifecycle_id,
+        deadline_ms: payload.qr_request_deadline_ms,
+        runtime_generation: payload.runtime_generation,
+        warm_pool_id: payload.warm_pool_id,
+        container_id: workerData.containerId ?? undefined,
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        outcome: 'queued',
+        reason: 'grpc_fastpath_unavailable',
+        duration_ms: durationMs,
+      });
+    } catch (error) {
       recordConnectionLifecycle({
         stage:
-          'connection.balancer.command_handler.qrcode_existing_container_grpc_probe_error',
-        decision: 'wait_worker_grpc_ready',
-        outcome: 'not_ready',
-        reason: options.reason,
-        level: 'warn',
+          'connection.balancer.command_handler.qrcode_fastpath_fallback_enqueue_error',
+        decision: 'enqueue_worker_qrcode_after_grpc_failure',
+        outcome: 'error',
+        reason: 'kafka_fallback_enqueue_failed',
+        level: 'error',
         worker_type: workerData.workerTypeId,
         worker_status_id: workerData.workerStatusId,
-        grpc_ready: false,
-        deadline_ms: options.timeoutMs,
-        error: getErrorMessage(err),
+        topic,
+        kafka_key: payload.worker_id,
+        connection_attempt_id: queuePayload.connection_attempt_id,
+        connection_lifecycle_id: queuePayload.connection_lifecycle_id,
+        deadline_ms: payload.qr_request_deadline_ms,
+        runtime_generation: payload.runtime_generation,
+        warm_pool_id: payload.warm_pool_id,
+        container_id: workerData.containerId,
+        duration_ms: Date.now() - startedAt,
+        error: getErrorMessage(error),
       });
-      return false;
+      throw error;
     }
   }
 
-  private async inspectWorkerContainerForQr(
-    workerId: string,
-    workerData: ResolvedWorkerDataForContainer
-  ): Promise<WorkerContainerInspection> {
-    const inspection =
-      await this.workerService.inspectContainerWorkerById(workerId);
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.command_handler.qrcode_container_inspected',
-      decision: 'inspect_container_worker_by_id',
-      outcome: inspection.exists ? 'exists' : 'missing',
-      worker_type: workerData.workerTypeId,
-      worker_status_id: workerData.workerStatusId,
-      ...this.lifecycleFieldsFromInspection(inspection),
-    });
-
-    return inspection;
+  private buildConnectionLifecycleKafkaHeaders(
+    connectionLifecycleId: string
+  ): MessageHeader[] {
+    return [
+      {
+        'x-connection-lifecycle-id': connectionLifecycleId,
+      },
+    ];
   }
 
   private lifecycleFieldsFromInspection(
@@ -3433,220 +3123,6 @@ export class WorkerCommandHandlerService {
         inspection.container_env?.WORKER_GRPC_PORT,
       container_running: inspection.running,
     };
-  }
-
-  private qrContainerRecreateReason(
-    inspection: WorkerContainerInspection
-  ): string {
-    if (!inspection.exists) {
-      return 'container_missing';
-    }
-    if (inspection.running !== true) {
-      return 'container_not_running';
-    }
-    return 'container_unhealthy';
-  }
-
-  private qrContainerCompatibilityIssue(
-    workerId: string,
-    workerData: ResolvedWorkerDataForContainer,
-    inspection: WorkerContainerInspection
-  ): string | undefined {
-    const expectedImage = getImageWorker(workerData.workerTypeId);
-    const expectedGrpcPort = this.getExpectedWorkerGrpcPort(
-      workerData.workerTypeId
-    );
-    const expectedGrpcPortValue =
-      expectedGrpcPort === undefined ? undefined : String(expectedGrpcPort);
-    const labels = inspection.container_labels ?? {};
-    const env = inspection.container_env ?? {};
-
-    if (
-      inspection.container_image &&
-      inspection.container_image !== expectedImage
-    ) {
-      return 'image_mismatch';
-    }
-
-    if (
-      labels['underchat.worker_image'] &&
-      labels['underchat.worker_image'] !== expectedImage
-    ) {
-      return 'image_mismatch';
-    }
-
-    if (env.WORKER_IMAGE && env.WORKER_IMAGE !== expectedImage) {
-      return 'image_mismatch';
-    }
-
-    if (
-      labels['underchat.worker_id'] &&
-      labels['underchat.worker_id'] !== workerId
-    ) {
-      return 'worker_id_mismatch';
-    }
-
-    if (env.WORKER_ID && env.WORKER_ID !== workerId) {
-      return 'worker_id_mismatch';
-    }
-
-    if (
-      labels['underchat.account_id'] &&
-      labels['underchat.account_id'] !== workerData.accountIdResolved
-    ) {
-      return 'account_id_mismatch';
-    }
-
-    if (env.ACCOUNT_ID && env.ACCOUNT_ID !== workerData.accountIdResolved) {
-      return 'account_id_mismatch';
-    }
-
-    if (
-      labels['underchat.worker_type_id'] &&
-      labels['underchat.worker_type_id'] !== workerData.workerTypeId
-    ) {
-      return 'worker_type_mismatch';
-    }
-
-    if (env.WORKER_TYPE_ID && env.WORKER_TYPE_ID !== workerData.workerTypeId) {
-      return 'worker_type_mismatch';
-    }
-
-    if (
-      labels['underchat.worker_grpc_port'] &&
-      expectedGrpcPortValue !== undefined &&
-      labels['underchat.worker_grpc_port'] !== expectedGrpcPortValue
-    ) {
-      return 'worker_grpc_port_mismatch';
-    }
-
-    if (
-      env.WORKER_GRPC_PORT &&
-      expectedGrpcPortValue !== undefined &&
-      env.WORKER_GRPC_PORT !== expectedGrpcPortValue
-    ) {
-      return 'worker_grpc_port_mismatch';
-    }
-
-    return undefined;
-  }
-
-  private isHardQrContainerRecreateReason(reason: string): boolean {
-    return [
-      'container_missing',
-      'container_not_running',
-      'image_mismatch',
-      'worker_id_mismatch',
-      'account_id_mismatch',
-      'worker_type_mismatch',
-      'worker_grpc_port_mismatch',
-      'proxy_unhealthy_direct_fallback',
-    ].includes(reason);
-  }
-
-  private activeQrAttemptAgeMs(workerId: string): number | undefined {
-    const active = this.qrConnectionRequestPayloads.get(workerId);
-    if (!active) {
-      return undefined;
-    }
-
-    return Math.max(0, Date.now() - active.startedAtMs);
-  }
-
-  private markQrContainerRecreateCooldown(
-    workerId: string,
-    reason: string
-  ): void {
-    this.qrContainerRecreateCooldowns.set(workerId, {
-      reason,
-      untilMs: Date.now() + getConnectionQrRecreateCooldownMs(),
-    });
-  }
-
-  private shouldSuppressQrContainerRecreate(
-    workerId: string,
-    workerData: ResolvedWorkerDataForContainer,
-    recreateReason: string,
-    inspection: WorkerContainerInspection
-  ): boolean {
-    if (this.isHardQrContainerRecreateReason(recreateReason)) {
-      return false;
-    }
-
-    if (!inspection.exists || inspection.running !== true) {
-      return false;
-    }
-
-    const now = Date.now();
-    const activeAgeMs = this.activeQrAttemptAgeMs(workerId);
-    const firstQrTimeoutMs = getConnectionQrFirstQrTimeoutMs();
-    const cooldown = this.qrContainerRecreateCooldowns.get(workerId);
-    const cooldownActive = Boolean(cooldown && cooldown.untilMs > now);
-    const firstQrWindowActive =
-      activeAgeMs !== undefined && activeAgeMs <= firstQrTimeoutMs;
-
-    if (!cooldownActive && !firstQrWindowActive) {
-      return false;
-    }
-
-    const reason = cooldownActive
-      ? 'recreate_cooldown_active'
-      : 'first_qr_window_active';
-    recordConnectionLifecycle({
-      stage:
-        'connection.balancer.command_handler.qrcode_container_recreate_suppressed',
-      decision: 'suppress_qr_container_recreate',
-      outcome: 'suppressed',
-      reason,
-      recreate_reason: recreateReason,
-      level: 'warn',
-      worker_type: workerData.workerTypeId,
-      server_id: workerData.serverId,
-      account_id: workerData.accountIdResolved,
-      runtime_generation: workerData.runtimeGeneration,
-      warm_pool_id: workerData.warmPoolId,
-      qr_pending_age_ms: activeAgeMs,
-      deadline_ms: firstQrTimeoutMs,
-      recreate_cooldown_ms: getConnectionQrRecreateCooldownMs(),
-      recreate_cooldown_reason: cooldown?.reason,
-      ...this.lifecycleFieldsFromInspection(inspection),
-    });
-    recordConnectionAttemptTelemetry({
-      event: 'balancer_qrcode_container_recreate_suppressed',
-      stage:
-        'connection.balancer.command_handler.qrcode_container_recreate_suppressed',
-      metric_event: 'qr_outcome',
-      level: 'warn',
-      worker_id: workerId,
-      account_id: workerData.accountIdResolved,
-      server_id: workerData.serverId,
-      worker_type: workerData.workerTypeId,
-      runtime_generation: workerData.runtimeGeneration,
-      warm_pool_id: workerData.warmPoolId ?? undefined,
-      container_id: inspection.container_id,
-      container_name: inspection.container_name,
-      outcome: 'pending',
-      reason,
-      recreate_reason: recreateReason,
-      qr_pending_age_ms: activeAgeMs,
-      deadline_ms: firstQrTimeoutMs,
-    });
-    recordConnectionQrSummary({
-      event: 'balancer_qrcode_container_recreate_suppressed',
-      worker_id: workerId,
-      account_id: workerData.accountIdResolved,
-      worker_type: workerData.workerTypeId,
-      server_id: workerData.serverId,
-      container_id: inspection.container_id,
-      runtime_generation: workerData.runtimeGeneration,
-      warm_pool_id: workerData.warmPoolId ?? undefined,
-      recreate_reason: recreateReason,
-      reason,
-      qr_pending: true,
-      level: 'warn',
-    });
-
-    return true;
   }
 
   private isWorkerGrpcReadinessRequired(workerType: EWorkerType): boolean {
@@ -4289,87 +3765,6 @@ export class WorkerCommandHandlerService {
 
       return undefined;
     }
-  }
-
-  private async resolveQrProxyDecision(
-    workerId: string,
-    workerData: ResolvedWorkerDataForContainer
-  ): Promise<QrProxyDecision> {
-    const proxy = await this.resolveWorkerProxyConfig(
-      workerId,
-      workerData.serverId
-    );
-
-    if (!proxy) {
-      return {
-        proxy: undefined,
-        fallbackDirect: false,
-        status: 'disabled',
-      };
-    }
-
-    let result: ProxyConnectivityResult;
-    try {
-      result = await this.proxyConnectivityService.check(proxy);
-    } catch (err) {
-      result = {
-        status: 'unhealthy',
-        error_code: getErrorMessage(err),
-      };
-    }
-
-    recordConnectionQrSummary({
-      event:
-        result.status === 'healthy'
-          ? 'balancer_qrcode_proxy_healthy'
-          : 'balancer_qrcode_proxy_unhealthy',
-      worker_id: workerId,
-      account_id: workerData.accountIdResolved,
-      worker_type: workerData.workerTypeId,
-      proxy_status: result.status,
-      proxy_error_code: result.error_code,
-      reason:
-        result.status === 'healthy'
-          ? 'proxy_connectivity_ok'
-          : 'proxy_connectivity_failed',
-      level: result.status === 'healthy' ? 'info' : 'warn',
-    });
-
-    if (result.status === 'healthy') {
-      return {
-        proxy,
-        fallbackDirect: false,
-        status: 'healthy',
-      };
-    }
-
-    recordConnectionQrSummary({
-      event: 'balancer_qrcode_proxy_fallback_direct',
-      worker_id: workerId,
-      account_id: workerData.accountIdResolved,
-      worker_type: workerData.workerTypeId,
-      proxy_status: 'unhealthy',
-      proxy_error_code: result.error_code,
-      proxy_fallback: 'direct',
-      proxy_bypassed: true,
-      reason: 'proxy_unhealthy',
-      level: 'warn',
-    });
-
-    return {
-      proxy: undefined,
-      fallbackDirect: true,
-      status: 'unhealthy',
-      errorCode: result.error_code,
-    };
-  }
-
-  private containerHasProxy(inspection: WorkerContainerInspection): boolean {
-    return Boolean(
-      inspection.container_env?.PROXY_HOST ||
-      inspection.container_env?.PROXY_PORT ||
-      inspection.container_labels?.['underchat.proxy_mode'] === 'proxy'
-    );
   }
 
   private async resolveChannelProxyConfig(workerId: string): Promise<

@@ -32,6 +32,10 @@ jest.mock('@core/services/kafkaBaileysQueue.service', () => ({
   KafkaBaileysQueueService: class KafkaBaileysQueueService {},
 }));
 
+jest.mock('@core/services/streamProducer.service', () => ({
+  StreamProducerService: class StreamProducerService {},
+}));
+
 jest.mock('@core/services/containerHealth.service', () => ({
   ContainerHealthService: class ContainerHealthService {},
 }));
@@ -58,10 +62,6 @@ jest.mock('@core/services/s3BackupUpload.service', () => ({
 
 jest.mock('@core/services/workerConfig.service', () => ({
   WorkerConfigService: class WorkerConfigService {},
-}));
-
-jest.mock('@core/services/proxyConnectivity.service', () => ({
-  ProxyConnectivityService: class ProxyConnectivityService {},
 }));
 
 jest.mock('uuid', () => ({
@@ -208,6 +208,12 @@ function buildHandler(
   const kafkaBaileysQueueService = {
     delete: jest.fn(async () => undefined),
     ensure: jest.fn(async () => undefined),
+    workerConnectionQrCode: jest.fn(
+      (workerId: string) => `worker.${workerId}.connection.qrcode`
+    ),
+  };
+  const streamProducerService = {
+    send: jest.fn(async () => undefined),
   };
   const containerHealthService = {
     isServiceHealthy: jest.fn(async () => true),
@@ -271,12 +277,6 @@ function buildHandler(
       return existed ? 1 : 0;
     }),
   };
-  const proxyConnectivityService = {
-    check: jest.fn<
-      Promise<{ status: 'healthy' | 'unhealthy'; error_code?: string }>,
-      [unknown]
-    >(async () => ({ status: 'healthy' })),
-  };
   const workerConnectionQrCodeReadinessService = {
     waitUntilReady: jest.fn(async () => true),
   };
@@ -287,6 +287,7 @@ function buildHandler(
     centrifugoService as never,
     chatService as never,
     kafkaBaileysQueueService as never,
+    streamProducerService as never,
     containerHealthService as never,
     workerBaileysGrpcClientService as never,
     serverSshViewerRepository as never,
@@ -295,7 +296,6 @@ function buildHandler(
     s3BackupUploadService as never,
     workerConfigService as never,
     workerLifecycleLockService as never,
-    proxyConnectivityService as never,
     workerConnectionQrCodeReadinessService as never,
     redis as never,
     undefined as never,
@@ -308,10 +308,10 @@ function buildHandler(
     centrifugoService,
     containerHealthService,
     kafkaBaileysQueueService,
+    streamProducerService,
     workerBaileysGrpcClientService,
     workerLifecycleLockService,
     workerConfigViewerRepository,
-    proxyConnectivityService,
     workerConnectionQrCodeReadinessService,
     workerRuntimeRepository,
     redis,
@@ -937,7 +937,7 @@ describe('WorkerCommandHandlerService connection', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('keeps pending cached and rejects when direct QR gRPC fails', async () => {
+  it('keeps pending cached and enqueues Kafka fallback when direct QR gRPC fails', async () => {
     jest.useFakeTimers();
     const deps = buildHandler();
     deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
@@ -945,17 +945,25 @@ describe('WorkerCommandHandlerService connection', () => {
     );
 
     try {
-      await expect(
-        deps.handler.handleRequestConnectionQrCode(
-          {
-            worker_id: 'worker-1',
-            status: EWorkerStatus.online,
-            type: EBaileysConnectionType.qrcode,
-          },
-          'account-1'
-        )
-      ).rejects.toThrow('4 DEADLINE_EXCEEDED');
+      const response = await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
 
+      expect(response).toEqual(
+        expect.objectContaining({
+          worker_id: 'worker-1',
+          account_id: 'account-1',
+          code: ECodeMessage.awaitingReadQrCode,
+          status: EBaileysConnectionStatus.connecting,
+          connection_attempt_id: 'uuid-v7',
+          qr_pending: true,
+        })
+      );
       expect(deps.redis.setex).toHaveBeenCalledWith(
         'connection:qrcode:worker-1:attempt',
         expect.any(Number),
@@ -973,6 +981,30 @@ describe('WorkerCommandHandlerService connection', () => {
       expect(
         deps.workerBaileysGrpcClientService.requestConnectionQrCode
       ).toHaveBeenCalledTimes(1);
+      expect(deps.kafkaBaileysQueueService.ensure).toHaveBeenCalledWith(
+        'worker-1'
+      );
+      expect(
+        deps.kafkaBaileysQueueService.workerConnectionQrCode
+      ).toHaveBeenCalledWith('worker-1');
+      expect(deps.streamProducerService.send).toHaveBeenCalledWith(
+        'worker.worker-1.connection.qrcode',
+        expect.objectContaining({
+          request_id: 'uuid-v7',
+          connection_attempt_id: 'uuid-v7',
+          connection_lifecycle_id: 'uuid-v7',
+          worker_id: 'worker-1',
+          account_id: 'account-1',
+          worker_type_id: EWorkerType.wwebjs,
+          source: 'manager',
+        }),
+        'worker-1',
+        [
+          {
+            'x-connection-lifecycle-id': 'uuid-v7',
+          },
+        ]
+      );
       expect(jest.getTimerCount()).toBe(0);
     } finally {
       jest.clearAllTimers();
@@ -980,7 +1012,7 @@ describe('WorkerCommandHandlerService connection', () => {
     }
   });
 
-  it('returns the cached pending attempt after direct QR gRPC failed once', async () => {
+  it('returns the cached pending attempt after direct QR gRPC fallback was queued once', async () => {
     jest.useFakeTimers();
     const deps = buildHandler();
     deps.workerBaileysGrpcClientService.requestConnectionQrCode.mockRejectedValueOnce(
@@ -988,16 +1020,14 @@ describe('WorkerCommandHandlerService connection', () => {
     );
 
     try {
-      await expect(
-        deps.handler.handleRequestConnectionQrCode(
-          {
-            worker_id: 'worker-1',
-            status: EWorkerStatus.online,
-            type: EBaileysConnectionType.qrcode,
-          },
-          'account-1'
-        )
-      ).rejects.toThrow('4 DEADLINE_EXCEEDED');
+      await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
 
       const response = await deps.handler.handleRequestConnectionQrCode(
         {
@@ -1022,6 +1052,7 @@ describe('WorkerCommandHandlerService connection', () => {
       expect(
         deps.workerBaileysGrpcClientService.requestConnectionQrCode
       ).toHaveBeenCalledTimes(1);
+      expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
       expect(jest.getTimerCount()).toBe(0);
     } finally {
       jest.clearAllTimers();
@@ -1037,19 +1068,18 @@ describe('WorkerCommandHandlerService connection', () => {
     );
 
     try {
-      await expect(
-        deps.handler.handleRequestConnectionQrCode(
-          {
-            worker_id: 'worker-1',
-            status: EWorkerStatus.online,
-            type: EBaileysConnectionType.qrcode,
-          },
-          'account-1'
-        )
-      ).rejects.toThrow('4 DEADLINE_EXCEEDED');
+      await deps.handler.handleRequestConnectionQrCode(
+        {
+          worker_id: 'worker-1',
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+        },
+        'account-1'
+      );
       expect(
         deps.workerBaileysGrpcClientService.requestConnectionQrCode
       ).toHaveBeenCalledTimes(1);
+      expect(deps.streamProducerService.send).toHaveBeenCalledTimes(1);
       expect(jest.getTimerCount()).toBe(0);
     } finally {
       jest.clearAllTimers();
@@ -1263,7 +1293,7 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
-  it('does not evaluate proxy fallback from the legacy QR request', async () => {
+  it('does not recreate a proxied container from the QR request', async () => {
     const deps = buildHandler();
     const proxyConfig = new Map<
       string,
@@ -1298,10 +1328,6 @@ describe('WorkerCommandHandlerService connection', () => {
       async (_workerId: string, type: EWorkerConfigType) =>
         proxyConfig.get(type) ?? { statusId: null, value: null }
     );
-    deps.proxyConnectivityService.check.mockResolvedValueOnce({
-      status: 'unhealthy',
-      error_code: 'connect_refused',
-    });
     deps.workerService.inspectContainerWorkerById.mockResolvedValueOnce(
       buildWorkerContainerInspection({
         container_env: {
@@ -1334,7 +1360,6 @@ describe('WorkerCommandHandlerService connection', () => {
       'account-1'
     );
 
-    expect(deps.proxyConnectivityService.check).not.toHaveBeenCalled();
     expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
     expect(deps.workerService.cleanupContainerWorker).not.toHaveBeenCalled();
     expect(response).toEqual(
