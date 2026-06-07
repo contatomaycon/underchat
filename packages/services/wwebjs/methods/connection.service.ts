@@ -49,6 +49,7 @@ const CONNECTION_EVENT_BRIDGE_ATTACH_TIMEOUT_MS = 20_000;
 const CONNECTION_PAGE_CHECK_TIMEOUT_MS = 5_000;
 const DEFAULT_PUPPETEER_PROTOCOL_TIMEOUT_MS = 300_000;
 const QR_DATA_URL_GENERATION_TIMEOUT_MS = 1_500;
+const CONNECTION_ATTEMPT_GUARD_TIMEOUT_GRACE_MS = 5_000;
 const QR_SVG_MARGIN_MODULES = 4;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
@@ -129,6 +130,15 @@ const PUPPETEER_PROTOCOL_TIMEOUT_MS = (() => {
   return DEFAULT_PUPPETEER_PROTOCOL_TIMEOUT_MS;
 })();
 
+function getWwebjsUserAgent(): string | false {
+  const configured = process.env.WWEBJS_USER_AGENT?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  return false;
+}
+
 function readProxyConfig(): {
   protocol: EProxyProtocol;
   host: string;
@@ -164,6 +174,12 @@ function readProxyConfig(): {
 
 const { Client: ClientCtor, LocalAuth } = whatsappWeb;
 type Client = InstanceType<typeof ClientCtor>;
+type WwebjsClientOptions = Omit<
+  NonNullable<ConstructorParameters<typeof ClientCtor>[0]>,
+  'userAgent'
+> & {
+  userAgent?: string | false;
+};
 type WwebjsPageLike = {
   evaluate<T>(pageFunction: () => T | Promise<T>): Promise<T>;
 };
@@ -564,7 +580,12 @@ export class WwebjsConnectionService {
       connection_type: this.typeConnection,
     });
     this.currentPromise = this.waitForPendingTeardown()
-      .then(() => this.createAndWaitClient(attemptId))
+      .then(() =>
+        this.withConnectionAttemptGuardTimeout(
+          this.createAndWaitClient(attemptId),
+          attemptId
+        )
+      )
       .finally(() => {
         this.connecting = false;
         this.currentPromise = undefined;
@@ -574,6 +595,85 @@ export class WwebjsConnectionService {
       });
 
     return this.currentPromise;
+  }
+
+  private withConnectionAttemptGuardTimeout(
+    promise: Promise<IBaileysConnectionState>,
+    attemptId: number
+  ): Promise<IBaileysConnectionState> {
+    const deadlineMs =
+      getConnectionQrFirstQrTimeoutMs() +
+      CONNECTION_ATTEMPT_GUARD_TIMEOUT_GRACE_MS;
+    const startedAtMs = this.connectionAttemptStartedAtMs || Date.now();
+    let guardTimeout: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+
+    this.logConnectionEvent('connection_attempt_guard_timeout_armed', {
+      attempt_id: attemptId,
+      deadline_ms: deadlineMs,
+      first_qr_timeout_ms: getConnectionQrFirstQrTimeoutMs(),
+      grace_ms: CONNECTION_ATTEMPT_GUARD_TIMEOUT_GRACE_MS,
+    });
+
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      const settle = (state: IBaileysConnectionState): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (guardTimeout) {
+          clearTimeout(guardTimeout);
+        }
+        resolve(state);
+      };
+
+      guardTimeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+
+        const elapsedMs = Date.now() - startedAtMs;
+        if (
+          this.activeConnectionAttemptId !== attemptId ||
+          this.connectionEstablished ||
+          this.status !== Status.connecting
+        ) {
+          this.logConnectionEvent(
+            'connection_attempt_guard_timeout_skipped',
+            {
+              attempt_id: attemptId,
+              active_attempt_id: this.activeConnectionAttemptId,
+              status: this.status,
+              code: this.code,
+              connection_established: this.connectionEstablished,
+              deadline_ms: deadlineMs,
+              time_to_first_qr_ms: elapsedMs,
+            },
+            'warn'
+          );
+          settle(this.state());
+          return;
+        }
+
+        const payload = this.resolveQrAttemptTimeout(
+          attemptId,
+          startedAtMs,
+          deadlineMs,
+          'connection_attempt_guard_timeout'
+        );
+        settle(payload);
+      }, deadlineMs);
+
+      promise.then(settle).catch((error) => {
+        if (settled) {
+          return;
+        }
+        if (guardTimeout) {
+          clearTimeout(guardTimeout);
+        }
+        reject(error);
+      });
+    });
   }
 
   private waitForPendingTeardown(): Promise<void> {
@@ -933,6 +1033,82 @@ export class WwebjsConnectionService {
     });
   }
 
+  private resolveQrAttemptTimeout(
+    attemptId: number,
+    startedAtMs: number,
+    deadlineMs: number,
+    reason: 'qr_event_timeout' | 'connection_attempt_guard_timeout'
+  ): IBaileysConnectionState {
+    const elapsedMs = Date.now() - startedAtMs;
+    this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
+    this.clearConnectionStateProbe();
+    this.logConnectionEvent(
+      reason === 'qr_event_timeout'
+        ? 'first_qr_timeout'
+        : 'connection_attempt_guard_timeout',
+      {
+        attempt_id: attemptId,
+        reason,
+        deadline_ms: deadlineMs,
+        time_to_first_qr_ms: elapsedMs,
+        connection_type: this.typeConnection,
+        has_session: this.hasSession(),
+        has_active_socket: Boolean(this.client),
+      },
+      'warn'
+    );
+    recordConnectionAttemptTelemetry({
+      event:
+        reason === 'qr_event_timeout'
+          ? 'worker_wwebjs_first_qr_timeout'
+          : 'worker_wwebjs_connection_attempt_guard_timeout',
+      stage:
+        reason === 'qr_event_timeout'
+          ? 'connection.wwebjs.service.first_qr_timeout'
+          : 'connection.wwebjs.service.connection_attempt_guard_timeout',
+      metric_event: 'qr_outcome',
+      level: 'warn',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type: 'wwebjs',
+      library: 'wwebjs',
+      connection_attempt_id: this.connectionAttemptId,
+      connection_lifecycle_id: this.connectionLifecycleId,
+      status: this.status,
+      code: this.code,
+      outcome: 'timeout',
+      reason,
+      deadline_ms: deadlineMs,
+      time_to_first_qr_ms: elapsedMs,
+    });
+
+    const payload = this.state(undefined, undefined, {
+      qr_pending: true,
+      reason,
+      time_to_first_qr_ms: elapsedMs,
+      worker_status_id: EWorkerStatus.disponible,
+    });
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, reason);
+    this.pendingResolve?.(payload);
+    this.pendingResolve = undefined;
+    this.queueTeardown(reason, async () => {
+      if (!this.client) {
+        return;
+      }
+
+      try {
+        await this.client.destroy();
+      } catch {}
+
+      this.client = undefined;
+      this.clearChromiumProfileLock();
+    });
+    this.incomingMessageService.unbind();
+
+    return payload;
+  }
+
   private createAndWaitClient(
     attemptId: number
   ): Promise<IBaileysConnectionState> {
@@ -961,66 +1137,34 @@ export class WwebjsConnectionService {
           this.connectionEstablished ||
           this.status !== Status.connecting
         ) {
+          this.logConnectionEvent(
+            'first_qr_timeout_skipped',
+            {
+              attempt_id: attemptId,
+              active_attempt_id: this.activeConnectionAttemptId,
+              status: this.status,
+              code: this.code,
+              connection_established: this.connectionEstablished,
+              deadline_ms: firstQrTimeoutMs,
+              time_to_first_qr_ms: Date.now() - startedAtMs,
+            },
+            'warn'
+          );
           return;
         }
 
-        const elapsedMs = Date.now() - startedAtMs;
-        this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
-        this.clearConnectionStateProbe();
-        this.logConnectionEvent(
-          'first_qr_timeout',
-          {
-            attempt_id: attemptId,
-            reason: 'qr_event_timeout',
-            deadline_ms: firstQrTimeoutMs,
-            time_to_first_qr_ms: elapsedMs,
-            connection_type: this.typeConnection,
-            has_session: this.hasSession(),
-            has_active_socket: Boolean(this.client),
-          },
-          'warn'
+        const payload = this.resolveQrAttemptTimeout(
+          attemptId,
+          startedAtMs,
+          firstQrTimeoutMs,
+          'qr_event_timeout'
         );
-        recordConnectionAttemptTelemetry({
-          event: 'worker_wwebjs_first_qr_timeout',
-          stage: 'connection.wwebjs.service.first_qr_timeout',
-          metric_event: 'qr_outcome',
-          level: 'warn',
-          worker_id: getWorker(),
-          account_id: getAccount(),
-          worker_type: 'wwebjs',
-          library: 'wwebjs',
-          connection_attempt_id: this.connectionAttemptId,
-          status: this.status,
-          code: this.code,
-          outcome: 'timeout',
-          reason: 'qr_event_timeout',
-          deadline_ms: firstQrTimeoutMs,
-          time_to_first_qr_ms: elapsedMs,
-        });
-
-        const payload = this.state(undefined, undefined, {
-          qr_pending: true,
-          reason: 'qr_event_timeout',
-          time_to_first_qr_ms: elapsedMs,
-          worker_status_id: EWorkerStatus.disponible,
-        });
-        this.publishSub(payload, true);
-        void this.notifyWorkerStatusSafely(payload, 'first_qr_timeout');
-        this.queueTeardown('first_qr_timeout', async () => {
-          if (!this.client) {
-            return;
-          }
-
-          try {
-            await this.client.destroy();
-          } catch {}
-
-          this.client = undefined;
-          this.clearChromiumProfileLock();
-        });
-        this.incomingMessageService.unbind();
         settle(payload);
       }, firstQrTimeoutMs);
+      this.logConnectionEvent('first_qr_timeout_armed', {
+        attempt_id: attemptId,
+        deadline_ms: firstQrTimeoutMs,
+      });
 
       this.clearChromiumProfileLock();
 
@@ -1054,18 +1198,28 @@ export class WwebjsConnectionService {
         puppeteerOpts.executablePath = systemChrome;
       }
 
-      const clientOptions: ConstructorParameters<typeof ClientCtor>[0] = {
+      const userAgent = getWwebjsUserAgent();
+      const clientOptions: WwebjsClientOptions = {
         authStrategy: new LocalAuth({
           clientId: getWorker(),
           dataPath: authPath,
         }),
         puppeteer: puppeteerOpts,
+        userAgent,
         emitHistoricalEvents: HISTORY_RECONCILIATION_ENABLED,
         resolveCiphertextMessages: true,
         ciphertextResolutionDelaysMs: [
           2000, 5000, 10000, 20000, 30000, 45000, 60000, 90000, 120000,
         ],
       };
+      this.logConnectionEvent('client_options_resolved', {
+        attempt_id: attemptId,
+        user_agent_mode: userAgent === false ? 'browser_default' : 'custom',
+        has_proxy: Boolean(proxy),
+        has_executable_path: Boolean(puppeteerOpts.executablePath),
+        protocol_timeout_ms: puppeteerOpts.protocolTimeout,
+        history_reconciliation_enabled: HISTORY_RECONCILIATION_ENABLED,
+      });
 
       if (proxy?.username && proxy.password) {
         clientOptions.proxyAuthentication = {
@@ -1083,7 +1237,9 @@ export class WwebjsConnectionService {
         };
       }
 
-      const client = new ClientCtor(clientOptions);
+      const client = new ClientCtor(
+        clientOptions as ConstructorParameters<typeof ClientCtor>[0]
+      );
 
       this.client = client;
       this.incomingMessageService.bindTo(client);
@@ -1620,10 +1776,22 @@ export class WwebjsConnectionService {
         this.handleChatState(state);
       });
 
-      client.initialize().catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        void this.handleInitializeError(msg, client, attemptId);
+      const initializeStartedAt = Date.now();
+      this.logConnectionEvent('client_initialize_start', {
+        attempt_id: attemptId,
       });
+      client
+        .initialize()
+        .then(() => {
+          this.logConnectionEvent('client_initialize_complete', {
+            attempt_id: attemptId,
+            duration_ms: Date.now() - initializeStartedAt,
+          });
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          void this.handleInitializeError(msg, client, attemptId);
+        });
     });
   }
 
