@@ -50,6 +50,8 @@ const CONNECTION_PAGE_CHECK_TIMEOUT_MS = 5_000;
 const DEFAULT_PUPPETEER_PROTOCOL_TIMEOUT_MS = 300_000;
 const QR_DATA_URL_GENERATION_TIMEOUT_MS = 1_500;
 const CONNECTION_ATTEMPT_GUARD_TIMEOUT_GRACE_MS = 5_000;
+const DEFAULT_CLIENT_DESTROY_TIMEOUT_MS = 15_000;
+const DEFAULT_PENDING_TEARDOWN_TIMEOUT_MS = 20_000;
 const QR_SVG_MARGIN_MODULES = 4;
 const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
@@ -63,6 +65,33 @@ const CHROMIUM_LOCK_FILE_NAMES = [
   'SingletonCookie',
 ] as const;
 const CHROMIUM_PROFILE_SUBDIRECTORIES = ['', 'Default'] as const;
+
+function readBoundedIntEnv(
+  key: string,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = Number.parseInt(process.env[key] ?? '', 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, parsed));
+}
+
+const WWEBJS_CLIENT_DESTROY_TIMEOUT_MS = readBoundedIntEnv(
+  'WWEBJS_CLIENT_DESTROY_TIMEOUT_MS',
+  DEFAULT_CLIENT_DESTROY_TIMEOUT_MS,
+  1_000,
+  60_000
+);
+const WWEBJS_PENDING_TEARDOWN_TIMEOUT_MS = readBoundedIntEnv(
+  'WWEBJS_PENDING_TEARDOWN_TIMEOUT_MS',
+  DEFAULT_PENDING_TEARDOWN_TIMEOUT_MS,
+  1_000,
+  120_000
+);
 
 function getFolder(): string {
   return `/app/data/wwebjs/storage/${wwebjsEnvironment.wwebjsWorkerId}`;
@@ -549,13 +578,26 @@ export class WwebjsConnectionService {
     this.incomingMessageService.unbind();
 
     if (this.client) {
-      try {
-        await this.client.destroy();
-      } catch {}
+      await this.destroyClientWithTimeout(this.client, 'shutdown');
       this.client = undefined;
     }
 
     this.clearChromiumProfileLock();
+  }
+
+  cancelConnectionAttempt(reason = 'connection_attempt_cancelled'): void {
+    this.logConnectionEvent(
+      'connection_attempt_cancel_requested',
+      {
+        reason,
+        status: this.status,
+        code: this.code,
+        has_active_socket: Boolean(this.client),
+        active_attempt_id: this.activeConnectionAttemptId,
+      },
+      'warn'
+    );
+    this.cancelAttempt(false);
   }
 
   private startConnection(
@@ -676,8 +718,25 @@ export class WwebjsConnectionService {
     });
   }
 
-  private waitForPendingTeardown(): Promise<void> {
-    return this.teardownPromise.catch(() => undefined);
+  private async waitForPendingTeardown(): Promise<void> {
+    try {
+      await this.runWithTimeout(
+        'pending_teardown_wait',
+        this.teardownPromise.catch(() => undefined),
+        WWEBJS_PENDING_TEARDOWN_TIMEOUT_MS
+      );
+    } catch (error) {
+      this.logConnectionEvent(
+        'pending_teardown_wait_timeout',
+        {
+          timeout_ms: WWEBJS_PENDING_TEARDOWN_TIMEOUT_MS,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'warn'
+      );
+      this.teardownPromise = Promise.resolve();
+      this.clearChromiumProfileLock();
+    }
   }
 
   private queueTeardown(
@@ -690,12 +749,88 @@ export class WwebjsConnectionService {
         this.logConnectionEvent('connection_teardown_started', {
           operation,
           active_attempt_id: this.activeConnectionAttemptId,
+          timeout_ms: WWEBJS_CLIENT_DESTROY_TIMEOUT_MS,
         });
-        await teardown();
+        try {
+          await this.runWithTimeout(
+            `connection_teardown:${operation}`,
+            teardown(),
+            WWEBJS_CLIENT_DESTROY_TIMEOUT_MS
+          );
+        } catch (error) {
+          this.logConnectionEvent(
+            'connection_teardown_timeout',
+            {
+              operation,
+              timeout_ms: WWEBJS_CLIENT_DESTROY_TIMEOUT_MS,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            'warn'
+          );
+        }
         this.logConnectionEvent('connection_teardown_finished', {
           operation,
         });
       });
+  }
+
+  private runWithTimeout<T>(
+    operation: string,
+    promise: Promise<T>,
+    timeoutMs: number
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      promise.then(
+        (value) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        (error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          reject(error);
+        }
+      );
+    });
+  }
+
+  private async destroyClientWithTimeout(
+    client: Client,
+    operation: string
+  ): Promise<void> {
+    try {
+      await this.runWithTimeout(
+        `client_destroy:${operation}`,
+        client.destroy(),
+        WWEBJS_CLIENT_DESTROY_TIMEOUT_MS
+      );
+    } catch (error) {
+      this.logConnectionEvent(
+        'client_destroy_timeout',
+        {
+          operation,
+          timeout_ms: WWEBJS_CLIENT_DESTROY_TIMEOUT_MS,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'warn'
+      );
+    }
   }
 
   private prepareFolder(): void {
@@ -2454,7 +2589,7 @@ export class WwebjsConnectionService {
     }
 
     try {
-      await this.client.destroy();
+      await this.destroyClientWithTimeout(this.client, 'safe_destroy');
     } catch {
       this.saveLogWppConnection({
         worker_id: getWorker(),

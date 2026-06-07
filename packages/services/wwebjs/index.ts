@@ -53,6 +53,10 @@ export class WwebjsService {
     this.connection.clearUserRequestedDisconnect();
   }
 
+  cancelConnectionAttempt(reason?: string): void {
+    this.connection.cancelConnectionAttempt(reason);
+  }
+
   republishLastState(): void {
     this.connection.republishLastState();
   }

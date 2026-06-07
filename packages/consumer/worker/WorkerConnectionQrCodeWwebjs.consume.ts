@@ -48,6 +48,14 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       Number(process.env.CONNECTION_QRCODE_MAX_AGE_MS) || 120_000
     )
   );
+  private static readonly LOCAL_REQUEST_TIMEOUT_MS = Math.max(
+    10_000,
+    Math.min(
+      180_000,
+      Number(process.env.CONNECTION_QRCODE_WWEBJS_LOCAL_REQUEST_TIMEOUT_MS) ||
+        45_000
+    )
+  );
   private isRunning = false;
   private stopped = true;
   private loopPromise: Promise<void> | null = null;
@@ -300,14 +308,17 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         requested_at: data.requested_at,
         queue_latency_ms: message.queue_latency_ms,
       });
-      const state = await this.workerConnectionStatusConsume.requestConnection({
-        worker_id: data.worker_id,
-        status: EWorkerStatus.online,
-        type: EBaileysConnectionType.qrcode,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-        qr_pending: true,
-      });
+      const state = await this.requestLocalConnectionWithTimeout(
+        {
+          worker_id: data.worker_id,
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+          connection_attempt_id: data.connection_attempt_id,
+          connection_lifecycle_id: data.connection_lifecycle_id,
+          qr_pending: true,
+        },
+        message
+      );
       recordConnectionLifecycle({
         stage: 'connection.wwebjs.qrcode_redis_stream.local_request_success',
         decision: 'request_local_connection_qrcode',
@@ -400,6 +411,79 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private requestLocalConnectionWithTimeout(
+    payload: {
+      worker_id: string;
+      status: EWorkerStatus;
+      type: EBaileysConnectionType;
+      connection_attempt_id: string;
+      connection_lifecycle_id: string;
+      qr_pending: boolean;
+    },
+    message: WorkerConnectionQrCodeRedisStreamMessage
+  ): Promise<IBaileysConnectionState> {
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        recordConnectionLifecycle({
+          stage: 'connection.wwebjs.qrcode_redis_stream.local_request_timeout',
+          decision: 'request_local_connection_qrcode',
+          outcome: 'timeout',
+          reason: 'local_connection_request_timeout',
+          level: 'warn',
+          stream_key: message.stream_key,
+          stream_id: message.stream_id,
+          consumer_group: message.consumer_group,
+          consumer_name: message.consumer_name,
+          delivery_count: message.delivery_count,
+          connection_attempt_id: payload.connection_attempt_id,
+          connection_lifecycle_id: payload.connection_lifecycle_id,
+          timeout_ms:
+            WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_TIMEOUT_MS,
+          queue_latency_ms: message.queue_latency_ms,
+          redis_status: this.redisStatus(),
+        });
+        this.workerConnectionStatusConsume.cancelConnectionAttempt(
+          'qrcode_redis_stream_local_request_timeout'
+        );
+        void this.releaseActiveAttemptIfCurrent(
+          payload.worker_id,
+          payload.connection_attempt_id,
+          message,
+          'local_request_timeout'
+        );
+        reject(
+          new Error(
+            `WWebJS local QR request timed out after ${WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_TIMEOUT_MS}ms`
+          )
+        );
+      }, WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_TIMEOUT_MS);
+
+      this.workerConnectionStatusConsume.requestConnection(payload).then(
+        (state) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          resolve(state);
+        },
+        (error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          reject(error);
+        }
+      );
+    });
   }
 
   private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
@@ -587,6 +671,114 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       queue_latency_ms: result.queue_latency_ms,
       error: result.error,
     });
+  }
+
+  private async releaseActiveAttemptIfCurrent(
+    workerId: string,
+    connectionAttemptId: string,
+    message: WorkerConnectionQrCodeRedisStreamMessage,
+    reason: string
+  ): Promise<void> {
+    if (!this.isRedisReady()) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.wwebjs.qrcode_redis_stream.active_attempt_release_skipped',
+        decision: 'release_active_connection_attempt',
+        outcome: 'skipped',
+        reason: 'redis_not_ready',
+        level: 'warn',
+        stream_key: message.stream_key,
+        stream_id: message.stream_id,
+        consumer_group: message.consumer_group,
+        consumer_name: message.consumer_name,
+        delivery_count: message.delivery_count,
+        connection_attempt_id: connectionAttemptId,
+        worker_type: EWorkerType.wwebjs,
+        worker_type_id: EWorkerType.wwebjs,
+        redis_status: this.redisStatus(),
+      });
+      return;
+    }
+
+    try {
+      const key = this.activeAttemptKey(workerId);
+      const raw = await this.redisGetWithTimeout(key, 'active_attempt_release');
+      if (!raw) {
+        recordConnectionLifecycle({
+          stage:
+            'connection.wwebjs.qrcode_redis_stream.active_attempt_release_skipped',
+          decision: 'release_active_connection_attempt',
+          outcome: 'skipped',
+          reason: 'active_attempt_missing',
+          stream_key: message.stream_key,
+          stream_id: message.stream_id,
+          consumer_group: message.consumer_group,
+          consumer_name: message.consumer_name,
+          delivery_count: message.delivery_count,
+          connection_attempt_id: connectionAttemptId,
+          worker_type: EWorkerType.wwebjs,
+          worker_type_id: EWorkerType.wwebjs,
+        });
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as ActiveQrAttemptEnvelope;
+      if (parsed.ack?.connection_attempt_id !== connectionAttemptId) {
+        recordConnectionLifecycle({
+          stage:
+            'connection.wwebjs.qrcode_redis_stream.active_attempt_release_skipped',
+          decision: 'release_active_connection_attempt',
+          outcome: 'skipped',
+          reason: 'active_attempt_mismatch',
+          level: 'warn',
+          stream_key: message.stream_key,
+          stream_id: message.stream_id,
+          consumer_group: message.consumer_group,
+          consumer_name: message.consumer_name,
+          delivery_count: message.delivery_count,
+          connection_attempt_id: connectionAttemptId,
+          active_connection_attempt_id: parsed.ack?.connection_attempt_id,
+          worker_type: EWorkerType.wwebjs,
+          worker_type_id: EWorkerType.wwebjs,
+        });
+        return;
+      }
+
+      const deleted = await this.redis.del(key);
+      recordConnectionLifecycle({
+        stage: 'connection.wwebjs.qrcode_redis_stream.active_attempt_released',
+        decision: 'release_active_connection_attempt',
+        outcome: deleted > 0 ? 'success' : 'skipped',
+        reason,
+        stream_key: message.stream_key,
+        stream_id: message.stream_id,
+        consumer_group: message.consumer_group,
+        consumer_name: message.consumer_name,
+        delivery_count: message.delivery_count,
+        connection_attempt_id: connectionAttemptId,
+        worker_type: EWorkerType.wwebjs,
+        worker_type_id: EWorkerType.wwebjs,
+        redis_delete_count: deleted,
+      });
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.wwebjs.qrcode_redis_stream.active_attempt_release_error',
+        decision: 'release_active_connection_attempt',
+        outcome: 'error',
+        reason: 'active_attempt_release_failed',
+        level: 'warn',
+        stream_key: message.stream_key,
+        stream_id: message.stream_id,
+        consumer_group: message.consumer_group,
+        consumer_name: message.consumer_name,
+        delivery_count: message.delivery_count,
+        connection_attempt_id: connectionAttemptId,
+        worker_type: EWorkerType.wwebjs,
+        worker_type_id: EWorkerType.wwebjs,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async cacheQrAttemptState(

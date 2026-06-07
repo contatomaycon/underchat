@@ -55,6 +55,18 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.stopConnectionRetry();
   }
 
+  cancelConnectionAttempt(reason = 'connection_attempt_cancelled'): void {
+    this.logConnectionEvent('connection_attempt_cancel_requested', {
+      reason,
+      active_connection_attempt_id:
+        this.activeConnectionRequest?.connection_attempt_id,
+      active_connection_lifecycle_id:
+        this.activeConnectionRequest?.connection_lifecycle_id,
+    });
+    this.stopConnectionRetry();
+    this.wwebjsService.cancelConnectionAttempt(reason);
+  }
+
   private async handleConnectionStatus(
     data: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
