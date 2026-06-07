@@ -30,6 +30,7 @@ import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { BaileysIncomingMessageService } from './incoming.service';
@@ -2392,6 +2393,7 @@ export class BaileysConnectionService {
       status: this.status,
       worker_id: getWorker(),
       account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
@@ -2418,13 +2420,15 @@ export class BaileysConnectionService {
 
     if (
       payload.connection_attempt_id === connectionAttemptId &&
-      payload.connection_lifecycle_id === connectionLifecycleId
+      payload.connection_lifecycle_id === connectionLifecycleId &&
+      payload.worker_type_id === EWorkerType.baileys
     ) {
       return payload;
     }
 
     return {
       ...payload,
+      worker_type_id: EWorkerType.baileys,
       connection_attempt_id: connectionAttemptId,
       connection_lifecycle_id: connectionLifecycleId,
     };

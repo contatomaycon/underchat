@@ -55,6 +55,7 @@ type ConnectionState struct {
 	Status                  string `json:"status"`
 	WorkerID                string `json:"worker_id"`
 	AccountID               string `json:"account_id"`
+	WorkerTypeID            string `json:"worker_type_id,omitempty"`
 	QRCode                  string `json:"qrcode,omitempty"`
 	IsNewLogin              bool   `json:"is_new_login,omitempty"`
 	Time                    int64  `json:"time,omitempty"`

@@ -708,7 +708,7 @@ func connectionQRCodeRequestComplete(state ConnectionState) bool {
 	if state.Status == "connected" {
 		return true
 	}
-	return !state.QRPending && (state.Status == "disconnected" || state.Status == "info")
+	return !state.QRPending && state.Status == "disconnected"
 }
 
 func workerConnectionQRCodeQueueMessageFromRedis(message redis.XMessage) (WorkerConnectionQRCodeQueueMessage, error) {

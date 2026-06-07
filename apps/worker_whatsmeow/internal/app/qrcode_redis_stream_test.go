@@ -26,6 +26,14 @@ func TestConnectionQRCodeRequestComplete(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "info without qr is not complete",
+			state: ConnectionState{
+				Status: "info",
+				Code:   CodeInfo,
+			},
+			want: false,
+		},
+		{
 			name: "qr is complete",
 			state: ConnectionState{
 				Status: "connecting",

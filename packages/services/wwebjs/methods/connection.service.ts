@@ -16,6 +16,7 @@ import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { EAppEnvironment } from '@core/common/enums/EAppEnvironment';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import {
   chatAccountCentrifugo,
@@ -2267,6 +2268,7 @@ export class WwebjsConnectionService {
       status: this.status,
       worker_id: getWorker(),
       account_id: getAccount(),
+      worker_type_id: EWorkerType.wwebjs,
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
@@ -2293,13 +2295,15 @@ export class WwebjsConnectionService {
 
     if (
       payload.connection_attempt_id === connectionAttemptId &&
-      payload.connection_lifecycle_id === connectionLifecycleId
+      payload.connection_lifecycle_id === connectionLifecycleId &&
+      payload.worker_type_id === EWorkerType.wwebjs
     ) {
       return payload;
     }
 
     return {
       ...payload,
+      worker_type_id: EWorkerType.wwebjs,
       connection_attempt_id: connectionAttemptId,
       connection_lifecycle_id: connectionLifecycleId,
     };

@@ -235,10 +235,10 @@ export class WorkerBaileysGrpcClientService {
             deadline_ms: GRPC_DEADLINE_MS,
             status: state.status,
             code: state.code,
-            qrcode: state.qrcode,
-            pairing_code: state.pairing_code,
             has_qr: Boolean(state.qrcode),
+            qrcode_len: state.qrcode?.length ?? 0,
             has_pairing_code: Boolean(state.pairing_code),
+            pairing_code_len: state.pairing_code?.length ?? 0,
             connection_attempt_id:
               state.connection_attempt_id ?? protoPayload.connection_attempt_id,
             runtime_generation:

@@ -564,6 +564,7 @@ func (m *WhatsAppManager) currentConnectionState() ConnectionState {
 		Status:              m.status,
 		WorkerID:            m.cfg.WorkerID,
 		AccountID:           m.cfg.AccountID,
+		WorkerTypeID:        WorkerTypeWhatsmeow,
 		QRCode:              m.currentQRCode,
 		PairingCode:         m.currentPairingCode,
 		ConnectionAttemptID: m.connectionAttemptID,
@@ -655,6 +656,7 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 			Status:           "disconnected",
 			WorkerID:         m.cfg.WorkerID,
 			AccountID:        m.cfg.AccountID,
+			WorkerTypeID:     WorkerTypeWhatsmeow,
 			DisconnectedUser: true,
 			Time:             time.Now().Unix(),
 			WorkerStatusID:   WorkerStatusDisponible,
@@ -1259,6 +1261,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 						Status:         "disconnected",
 						WorkerID:       m.cfg.WorkerID,
 						AccountID:      m.cfg.AccountID,
+						WorkerTypeID:   WorkerTypeWhatsmeow,
 						IsNewLogin:     true,
 						Time:           time.Now().Unix(),
 						WorkerStatusID: WorkerStatusDisponible,
@@ -1275,7 +1278,8 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 					"stage":               "connection.whatsmeow.qrcode.generated",
 					"decision":            "qr_channel_event",
 					"outcome":             "success",
-					"qrcode":              evt.Code,
+					"has_qr":              true,
+					"qrcode_len":          len(evt.Code),
 					"attempt":             attempt,
 					"max_attempts":        maxQRCodeGenerations,
 					"deadline_ms":         evt.Timeout.Milliseconds(),
@@ -1289,6 +1293,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 					Status:          "connecting",
 					WorkerID:        m.cfg.WorkerID,
 					AccountID:       m.cfg.AccountID,
+					WorkerTypeID:    WorkerTypeWhatsmeow,
 					QRCode:          qrImage,
 					IsNewLogin:      true,
 					Time:            time.Now().Unix(),
@@ -1315,6 +1320,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 					Status:         "connecting",
 					WorkerID:       m.cfg.WorkerID,
 					AccountID:      m.cfg.AccountID,
+					WorkerTypeID:   WorkerTypeWhatsmeow,
 					IsNewLogin:     true,
 					Time:           time.Now().Unix(),
 					WorkerStatusID: WorkerStatusDisponible,
@@ -1338,6 +1344,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 					Status:         "disconnected",
 					WorkerID:       m.cfg.WorkerID,
 					AccountID:      m.cfg.AccountID,
+					WorkerTypeID:   WorkerTypeWhatsmeow,
 					IsNewLogin:     true,
 					Time:           time.Now().Unix(),
 					WorkerStatusID: WorkerStatusDisponible,
@@ -1377,7 +1384,8 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			"status":           state.Status,
 			"code":             state.Code,
 			"worker_status_id": state.WorkerStatusID,
-			"qrcode":           state.QRCode,
+			"has_qr":           state.QRCode != "",
+			"qrcode_len":       len(state.QRCode),
 		})
 		return state, nil
 	case <-ctx.Done():
@@ -1408,6 +1416,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			Status:              "connecting",
 			WorkerID:            m.cfg.WorkerID,
 			AccountID:           m.cfg.AccountID,
+			WorkerTypeID:        WorkerTypeWhatsmeow,
 			IsNewLogin:          true,
 			Time:                time.Now().Unix(),
 			WorkerStatusID:      WorkerStatusDisponible,
@@ -1926,6 +1935,7 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		Status:              status,
 		WorkerID:            m.cfg.WorkerID,
 		AccountID:           m.cfg.AccountID,
+		WorkerTypeID:        WorkerTypeWhatsmeow,
 		IsNewLogin:          isNewLogin,
 		Time:                time.Now().Unix(),
 		Phone:               phone,
@@ -1957,8 +1967,11 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		"attempt":               state.Attempt,
 		"max_attempts":          state.MaxAttempts,
 		"connection_attempt_id": state.ConnectionAttemptID,
-		"qrcode":                state.QRCode,
-		"pairing_code":          state.PairingCode,
+		"worker_type_id":        state.WorkerTypeID,
+		"has_qr":                state.QRCode != "",
+		"qrcode_len":            len(state.QRCode),
+		"has_pairing_code":      state.PairingCode != "",
+		"pairing_code_len":      len(state.PairingCode),
 		"has_phone":             phone != "",
 		"disconnected_user":     state.DisconnectedUser,
 	})
@@ -1975,49 +1988,43 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		state.MaxAttempts,
 		state.ConnectionAttemptID,
 	)
-	if code != CodeAwaitingReadQRCode {
+	recordConnectionLifecycle(ctx, m.cfg, map[string]any{
+		"stage":            "connection.whatsmeow.centrifugo.publish_start",
+		"decision":         "publish_centrifugo",
+		"outcome":          "started",
+		"status":           status,
+		"code":             code,
+		"worker_status_id": workerStatusID,
+		"worker_type_id":   state.WorkerTypeID,
+		"has_qr":           state.QRCode != "",
+		"qrcode_len":       len(state.QRCode),
+		"has_pairing_code": state.PairingCode != "",
+	})
+	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
 		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-			"stage":            "connection.whatsmeow.centrifugo.publish_start",
+			"stage":            "connection.whatsmeow.centrifugo.publish_error",
 			"decision":         "publish_centrifugo",
-			"outcome":          "started",
+			"outcome":          "error",
+			"reason":           "centrifugo_publish_failed",
+			"level":            "error",
 			"status":           status,
 			"code":             code,
 			"worker_status_id": workerStatusID,
-			"qrcode":           state.QRCode,
-			"pairing_code":     state.PairingCode,
+			"worker_type_id":   state.WorkerTypeID,
+			"has_qr":           state.QRCode != "",
+			"error":            err.Error(),
 		})
-		if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
-			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-				"stage":            "connection.whatsmeow.centrifugo.publish_error",
-				"decision":         "publish_centrifugo",
-				"outcome":          "error",
-				"reason":           "centrifugo_publish_failed",
-				"level":            "error",
-				"status":           status,
-				"code":             code,
-				"worker_status_id": workerStatusID,
-				"error":            err.Error(),
-			})
-			log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
-		} else {
-			recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-				"stage":            "connection.whatsmeow.centrifugo.publish_success",
-				"decision":         "publish_centrifugo",
-				"outcome":          "success",
-				"status":           status,
-				"code":             code,
-				"worker_status_id": workerStatusID,
-			})
-		}
+		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
 	} else {
 		recordConnectionLifecycle(ctx, m.cfg, map[string]any{
-			"stage":    "connection.whatsmeow.centrifugo.publish_skipped",
-			"decision": "publish_centrifugo",
-			"outcome":  "skipped",
-			"reason":   "qrcode_state_not_published_to_centrifugo",
-			"status":   status,
-			"code":     code,
-			"qrcode":   state.QRCode,
+			"stage":            "connection.whatsmeow.centrifugo.publish_success",
+			"decision":         "publish_centrifugo",
+			"outcome":          "success",
+			"status":           status,
+			"code":             code,
+			"worker_status_id": workerStatusID,
+			"worker_type_id":   state.WorkerTypeID,
+			"has_qr":           state.QRCode != "",
 		})
 	}
 	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
@@ -2036,6 +2043,7 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		Status:              "disconnected",
 		WorkerID:            m.cfg.WorkerID,
 		AccountID:           m.cfg.AccountID,
+		WorkerTypeID:        WorkerTypeWhatsmeow,
 		DisconnectedUser:    true,
 		Time:                time.Now().Unix(),
 		WorkerStatusID:      workerStatusID,

@@ -390,8 +390,7 @@ export class WorkerConnectionQrCodeConsume {
 
     return (
       state.qr_pending !== true &&
-      (state.status === EBaileysConnectionStatus.disconnected ||
-        state.status === EBaileysConnectionStatus.info)
+      state.status === EBaileysConnectionStatus.disconnected
     );
   }
 
