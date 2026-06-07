@@ -141,12 +141,17 @@ const currentConnectionChannel = computed(() => {
 });
 
 const currentConnectionChannelType = computed(
-  () => currentConnectionChannel.value?.type?.id ?? channelConnectionType.value
+  () =>
+    channelConnectionType.value ??
+    currentConnectionChannel.value?.type?.id ??
+    null
 );
 
 const currentConnectionChannelStatus = computed(
   () =>
-    currentConnectionChannel.value?.status?.id ?? channelConnectionStatus.value
+    channelConnectionStatus.value ??
+    currentConnectionChannel.value?.status?.id ??
+    null
 );
 
 const currentConnectionChannelPhone = computed(
@@ -397,6 +402,10 @@ const workerStatusHandler = (
     data.worker_status_id
   ) {
     channelConnectionStatus.value = data.worker_status_id;
+  }
+
+  if (data.worker_id === channelConnectionChannel.value && data.worker_type_id) {
+    channelConnectionType.value = data.worker_type_id;
   }
 };
 
