@@ -201,6 +201,10 @@ export class ScheduleSendService {
 
     replaced = replaced.replaceAll('{{ greeting }}', greeting);
     replaced = replaced.replaceAll('{{ name }}', contact.name || '');
+    replaced = replaced.replaceAll(
+      '{{ nickname }}',
+      contact.nickname || contact.name || ''
+    );
     replaced = replaced.replaceAll('{{ protocol }}', protocol);
     replaced = replaced.replaceAll('{{ date }}', date);
     replaced = replaced.replaceAll('{{ time }}', time);

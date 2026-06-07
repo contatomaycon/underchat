@@ -1262,9 +1262,13 @@ const handleTransfer = async () => {
       transferType.value === 'sector' ? selectedTransferSector.value : null;
     const workerId = selectedTransferChannel.value;
     const annotation = transferAnnotationText.value.trim() || null;
+    const transferredChatId = chatStore.activeChat.chat_id;
+    const routeChatId = resolveRouteChatId();
+    const wasRoutePointingToTransferredChat =
+      routeChatId === transferredChatId;
 
     const success = await chatStore.transferChat(
-      chatStore.activeChat.chat_id,
+      transferredChatId,
       userId,
       sectorId,
       annotation,
@@ -1396,6 +1400,18 @@ const handleTransfer = async () => {
 
       if (chatStore.activeChat?.chat_id === activeChat.chat_id) {
         chatStore.activeChat = null;
+      }
+
+      if (
+        wasRoutePointingToTransferredChat &&
+        chatStore.activeChat?.chat_id !== transferredChatId
+      ) {
+        const { chat_id, ...remainingQuery } = route.query;
+        void chat_id;
+        await router.replace({
+          name: 'chat',
+          query: remainingQuery,
+        });
       }
 
       chatStore.showSnackbar(t('transfer_successfully'), EColor.success);
@@ -5917,6 +5933,17 @@ const handleGlobalChatUpdate = async (e: Event) => {
   }
 };
 
+const handleOpenChatFromToast = (e: Event) => {
+  const chatId = (e as CustomEvent<{ chatId?: string }>).detail?.chatId;
+  if (!chatId) {
+    return;
+  }
+
+  void openChat(chatId, {
+    forceReload: true,
+  });
+};
+
 onMounted(async () => {
   operatorReplyPendingTicker = setInterval(() => {
     operatorReplyPendingNow.value = Date.now();
@@ -5960,6 +5987,10 @@ onMounted(async () => {
   globalThis.addEventListener(
     'open-transcribe-modal',
     onOpenTranscribeModal as EventListener
+  );
+  globalThis.addEventListener(
+    'open-chat-from-toast',
+    handleOpenChatFromToast as EventListener
   );
 
   const handleResize = () => {
@@ -6011,6 +6042,10 @@ onUnmounted(async () => {
   globalThis.removeEventListener(
     'open-transcribe-modal',
     onOpenTranscribeModal as EventListener
+  );
+  globalThis.removeEventListener(
+    'open-chat-from-toast',
+    handleOpenChatFromToast as EventListener
   );
 
   if (resizeHandler.value) {

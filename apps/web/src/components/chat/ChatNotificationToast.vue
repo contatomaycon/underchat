@@ -1,6 +1,6 @@
 <script lang="ts" setup>
-import { ref, computed, watch, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref, watch, onUnmounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
@@ -23,12 +23,15 @@ const emit = defineEmits<{
 }>();
 
 const router = useRouter();
+const route = useRoute();
 const chatStore = useChatStore();
 const internalChatStore = useInternalChatStore();
 const { t } = useI18n();
 const timer = ref<ReturnType<typeof setTimeout> | null>(null);
 
-const shouldShow = computed(() => props.visible);
+const isTransferNotification = computed(
+  () => props.notification.type === 'transfer'
+);
 
 const notificationChatId = computed(() => {
   if (props.notification.type === 'internal-message') {
@@ -39,19 +42,19 @@ const notificationChatId = computed(() => {
     return props.notification.message.chat_id;
   }
 
-  return props.notification.chat.chat_id;
+  if (props.notification.type === 'status') {
+    return props.notification.chat.chat_id;
+  }
+
+  return props.notification.chat_id;
 });
 
 const notificationChat = computed(() => {
-  if (props.notification.type === 'internal-message') {
+  if (props.notification.type === 'internal-message' || props.notification.type === 'transfer') {
     return null;
   }
 
   if (props.notification.type === 'status') {
-    return props.notification.chat;
-  }
-
-  if (props.notification.type === 'transfer') {
     return props.notification.chat;
   }
 
@@ -79,9 +82,11 @@ const senderName = computed(() => {
     return message.user?.name || t('internal_chat_default_conversation');
   }
 
-  return (
-    notificationChat.value?.name || notificationChat.value?.contact?.name || ''
-  );
+  if (props.notification.type === 'transfer') {
+    return props.notification.contact_name;
+  }
+
+  return notificationChat.value?.name || notificationChat.value?.contact?.name || '';
 });
 
 const senderIcon = computed(() => {
@@ -98,10 +103,28 @@ const senderIcon = computed(() => {
     );
   }
 
+  if (props.notification.type === 'transfer') {
+    return (
+      props.notification.contact_photo || '/images/svg/avatar-default.svg'
+    );
+  }
+
   return (
     notificationChat.value?.photo ||
     notificationChat.value?.contact?.photo ||
     '/images/svg/avatar-default.svg'
+  );
+});
+
+const transferOperatorName = computed(() => {
+  if (props.notification.type !== 'transfer') {
+    return '';
+  }
+
+  return (
+    props.notification.actor_user_name ||
+    props.notification.actor_user_id ||
+    t('chat_notification_transfer_operator_fallback')
   );
 });
 
@@ -165,13 +188,17 @@ const messagePreview = computed(() => {
   }
 
   if (props.notification.type === 'transfer') {
-    return t('chat_notification_transfer_received');
+    return props.notification.contact_name;
   }
 
   return getMessagePreview(props.notification.message);
 });
 
-function handleClick() {
+function handleCardClick() {
+  if (props.notification.type === 'transfer') {
+    return;
+  }
+
   emit('click');
   emit('close');
 
@@ -194,7 +221,34 @@ function handleClick() {
   });
 }
 
-function handleClose() {
+function goToTransferredChat() {
+  if (props.notification.type !== 'transfer') {
+    return;
+  }
+
+  const chatId = props.notification.chat_id;
+  const fallbackChat = chatStore.findChatInLists(chatId);
+
+  if (route.name === 'chat') {
+    globalThis.dispatchEvent(
+      new CustomEvent('open-chat-from-toast', {
+        detail: { chatId },
+      })
+    );
+  } else {
+    if (chatStore.setActiveChat) {
+      chatStore.setActiveChat(chatId, fallbackChat ?? undefined);
+    }
+
+    router.push({
+      name: 'chat',
+    });
+  }
+
+  emit('close');
+}
+
+function handleDismissTransfer() {
   emit('close');
 }
 
@@ -204,11 +258,13 @@ function startTimer() {
     timer.value = null;
   }
 
-  if (shouldShow.value) {
-    timer.value = setTimeout(() => {
-      handleClose();
-    }, 5000);
+  if (props.notification.type === 'transfer') {
+    return;
   }
+
+  timer.value = setTimeout(() => {
+    emit('close');
+  }, 5000);
 }
 
 watch(
@@ -229,13 +285,59 @@ onUnmounted(() => {
 <template>
   <Transition name="notification-toast">
     <VCard
-      v-if="shouldShow"
+      v-if="props.visible"
       class="chat-notification-toast"
       elevation="8"
-      @click="handleClick"
+      @click="handleCardClick"
     >
       <VCardItem class="pa-3">
-        <div class="d-flex align-center gap-3">
+        <div v-if="isTransferNotification" class="d-flex flex-column gap-2">
+          <div class="d-flex align-center gap-3">
+            <VAvatar size="40" :image="senderIcon" />
+            <div class="flex-grow-1 min-width-0">
+              <div class="text-body-1 font-weight-medium text-high-emphasis">
+                {{
+                  t('chat_notification_transfer_title')
+                }}
+              </div>
+              <div
+                class="text-body-2 text-medium-emphasis text-truncate"
+              >
+                {{
+                  t('chat_notification_transfer_contact', {
+                    name: senderName,
+                  })
+                }}
+              </div>
+              <div class="text-body-2 text-medium-emphasis text-truncate">
+                {{
+                  t('chat_notification_transfer_operator', {
+                    operator: transferOperatorName,
+                  })
+                }}
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-notification-toast-actions d-flex justify-end gap-2">
+            <VBtn
+              variant="text"
+              size="small"
+              @click.stop="handleDismissTransfer"
+            >
+              {{ t('chat_notification_transfer_dismiss') }}
+            </VBtn>
+            <VBtn
+              color="primary"
+              size="small"
+              @click.stop="goToTransferredChat"
+            >
+              {{ t('chat_notification_transfer_go_to_attendance') }}
+            </VBtn>
+          </div>
+        </div>
+
+        <div v-else class="d-flex align-center gap-3">
           <VAvatar size="40" :image="senderIcon" />
           <div class="flex-grow-1 min-width-0">
             <div class="text-body-1 font-weight-medium text-high-emphasis">
@@ -253,7 +355,7 @@ onUnmounted(() => {
             variant="text"
             size="small"
             class="flex-shrink-0"
-            @click.stop="handleClose"
+            @click.stop="handleDismissTransfer"
           >
             <VIcon icon="tabler-x" size="20" />
           </VBtn>
@@ -265,18 +367,17 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .chat-notification-toast {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 9999;
-  min-width: 320px;
-  max-width: 400px;
+  width: 100%;
   cursor: pointer;
   transition: transform 0.2s;
 
   &:hover {
     transform: translateY(-2px);
   }
+}
+
+.chat-notification-toast-actions {
+  width: 100%;
 }
 
 .notification-toast-enter-active {

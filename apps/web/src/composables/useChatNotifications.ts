@@ -13,10 +13,14 @@ import { extractMessageTextFromContent } from '@core/common/functions/extractMes
 
 const MAX_LINE_LENGTH = 70;
 const VAPID_PUBLIC_KEY_CACHE_TTL_MS = 30 * 60 * 1000;
+const CHAT_USERS_CACHE_TTL_MS = 15 * 60 * 1000;
 
 let cachedVapidPublicKey: string | null = null;
 let cachedVapidPublicKeyExpiresAt = 0;
 let pendingVapidPublicKeyRequest: Promise<string> | null = null;
+let cachedChatUsers: Map<string, string> | null = null;
+let cachedChatUsersExpiresAt = 0;
+let pendingChatUsersRequest: Promise<Map<string, string>> | null = null;
 
 function clearCachedVapidPublicKey(): void {
   cachedVapidPublicKey = null;
@@ -389,6 +393,77 @@ export const useChatNotifications = () => {
     );
   };
 
+  const clearCachedChatUsers = () => {
+    cachedChatUsers = null;
+    cachedChatUsersExpiresAt = 0;
+    pendingChatUsersRequest = null;
+  };
+
+  const getCachedChatUsers = (): Map<string, string> | null => {
+    const now = Date.now();
+    if (cachedChatUsers && now < cachedChatUsersExpiresAt) {
+      return cachedChatUsers;
+    }
+
+    clearCachedChatUsers();
+    return null;
+  };
+
+  const loadChatUsers = async (): Promise<Map<string, string>> => {
+    const now = Date.now();
+    const cached = getCachedChatUsers();
+    if (cached) {
+      return cached;
+    }
+
+    if (pendingChatUsersRequest) {
+      return pendingChatUsersRequest;
+    }
+
+    pendingChatUsersRequest = (async () => {
+      const response = await chatStore.listChatUsers();
+      const users = response ?? [];
+
+      const map = new Map<string, string>();
+      for (const user of users) {
+        if (user.user_id && user.name) {
+          map.set(user.user_id, user.name);
+        }
+      }
+
+      cachedChatUsers = map;
+      cachedChatUsersExpiresAt = now + CHAT_USERS_CACHE_TTL_MS;
+
+      return map;
+    })();
+
+    try {
+      return await pendingChatUsersRequest;
+    } catch {
+      clearCachedChatUsers();
+      return new Map();
+    } finally {
+      pendingChatUsersRequest = null;
+    }
+  };
+
+  const getTransferActorName = async (
+    actorUserId?: string | null
+  ): Promise<string> => {
+    if (!actorUserId) {
+      return '';
+    }
+
+    const cachedUsers = getCachedChatUsers();
+    const cachedName = cachedUsers?.get(actorUserId);
+    if (cachedName) {
+      return cachedName;
+    }
+
+    const users = await loadChatUsers();
+    return users.get(actorUserId) || actorUserId;
+  };
+
   async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
     if (!('serviceWorker' in navigator)) {
       return null;
@@ -729,10 +804,10 @@ export const useChatNotifications = () => {
     }, 5000);
   }
 
-  function handleChatTransfer(
+  async function handleChatTransfer(
     chat: IChat,
     previousChat: IChat | null = null
-  ): boolean {
+  ): Promise<boolean> {
     const event = getChatNotificationEvent(chat);
     const isTransferEvent = event?.type === 'chat_transfer';
 
@@ -756,17 +831,32 @@ export const useChatNotifications = () => {
       return true;
     }
 
-    const title = getChatTitle(chat, t('chat_notification_transfer'));
+    const actorUserId = event?.actor_user_id || '';
+    const actorUserName = await getTransferActorName(actorUserId);
+    const contactName = getChatTitle(chat, t('chat_notification_transfer'));
+    const contactPhoto = chat.photo || chat.contact?.photo;
+
+    const title = t('chat_notification_transfer_title', {
+      operator: actorUserName || actorUserId || t('chat_notification_transfer_operator_fallback'),
+    });
     const body = formatNotificationBody(
-      t('chat_notification_transfer_received')
+      t('chat_notification_transfer_received', { contact: contactName })
     );
 
     if (isSoundNotificationsEnabled()) {
       playAlertSound();
     }
 
-    if (isToastNotificationsEnabled() && isPageVisible.value) {
-      showTransferToast(chat);
+    if (isToastNotificationsEnabled()) {
+      showTransferToast({
+        id: `${chat.chat_id}-${actorUserId || 'system'}`,
+        type: 'transfer',
+        chat_id: chat.chat_id,
+        actor_user_id: actorUserId,
+        actor_user_name: actorUserName || actorUserId,
+        contact_name: contactName,
+        contact_photo: contactPhoto ?? undefined,
+      });
     }
 
     if (isBrowserNotificationsEnabled() && !isPageVisible.value) {

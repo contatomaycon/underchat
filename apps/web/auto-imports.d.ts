@@ -428,7 +428,7 @@ declare global {
   export type { ActiveWhatsappValidationHandler, ActiveWhatsappValidationConfig } from './src/composables/useActiveWhatsappValidation'
   import('./src/composables/useActiveWhatsappValidation')
   // @ts-ignore
-  export type { ChatNotificationToastPayload } from './src/composables/useChatNotificationToast'
+  export type { ChatTransferNotificationPayload, ChatNotificationToastPayload } from './src/composables/useChatNotificationToast'
   import('./src/composables/useChatNotificationToast')
 }
 
