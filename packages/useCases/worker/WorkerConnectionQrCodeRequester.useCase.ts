@@ -26,7 +26,10 @@ import {
   runWithConnectionLifecycleContext,
 } from '@core/plugins/telemetry/connectionLifecycleDebug';
 import { recordConnectionQrSummary } from '@core/plugins/telemetry/connectionQrSummary';
-import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
+import {
+  getConnectionQrGrpcFastPathDeadlineMs,
+  recordConnectionAttemptTelemetry,
+} from '@core/plugins/telemetry/connectionAttemptTelemetry';
 import { getErrorMessage } from '@core/common/functions/toError';
 
 interface ActiveQrAttempt {
@@ -687,6 +690,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     source: WorkerConnectionQrCodeQueueSource;
     topic: string;
   }): Promise<IBaileysConnectionState | null> {
+    const deadlineMs = getConnectionQrGrpcFastPathDeadlineMs();
+
     try {
       recordConnectionLifecycle({
         stage: 'connection.manager.qrcode_request.grpc_fastpath_start',
@@ -698,6 +703,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         worker_status_id: input.workerStatusId,
         connection_attempt_id: input.ack.connection_attempt_id,
         connection_lifecycle_id: input.ack.connection_lifecycle_id,
+        deadline_ms: deadlineMs,
         topic: input.topic,
         source: input.source,
       });
@@ -711,6 +717,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
             type: EBaileysConnectionType.qrcode,
             connection_attempt_id: input.ack.connection_attempt_id,
             connection_lifecycle_id: input.ack.connection_lifecycle_id,
+            qr_request_deadline_ms: deadlineMs,
             qr_pending: true,
           },
           input.accountId
@@ -754,6 +761,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         worker_status_id: input.workerStatusId,
         connection_attempt_id: normalized.connection_attempt_id,
         connection_lifecycle_id: normalized.connection_lifecycle_id,
+        deadline_ms: deadlineMs,
         has_qr: Boolean(normalized.qrcode),
         has_pairing_code: Boolean(normalized.pairing_code),
         qr_pending: normalized.qr_pending === true,
@@ -770,6 +778,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         worker_type: input.workerTypeId,
         connection_attempt_id: normalized.connection_attempt_id,
         connection_lifecycle_id: normalized.connection_lifecycle_id,
+        deadline_ms: deadlineMs,
         status: normalized.status,
         code: normalized.code,
         outcome: 'success',
@@ -791,6 +800,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         worker_status_id: input.workerStatusId,
         connection_attempt_id: input.ack.connection_attempt_id,
         connection_lifecycle_id: input.ack.connection_lifecycle_id,
+        deadline_ms: deadlineMs,
         topic: input.topic,
         source: input.source,
         error: getErrorMessage(error),

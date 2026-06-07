@@ -34,4 +34,18 @@ describe('WorkerBaileysGrpcClientService', () => {
         '        { deadline },'
     );
   });
+
+  it('honors the per-request QR gRPC deadline', () => {
+    const source = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        'packages/services/workerBaileysGrpcClient.service.ts'
+      ),
+      'utf8'
+    );
+
+    expect(source).toContain('resolveConnectionQrGrpcDeadlineMs');
+    expect(source).toContain('protoPayload.qr_request_deadline_ms');
+    expect(source).toContain('requested_deadline_ms');
+  });
 });

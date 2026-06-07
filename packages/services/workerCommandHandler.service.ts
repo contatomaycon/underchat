@@ -66,6 +66,7 @@ import {
 } from '@core/plugins/telemetry/connectionQrSummary';
 import {
   getConnectionQrFirstQrTimeoutMs,
+  getConnectionQrGrpcFastPathDeadlineMs,
   getConnectionQrRecreateCooldownMs,
   recordConnectionAttemptTelemetry,
 } from '@core/plugins/telemetry/connectionAttemptTelemetry';
@@ -2893,6 +2894,7 @@ export class WorkerCommandHandlerService {
       ...payload,
       status: EWorkerStatus.online,
       type: EBaileysConnectionType.qrcode,
+      qr_request_deadline_ms: getConnectionQrGrpcFastPathDeadlineMs(),
       runtime_generation: workerData.runtimeGeneration,
       warm_pool_id: workerData.warmPoolId ?? undefined,
       qr_pending: true,
@@ -2907,6 +2909,7 @@ export class WorkerCommandHandlerService {
         worker_status_id: workerData.workerStatusId,
         connection_attempt_id: directPayload.connection_attempt_id,
         connection_lifecycle_id: directPayload.connection_lifecycle_id,
+        deadline_ms: directPayload.qr_request_deadline_ms,
         runtime_generation: directPayload.runtime_generation,
         warm_pool_id: directPayload.warm_pool_id,
         container_id: workerData.containerId,
@@ -2946,6 +2949,7 @@ export class WorkerCommandHandlerService {
         code: normalized.code,
         connection_attempt_id: normalized.connection_attempt_id,
         connection_lifecycle_id: normalized.connection_lifecycle_id,
+        deadline_ms: directPayload.qr_request_deadline_ms,
         has_qr: Boolean(normalized.qrcode),
         has_pairing_code: Boolean(normalized.pairing_code),
         qr_pending: normalized.qr_pending === true,
@@ -2966,6 +2970,7 @@ export class WorkerCommandHandlerService {
         worker_status_id: workerData.workerStatusId,
         connection_attempt_id: directPayload.connection_attempt_id,
         connection_lifecycle_id: directPayload.connection_lifecycle_id,
+        deadline_ms: directPayload.qr_request_deadline_ms,
         runtime_generation: directPayload.runtime_generation,
         warm_pool_id: directPayload.warm_pool_id,
         container_id: workerData.containerId,

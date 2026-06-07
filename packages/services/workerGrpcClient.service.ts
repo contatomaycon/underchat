@@ -38,6 +38,7 @@ import {
   summarizeConnectionQrState,
 } from '@core/plugins/telemetry/connectionQrSummary';
 import {
+  getConnectionQrGrpcFastPathDeadlineMs,
   getConnectionQrFirstQrTimeoutMs,
   recordConnectionAttemptTelemetry,
 } from '@core/plugins/telemetry/connectionAttemptTelemetry';
@@ -65,6 +66,24 @@ const CONNECTION_QR_GRPC_DEADLINE_MS = Math.max(
   90_000,
   getConnectionQrFirstQrTimeoutMs() + 15_000
 );
+const CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS =
+  getConnectionQrGrpcFastPathDeadlineMs();
+
+function resolveConnectionQrCommandGrpcDeadlineMs(
+  requestedDeadlineMs?: number
+): number {
+  if (!Number.isFinite(requestedDeadlineMs) || !requestedDeadlineMs) {
+    return CONNECTION_QR_GRPC_DEADLINE_MS;
+  }
+
+  return Math.min(
+    CONNECTION_QR_GRPC_DEADLINE_MS,
+    Math.max(
+      CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS + 2_000,
+      requestedDeadlineMs + 2_000
+    )
+  );
+}
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -228,7 +247,10 @@ export class WorkerGrpcClientService {
         new Metadata(),
         contextData
       );
-      const deadline = new Date(Date.now() + CONNECTION_QR_GRPC_DEADLINE_MS);
+      const deadlineMs = resolveConnectionQrCommandGrpcDeadlineMs(
+        payload.qr_request_deadline_ms
+      );
+      const deadline = new Date(Date.now() + deadlineMs);
 
       recordConnectionLifecycle({
         stage: 'connection.manager.worker_command_grpc.qrcode_start',
@@ -236,7 +258,8 @@ export class WorkerGrpcClientService {
         outcome: 'started',
         grpc_method: 'RequestConnectionQrCode',
         grpc_address: address,
-        deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+        deadline_ms: deadlineMs,
+        requested_deadline_ms: payload.qr_request_deadline_ms,
         server_id: serverId,
         status: payload.status,
         connection_type: payload.type,
@@ -261,7 +284,8 @@ export class WorkerGrpcClientService {
                 level: 'error',
                 grpc_method: 'RequestConnectionQrCode',
                 grpc_address: address,
-                deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+                deadline_ms: deadlineMs,
+                requested_deadline_ms: payload.qr_request_deadline_ms,
                 error: err.message,
               });
               recordConnectionQrSummary({
@@ -288,7 +312,8 @@ export class WorkerGrpcClientService {
               outcome: 'success',
               grpc_method: 'RequestConnectionQrCode',
               grpc_address: address,
-              deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+              deadline_ms: deadlineMs,
+              requested_deadline_ms: payload.qr_request_deadline_ms,
               status: state.status,
               code: state.code,
               qrcode: state.qrcode,

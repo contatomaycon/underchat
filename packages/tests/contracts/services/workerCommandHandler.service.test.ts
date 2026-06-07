@@ -541,6 +541,7 @@ describe('WorkerCommandHandlerService connection', () => {
       expect.objectContaining({
         worker_id: 'worker-1',
         connection_attempt_id: 'uuid-v7',
+        qr_request_deadline_ms: 5000,
         qr_pending: true,
       }),
       EWorkerType.wwebjs

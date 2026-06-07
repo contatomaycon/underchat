@@ -154,6 +154,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       expect.objectContaining({
         worker_id: 'worker-1',
         connection_attempt_id: response.connection_attempt_id,
+        qr_request_deadline_ms: 5000,
       }),
       'account-1'
     );

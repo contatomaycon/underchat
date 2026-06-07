@@ -34,6 +34,7 @@ import {
   summarizeConnectionQrState,
 } from '@core/plugins/telemetry/connectionQrSummary';
 import {
+  getConnectionQrGrpcFastPathDeadlineMs,
   getConnectionQrFirstQrTimeoutMs,
   recordConnectionAttemptTelemetry,
 } from '@core/plugins/telemetry/connectionAttemptTelemetry';
@@ -66,7 +67,22 @@ const CONNECTION_QR_GRPC_DEADLINE_MS = Math.max(
   30_000,
   getConnectionQrFirstQrTimeoutMs() + 5_000
 );
+const CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS =
+  getConnectionQrGrpcFastPathDeadlineMs();
 const GRPC_READY_DEADLINE_MS = 10_000;
+
+function resolveConnectionQrGrpcDeadlineMs(
+  requestedDeadlineMs?: number
+): number {
+  if (!Number.isFinite(requestedDeadlineMs) || !requestedDeadlineMs) {
+    return CONNECTION_QR_GRPC_DEADLINE_MS;
+  }
+
+  return Math.min(
+    CONNECTION_QR_GRPC_DEADLINE_MS,
+    Math.max(CONNECTION_QR_GRPC_FASTPATH_DEADLINE_MS, requestedDeadlineMs)
+  );
+}
 
 @injectable()
 export class WorkerBaileysGrpcClientService {
@@ -291,7 +307,10 @@ export class WorkerBaileysGrpcClientService {
       address,
       credentials.createInsecure()
     );
-    const deadline = new Date(Date.now() + CONNECTION_QR_GRPC_DEADLINE_MS);
+    const deadlineMs = resolveConnectionQrGrpcDeadlineMs(
+      protoPayload.qr_request_deadline_ms
+    );
+    const deadline = new Date(Date.now() + deadlineMs);
     const metadata = injectGrpcConnectionMetadata(new Metadata());
 
     recordConnectionLifecycle({
@@ -300,7 +319,8 @@ export class WorkerBaileysGrpcClientService {
       outcome: 'started',
       grpc_method: 'RequestConnection',
       grpc_address: address,
-      deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+      deadline_ms: deadlineMs,
+      requested_deadline_ms: protoPayload.qr_request_deadline_ms,
       status: protoPayload.status,
       connection_type: protoPayload.type,
       connection_attempt_id: protoPayload.connection_attempt_id,
@@ -317,7 +337,8 @@ export class WorkerBaileysGrpcClientService {
       grpc_address: address,
       status: protoPayload.status,
       outcome: 'started',
-      deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+      deadline_ms: deadlineMs,
+      requested_deadline_ms: protoPayload.qr_request_deadline_ms,
     });
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
@@ -339,7 +360,8 @@ export class WorkerBaileysGrpcClientService {
               level: 'error',
               grpc_method: 'RequestConnection',
               grpc_address: address,
-              deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+              deadline_ms: deadlineMs,
+              requested_deadline_ms: protoPayload.qr_request_deadline_ms,
               connection_attempt_id: protoPayload.connection_attempt_id,
               runtime_generation: protoPayload.runtime_generation,
               warm_pool_id: protoPayload.warm_pool_id,
@@ -370,7 +392,8 @@ export class WorkerBaileysGrpcClientService {
               outcome: 'error',
               reason: 'grpc_error',
               error: err.message,
-              deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+              deadline_ms: deadlineMs,
+              requested_deadline_ms: protoPayload.qr_request_deadline_ms,
               duration_ms: Date.now() - startedAt,
               runtime_generation: protoPayload.runtime_generation,
               warm_pool_id: protoPayload.warm_pool_id,
@@ -387,7 +410,8 @@ export class WorkerBaileysGrpcClientService {
             outcome: 'success',
             grpc_method: 'RequestConnection',
             grpc_address: address,
-            deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+            deadline_ms: deadlineMs,
+            requested_deadline_ms: protoPayload.qr_request_deadline_ms,
             status: state.status,
             code: state.code,
             qrcode: state.qrcode,
@@ -432,7 +456,8 @@ export class WorkerBaileysGrpcClientService {
               : (state.reason ?? 'worker_response_without_qr'),
             qrcode: state.qrcode,
             has_qr: Boolean(state.qrcode),
-            deadline_ms: CONNECTION_QR_GRPC_DEADLINE_MS,
+            deadline_ms: deadlineMs,
+            requested_deadline_ms: protoPayload.qr_request_deadline_ms,
             duration_ms: Date.now() - startedAt,
             time_to_first_qr_ms: state.time_to_first_qr_ms,
             runtime_generation:
