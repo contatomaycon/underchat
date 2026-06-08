@@ -329,20 +329,46 @@ export class MessageUpdateConsume {
       const previousChain =
         this.partitionChains.get(partition) ?? Promise.resolve();
 
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
+      const currentChain = previousChain
+        .catch((error) => {
+          console.error(
+            '[MessageUpdateConsume] previous partition task failed',
+            {
+              topic,
+              partition,
+              error,
+            }
+          );
+        })
+        .then(async () => {
+          const heartbeat = async () => {
+            this.consumer?.commit();
+          };
 
-        const stop = startHeartbeat(heartbeat);
+          const stop = startHeartbeat(heartbeat);
 
-        try {
-          await this.handleMessage(data);
-        } finally {
-          stop();
-          await this.commitNext(topic, partition, offset);
-        }
-      });
+          try {
+            await this.handleMessage(data);
+          } catch (error) {
+            console.error('[MessageUpdateConsume] message update failed', {
+              topic,
+              partition,
+              offset,
+              error,
+            });
+          } finally {
+            stop();
+            await this.commitNext(topic, partition, offset);
+          }
+        })
+        .catch((error) => {
+          console.error('[MessageUpdateConsume] partition task failed', {
+            topic,
+            partition,
+            offset,
+            error,
+          });
+        });
 
       this.partitionChains.set(partition, currentChain);
     });

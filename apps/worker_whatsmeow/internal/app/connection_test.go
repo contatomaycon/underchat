@@ -100,6 +100,9 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if cfg.SendIdempotencyFinalTTL.String() != "24h0m0s" {
 		t.Fatalf("unexpected final ttl %s", cfg.SendIdempotencyFinalTTL)
 	}
+	if cfg.SendIdempotencyStaleAfter.String() != "2m0s" {
+		t.Fatalf("unexpected stale claim threshold %s", cfg.SendIdempotencyStaleAfter)
+	}
 	if !cfg.MessageLifecycleOutboundSuccessEnabled {
 		t.Fatal("expected outbound success lifecycle to be enabled by default")
 	}
@@ -114,6 +117,36 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	}
 	if cfg.KafkaHandlerErrorBackoff != time.Second {
 		t.Fatalf("unexpected kafka handler error backoff %s", cfg.KafkaHandlerErrorBackoff)
+	}
+}
+
+func TestOutboundClaimStaleDetection(t *testing.T) {
+	now := time.Date(2026, 6, 8, 22, 0, 0, 0, time.UTC)
+	stale, age := shouldReacquireOutboundClaim(outboundSendClaimRecord{
+		State:     sendIdempotencyStateInProgress,
+		UpdatedAt: now.Add(-3 * time.Minute).Format(time.RFC3339Nano),
+	}, now, 2*time.Minute)
+	if !stale {
+		t.Fatal("expected old in-progress claim to be stale")
+	}
+	if age != 3*time.Minute {
+		t.Fatalf("unexpected claim age %s", age)
+	}
+
+	stale, _ = shouldReacquireOutboundClaim(outboundSendClaimRecord{
+		State:     sendIdempotencyStateInProgress,
+		UpdatedAt: now.Add(-30 * time.Second).Format(time.RFC3339Nano),
+	}, now, 2*time.Minute)
+	if stale {
+		t.Fatal("expected fresh in-progress claim to remain protected")
+	}
+
+	stale, _ = shouldReacquireOutboundClaim(outboundSendClaimRecord{
+		State:     sendIdempotencyStateSucceeded,
+		UpdatedAt: now.Add(-3 * time.Minute).Format(time.RFC3339Nano),
+	}, now, 2*time.Minute)
+	if stale {
+		t.Fatal("expected final claims to remain protected")
 	}
 }
 

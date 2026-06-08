@@ -1696,6 +1696,32 @@ func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data 
 	}
 
 	existing := parseOutboundSendClaimRecord(raw)
+	if stale, age := shouldReacquireOutboundClaim(existing, time.Now(), w.cfg.SendIdempotencyStaleAfter); stale {
+		existing.State = sendIdempotencyStateInProgress
+		existing.Attempts++
+		existing.Result = nil
+		existing.Error = ""
+		existing.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		nextPayload, _ := json.Marshal(existing)
+		if err := w.redis.Set(ctx, key, nextPayload, w.cfg.SendIdempotencyInProgressTTL).Err(); err != nil {
+			return outboundSendClaim{}, err
+		}
+		recordMessageLifecycle(ctx, w.cfg, map[string]any{
+			"stage":          "whatsmeow.outgoing.claim.reacquired_stale",
+			"decision":       "claim_message",
+			"outcome":        "retrying",
+			"reason":         "stale_in_progress_claim",
+			"claim_id":       claimID,
+			"claim_state":    existing.State,
+			"attempts":       existing.Attempts,
+			"message_id":     data.MessageID,
+			"chat_id":        data.ChatID,
+			"message_type":   chatMessageType(data),
+			"claim_age_ms":   age.Milliseconds(),
+			"stale_after_ms": w.cfg.SendIdempotencyStaleAfter.Milliseconds(),
+		})
+		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: existing.Attempts}, nil
+	}
 	if existing.State == sendIdempotencyStateFailed {
 		existing.State = sendIdempotencyStateInProgress
 		existing.Attempts++
@@ -1744,6 +1770,18 @@ func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data 
 		return claim, nil
 	}
 	return claim, fmt.Errorf("message send claim is still %s for %s", existing.State, claimID)
+}
+
+func shouldReacquireOutboundClaim(record outboundSendClaimRecord, now time.Time, staleAfter time.Duration) (bool, time.Duration) {
+	if record.State != sendIdempotencyStateInProgress || staleAfter <= 0 {
+		return false, 0
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(record.UpdatedAt))
+	if err != nil {
+		return false, 0
+	}
+	age := now.Sub(updatedAt)
+	return age >= staleAfter, age
 }
 
 func parseOutboundSendClaimRecord(raw string) outboundSendClaimRecord {

@@ -71,6 +71,7 @@ type Config struct {
 	OutboundFailureReconnectCooldown  time.Duration
 	SendIdempotencyInProgressTTL      time.Duration
 	SendIdempotencyFinalTTL           time.Duration
+	SendIdempotencyStaleAfter         time.Duration
 
 	HistoryReconciliationEnabled      bool
 	HistoryReconciliationMessageLimit int
@@ -142,6 +143,7 @@ func LoadConfig() (Config, error) {
 		OutboundFailureReconnectCooldown:       envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
 		SendIdempotencyInProgressTTL:           envDurationDefault("WORKER_SEND_IDEMPOTENCY_IN_PROGRESS_TTL", 10*time.Minute),
 		SendIdempotencyFinalTTL:                envDurationDefault("WORKER_SEND_IDEMPOTENCY_FINAL_TTL", 24*time.Hour),
+		SendIdempotencyStaleAfter:              envDurationDefault("WORKER_SEND_IDEMPOTENCY_STALE_AFTER", 0),
 		HistoryReconciliationEnabled:           envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
 		HistoryReconciliationMessageLimit:      envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
 		HistoryReconciliationMaxAge:            envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
@@ -209,6 +211,12 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.SendIdempotencyFinalTTL <= 0 {
 		cfg.SendIdempotencyFinalTTL = 24 * time.Hour
+	}
+	if cfg.SendIdempotencyStaleAfter <= 0 {
+		cfg.SendIdempotencyStaleAfter = cfg.SendTimeout + 30*time.Second
+	}
+	if cfg.SendIdempotencyStaleAfter < cfg.SendTimeout {
+		cfg.SendIdempotencyStaleAfter = cfg.SendTimeout
 	}
 	if cfg.MessageLifecycleDebugBodyLimit <= 0 {
 		cfg.MessageLifecycleDebugBodyLimit = 500
