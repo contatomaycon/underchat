@@ -269,14 +269,25 @@ func shouldRecordMessageLifecycleEvent(cfg Config, event map[string]any) bool {
 	if shouldRecordLifecycleDebugEvent(event) {
 		return true
 	}
-	if !cfg.MessageLifecycleOutboundSuccessEnabled {
-		return false
-	}
 	stage := lifecycleToken(event["stage"])
-	if strings.HasPrefix(stage, "whatsmeow.outgoing.") || strings.HasPrefix(stage, "service.outgoing.") {
+	if cfg.MessageLifecycleIncomingSuccessEnabled && isIncomingMessageLifecycleStage(stage) {
+		return true
+	}
+	if cfg.MessageLifecycleOutboundSuccessEnabled && isOutboundMessageLifecycleStage(stage) {
 		return true
 	}
 	return false
+}
+
+func isIncomingMessageLifecycleStage(stage string) bool {
+	return strings.HasPrefix(stage, "whatsmeow.incoming.") ||
+		strings.HasPrefix(stage, "whatsmeow.kafka.publish.") ||
+		strings.HasPrefix(stage, "whatsmeow.history.")
+}
+
+func isOutboundMessageLifecycleStage(stage string) bool {
+	return strings.HasPrefix(stage, "whatsmeow.outgoing.") ||
+		strings.HasPrefix(stage, "service.outgoing.")
 }
 
 func normalizeMessageLifecyclePayload(ctx context.Context, cfg Config, event map[string]any) map[string]any {

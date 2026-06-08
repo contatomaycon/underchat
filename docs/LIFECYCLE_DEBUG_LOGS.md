@@ -7,7 +7,7 @@ Este documento explica os logs temporarios de investigacao para:
 
 Esses logs existem para diagnosticar onde uma mensagem ou uma conexao parou no fluxo ponta a ponta.
 
-Para mensagens, o debug continua emitindo apenas excecoes do fluxo: erro, retry, DLQ, descarte, skip, ignored/dropped ou outro ponto que encerra o fluxo sem continuidade.
+Para mensagens, o debug emite excecoes do fluxo por padrao: erro, retry, DLQ, descarte, skip, ignored/dropped ou outro ponto que encerra o fluxo sem continuidade. Sucesso/progresso de entrada pode ser habilitado temporariamente com `MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED=true`.
 
 Para conexoes, quando `CONNECTION_LIFECYCLE_DEBUG_ENABLED=true`, o debug emite progresso e erros do fluxo completo. Isso inclui entrada de request, validacao, container, health, readiness gRPC, chamada ao worker, publish e resposta final. O objetivo e enxergar exatamente em qual etapa a conexao/QR parou.
 
@@ -18,6 +18,8 @@ Configure as variaveis no ambiente do servico que precisa emitir os logs e reini
 ```env
 # Logs de debug do ciclo de vida da mensagem
 MESSAGE_LIFECYCLE_DEBUG_ENABLED: "true"
+MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED: "false"
+MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED: "true"
 MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT: "500"
 MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT: "4000"
 
@@ -36,13 +38,22 @@ CONNECTION_LIFECYCLE_DEBUG_ENABLED=false
 
 ## O Que E Emitido
 
-Com `MESSAGE_LIFECYCLE_DEBUG_ENABLED=true`, o lifecycle debug de mensagem registra apenas eventos problematicos:
+Com `MESSAGE_LIFECYCLE_DEBUG_ENABLED=true`, o lifecycle debug de mensagem registra eventos problematicos e, por padrao, sucesso/progresso de saida:
 
 - `level="warn"` ou `level="error"`
 - `outcome` em `error`, `failed`, `partial_error`, `timeout`, `dlq`, `discarded`, `dropped`, `skipped`, `ignored`, `ignore_totally`, `ignore_automation`, `retrying`, `closed`, `message_creation_skipped` ou `chat_saved_without_message`
 - qualquer evento que tenha `error`, `err`, `exception`, `stack` ou `error_message`
+- eventos de saida `service.outgoing.*` e `whatsmeow.outgoing.*`, a menos que `MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED=false`
 
-Eventos normais de mensagem como `received`, `started`, `success`, `published`, `committed`, `completed`, `created`, `mapped`, `queued` e `chatbot` sao descartados no helper de mensagem antes de serializar payload, truncar raw ou capturar arquivo/linha.
+Eventos normais de entrada como `received`, `started`, `success`, `published`, `committed`, `completed`, `created`, `mapped`, `queued` e `chatbot` sao descartados no helper de mensagem antes de serializar payload, truncar raw ou capturar arquivo/linha.
+
+Para investigar lacunas em que a mensagem pode ter chegado ao provider, Kafka ou consumer sem erro, habilite temporariamente:
+
+```env
+MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED=true
+```
+
+Esse flag inclui sucesso/progresso de entrada como `whatsmeow.incoming.*`, `whatsmeow.kafka.publish.*`, `whatsmeow.history.*`, `message_upsert.*` e `message_history_sync.*`. Use apenas durante a janela de investigacao, pois aumenta bastante o volume de logs.
 
 Com `CONNECTION_LIFECYCLE_DEBUG_ENABLED=true`, o lifecycle debug de conexao registra tambem eventos de progresso, como:
 
@@ -60,7 +71,7 @@ Mesmo em eventos de progresso, QR code e codigo de pareamento continuam sanitiza
 
 ## Onde Fica Salvo
 
-Os eventos de excecao sao emitidos como logs OpenTelemetry e seguem o pipeline OTLP configurado pelo ambiente. No fluxo esperado, eles chegam ao OTel Collector e sao armazenados no Loki. Eles nao criam indice Elasticsearch.
+Os eventos de lifecycle sao emitidos como logs OpenTelemetry e seguem o pipeline OTLP configurado pelo ambiente. No fluxo esperado, eles chegam ao OTel Collector e sao armazenados no Loki. Eles nao criam indice Elasticsearch.
 
 O "indice unico" citado na implementacao e um indice logico via campo:
 

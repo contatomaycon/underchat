@@ -99,6 +99,10 @@ function isOutboundLifecycleSuccessEnabled(): boolean {
   return process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED !== 'false';
 }
 
+function isIncomingLifecycleSuccessEnabled(): boolean {
+  return process.env.MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED === 'true';
+}
+
 export function getMessageLifecycleContext():
   | MessageLifecycleContext
   | undefined {
@@ -351,13 +355,42 @@ function shouldRecordLifecycleEvent(event: MessageLifecycleEvent): boolean {
 
   if (
     isOutboundLifecycleSuccessEnabled() &&
-    (event.stage.startsWith('service.outgoing.') ||
-      event.stage.startsWith('whatsmeow.outgoing.'))
+    isOutboundMessageLifecycleStage(event.stage)
+  ) {
+    return true;
+  }
+
+  if (
+    isIncomingLifecycleSuccessEnabled() &&
+    isIncomingMessageLifecycleStage(event.stage)
   ) {
     return true;
   }
 
   return eventHasErrorField(event);
+}
+
+function isOutboundMessageLifecycleStage(stage: string): boolean {
+  return (
+    stage.startsWith('service.outgoing.') ||
+    stage.startsWith('whatsmeow.outgoing.')
+  );
+}
+
+function isIncomingMessageLifecycleStage(stage: string): boolean {
+  return (
+    stage.startsWith('message_upsert.') ||
+    stage.startsWith('message_history_sync.') ||
+    stage.startsWith('whatsmeow.incoming.') ||
+    stage.startsWith('whatsmeow.kafka.publish.') ||
+    stage.startsWith('whatsmeow.history.') ||
+    stage.startsWith('baileys.incoming.') ||
+    stage.startsWith('baileys.kafka.publish.') ||
+    stage.startsWith('baileys.history.') ||
+    stage.startsWith('wwebjs.incoming.') ||
+    stage.startsWith('wwebjs.kafka.publish.') ||
+    stage.startsWith('wwebjs.history.')
+  );
 }
 
 function isErrorLifecycleEvent(event: MessageLifecycleEvent): boolean {

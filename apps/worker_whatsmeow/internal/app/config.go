@@ -79,6 +79,7 @@ type Config struct {
 	MessageLifecycleDebugEnabled           bool
 	MessageLifecycleDebugBodyLimit         int
 	MessageLifecycleDebugRawLimit          int
+	MessageLifecycleIncomingSuccessEnabled bool
 	MessageLifecycleOutboundSuccessEnabled bool
 
 	ConnectionLifecycleDebugEnabled    bool
@@ -147,6 +148,7 @@ func LoadConfig() (Config, error) {
 		MessageLifecycleDebugEnabled:           envBoolDefault("MESSAGE_LIFECYCLE_DEBUG_ENABLED", false),
 		MessageLifecycleDebugBodyLimit:         envIntDefault("MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT", 500),
 		MessageLifecycleDebugRawLimit:          envIntDefault("MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT", 4000),
+		MessageLifecycleIncomingSuccessEnabled: envBoolDefault("MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED", false),
 		MessageLifecycleOutboundSuccessEnabled: envBoolDefault("MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED", true),
 		ConnectionLifecycleDebugEnabled:        envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
 		ConnectionLifecycleDebugValueLimit: envIntDefault(

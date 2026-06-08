@@ -23,6 +23,8 @@ describe('messageLifecycleDebug', () => {
   const previousRawLimit = process.env.MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT;
   const previousOutboundSuccess =
     process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED;
+  const previousIncomingSuccess =
+    process.env.MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -30,6 +32,7 @@ describe('messageLifecycleDebug', () => {
     delete process.env.MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT;
     delete process.env.MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT;
     delete process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED;
+    delete process.env.MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED;
   });
 
   afterAll(() => {
@@ -53,6 +56,12 @@ describe('messageLifecycleDebug', () => {
     } else {
       process.env.MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED =
         previousOutboundSuccess;
+    }
+    if (previousIncomingSuccess === undefined) {
+      delete process.env.MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED;
+    } else {
+      process.env.MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED =
+        previousIncomingSuccess;
     }
   });
 
@@ -162,6 +171,28 @@ describe('messageLifecycleDebug', () => {
     });
 
     expect(mockedLogger.info).not.toHaveBeenCalled();
+  });
+
+  it('emits incoming success events only when explicitly enabled', () => {
+    process.env.MESSAGE_LIFECYCLE_DEBUG_ENABLED = 'true';
+
+    recordMessageLifecycle({
+      stage: 'message_upsert.process.success',
+      decision: 'process_message',
+      outcome: 'processed',
+    });
+
+    expect(mockedLogger.info).not.toHaveBeenCalled();
+
+    process.env.MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED = 'true';
+
+    recordMessageLifecycle({
+      stage: 'message_upsert.process.success',
+      decision: 'process_message',
+      outcome: 'processed',
+    });
+
+    expect(mockedLogger.info).toHaveBeenCalledTimes(1);
   });
 
   it('emits discarded, retrying and explicit error events', () => {

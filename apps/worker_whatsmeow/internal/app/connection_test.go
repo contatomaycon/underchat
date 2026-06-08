@@ -103,6 +103,9 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if !cfg.MessageLifecycleOutboundSuccessEnabled {
 		t.Fatal("expected outbound success lifecycle to be enabled by default")
 	}
+	if cfg.MessageLifecycleIncomingSuccessEnabled {
+		t.Fatal("expected incoming success lifecycle to be disabled by default")
+	}
 	if cfg.OutboundReadyTimeout != time.Minute {
 		t.Fatalf("unexpected outbound ready timeout %s", cfg.OutboundReadyTimeout)
 	}
@@ -232,6 +235,31 @@ func TestOutboundLifecycleSuccessFilter(t *testing.T) {
 		"outcome": "success",
 	}) {
 		t.Fatal("expected outbound success event to be dropped when disabled")
+	}
+}
+
+func TestIncomingLifecycleSuccessFilter(t *testing.T) {
+	cfg := Config{}
+	if shouldRecordMessageLifecycleEvent(cfg, map[string]any{
+		"stage":   "whatsmeow.kafka.publish.success",
+		"outcome": "published",
+	}) {
+		t.Fatal("expected incoming success event to be dropped by default")
+	}
+
+	cfg.MessageLifecycleIncomingSuccessEnabled = true
+	if !shouldRecordMessageLifecycleEvent(cfg, map[string]any{
+		"stage":   "whatsmeow.kafka.publish.success",
+		"outcome": "published",
+	}) {
+		t.Fatal("expected incoming success event to be emitted when enabled")
+	}
+
+	if !shouldRecordMessageLifecycleEvent(cfg, map[string]any{
+		"stage":   "whatsmeow.history.kafka.publish.success",
+		"outcome": "published",
+	}) {
+		t.Fatal("expected history success event to be emitted when enabled")
 	}
 }
 
