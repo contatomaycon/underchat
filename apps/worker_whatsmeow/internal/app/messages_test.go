@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -773,6 +774,76 @@ func TestBuildIncomingUpsertSetsRemoteJIDAltForLIDChat(t *testing.T) {
 	}
 }
 
+func TestIncomingMessageDebugLogsNormalMessage(t *testing.T) {
+	manager := &WhatsAppManager{cfg: Config{
+		WorkerID:                       "worker-1",
+		AccountID:                      "account-1",
+		MessageLifecycleDebugEnabled:   true,
+		MessageLifecycleDebugBodyLimit: 500,
+		MessageLifecycleDebugRawLimit:  4000,
+	}}
+	evt := incomingTextEvent(types.NewJID("5511999999999", types.DefaultUserServer), false, "")
+
+	output := captureStandardLog(t, func() {
+		manager.logIncomingMessageDebug(context.Background(), evt, "")
+	})
+
+	if !strings.Contains(output, "message_debug direction=in") {
+		t.Fatalf("expected message debug log, got %s", output)
+	}
+	if !strings.Contains(output, "account_id=account-1") {
+		t.Fatalf("expected account id in log, got %s", output)
+	}
+	if !strings.Contains(output, `message_text="texto recebido"`) {
+		t.Fatalf("expected normal message text in log, got %s", output)
+	}
+	if !strings.Contains(output, `skip_reason=""`) {
+		t.Fatalf("expected empty skip reason for normal message, got %s", output)
+	}
+}
+
+func TestIncomingMessageDebugLogsSkipReason(t *testing.T) {
+	manager := &WhatsAppManager{cfg: Config{
+		WorkerID:                       "worker-1",
+		AccountID:                      "account-1",
+		MessageLifecycleDebugEnabled:   true,
+		MessageLifecycleDebugBodyLimit: 500,
+		MessageLifecycleDebugRawLimit:  4000,
+	}}
+	evt := incomingTextEvent(types.NewJID("5511999999999", types.DefaultUserServer), false, "peer")
+
+	output := captureStandardLog(t, func() {
+		manager.logIncomingMessageDebug(context.Background(), evt, incomingSkipReason(evt))
+	})
+
+	if !strings.Contains(output, `skip_reason="peer_category"`) {
+		t.Fatalf("expected peer skip reason in log, got %s", output)
+	}
+}
+
+func TestIncomingMessageDebugTruncatesRawPayload(t *testing.T) {
+	manager := &WhatsAppManager{cfg: Config{
+		WorkerID:                       "worker-1",
+		AccountID:                      "account-1",
+		MessageLifecycleDebugEnabled:   true,
+		MessageLifecycleDebugBodyLimit: 500,
+		MessageLifecycleDebugRawLimit:  20,
+	}}
+	evt := incomingTextEvent(types.NewJID("5511999999999", types.DefaultUserServer), false, "")
+	evt.Message = &waE2E.Message{Conversation: proto.String("mensagem longa para truncar payload bruto")}
+
+	output := captureStandardLog(t, func() {
+		manager.logIncomingMessageDebug(context.Background(), evt, "")
+	})
+
+	if !strings.Contains(output, "raw_truncated=true") {
+		t.Fatalf("expected truncated raw payload marker, got %s", output)
+	}
+	if !strings.Contains(output, "<truncated>") {
+		t.Fatalf("expected truncated raw payload suffix, got %s", output)
+	}
+}
+
 func TestBuildIncomingUpsertNormalizesReactionPayloadForBaileys(t *testing.T) {
 	manager := &WhatsAppManager{}
 	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)
@@ -1032,6 +1103,17 @@ func incomingTextEvent(chat types.JID, fromMe bool, category string) *events.Mes
 		},
 		Message: &waE2E.Message{Conversation: proto.String("texto recebido")},
 	}
+}
+
+func captureStandardLog(t *testing.T, fn func()) string {
+	t.Helper()
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&output)
+	defer log.SetOutput(previous)
+
+	fn()
+	return output.String()
 }
 
 func TestBuildChatReadStatePatchesForSentMessage(t *testing.T) {

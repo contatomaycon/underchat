@@ -38,10 +38,14 @@ func (e UnsupportedFeatureError) Error() string {
 
 func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage) (result map[string]any, err error) {
 	startedAt := time.Now()
+	var target types.JID
+	externalID := ""
+	m.logOutgoingSendDebug("whatsmeow.outgoing.send.start", data, target, externalID, 0, nil)
 	m.recordOutboundAttempt(ctx, data)
 	defer func() {
 		if err != nil {
 			m.recordOutboundFailure(ctx, data, time.Since(startedAt), err)
+			m.logOutgoingSendDebug("whatsmeow.outgoing.send.error", data, target, externalID, time.Since(startedAt), err)
 		}
 	}()
 
@@ -56,7 +60,7 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	if client == nil {
 		return nil, fmt.Errorf("client is not initialized")
 	}
-	target, err := resolveTargetJID(data)
+	target, err = resolveTargetJID(data)
 	if err != nil {
 		return nil, err
 	}
@@ -67,12 +71,14 @@ func (m *WhatsAppManager) SendChatMessage(ctx context.Context, data ChatMessage)
 	if text, ok := typingSimulationText(data); ok {
 		m.simulateTypingBeforeSend(opCtx, client, target, text)
 	}
+	m.logOutgoingSendDebug("whatsmeow.outgoing.send.before_provider", data, target, externalID, time.Since(startedAt), nil)
 	resp, err := client.SendMessage(opCtx, target, msg)
 	if err != nil {
 		return nil, err
 	}
-	externalID := string(resp.ID)
+	externalID = string(resp.ID)
 	m.recordOutboundSuccess(ctx, data, time.Since(startedAt), externalID)
+	m.logOutgoingSendDebug("whatsmeow.outgoing.send.ack.success", data, target, externalID, time.Since(startedAt), nil)
 	m.markChatAsReadAppState(opCtx, client, sentChatReadMessageKey(data, target, string(resp.ID)), target, time.Now())
 	return map[string]any{
 		"key": map[string]any{
@@ -186,6 +192,63 @@ func (m *WhatsAppManager) sendOperationContext(ctx context.Context) (context.Con
 		return context.WithCancel(ctx)
 	}
 	return context.WithTimeout(ctx, m.cfg.SendTimeout)
+}
+
+func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, target types.JID, externalID string, elapsed time.Duration, err error) {
+	if !m.cfg.MessageLifecycleDebugEnabled {
+		return
+	}
+	contentJSON, contentTruncated, contentErr := debugJSONPayload(data.Content, m.cfg.MessageLifecycleDebugRawLimit)
+	errorText := ""
+	if err != nil {
+		errorText = err.Error()
+	}
+	log.Printf(
+		"message_debug direction=out stage=%s worker_id=%s account_id=%s message_id=%s chat_id=%s target_jid=%s phone=%s message_type=%s external_message_id=%s elapsed_ms=%d timeout_ms=%d message_text=%q content_payload=%q content_truncated=%t content_error=%q error=%q",
+		stage,
+		m.cfg.WorkerID,
+		firstNonEmpty(stringValue(data.Account["id"]), m.cfg.AccountID),
+		data.MessageID,
+		data.ChatID,
+		jidString(target),
+		data.Phone,
+		chatMessageType(data),
+		externalID,
+		elapsed.Milliseconds(),
+		m.cfg.SendTimeout.Milliseconds(),
+		truncateLogValue(outgoingMessageTextPreview(data), m.cfg.MessageLifecycleDebugBodyLimit),
+		contentJSON,
+		contentTruncated,
+		contentErr,
+		errorText,
+	)
+}
+
+func debugJSONPayload(value any, limit int) (string, bool, string) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return "null", false, err.Error()
+	}
+	valueText, truncated := truncateDebugLogValue(string(raw), limit)
+	return valueText, truncated, ""
+}
+
+func outgoingMessageTextPreview(data ChatMessage) string {
+	candidates := []string{
+		stringValue(data.Content["message"]),
+		stringValue(asMap(data.Content["image"])["caption"]),
+		stringValue(asMap(data.Content["video"])["caption"]),
+		stringValue(asMap(data.Content["document"])["caption"]),
+		stringValue(asMap(data.Content["document"])["file_name"]),
+		stringValue(asMap(data.Content["document"])["filename"]),
+	}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func normalizeProfilePhotoJPEG(body []byte, contentType string) ([]byte, error) {

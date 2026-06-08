@@ -1667,6 +1667,8 @@ func (m *WhatsAppManager) logoutAndDeleteDevice(client *whatsmeow.Client) error 
 }
 
 func (m *WhatsAppManager) handleEvent(evt any) {
+	m.logWhatsmeowEventDebug(context.Background(), evt)
+
 	switch event := evt.(type) {
 	case *events.Connected:
 		recordConnectionLifecycle(context.Background(), m.cfg, map[string]any{
@@ -2103,7 +2105,6 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 	var finishLifecycleSpan func(error)
 	ctx, finishLifecycleSpan = startMessageLifecycleSpan(ctx, m.cfg, messageLifecycleFromEvent(m.cfg, incomingLifecycleMessageLike(evt)))
 	defer finishLifecycleSpan(nil)
-	m.logIncomingMessageDebug(ctx, evt, skipReason)
 
 	if skipReason != "" {
 		recordMessageLifecycle(ctx, m.cfg, map[string]any{
@@ -3062,16 +3063,139 @@ func incomingLifecycleMessageLike(evt *events.Message) *eventsMessageLike {
 	}
 }
 
+func (m *WhatsAppManager) logWhatsmeowEventDebug(ctx context.Context, evt any) {
+	if !m.cfg.MessageLifecycleDebugEnabled {
+		return
+	}
+
+	switch event := evt.(type) {
+	case *events.Message:
+		m.logIncomingMessageDebug(
+			contextWithMessageLifecycle(ctx, messageLifecycleFromEvent(m.cfg, incomingLifecycleMessageLike(event))),
+			event,
+			incomingSkipReason(event),
+		)
+	case *events.HistorySync:
+		rawJSON, rawTruncated, rawErr := historySyncRawJSON(event, m.cfg.MessageLifecycleDebugRawLimit)
+		conversations := 0
+		statusMessages := 0
+		syncType := ""
+		progress := uint32(0)
+		if event != nil && event.Data != nil {
+			conversations = len(event.Data.GetConversations())
+			statusMessages = len(event.Data.GetStatusV3Messages())
+			syncType = event.Data.GetSyncType().String()
+			progress = event.Data.GetProgress()
+		}
+		log.Printf(
+			"message_debug direction=in event_type=%T worker_id=%s account_id=%s history_sync_type=%q conversations=%d status_messages=%d progress=%d raw_payload=%q raw_truncated=%t raw_error=%q",
+			evt,
+			m.cfg.WorkerID,
+			m.cfg.AccountID,
+			syncType,
+			conversations,
+			statusMessages,
+			progress,
+			rawJSON,
+			rawTruncated,
+			rawErr,
+		)
+	case *events.Receipt:
+		log.Printf(
+			"message_debug direction=in event_type=%T worker_id=%s account_id=%s chat=%s sender=%s sender_alt=%s id=%q from_me=%t receipt_type=%s message_ids=%q message_sender=%s timestamp=%s",
+			evt,
+			m.cfg.WorkerID,
+			m.cfg.AccountID,
+			jidString(event.Chat),
+			jidString(event.Sender),
+			jidString(event.SenderAlt),
+			"",
+			event.IsFromMe,
+			event.Type,
+			messageIDsDebugString(event.MessageIDs),
+			jidString(event.MessageSender),
+			event.Timestamp.UTC().Format(time.RFC3339Nano),
+		)
+	case *events.CallOffer:
+		log.Printf(
+			"message_debug direction=in event_type=%T worker_id=%s account_id=%s chat=%s sender=%s id=%q from_me=%t call_id=%s call_creator=%s call_creator_alt=%s group_jid=%s remote_platform=%s remote_version=%s timestamp=%s",
+			evt,
+			m.cfg.WorkerID,
+			m.cfg.AccountID,
+			jidString(event.From),
+			jidString(event.CallCreator),
+			event.CallID,
+			false,
+			event.CallID,
+			jidString(event.CallCreator),
+			jidString(event.CallCreatorAlt),
+			jidString(event.GroupJID),
+			event.RemotePlatform,
+			event.RemoteVersion,
+			event.Timestamp.UTC().Format(time.RFC3339Nano),
+		)
+	case *events.CallOfferNotice:
+		log.Printf(
+			"message_debug direction=in event_type=%T worker_id=%s account_id=%s chat=%s sender=%s id=%q from_me=%t call_id=%s call_creator=%s call_creator_alt=%s group_jid=%s call_media=%s call_type=%s timestamp=%s",
+			evt,
+			m.cfg.WorkerID,
+			m.cfg.AccountID,
+			jidString(event.From),
+			jidString(event.CallCreator),
+			event.CallID,
+			false,
+			event.CallID,
+			jidString(event.CallCreator),
+			jidString(event.CallCreatorAlt),
+			jidString(event.GroupJID),
+			event.Media,
+			event.Type,
+			event.Timestamp.UTC().Format(time.RFC3339Nano),
+		)
+	case *events.ChatPresence:
+		log.Printf(
+			"message_debug direction=in event_type=%T worker_id=%s account_id=%s chat=%s sender=%s sender_alt=%s id=%q from_me=%t presence_state=%s presence_media=%s",
+			evt,
+			m.cfg.WorkerID,
+			m.cfg.AccountID,
+			jidString(event.Chat),
+			jidString(event.Sender),
+			jidString(event.SenderAlt),
+			"",
+			event.IsFromMe,
+			event.State,
+			event.Media,
+		)
+	default:
+		raw, rawTruncated := truncateDebugLogValue(fmt.Sprintf("%#v", evt), m.cfg.MessageLifecycleDebugRawLimit)
+		log.Printf(
+			"message_debug direction=in event_type=%T worker_id=%s account_id=%s raw_payload=%q raw_truncated=%t",
+			evt,
+			m.cfg.WorkerID,
+			m.cfg.AccountID,
+			raw,
+			rawTruncated,
+		)
+	}
+}
+
 func (m *WhatsAppManager) logIncomingMessageDebug(ctx context.Context, evt *events.Message, skipReason string) {
-	if !m.cfg.MessageLifecycleDebugEnabled || strings.TrimSpace(skipReason) == "" {
+	if !m.cfg.MessageLifecycleDebugEnabled {
 		return
 	}
 
 	rawJSON, rawTruncated, rawErr := incomingRawMessageJSON(evt, m.cfg.MessageLifecycleDebugRawLimit)
+	stage := "whatsmeow.incoming.raw"
+	outcome := "received"
+	if strings.TrimSpace(skipReason) != "" {
+		stage = "whatsmeow.incoming.skip_raw"
+		outcome = "skipped"
+	}
+	messageText := truncateLogValue(incomingTextPreview(evt), m.cfg.MessageLifecycleDebugBodyLimit)
 	recordMessageLifecycle(ctx, m.cfg, map[string]any{
-		"stage":                        "whatsmeow.incoming.skip_raw",
+		"stage":                        stage,
 		"decision":                     "receive_provider_message",
-		"outcome":                      "skipped",
+		"outcome":                      outcome,
 		"reason":                       skipReason,
 		"skip_reason":                  skipReason,
 		"chat_server":                  incomingChatServer(evt),
@@ -3098,11 +3222,46 @@ func (m *WhatsAppManager) logIncomingMessageDebug(ctx context.Context, evt *even
 		"is_bot_invoke":                evt != nil && evt.IsBotInvoke,
 		"is_edit":                      evt != nil && evt.IsEdit,
 		"kinds":                        strings.Join(incomingMessageKinds(evt), ","),
-		"message_text":                 incomingTextPreview(evt),
+		"message_text":                 messageText,
 		"raw_payload":                  rawJSON,
 		"raw_payload_source_truncated": rawTruncated,
 		"raw_error":                    rawErr,
 	})
+	log.Printf(
+		"message_debug direction=in event_type=%T worker_id=%s account_id=%s chat=%s sender=%s sender_alt=%s recipient_alt=%s id=%s from_me=%t category=%q info_type=%q media_type=%q edit=%q multicast=%t timestamp=%s retry_count=%d unavailable_request_id=%s source_web_msg=%t is_ephemeral=%t is_view_once=%t is_view_once_v2=%t is_view_once_v2_extension=%t is_document_with_caption=%t is_lottie_sticker=%t is_bot_invoke=%t is_edit=%t kinds=%q message_text=%q raw_payload=%q raw_truncated=%t raw_error=%q skip_reason=%q",
+		evt,
+		m.cfg.WorkerID,
+		m.cfg.AccountID,
+		incomingChatString(evt),
+		incomingSenderString(evt),
+		incomingSenderAltString(evt),
+		incomingRecipientAltString(evt),
+		incomingMessageID(evt),
+		incomingFromMe(evt),
+		incomingCategory(evt),
+		incomingInfoType(evt),
+		incomingMediaType(evt),
+		incomingEdit(evt),
+		incomingMulticast(evt),
+		incomingTimestamp(evt),
+		incomingRetryCount(evt),
+		incomingUnavailableRequestID(evt),
+		evt != nil && evt.SourceWebMsg != nil,
+		evt != nil && evt.IsEphemeral,
+		evt != nil && evt.IsViewOnce,
+		evt != nil && evt.IsViewOnceV2,
+		evt != nil && evt.IsViewOnceV2Extension,
+		evt != nil && evt.IsDocumentWithCaption,
+		evt != nil && evt.IsLottieSticker,
+		evt != nil && evt.IsBotInvoke,
+		evt != nil && evt.IsEdit,
+		strings.Join(incomingMessageKinds(evt), ","),
+		messageText,
+		rawJSON,
+		rawTruncated,
+		rawErr,
+		skipReason,
+	)
 }
 
 func incomingRawMessageJSON(evt *events.Message, limit int) (string, bool, string) {
@@ -3120,6 +3279,43 @@ func incomingRawMessageJSON(evt *events.Message, limit int) (string, bool, strin
 		truncated = true
 	}
 	return value, truncated, ""
+}
+
+func historySyncRawJSON(evt *events.HistorySync, limit int) (string, bool, string) {
+	if evt == nil || evt.Data == nil {
+		return "null", false, ""
+	}
+	raw, err := protojson.MarshalOptions{EmitUnpopulated: false}.Marshal(evt.Data)
+	if err != nil {
+		return "null", false, err.Error()
+	}
+	value, truncated := truncateDebugLogValue(string(raw), limit)
+	return value, truncated, ""
+}
+
+func truncateDebugLogValue(value string, limit int) (string, bool) {
+	if limit > 0 && len(value) > limit {
+		return value[:limit] + "...<truncated>", true
+	}
+	return value, false
+}
+
+func messageIDsDebugString(ids []types.MessageID) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, string(id))
+	}
+	return strings.Join(parts, ",")
+}
+
+func jidString(jid types.JID) string {
+	if jid.IsEmpty() {
+		return ""
+	}
+	return jid.String()
 }
 
 func incomingMessageKinds(evt *events.Message) []string {

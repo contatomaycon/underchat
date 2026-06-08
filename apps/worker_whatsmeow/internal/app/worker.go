@@ -1010,32 +1010,42 @@ func (w *Worker) markConnectionQRCodeAttemptProcessed(ctx context.Context, data 
 }
 
 func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err error) {
+	w.logOutgoingKafkaRawDebug("whatsmeow.outgoing.kafka.received_raw", msg)
+
 	if statusDelete, ok, err := mapToProfileStatusDeleteMessage(msg.Value); err != nil {
 		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
+		w.logOutgoingKafkaDecodeErrorDebug(msg, err)
 		return nil
 	} else if ok {
+		w.logOutgoingKafkaDecodedDebug(msg, "profile_status_delete", statusDelete.WorkerProfileStatusID, "", "profile_status_delete", statusDelete.AccountID)
 		return w.handleProfileStatusDelete(ctx, msg, statusDelete)
 	}
 
 	if status, ok, err := mapToProfileStatusMessage(msg.Value); err != nil {
 		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
+		w.logOutgoingKafkaDecodeErrorDebug(msg, err)
 		return nil
 	} else if ok {
+		w.logOutgoingKafkaDecodedDebug(msg, "profile_status", status.WorkerProfileStatusID, "", "profile_status", status.AccountID)
 		return w.handleProfileStatus(ctx, msg, status)
 	}
 
 	if profileInfo, ok, err := mapToProfileInfoMessage(msg.Value); err != nil {
 		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
+		w.logOutgoingKafkaDecodeErrorDebug(msg, err)
 		return nil
 	} else if ok {
+		w.logOutgoingKafkaDecodedDebug(msg, "profile_info", firstNonEmpty(profileInfo.WorkerID, w.cfg.WorkerID), "", "profile_info", profileInfo.AccountID)
 		return w.handleProfileInfo(ctx, msg, profileInfo)
 	}
 
 	data, err := mapToChatMessage(msg.Value)
 	if err != nil {
 		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
+		w.logOutgoingKafkaDecodeErrorDebug(msg, err)
 		return nil
 	}
+	w.logOutgoingKafkaDecodedDebug(msg, "chat_message", data.MessageID, data.ChatID, chatMessageType(data), firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID))
 
 	lifecycle := messageLifecycleFromChatMessage(w.cfg, data)
 	ctx, finishLifecycleSpan := startMessageLifecycleSpan(ctx, w.cfg, lifecycle)
@@ -1060,14 +1070,19 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		return err
 	}
 
+	claimID := chatMessageClaimID(data)
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.claim.start", msg, data, map[string]any{"claim_id": claimID}, nil)
 	claim, err := w.claimOutboundMessage(ctx, chatMessageClaimID(data), data, msg)
 	if err != nil {
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.claim.error", msg, data, map[string]any{"claim_id": claimID}, err)
 		return err
 	}
 	if !claim.Acquired {
 		if claim.State == sendIdempotencyStateSucceeded && len(claim.Result) > 0 {
+			w.logOutgoingMessageStepDebug("whatsmeow.outgoing.claim.recover_update", msg, data, map[string]any{"claim_id": claim.ID, "claim_state": claim.State}, nil)
 			return w.publishRecoveredOutboundUpdate(ctx, data, claim, msg)
 		}
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.claim.duplicate", msg, data, map[string]any{"claim_id": claim.ID, "claim_state": claim.State, "reason": "duplicate_message"}, nil)
 		recordMessageLifecycle(ctx, w.cfg, map[string]any{
 			"stage":        "whatsmeow.outgoing.claim.duplicate",
 			"decision":     "claim_message",
@@ -1081,9 +1096,12 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		})
 		return nil
 	}
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.claim.acquired", msg, data, map[string]any{"claim_id": claim.ID, "claim_state": claim.State}, nil)
 	startedAt := time.Now()
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.send.invoke", msg, data, map[string]any{"claim_id": claim.ID}, nil)
 	result, err := w.whatsapp.SendChatMessage(ctx, data)
 	if err != nil {
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.send.error", msg, data, map[string]any{"claim_id": claim.ID, "elapsed_ms": time.Since(startedAt).Milliseconds()}, err)
 		if errors.Is(err, ErrWhatsAppNotReady) {
 			w.releaseOutboundClaim(ctx, claim, "connection_not_ready_after_claim", err)
 			return err
@@ -1099,13 +1117,20 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		})
 		if statusErr != nil {
 			w.completeOutboundClaim(ctx, claim, sendIdempotencyStateAmbiguous, nil, statusErr)
+			w.logOutgoingMessageStepDebug("whatsmeow.outgoing.status_failed_publish.error", msg, data, map[string]any{"claim_id": claim.ID, "elapsed_ms": time.Since(startedAt).Milliseconds()}, statusErr)
 			_ = w.publishSendDLQ(ctx, msg, data, "status_publish_failed", statusErr)
 			return statusErr
 		}
 		w.completeOutboundClaim(ctx, claim, sendIdempotencyStateFailed, nil, err)
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.send.failed_marked", msg, data, map[string]any{"claim_id": claim.ID, "elapsed_ms": time.Since(startedAt).Milliseconds()}, err)
 		return nil
 	}
 	w.completeOutboundClaim(ctx, claim, sendIdempotencyStateSucceeded, result, nil)
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.send.success", msg, data, map[string]any{
+		"claim_id":            claim.ID,
+		"elapsed_ms":          time.Since(startedAt).Milliseconds(),
+		"external_message_id": messageKeyFromSendResult(result),
+	}, nil)
 	recordMessageLifecycle(ctx, w.cfg, map[string]any{
 		"stage":        "whatsmeow.outgoing.update.publish.start",
 		"decision":     "publish_update_message",
@@ -1115,10 +1140,12 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		"chat_id":      data.ChatID,
 		"message_type": chatMessageType(data),
 	})
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.start", msg, data, map[string]any{"topic": topicUpdateMessage}, nil)
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: result, Data: data}); err != nil {
 		log.Printf(
-			"whatsmeow send update publish failed worker_id=%s source_topic=%s partition=%d offset=%d message_id=%s chat_id=%s message_type=%s topic=%s error=%v",
+			"whatsmeow send update publish failed worker_id=%s account_id=%s source_topic=%s partition=%d offset=%d message_id=%s chat_id=%s message_type=%s topic=%s error=%v",
 			w.cfg.WorkerID,
+			w.cfg.AccountID,
 			msg.Topic,
 			msg.Partition,
 			msg.Offset,
@@ -1128,6 +1155,7 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 			topicUpdateMessage,
 			err,
 		)
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.error", msg, data, map[string]any{"topic": topicUpdateMessage}, err)
 		recordMessageLifecycle(ctx, w.cfg, map[string]any{
 			"stage":        "whatsmeow.outgoing.update.publish.error",
 			"decision":     "publish_update_message",
@@ -1143,6 +1171,7 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		_ = w.publishSendDLQ(ctx, msg, data, "update_publish_failed_after_send_ack", err)
 		return err
 	}
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.success", msg, data, map[string]any{"topic": topicUpdateMessage}, nil)
 	recordMessageLifecycle(ctx, w.cfg, map[string]any{
 		"stage":        "whatsmeow.outgoing.update.publish.success",
 		"decision":     "publish_update_message",
@@ -1163,11 +1192,14 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		"chat_id":      data.ChatID,
 		"message_type": chatMessageType(data),
 	})
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.kafka.commit.ready", msg, data, nil, nil)
 	return nil
 }
 
 func (w *Worker) waitOutboundReady(ctx context.Context, data ChatMessage, msg kafka.Message) error {
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.connection.wait.start", msg, data, map[string]any{"timeout_ms": w.cfg.OutboundReadyTimeout.Milliseconds()}, nil)
 	if err := w.whatsapp.WaitUntilReady(ctx, w.cfg.OutboundReadyTimeout); err != nil {
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.connection.wait", msg, data, map[string]any{"timeout_ms": w.cfg.OutboundReadyTimeout.Milliseconds(), "reason": "connection_not_ready"}, err)
 		recordMessageLifecycle(ctx, w.cfg, map[string]any{
 			"stage":        "whatsmeow.outgoing.connection.wait",
 			"decision":     "wait_connection_ready",
@@ -1185,6 +1217,7 @@ func (w *Worker) waitOutboundReady(ctx context.Context, data ChatMessage, msg ka
 		})
 		return err
 	}
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.connection.ready", msg, data, nil, nil)
 	recordMessageLifecycle(ctx, w.cfg, map[string]any{
 		"stage":        "whatsmeow.outgoing.connection.ready",
 		"decision":     "wait_connection_ready",
@@ -1280,20 +1313,33 @@ func (w *Worker) handleProfileInfo(ctx context.Context, msg kafka.Message, data 
 }
 
 func (w *Worker) handleScheduleSend(ctx context.Context, msg kafka.Message) error {
+	w.logOutgoingKafkaRawDebug("whatsmeow.outgoing.schedule.kafka.received_raw", msg)
 	var data ScheduleMessage
 	if err := json.Unmarshal(msg.Value, &data); err != nil {
 		logKafkaPayloadDecodeError(w.cfg.WorkerID, msg, err)
+		w.logOutgoingKafkaDecodeErrorDebug(msg, err)
 		return nil
 	}
+	w.logOutgoingKafkaDecodedDebug(msg, "schedule_message", data.Message.MessageID, data.Message.ChatID, chatMessageType(data.Message), firstNonEmpty(stringValue(data.Message.Account["id"]), w.cfg.AccountID))
 	if !data.IsValidated {
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.schedule.ignored", msg, data.Message, map[string]any{
+			"schedule_id": data.ScheduleID,
+			"contact_id":  data.ContactID,
+			"reason":      "not_validated",
+		}, nil)
 		return w.publishScheduleStatus(ctx, data, "ignored")
 	}
 	startedAt := time.Now()
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.schedule.send.invoke", msg, data.Message, map[string]any{
+		"schedule_id": data.ScheduleID,
+		"contact_id":  data.ContactID,
+	}, nil)
 	result, err := w.whatsapp.SendChatMessage(ctx, data.Message)
 	if err != nil {
 		log.Printf(
-			"whatsmeow schedule send failed worker_id=%s topic=%s partition=%d offset=%d schedule_id=%s contact_id=%s message_id=%s chat_id=%s message_type=%s elapsed_ms=%d timeout=%s error=%v",
+			"whatsmeow schedule send failed worker_id=%s account_id=%s topic=%s partition=%d offset=%d schedule_id=%s contact_id=%s message_id=%s chat_id=%s message_type=%s elapsed_ms=%d timeout=%s error=%v",
 			w.cfg.WorkerID,
+			w.cfg.AccountID,
 			msg.Topic,
 			msg.Partition,
 			msg.Offset,
@@ -1306,13 +1352,35 @@ func (w *Worker) handleScheduleSend(ctx context.Context, msg kafka.Message) erro
 			w.cfg.SendTimeout,
 			err,
 		)
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.schedule.send.error", msg, data.Message, map[string]any{
+			"schedule_id": data.ScheduleID,
+			"contact_id":  data.ContactID,
+			"elapsed_ms":  time.Since(startedAt).Milliseconds(),
+		}, err)
 		_ = w.publishScheduleStatus(ctx, data, "failed")
 		return err
 	}
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.schedule.send.success", msg, data.Message, map[string]any{
+		"schedule_id":          data.ScheduleID,
+		"contact_id":           data.ContactID,
+		"elapsed_ms":           time.Since(startedAt).Milliseconds(),
+		"external_message_id":  messageKeyFromSendResult(result),
+		"schedule_status_next": "sent",
+	}, nil)
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.Message.MessageID, UpdateMessage{Message: result, Data: data.Message}); err != nil {
-		log.Printf("whatsmeow schedule update publish failed worker_id=%s source_topic=%s partition=%d offset=%d schedule_id=%s message_id=%s topic=%s error=%v", w.cfg.WorkerID, msg.Topic, msg.Partition, msg.Offset, data.ScheduleID, data.Message.MessageID, topicUpdateMessage, err)
+		log.Printf("whatsmeow schedule update publish failed worker_id=%s account_id=%s source_topic=%s partition=%d offset=%d schedule_id=%s message_id=%s topic=%s error=%v", w.cfg.WorkerID, w.cfg.AccountID, msg.Topic, msg.Partition, msg.Offset, data.ScheduleID, data.Message.MessageID, topicUpdateMessage, err)
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.schedule.update.publish.error", msg, data.Message, map[string]any{
+			"schedule_id": data.ScheduleID,
+			"contact_id":  data.ContactID,
+			"topic":       topicUpdateMessage,
+		}, err)
 		return err
 	}
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.schedule.update.publish.success", msg, data.Message, map[string]any{
+		"schedule_id": data.ScheduleID,
+		"contact_id":  data.ContactID,
+		"topic":       topicUpdateMessage,
+	}, nil)
 	return w.publishScheduleStatus(ctx, data, "sent")
 }
 
@@ -1830,6 +1898,10 @@ func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data Cha
 		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
 		"payload":          json.RawMessage(msg.Value),
 	}
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.start", msg, data, map[string]any{
+		"topic":  topic,
+		"reason": reason,
+	}, cause)
 	recordMessageLifecycle(ctx, w.cfg, map[string]any{
 		"stage":        "whatsmeow.outgoing.dlq.publish.start",
 		"decision":     "publish_dlq",
@@ -1841,6 +1913,10 @@ func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data Cha
 		"message_type": chatMessageType(data),
 	})
 	if err := w.kafka.SendJSON(ctx, topic, data.MessageID, payload); err != nil {
+		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.error", msg, data, map[string]any{
+			"topic":  topic,
+			"reason": reason,
+		}, err)
 		recordMessageLifecycle(ctx, w.cfg, map[string]any{
 			"stage":        "whatsmeow.outgoing.dlq.publish.error",
 			"decision":     "publish_dlq",
@@ -1855,6 +1931,10 @@ func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data Cha
 		})
 		return err
 	}
+	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.success", msg, data, map[string]any{
+		"topic":  topic,
+		"reason": reason,
+	}, nil)
 	recordMessageLifecycle(ctx, w.cfg, map[string]any{
 		"stage":        "whatsmeow.outgoing.dlq.publish.success",
 		"decision":     "publish_dlq",
@@ -1969,6 +2049,96 @@ func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accou
 
 func logKafkaPayloadDecodeError(workerID string, msg kafka.Message, err error) {
 	log.Printf("whatsmeow kafka payload decode failed worker_id=%s topic=%s partition=%d offset=%d error=%v", workerID, msg.Topic, msg.Partition, msg.Offset, err)
+}
+
+func (w *Worker) logOutgoingKafkaRawDebug(stage string, msg kafka.Message) {
+	if !w.cfg.MessageLifecycleDebugEnabled {
+		return
+	}
+	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), w.cfg.MessageLifecycleDebugRawLimit)
+	log.Printf(
+		"message_debug direction=out stage=%s event_type=kafka_message worker_id=%s account_id=%s topic=%s partition=%d offset=%d kafka_key=%q raw_payload=%q raw_truncated=%t",
+		stage,
+		w.cfg.WorkerID,
+		w.cfg.AccountID,
+		msg.Topic,
+		msg.Partition,
+		msg.Offset,
+		string(msg.Key),
+		rawPayload,
+		rawTruncated,
+	)
+}
+
+func (w *Worker) logOutgoingKafkaDecodeErrorDebug(msg kafka.Message, err error) {
+	if !w.cfg.MessageLifecycleDebugEnabled {
+		return
+	}
+	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), w.cfg.MessageLifecycleDebugRawLimit)
+	log.Printf(
+		"message_debug direction=out stage=whatsmeow.outgoing.kafka.decode.error event_type=kafka_message worker_id=%s account_id=%s topic=%s partition=%d offset=%d kafka_key=%q raw_payload=%q raw_truncated=%t error=%q",
+		w.cfg.WorkerID,
+		w.cfg.AccountID,
+		msg.Topic,
+		msg.Partition,
+		msg.Offset,
+		string(msg.Key),
+		rawPayload,
+		rawTruncated,
+		err.Error(),
+	)
+}
+
+func (w *Worker) logOutgoingKafkaDecodedDebug(msg kafka.Message, payloadType, messageID, chatID, messageType, accountID string) {
+	if !w.cfg.MessageLifecycleDebugEnabled {
+		return
+	}
+	log.Printf(
+		"message_debug direction=out stage=whatsmeow.outgoing.kafka.decoded event_type=kafka_message worker_id=%s account_id=%s payload_type=%s topic=%s partition=%d offset=%d kafka_key=%q message_id=%s chat_id=%s message_type=%s",
+		w.cfg.WorkerID,
+		firstNonEmpty(accountID, w.cfg.AccountID),
+		payloadType,
+		msg.Topic,
+		msg.Partition,
+		msg.Offset,
+		string(msg.Key),
+		messageID,
+		chatID,
+		messageType,
+	)
+}
+
+func (w *Worker) logOutgoingMessageStepDebug(stage string, msg kafka.Message, data ChatMessage, detail map[string]any, err error) {
+	if !w.cfg.MessageLifecycleDebugEnabled {
+		return
+	}
+	if detail == nil {
+		detail = map[string]any{}
+	}
+	detailPayload, detailTruncated, detailErr := debugJSONPayload(detail, w.cfg.MessageLifecycleDebugRawLimit)
+	errorText := ""
+	if err != nil {
+		errorText = err.Error()
+	}
+	log.Printf(
+		"message_debug direction=out stage=%s worker_id=%s account_id=%s topic=%s partition=%d offset=%d kafka_key=%q message_id=%s chat_id=%s message_type=%s phone=%s message_text=%q detail_payload=%q detail_truncated=%t detail_error=%q error=%q",
+		stage,
+		w.cfg.WorkerID,
+		firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID),
+		msg.Topic,
+		msg.Partition,
+		msg.Offset,
+		string(msg.Key),
+		data.MessageID,
+		data.ChatID,
+		chatMessageType(data),
+		data.Phone,
+		truncateLogValue(outgoingMessageTextPreview(data), w.cfg.MessageLifecycleDebugBodyLimit),
+		detailPayload,
+		detailTruncated,
+		detailErr,
+		errorText,
+	)
 }
 
 func chatMessageType(data ChatMessage) string {
