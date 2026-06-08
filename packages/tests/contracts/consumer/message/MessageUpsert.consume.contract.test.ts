@@ -454,11 +454,15 @@ describe('MessageUpsertConsume edit fallback', () => {
       clearFlowCacheForChat: jest.fn(async () => undefined),
       execute: jest.fn(async () => undefined),
     };
+    const streamProducerService = {
+      send: jest.fn(async () => undefined),
+    };
     const consumer = new MessageUpsertConsume(
       redis as never,
       {} as never,
       {
         upsertMessage: jest.fn(() => 'upsert-message'),
+        upsertMessageDlq: jest.fn(() => 'upsert-message-dlq'),
         markMessageRead: jest.fn(() => 'mark-message-read'),
         getNumPartitions: jest.fn(() => 1),
         getReplicationFactor: jest.fn(() => 1),
@@ -475,9 +479,7 @@ describe('MessageUpsertConsume edit fallback', () => {
         uploadFromUrl: jest.fn(async () => null),
         deleteImage: jest.fn(async () => undefined),
       } as never,
-      {
-        send: jest.fn(async () => undefined),
-      } as never,
+      streamProducerService as never,
       {} as never,
       {
         createContact: jest.fn(async () => null),
@@ -515,6 +517,7 @@ describe('MessageUpsertConsume edit fallback', () => {
       activeWhatsappValidationService,
       workerConfigService,
       chatbotFlowRunnerService,
+      streamProducerService,
     };
   };
 
@@ -570,6 +573,34 @@ describe('MessageUpsertConsume edit fallback', () => {
       fromPhone: '556999715039',
       messageText: similarText,
     });
+  });
+
+  it('publishes lock acquisition timeouts to DLQ after local retries so the partition can commit', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const error = new Error(
+      'Failed to acquire lock "chat-create:account-1:worker-1:556999715039" after 90000ms'
+    );
+    error.name = 'LockAcquisitionTimeoutError';
+
+    const sentToDlq = await (consumer as any).handleProcessRetry(
+      makeTextUpsert(),
+      17,
+      63533,
+      true,
+      error
+    );
+
+    expect(sentToDlq).toBe(true);
+    expect(streamProducerService.send).toHaveBeenCalledTimes(1);
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert-message-dlq',
+      expect.objectContaining({
+        account_id: 'account-1',
+        worker_id: 'worker-1',
+        dlq_error: error.message,
+        dlq_retry_count: 3,
+      })
+    );
   });
 
   it('creates the original message when edit_text points to a missing target', async () => {

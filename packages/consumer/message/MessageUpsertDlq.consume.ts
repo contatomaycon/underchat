@@ -98,11 +98,6 @@ export class MessageUpsertDlqConsume {
 
         const stop = startHeartbeat(heartbeat);
         try {
-          if (data.is_call_event) {
-            await (this.messageUpsertConsume as any).handleCallEvent(t, data);
-            return;
-          }
-
           const jid = remoteJid(data.message?.key);
           const jidAlt = remoteJidAlt(data.message?.key);
 

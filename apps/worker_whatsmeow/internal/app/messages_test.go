@@ -774,6 +774,48 @@ func TestBuildIncomingUpsertSetsRemoteJIDAltForLIDChat(t *testing.T) {
 	}
 }
 
+func TestIncomingUpsertKafkaKeyUsesStablePhoneJIDForLIDChat(t *testing.T) {
+	cfg := Config{
+		AccountID: "account-1",
+		WorkerID:  "worker-1",
+	}
+	upsert := &UpsertMessage{
+		Message: map[string]any{
+			"key": map[string]any{
+				"id":           "3EB01BB65FF0DD2CA13BB2",
+				"remoteJid":    "252067352473847@lid",
+				"remoteJidAlt": "556481342084@s.whatsapp.net",
+			},
+		},
+	}
+
+	got := incomingUpsertKafkaKey(cfg, upsert)
+	want := "account-1:worker-1:556481342084@s.whatsapp.net"
+	if got != want {
+		t.Fatalf("unexpected kafka key %q want %q", got, want)
+	}
+}
+
+func TestIncomingUpsertKafkaKeyFallsBackToMessageID(t *testing.T) {
+	cfg := Config{
+		AccountID: "account-1",
+		WorkerID:  "worker-1",
+	}
+	upsert := &UpsertMessage{
+		Message: map[string]any{
+			"key": map[string]any{
+				"id": "message-1",
+			},
+		},
+	}
+
+	got := incomingUpsertKafkaKey(cfg, upsert)
+	want := "account-1:message-1"
+	if got != want {
+		t.Fatalf("unexpected kafka key %q want %q", got, want)
+	}
+}
+
 func TestIncomingMessageDebugLogsNormalMessage(t *testing.T) {
 	manager := &WhatsAppManager{cfg: Config{
 		WorkerID:                       "worker-1",

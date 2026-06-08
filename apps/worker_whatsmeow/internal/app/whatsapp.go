@@ -2171,7 +2171,7 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 		"from_history_sync":     upsert.FromHistorySync,
 		"message_text":          incomingTextPreview(evt),
 	})
-	key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
+	key := incomingUpsertKafkaKey(m.cfg, upsert)
 	recordMessageLifecycle(ctx, m.cfg, map[string]any{
 		"stage":     "whatsmeow.kafka.publish.start",
 		"decision":  "publish_upsert",
@@ -2724,6 +2724,44 @@ func (m *WhatsAppManager) buildIncomingMessageKey(evt *events.Message) map[strin
 		key["participantAlt"] = evt.Info.SenderAlt.String()
 	}
 	return key
+}
+
+func incomingUpsertKafkaKey(cfg Config, upsert *UpsertMessage) string {
+	if upsert == nil {
+		return cfg.AccountID
+	}
+
+	messageKey := asMap(upsert.Message["key"])
+	remoteKey := stableRemotePartitionKey(
+		valueString(messageKey, "remoteJid"),
+		valueString(messageKey, "remoteJidAlt"),
+	)
+	if remoteKey != "" {
+		return fmt.Sprintf("%s:%s:%s", cfg.AccountID, cfg.WorkerID, remoteKey)
+	}
+
+	messageID := valueString(messageKey, "id")
+	if messageID != "" {
+		return fmt.Sprintf("%s:%s", cfg.AccountID, messageID)
+	}
+
+	return cfg.AccountID
+}
+
+func stableRemotePartitionKey(remoteJID, remoteJIDAlt string) string {
+	remoteJID = strings.ToLower(strings.TrimSpace(remoteJID))
+	remoteJIDAlt = strings.ToLower(strings.TrimSpace(remoteJIDAlt))
+
+	if remoteJID != "" && strings.HasSuffix(remoteJID, "@lid") && remoteJIDAlt != "" && !strings.HasSuffix(remoteJIDAlt, "@lid") {
+		return remoteJIDAlt
+	}
+	if remoteJIDAlt != "" && !strings.HasSuffix(remoteJIDAlt, "@lid") {
+		return remoteJIDAlt
+	}
+	if remoteJID != "" {
+		return remoteJID
+	}
+	return remoteJIDAlt
 }
 
 func incomingMessageIsViewOnce(evt *events.Message) bool {

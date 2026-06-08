@@ -261,9 +261,22 @@ export class MessageUpsertConsume {
     return candidates.sort()[0] ?? phone;
   }
 
-  private incrementPartitionFailure(partition: number): void {
+  private incrementPartitionFailure(partition: number): number {
     const current = this.partitionFailureCounts.get(partition) ?? 0;
-    this.partitionFailureCounts.set(partition, current + 1);
+    const next = current + 1;
+    this.partitionFailureCounts.set(partition, next);
+    return next;
+  }
+
+  private isLockAcquisitionTimeoutError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    return (
+      error.name === 'LockAcquisitionTimeoutError' ||
+      /^Failed to acquire lock ".+" after \d+ms$/.test(error.message)
+    );
   }
 
   private async sendToDlq(
@@ -6185,13 +6198,18 @@ export class MessageUpsertConsume {
         return;
       } catch (error) {
         clearTimeout(timeout);
-        await this.handleProcessRetry(
+        const sentToDlq = await this.handleProcessRetry(
           data,
           partition,
           offset,
           timeoutLogged,
           error
         );
+        if (sentToDlq) {
+          this.partitionFailureCounts.set(partition, 0);
+          await this.commitNext(topic, partition, offset);
+          return;
+        }
       }
     }
   }
@@ -6343,7 +6361,7 @@ export class MessageUpsertConsume {
     offset: number,
     timeoutLogged: boolean,
     error: unknown
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error)) {
       logger.error({
         type: 'message_upsert_elastic_read_only_allow_delete',
@@ -6366,7 +6384,55 @@ export class MessageUpsertConsume {
       });
       incrementCounter('message_upsert_elastic_read_only_allow_delete');
       await delay(3000);
-      return;
+      return false;
+    }
+
+    const consecutiveFailureCount = this.incrementPartitionFailure(partition);
+    const lockTimeout = this.isLockAcquisitionTimeoutError(error);
+
+    if (
+      lockTimeout ||
+      consecutiveFailureCount >= this.MAX_CONSECUTIVE_FAILURES
+    ) {
+      const reason = lockTimeout
+        ? 'lock_acquisition_timeout'
+        : 'consecutive_failures_exhausted';
+      logger.error({
+        type: 'message_upsert_dlq_after_retry_exhausted',
+        message:
+          'Message upsert failed after retries. Publishing to DLQ and committing offset to unblock partition.',
+        error: error instanceof Error ? error.message : error,
+        partition,
+        offset,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+        consecutive_failure_count: consecutiveFailureCount,
+        max_consecutive_failures: this.MAX_CONSECUTIVE_FAILURES,
+        reason,
+      });
+      this.logLifecycle(data, {
+        stage: 'message_upsert.process.dlq',
+        decision: 'process_message',
+        outcome: 'dlq',
+        reason,
+        level: 'error',
+        partition,
+        offset,
+        retry_count: this.MAX_RETRIES,
+        consecutive_failure_count: consecutiveFailureCount,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      incrementCounter('message_upsert_dlq_after_retry_exhausted');
+
+      const sentToDlq = await this.sendToDlq(
+        data,
+        error,
+        lockTimeout ? this.MAX_RETRIES : consecutiveFailureCount
+      );
+      if (sentToDlq) {
+        return true;
+      }
     }
 
     logger.error({
@@ -6404,8 +6470,8 @@ export class MessageUpsertConsume {
         : 'message_upsert_processing_error'
     );
 
-    this.incrementPartitionFailure(partition);
     await delay(timeoutLogged ? 5000 : 3000);
+    return false;
   }
 
   private handlePartitionChainError(
