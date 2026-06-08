@@ -195,7 +195,8 @@ func (m *WhatsAppManager) sendOperationContext(ctx context.Context) (context.Con
 }
 
 func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, target types.JID, externalID string, elapsed time.Duration, err error) {
-	if !m.cfg.MessageLifecycleDebugEnabled {
+	accountID := firstNonEmpty(stringValue(data.Account["id"]), m.cfg.AccountID)
+	if !messageDebugEnabledForAccount(m.cfg, accountID) {
 		return
 	}
 	contentJSON, contentTruncated, contentErr := debugJSONPayload(data.Content, m.cfg.MessageLifecycleDebugRawLimit)
@@ -207,7 +208,7 @@ func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, t
 		"message_debug direction=out stage=%s worker_id=%s account_id=%s message_id=%s chat_id=%s target_jid=%s phone=%s message_type=%s external_message_id=%s elapsed_ms=%d timeout_ms=%d message_text=%q content_payload=%q content_truncated=%t content_error=%q error=%q",
 		stage,
 		m.cfg.WorkerID,
-		firstNonEmpty(stringValue(data.Account["id"]), m.cfg.AccountID),
+		accountID,
 		data.MessageID,
 		data.ChatID,
 		jidString(target),
@@ -222,6 +223,19 @@ func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, t
 		contentErr,
 		errorText,
 	)
+}
+
+const suppressedMessageDebugAccountID = "019a930d-c6f4-75ad-88ff-8d2fcd5839e1"
+
+func messageDebugEnabledForAccount(cfg Config, accountID string) bool {
+	if !cfg.MessageLifecycleDebugEnabled {
+		return false
+	}
+	return !messageDebugAccountSuppressed(cfg.AccountID) && !messageDebugAccountSuppressed(accountID)
+}
+
+func messageDebugAccountSuppressed(accountID string) bool {
+	return strings.TrimSpace(accountID) == suppressedMessageDebugAccountID
 }
 
 func debugJSONPayload(value any, limit int) (string, bool, string) {

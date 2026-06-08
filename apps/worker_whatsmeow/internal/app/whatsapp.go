@@ -3102,7 +3102,7 @@ func incomingLifecycleMessageLike(evt *events.Message) *eventsMessageLike {
 }
 
 func (m *WhatsAppManager) logWhatsmeowEventDebug(ctx context.Context, evt any) {
-	if !m.cfg.MessageLifecycleDebugEnabled {
+	if !messageDebugEnabledForAccount(m.cfg, "") {
 		return
 	}
 
@@ -3218,7 +3218,7 @@ func (m *WhatsAppManager) logWhatsmeowEventDebug(ctx context.Context, evt any) {
 }
 
 func (m *WhatsAppManager) logIncomingMessageDebug(ctx context.Context, evt *events.Message, skipReason string) {
-	if !m.cfg.MessageLifecycleDebugEnabled {
+	if !messageDebugEnabledForAccount(m.cfg, "") {
 		return
 	}
 

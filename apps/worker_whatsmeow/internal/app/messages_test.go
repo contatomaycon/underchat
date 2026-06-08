@@ -886,6 +886,41 @@ func TestIncomingMessageDebugTruncatesRawPayload(t *testing.T) {
 	}
 }
 
+func TestMessageDebugSuppressesRequestedAccount(t *testing.T) {
+	manager := &WhatsAppManager{cfg: Config{
+		WorkerID:                       "worker-1",
+		AccountID:                      suppressedMessageDebugAccountID,
+		MessageLifecycleDebugEnabled:   true,
+		MessageLifecycleDebugBodyLimit: 500,
+		MessageLifecycleDebugRawLimit:  4000,
+	}}
+	evt := incomingTextEvent(types.NewJID("5511999999999", types.DefaultUserServer), false, "")
+
+	incomingOutput := captureStandardLog(t, func() {
+		manager.logIncomingMessageDebug(context.Background(), evt, "")
+	})
+	if incomingOutput != "" {
+		t.Fatalf("expected incoming debug log to be suppressed, got %s", incomingOutput)
+	}
+
+	outgoingOutput := captureStandardLog(t, func() {
+		manager.logOutgoingSendDebug("whatsmeow.outgoing.send.start", ChatMessage{
+			MessageID: "message-1",
+			ChatID:    "5511999999999@s.whatsapp.net",
+			Account: map[string]any{
+				"id": suppressedMessageDebugAccountID,
+			},
+			Content: map[string]any{
+				"type":    MessageTypeText,
+				"message": "texto enviado",
+			},
+		}, types.EmptyJID, "", 0, nil)
+	})
+	if outgoingOutput != "" {
+		t.Fatalf("expected outgoing debug log to be suppressed, got %s", outgoingOutput)
+	}
+}
+
 func TestBuildIncomingUpsertNormalizesReactionPayloadForBaileys(t *testing.T) {
 	manager := &WhatsAppManager{}
 	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)

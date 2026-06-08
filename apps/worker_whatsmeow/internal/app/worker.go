@@ -2052,7 +2052,7 @@ func logKafkaPayloadDecodeError(workerID string, msg kafka.Message, err error) {
 }
 
 func (w *Worker) logOutgoingKafkaRawDebug(stage string, msg kafka.Message) {
-	if !w.cfg.MessageLifecycleDebugEnabled {
+	if !messageDebugEnabledForAccount(w.cfg, "") {
 		return
 	}
 	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), w.cfg.MessageLifecycleDebugRawLimit)
@@ -2071,7 +2071,7 @@ func (w *Worker) logOutgoingKafkaRawDebug(stage string, msg kafka.Message) {
 }
 
 func (w *Worker) logOutgoingKafkaDecodeErrorDebug(msg kafka.Message, err error) {
-	if !w.cfg.MessageLifecycleDebugEnabled {
+	if !messageDebugEnabledForAccount(w.cfg, "") {
 		return
 	}
 	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), w.cfg.MessageLifecycleDebugRawLimit)
@@ -2090,7 +2090,7 @@ func (w *Worker) logOutgoingKafkaDecodeErrorDebug(msg kafka.Message, err error) 
 }
 
 func (w *Worker) logOutgoingKafkaDecodedDebug(msg kafka.Message, payloadType, messageID, chatID, messageType, accountID string) {
-	if !w.cfg.MessageLifecycleDebugEnabled {
+	if !messageDebugEnabledForAccount(w.cfg, accountID) {
 		return
 	}
 	log.Printf(
@@ -2109,7 +2109,8 @@ func (w *Worker) logOutgoingKafkaDecodedDebug(msg kafka.Message, payloadType, me
 }
 
 func (w *Worker) logOutgoingMessageStepDebug(stage string, msg kafka.Message, data ChatMessage, detail map[string]any, err error) {
-	if !w.cfg.MessageLifecycleDebugEnabled {
+	accountID := firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID)
+	if !messageDebugEnabledForAccount(w.cfg, accountID) {
 		return
 	}
 	if detail == nil {
@@ -2124,7 +2125,7 @@ func (w *Worker) logOutgoingMessageStepDebug(stage string, msg kafka.Message, da
 		"message_debug direction=out stage=%s worker_id=%s account_id=%s topic=%s partition=%d offset=%d kafka_key=%q message_id=%s chat_id=%s message_type=%s phone=%s message_text=%q detail_payload=%q detail_truncated=%t detail_error=%q error=%q",
 		stage,
 		w.cfg.WorkerID,
-		firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID),
+		accountID,
 		msg.Topic,
 		msg.Partition,
 		msg.Offset,
