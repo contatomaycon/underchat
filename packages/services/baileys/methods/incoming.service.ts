@@ -55,6 +55,7 @@ import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWork
 import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.service';
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { resolveCallEventJidAndPhone } from '../util/callEventResolver';
+import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 
 function readPositiveIntEnv(key: string, fallback: number): number {
   const raw = process.env[key];
@@ -625,6 +626,9 @@ export class BaileysIncomingMessageService {
   private async sendToKafkaWithRetry(
     item: IBaileysPendingMessage
   ): Promise<void> {
+    const kafkaKey =
+      item.kafkaKey ??
+      buildUpsertMessageKafkaKey(item.inputUpsert, item.messageKey);
     const delay = Math.min(
       this.RETRY_BASE_DELAY_MS * Math.pow(2, item.retries),
       this.MAX_RETRY_DELAY_MS
@@ -653,7 +657,7 @@ export class BaileysIncomingMessageService {
       decision: 'publish_to_kafka',
       outcome: 'start',
       topic: item.topic,
-      kafka_key: item.messageKey,
+      kafka_key: kafkaKey,
       retry_count: item.retries,
     });
 
@@ -661,7 +665,7 @@ export class BaileysIncomingMessageService {
       await this.streamProducerService.send(
         item.topic,
         item.inputUpsert,
-        item.messageKey
+        kafkaKey
       );
 
       this.logLifecycle(item.inputUpsert.message as WAMessage, {
@@ -669,7 +673,7 @@ export class BaileysIncomingMessageService {
         decision: 'publish_to_kafka',
         outcome: 'published',
         topic: item.topic,
-        kafka_key: item.messageKey,
+        kafka_key: kafkaKey,
         retry_count: item.retries,
       });
     } catch (error) {
@@ -679,7 +683,7 @@ export class BaileysIncomingMessageService {
         outcome: 'error',
         level: 'error',
         topic: item.topic,
-        kafka_key: item.messageKey,
+        kafka_key: kafkaKey,
         retry_count: item.retries,
         reason: error instanceof Error ? error.message : String(error),
       });
@@ -722,9 +726,11 @@ export class BaileysIncomingMessageService {
       });
     }
 
+    const kafkaKey = buildUpsertMessageKafkaKey(inputUpsert, messageKey);
     const item: IBaileysPendingMessage = {
       inputUpsert,
       messageKey,
+      kafkaKey,
       topic,
       retries: 0,
       addedAt: Date.now(),
@@ -735,7 +741,7 @@ export class BaileysIncomingMessageService {
       decision: 'enqueue',
       outcome: 'queued',
       topic,
-      kafka_key: messageKey,
+      kafka_key: kafkaKey,
       queue_size: this.pendingQueue.length,
     });
     return item;

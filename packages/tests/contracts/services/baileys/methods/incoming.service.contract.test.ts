@@ -40,6 +40,16 @@ jest.mock('@core/plugins/telemetry/logger', () => ({
   },
 }));
 
+jest.mock('@core/config/environments', () => ({
+  baileysEnvironment: {
+    baileysAccountId: 'account-1',
+    baileysWorkerId: 'worker-1',
+  },
+  generalEnvironment: {
+    automationSendDedupeTtlSeconds: 60,
+  },
+}));
+
 jest.mock('@core/services/streamProducer.service', () => ({
   StreamProducerService: class {},
 }));
@@ -163,7 +173,7 @@ describe('BaileysIncomingMessageService', () => {
       expect.objectContaining({
         photo: 'https://cdn.test/profile.jpg',
       }),
-      'message-key-1'
+      'account-1:worker-1:5511999999999@s.whatsapp.net'
     );
   });
 
@@ -211,7 +221,7 @@ describe('BaileysIncomingMessageService', () => {
       expect.objectContaining({
         photo: 'https://cdn.test/shared.jpg',
       }),
-      'message-key-shared'
+      'account-1:worker-1:5511999999999@s.whatsapp.net'
     );
   });
 
@@ -263,7 +273,7 @@ describe('BaileysIncomingMessageService', () => {
       expect.objectContaining({
         photo: 'https://cdn.test/fetched-after-legacy.jpg',
       }),
-      'message-key-legacy'
+      'account-1:worker-1:5511999999999@s.whatsapp.net'
     );
   });
 
@@ -326,7 +336,7 @@ describe('BaileysIncomingMessageService', () => {
       expect.objectContaining({
         photo: 'https://cdn.test/fresh.jpg',
       }),
-      'message-key-stale'
+      'account-1:worker-1:5511999999999@s.whatsapp.net'
     );
   });
 
@@ -386,7 +396,7 @@ describe('BaileysIncomingMessageService', () => {
       expect.objectContaining({
         photo: 'https://cdn.test/lid-profile.jpg',
       }),
-      'message-key-2'
+      'account-1:worker-1:123456789012345@lid'
     );
   });
 

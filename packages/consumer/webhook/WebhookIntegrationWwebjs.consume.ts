@@ -24,6 +24,7 @@ import {
   resolveWebhookInteractionJids,
   type IWebhookInteractionJids,
 } from '@core/common/functions/resolveWebhookInteractionJids';
+import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 
 @singleton()
 export class WebhookIntegrationWwebjsConsume {
@@ -606,7 +607,10 @@ export class WebhookIntegrationWwebjsConsume {
     upsertMessage: IUpsertMessage
   ): Promise<void> {
     const topic = this.kafkaServiceQueueService.upsertMessage();
-    const messageKey = upsertMessage.message.key?.id ?? uuidv7();
+    const messageKey = buildUpsertMessageKafkaKey(
+      upsertMessage,
+      upsertMessage.message.key?.id ?? uuidv7()
+    );
     await this.streamProducerService.send(topic, upsertMessage, messageKey);
   }
 }

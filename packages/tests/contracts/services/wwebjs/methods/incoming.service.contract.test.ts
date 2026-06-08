@@ -619,6 +619,10 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
       ]);
       expect(upsertPayloads).toHaveLength(2);
       expect(inboundAdPayloads).toHaveLength(2);
+      expect(upsertSends.map((send) => send[2])).toEqual([
+        'account-w:worker-w:556999715039@s.whatsapp.net',
+        'account-w:worker-w:556999715039@s.whatsapp.net',
+      ]);
       expect(
         upsertPayloads.some(
           (payload) => payload.type === EMessageType.edit_text

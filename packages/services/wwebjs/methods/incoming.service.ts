@@ -37,6 +37,7 @@ import {
   recordMessageLifecycle,
   type MessageLifecycleEvent,
 } from '@core/plugins/telemetry/messageLifecycleDebug';
+import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 
 const ACK_ERROR = -1;
 const ACK_SERVER = 1;
@@ -1135,6 +1136,12 @@ export class WwebjsIncomingMessageService {
     const lifecyclePayload = isUpsertMessagePayload(payload)
       ? payload
       : undefined;
+    const resolvedKafkaKey = lifecyclePayload
+      ? buildUpsertMessageKafkaKey(
+          lifecyclePayload,
+          typeof kafkaKey === 'string' ? kafkaKey : metadata.messageId
+        )
+      : kafkaKey;
 
     if (lifecyclePayload) {
       lifecyclePayload.source_provider = 'wwebjs';
@@ -1143,7 +1150,10 @@ export class WwebjsIncomingMessageService {
         decision: 'publish_upsert',
         outcome: 'started',
         topic,
-        kafka_key: typeof kafkaKey === 'string' ? kafkaKey : metadata.messageId,
+        kafka_key:
+          typeof resolvedKafkaKey === 'string'
+            ? resolvedKafkaKey
+            : metadata.messageId,
         metadata_event: metadata.event,
       });
     }
@@ -1154,7 +1164,7 @@ export class WwebjsIncomingMessageService {
       attempt++
     ) {
       try {
-        await this.streamProducerService.send(topic, payload, kafkaKey);
+        await this.streamProducerService.send(topic, payload, resolvedKafkaKey);
         if (lifecyclePayload) {
           this.logLifecycleForUpsert(lifecyclePayload, {
             stage: 'wwebjs.kafka.publish.success',
@@ -1162,7 +1172,9 @@ export class WwebjsIncomingMessageService {
             outcome: 'published',
             topic,
             kafka_key:
-              typeof kafkaKey === 'string' ? kafkaKey : metadata.messageId,
+              typeof resolvedKafkaKey === 'string'
+                ? resolvedKafkaKey
+                : metadata.messageId,
             metadata_event: metadata.event,
             attempts: attempt,
           });
@@ -1202,7 +1214,9 @@ export class WwebjsIncomingMessageService {
             level: isLastAttempt ? 'warn' : 'info',
             topic,
             kafka_key:
-              typeof kafkaKey === 'string' ? kafkaKey : metadata.messageId,
+              typeof resolvedKafkaKey === 'string'
+                ? resolvedKafkaKey
+                : metadata.messageId,
             metadata_event: metadata.event,
             attempts: attempt,
             error: error instanceof Error ? error.message : String(error),
@@ -1222,7 +1236,7 @@ export class WwebjsIncomingMessageService {
     const queued = this.enqueueKafkaRetry({
       topic,
       payload,
-      kafkaKey,
+      kafkaKey: resolvedKafkaKey,
       metadata,
       attempts: this.KAFKA_IMMEDIATE_SEND_ATTEMPTS,
       nextAttemptAt,

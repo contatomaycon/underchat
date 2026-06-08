@@ -23,6 +23,7 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 import { WAMessage } from '@whiskeysockets/baileys';
+import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import Redis from 'ioredis';
 import {
   buildMessageLifecycleContext,
@@ -403,18 +404,19 @@ export class MessageHistorySyncConsume {
       ...data,
       from_history_sync: true,
     };
+    const kafkaKey = buildUpsertMessageKafkaKey(payload, data.message.key.id);
 
     await this.streamProducerService.send(
       this.kafkaServiceQueueService.upsertMessage(),
       payload,
-      data.message.key.id
+      kafkaKey
     );
     this.logLifecycle(payload, {
       stage: 'message_history_sync.kafka.publish',
       decision: 'publish_history_upsert',
       outcome: 'published',
       topic: this.kafkaServiceQueueService.upsertMessage(),
-      kafka_key: data.message.key.id,
+      kafka_key: kafkaKey,
     });
   }
 
