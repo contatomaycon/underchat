@@ -7,6 +7,7 @@ import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import type { ContainerHealthResult } from '@core/services/containerHealth.service';
@@ -134,6 +135,11 @@ function buildHandler(
       upsert: jest.Mock;
       deleteByWorkerId: jest.Mock;
     };
+    workerWarmPoolRepository?: {
+      viewById: jest.Mock;
+      markAssigned: jest.Mock;
+      markRuntime: jest.Mock;
+    };
     workerInspection?: WorkerContainerInspection;
   } = {}
 ) {
@@ -193,6 +199,7 @@ function buildHandler(
     ),
     recordContainerDiagnostics: jest.fn(async () => undefined),
     createContainerWorker: jest.fn(async () => 'container-1'),
+    renameContainer: jest.fn(async () => undefined),
   };
 
   const centrifugoService = {
@@ -215,6 +222,7 @@ function buildHandler(
   const workerBaileysGrpcClientService = {
     requestConnection: jest.fn(async () => buildConnectedState()),
     waitForReady: jest.fn(async () => 'worker-1:50053'),
+    activateRuntime: jest.fn(async () => ({ activated: true })),
   };
   const serverSshViewerRepository = {
     viewServerSshById: jest.fn(async () => null),
@@ -278,6 +286,21 @@ function buildHandler(
     }),
     enqueue: jest.fn(async () => '1710000000000-0'),
   };
+  const workerWarmPoolRepository = overrides.workerWarmPoolRepository ?? {
+    viewById: jest.fn(async () => ({
+      warm_pool_id: 'warm-1',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.baileys,
+      container_id: 'warm-container-id',
+      container_name: 'warm-container',
+      session_volume_name: 'warm-volume',
+      state: EWorkerWarmPoolState.reserved,
+      reserved_by_worker_id: 'worker-1',
+      reservation_expires_at: '2999-01-01T00:00:00.000Z',
+    })),
+    markAssigned: jest.fn(async () => true),
+    markRuntime: jest.fn(async () => true),
+  };
   const workerRuntimeRepository = overrides.workerRuntimeRepository;
 
   const handler = new WorkerCommandHandlerService(
@@ -295,7 +318,7 @@ function buildHandler(
     workerLifecycleLockService as never,
     redis as never,
     redisQueueService as never,
-    undefined as never,
+    workerWarmPoolRepository as never,
     workerRuntimeRepository as never
   );
 
@@ -309,6 +332,7 @@ function buildHandler(
     workerLifecycleLockService,
     workerConfigViewerRepository,
     redisQueueService,
+    workerWarmPoolRepository,
     workerRuntimeRepository,
     redis,
     redisStore,
@@ -1134,6 +1158,85 @@ describe('WorkerCommandHandlerService connection', () => {
         account_id: 'account-1',
         worker_status_id: EWorkerStatus.disponible,
         reason: 'warm_activation_disponible',
+      })
+    );
+  });
+
+  it('clears stale phone metadata when warm activation resets the session', async () => {
+    const deps = buildHandler();
+    deps.workerService.inspectContainerWorkerById
+      .mockResolvedValueOnce(
+        buildWorkerContainerInspection({
+          container_id: 'warm-container-id',
+          container_name: 'warm-container',
+          container_image: 'under-worker-baileys:latest',
+          container_labels: {
+            'underchat.server_id': 'server-1',
+            'underchat.warm_pool_id': 'warm-1',
+            'underchat.warm_standby': 'true',
+            'underchat.worker_type_id': EWorkerType.baileys,
+            'underchat.worker_image': 'under-worker-baileys:latest',
+            'underchat.worker_grpc_port': '50052',
+          },
+          container_env: {
+            WARM_STANDBY: 'true',
+            WARM_POOL_ID: 'warm-1',
+            WORKER_TYPE_ID: EWorkerType.baileys,
+            WORKER_IMAGE: 'under-worker-baileys:latest',
+            WORKER_GRPC_PORT: '50052',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        buildWorkerContainerInspection({
+          exists: false,
+          container_name: 'worker-1',
+          running: false,
+        })
+      )
+      .mockResolvedValueOnce(
+        buildWorkerContainerInspection({
+          container_id: 'activated-container',
+          container_name: 'worker-1',
+          container_image: 'under-worker-baileys:latest',
+          container_labels: {
+            'underchat.worker_id': 'worker-1',
+            'underchat.account_id': 'account-1',
+            'underchat.session_volume_name': 'warm-volume',
+            'underchat.worker_type_id': EWorkerType.baileys,
+            'underchat.worker_image': 'under-worker-baileys:latest',
+            'underchat.worker_grpc_port': '50052',
+          },
+          container_env: {
+            WORKER_ID: 'worker-1',
+            ACCOUNT_ID: 'account-1',
+            SESSION_VOLUME_NAME: 'warm-volume',
+            WORKER_TYPE_ID: EWorkerType.baileys,
+            WORKER_IMAGE: 'under-worker-baileys:latest',
+            WORKER_GRPC_PORT: '50052',
+          },
+        })
+      );
+
+    await deps.handler.activateWarmWorker({
+      warm_pool_id: 'warm-1',
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.baileys,
+      previous_worker_type_id: EWorkerType.whatsmeow,
+      remove_session: true,
+      remove_volume: true,
+    });
+
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        container_id: 'activated-container',
+        worker_status_id: EWorkerStatus.disponible,
+        number: null,
+        connection_date: null,
       })
     );
   });

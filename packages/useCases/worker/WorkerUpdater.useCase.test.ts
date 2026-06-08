@@ -240,6 +240,16 @@ describe('WorkerUpdaterUseCase', () => {
     });
 
     expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.recreating,
+        number: null,
+        connection_date: null,
+      })
+    );
     expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'recreate',
@@ -250,7 +260,7 @@ describe('WorkerUpdaterUseCase', () => {
     );
   });
 
-  it('enqueues cleanup before warm activation when a warm runtime is reserved', async () => {
+  it('enqueues warm activation without separate cleanup on same-server type change', async () => {
     const deps = buildUseCase({
       warmPool: {
         warm_pool_id: 'warm-1',
@@ -272,15 +282,18 @@ describe('WorkerUpdaterUseCase', () => {
       reason: 'warm_activation_queued',
     });
 
-    expect(deps.workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
-      1,
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
       expect.objectContaining({
-        action: 'cleanup_previous_runtime',
-        server_id: deps.currentServerId,
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.recreating,
+        number: null,
+        connection_date: null,
       })
     );
-    expect(deps.workerLifecycleQueueService.publish).toHaveBeenNthCalledWith(
-      2,
+    expect(deps.workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'activate_warm',
         warm_pool_id: 'warm-1',

@@ -576,11 +576,23 @@ export class WorkerCommandHandlerService {
       data.warm_pool_id,
       data.worker_id
     );
-    await this.workerService.updateWorkerById(data.account_id, {
+    const shouldClearSessionMetadata =
+      data.remove_session === true ||
+      data.remove_volume === true ||
+      Boolean(
+        data.previous_worker_type_id &&
+        data.previous_worker_type_id !== workerType
+      );
+    const workerUpdate: IUpdateWorker = {
       worker_id: data.worker_id,
       container_id: activatedInspection.container_id ?? warm.container_id,
       worker_status_id: EWorkerStatus.disponible,
-    });
+      ...(shouldClearSessionMetadata
+        ? { number: null, connection_date: null }
+        : {}),
+    };
+
+    await this.workerService.updateWorkerById(data.account_id, workerUpdate);
 
     await this.publishWarmActivationDisponible(
       data,
@@ -621,6 +633,7 @@ export class WorkerCommandHandlerService {
       container_id: activatedInspection.container_id ?? warm.container_id,
       container_name: data.worker_id,
       session_volume_name: sessionVolumeName,
+      session_metadata_cleared: shouldClearSessionMetadata,
       runtime_generation: runtime?.runtime_generation,
       duration_ms: Date.now() - startedAt,
     });

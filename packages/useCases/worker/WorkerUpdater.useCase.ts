@@ -463,6 +463,11 @@ export class WorkerUpdaterUseCase {
       inputUpdate.lifecycle_operation_id = lifecycleOperationId;
     }
 
+    if (shouldRecreateOnTypeChange) {
+      inputUpdate.number = null;
+      inputUpdate.connection_date = null;
+    }
+
     if (input.worker_type) {
       inputUpdate.worker_type_id = input.worker_type as EWorkerType;
     }

@@ -113,6 +113,17 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
 
     expect(workerGrpcClientService.cleanupWorker).not.toHaveBeenCalled();
     expect(workerRecreatorUseCase.execute).not.toHaveBeenCalled();
+    expect(workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.wwebjs,
+        worker_status_id: EWorkerStatus.recreating,
+        lifecycle_operation_id: 'operation-1',
+        number: null,
+        connection_date: null,
+      })
+    );
     expect(workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
     expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -210,6 +221,8 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
         server_id: 'server-new',
         worker_status_id: EWorkerStatus.recreating,
         lifecycle_operation_id: 'operation-1',
+        number: null,
+        connection_date: null,
       })
     );
     expect(workerGrpcClientService.cleanupWorker).not.toHaveBeenCalled();
@@ -304,6 +317,17 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
       worker_type: EWorkerType.wwebjs,
     } as never);
 
+    expect(workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.wwebjs,
+        worker_status_id: EWorkerStatus.recreating,
+        lifecycle_operation_id: 'operation-1',
+        number: null,
+        connection_date: null,
+      })
+    );
     expect(workerLifecycleQueueService.publish).toHaveBeenCalledTimes(1);
     expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
