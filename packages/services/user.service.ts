@@ -64,7 +64,10 @@ import {
   IUserAttendanceGuardStatus,
   IUserAttendanceHoursRule,
 } from '@core/common/interfaces/IUserAttendanceHours';
-import { createUserAttendanceRulesCacheKey } from '@core/common/functions/createCacheKey';
+import {
+  createUserAccessScopeCacheKey,
+  createUserAttendanceRulesCacheKey,
+} from '@core/common/functions/createCacheKey';
 import { calculateUserAttendanceGuardStatus } from '@core/common/functions/userAttendanceHours';
 import { UserAttendanceHoursRulesViewerRepository } from '@core/repositories/user/UserAttendanceHoursRulesViewer.repository';
 import { UserAttendanceHoursRulesUpdaterTransactionRepository } from '@core/repositories/user/UserAttendanceHoursRulesUpdaterTransaction.repository';
@@ -205,6 +208,16 @@ export class UserService {
     accountId: string
   ): Promise<void> {
     const cacheKey = createUserAttendanceRulesCacheKey(accountId, userId);
+
+    try {
+      await this.redis.del(cacheKey);
+    } catch {
+      // Ignore cache invalidation failures.
+    }
+  }
+
+  private async invalidateUserAccessScopeCache(userId: string): Promise<void> {
+    const cacheKey = createUserAccessScopeCacheKey(userId);
 
     try {
       await this.redis.del(cacheKey);
@@ -827,11 +840,18 @@ export class UserService {
     accountId: string,
     channelIds: string[]
   ): Promise<boolean> => {
-    return this.userChannelsUpdaterTransactionRepository.updateUserChannels(
-      userId,
-      accountId,
-      channelIds
-    );
+    const updated =
+      await this.userChannelsUpdaterTransactionRepository.updateUserChannels(
+        userId,
+        accountId,
+        channelIds
+      );
+
+    if (updated) {
+      await this.invalidateUserAccessScopeCache(userId);
+    }
+
+    return updated;
   };
 
   updateUserSectors = async (
@@ -839,11 +859,18 @@ export class UserService {
     userId: string,
     sectorIds: string[]
   ): Promise<boolean> => {
-    return this.userSectorsUpdaterTransactionRepository.updateUserSectors(
-      t,
-      userId,
-      sectorIds
-    );
+    const updated =
+      await this.userSectorsUpdaterTransactionRepository.updateUserSectors(
+        t,
+        userId,
+        sectorIds
+      );
+
+    if (updated) {
+      await this.invalidateUserAccessScopeCache(userId);
+    }
+
+    return updated;
   };
 
   viewAttendanceHoursRules = async (

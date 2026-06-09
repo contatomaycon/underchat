@@ -11,6 +11,7 @@ import { Centrifuge } from 'centrifuge';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import Redis from 'ioredis';
 import { IRegisterJwtData } from '../interfaces/IRegisterJwtData';
+import type { Pool } from 'pg';
 
 declare module 'fastify' {
   export interface FastifyRequest {
@@ -20,6 +21,8 @@ declare module 'fastify' {
   export interface FastifyInstance {
     DatabaseRw: NodePgDatabase<typeof schema>;
     DatabaseRo: NodePgDatabase<typeof schema>;
+    DatabasePoolRw: Pool;
+    DatabasePoolRo: Pool;
     DatabaseElasticClient: ClientElastic;
     ElasticLogsClient: ClientElastic;
     Centrifuge: Centrifuge;

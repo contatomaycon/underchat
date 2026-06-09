@@ -10,11 +10,16 @@ import type {
   IElasticBulkResponse,
   IElasticBulkUpdateItem,
 } from '@core/common/interfaces/IElasticBulk';
-import { incrementCounter } from '@core/plugins/telemetry/observability';
+import {
+  incrementCounter,
+  recordHistogram,
+} from '@core/plugins/telemetry/observability';
 import {
   getMessageLifecycleContext,
   recordMessageLifecycle,
 } from '@core/plugins/telemetry/messageLifecycleDebug';
+import { logger } from '@core/plugins/telemetry/logger';
+import { recordRequestLatencyStage } from '@core/plugins/telemetry/requestLatency';
 
 @injectable()
 export class ElasticDatabaseService {
@@ -95,6 +100,42 @@ export class ElasticDatabaseService {
     );
   }
 
+  private getSearchTotalHits<
+    TDoc,
+    TAggs extends Record<string, AggregationsAggregate>,
+  >(response: SearchResponse<TDoc, TAggs>): number | null {
+    const total = response.hits.total;
+
+    if (typeof total === 'number') {
+      return total;
+    }
+
+    if (typeof total?.value === 'number') {
+      return total.value;
+    }
+
+    return null;
+  }
+
+  private serializeElasticError(error: unknown): Record<string, unknown> {
+    if (error instanceof Error) {
+      const elasticError = error as Error & {
+        statusCode?: number;
+        meta?: { statusCode?: number };
+      };
+
+      return {
+        name: elasticError.name,
+        message: elasticError.message,
+        statusCode: elasticError.statusCode ?? elasticError.meta?.statusCode,
+      };
+    }
+
+    return {
+      message: String(error),
+    };
+  }
+
   private buildReadOnlyAllowDeleteBlockError(
     index: string,
     error: unknown
@@ -112,14 +153,71 @@ export class ElasticDatabaseService {
     >,
   >(index: string, query: object): Promise<SearchResponse<TDoc, TAggs> | null> {
     return this.withLifecycleElastic('select', index, undefined, async () => {
+      const start = Date.now();
       try {
         const response = await this.client.search<TDoc, TAggs>({
           index,
           body: query,
         });
+        const duration = Date.now() - start;
+        const hitsTotal = this.getSearchTotalHits(response);
+        const hitCount = response.hits.hits.length;
+
+        recordHistogram('elastic.select.duration.ms', duration, {
+          index,
+        });
+        recordRequestLatencyStage('elastic.select', duration, {
+          index,
+          took: response.took ?? null,
+          timed_out: response.timed_out ?? false,
+          hits_total: hitsTotal,
+          hit_count: hitCount,
+        });
+
+        if (duration >= 1000 || response.timed_out) {
+          logger.warn(
+            {
+              type: 'elastic_select_slow',
+              index,
+              duration,
+              took: response.took ?? null,
+              timed_out: response.timed_out ?? false,
+              hits_total: hitsTotal,
+              hit_count: hitCount,
+            },
+            'Elasticsearch select was slow'
+          );
+        }
 
         return response;
-      } catch {
+      } catch (error) {
+        const duration = Date.now() - start;
+
+        incrementCounter('elastic.select.errors.total', 1, {
+          index,
+        });
+        recordHistogram('elastic.select.duration.ms', duration, {
+          index,
+        });
+        recordRequestLatencyStage(
+          'elastic.select',
+          duration,
+          {
+            index,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          false
+        );
+        logger.warn(
+          {
+            type: 'elastic_select_error',
+            index,
+            duration,
+            err: this.serializeElasticError(error),
+          },
+          'Elasticsearch select failed'
+        );
+
         return null;
       }
     });

@@ -139,6 +139,14 @@ export function createUserAttendanceRulesCacheKey(
   return joinParts(['userAttendanceRules', accountId, userId]);
 }
 
+export function createUserAccessScopeCacheKey(userId: string): string {
+  if (!userId) {
+    throw new Error('user id is required');
+  }
+
+  return joinParts(['userAccessScope', userId]);
+}
+
 export function createChatCacheKey(
   accountId: string,
   workerId: string,

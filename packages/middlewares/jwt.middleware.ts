@@ -8,6 +8,7 @@ import {
   createJwtCacheKey,
   createJwtCacheVersionKey,
   createJwtSessionKey,
+  createUserAccessScopeCacheKey,
 } from '@core/common/functions/createCacheKey';
 import { getRootPath } from '@core/common/functions/getRootPath';
 import { hasRequiredPermission } from '@core/common/functions/hasRequiredPermission';
@@ -23,6 +24,11 @@ import { UserService } from '@core/services/user.service';
 import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
 import { normalizeSessionPlatform } from '@core/common/functions/sessionPlatform';
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
+import {
+  measureRequestLatencyStage,
+  recordRequestLatencyStage,
+} from '@core/plugins/telemetry/requestLatency';
+import { safeRedisGet, safeRedisSet } from '@core/plugins/redis';
 
 type AuthFailureReason =
   | 'jwt_verify_failed'
@@ -37,6 +43,22 @@ type AuthFailureReason =
   | 'auth_viewer_empty'
   | 'token_access_account_id_missing'
   | 'unexpected_error';
+
+type DecodedJwtPayload = {
+  user_id: string;
+  module: ERouteModule;
+  account_id: string;
+  session_id: string;
+  session_platform?: string;
+};
+
+type CachedUserAccessScope = {
+  account_id: string;
+  sectors: string[];
+  channels: ITokenJwtData['channels'];
+};
+
+const USER_ACCESS_SCOPE_CACHE_TTL_SECONDS = 120;
 
 function logAuthFailure(
   request: FastifyRequest,
@@ -75,6 +97,133 @@ function normalizeCacheVersion(value: string | null): string {
 
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : '0';
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === 'string')
+  );
+}
+
+function isTokenChannelArray(
+  value: unknown
+): value is ITokenJwtData['channels'] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as { id?: unknown }).id === 'string' &&
+        typeof (item as { name?: unknown }).name === 'string'
+    )
+  );
+}
+
+function parseCachedUserAccessScope(
+  value: string | null,
+  accountId: string
+): CachedUserAccessScope | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<CachedUserAccessScope>;
+
+    if (
+      parsed.account_id !== accountId ||
+      !isStringArray(parsed.sectors) ||
+      !isTokenChannelArray(parsed.channels)
+    ) {
+      return null;
+    }
+
+    return {
+      account_id: parsed.account_id,
+      sectors: parsed.sectors,
+      channels: parsed.channels,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function getCachedUserAccessScope(
+  redis: Redis,
+  accountId: string,
+  userId: string
+): Promise<CachedUserAccessScope | null> {
+  const cacheKey = createUserAccessScopeCacheKey(userId);
+
+  try {
+    const cachedValue = await measureRequestLatencyStage(
+      'auth.access_scope.cache_get',
+      () => safeRedisGet(redis, cacheKey),
+      {
+        cache: 'user_access_scope',
+      }
+    );
+    const cachedScope = parseCachedUserAccessScope(cachedValue, accountId);
+
+    recordRequestLatencyStage('auth.access_scope.cache_result', 0, {
+      hit: Boolean(cachedScope),
+    });
+
+    return cachedScope;
+  } catch (error) {
+    recordRequestLatencyStage(
+      'auth.access_scope.cache_get_fallback',
+      0,
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+      false
+    );
+    return null;
+  }
+}
+
+async function setCachedUserAccessScope(
+  redis: Redis,
+  accountId: string,
+  userId: string,
+  sectors: string[],
+  channels: ITokenJwtData['channels']
+): Promise<void> {
+  const cacheKey = createUserAccessScopeCacheKey(userId);
+
+  try {
+    await measureRequestLatencyStage(
+      'auth.access_scope.cache_set',
+      async () => {
+        await safeRedisSet(
+          redis,
+          cacheKey,
+          JSON.stringify({
+            account_id: accountId,
+            sectors,
+            channels,
+          }),
+          'EX',
+          USER_ACCESS_SCOPE_CACHE_TTL_SECONDS
+        );
+      },
+      {
+        cache: 'user_access_scope',
+        ttl_seconds: USER_ACCESS_SCOPE_CACHE_TTL_SECONDS,
+      }
+    );
+  } catch (error) {
+    recordRequestLatencyStage(
+      'auth.access_scope.cache_set_ignored',
+      0,
+      {
+        error: error instanceof Error ? error.message : String(error),
+      },
+      false
+    );
+  }
 }
 
 async function handleApiKeyCacheWithCachedValue(
@@ -124,7 +273,8 @@ async function generateTokenJwtAccess(
   userId: string,
   sessionId: string,
   sessionPlatform: SessionPlatform | null,
-  responseAuth: IJwtPermissionsWithPlan
+  responseAuth: IJwtPermissionsWithPlan,
+  redis: Redis
 ): Promise<ITokenJwtData> {
   const accountId = responseAuth.actions.find(
     (item) => item.account_id !== null
@@ -136,11 +286,36 @@ async function generateTokenJwtAccess(
   let sectors: string[] = [];
   let channels: ITokenJwtData['channels'] = [];
   if (accountId) {
-    const userService = container.resolve(UserService);
-    [sectors, channels] = await Promise.all([
-      userService.listUserSectors(accountId, userId),
-      userService.listUserChannelsWithNames(accountId, userId),
-    ]);
+    const cachedScope = await getCachedUserAccessScope(
+      redis,
+      accountId,
+      userId
+    );
+
+    if (cachedScope) {
+      sectors = cachedScope.sectors;
+      channels = cachedScope.channels;
+    } else {
+      const userService = container.resolve(UserService);
+      [sectors, channels] = await measureRequestLatencyStage(
+        'auth.access_scope.load_db',
+        () =>
+          Promise.all([
+            userService.listUserSectors(accountId, userId),
+            userService.listUserChannelsWithNames(accountId, userId),
+          ]),
+        {
+          source: 'postgres',
+        }
+      );
+      await setCachedUserAccessScope(
+        redis,
+        accountId,
+        userId,
+        sectors,
+        channels
+      );
+    }
   }
 
   return {
@@ -166,23 +341,19 @@ async function authenticateJwt(
   const shouldBypassAttendanceGuard =
     routePath === '/user/me/attendance-hours/status';
 
-  let decoded: {
-    user_id: string;
-    module: ERouteModule;
-    account_id: string;
-    session_id: string;
-    session_platform?: string;
-  };
+  let decoded: DecodedJwtPayload;
 
   try {
-    decoded = await request.jwtVerify({
-      verify: {
-        key: generalEnvironment.jwtSecret,
-      },
-      decode: {
-        complete: true,
-      },
-    });
+    decoded = await measureRequestLatencyStage('auth.jwt_verify', () =>
+      request.jwtVerify({
+        verify: {
+          key: generalEnvironment.jwtSecret,
+        },
+        decode: {
+          complete: true,
+        },
+      })
+    );
   } catch (error) {
     return sendUnauthorized(request, reply, 'jwt_verify_failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -227,7 +398,10 @@ async function authenticateJwt(
     let cacheVersion = '0';
 
     try {
-      const cacheVersionRaw = await Redis.get(cacheVersionKey);
+      const cacheVersionRaw = await measureRequestLatencyStage(
+        'auth.redis.cache_version_get',
+        () => Redis.get(cacheVersionKey)
+      );
       cacheVersion = normalizeCacheVersion(cacheVersionRaw);
     } catch (error) {
       return sendUnauthorized(request, reply, 'redis_cache_version_error', {
@@ -246,10 +420,10 @@ async function authenticateJwt(
     let cachedPermissions: string | null = null;
 
     try {
-      [activeSession, cachedPermissions] = await Promise.all([
-        Redis.get(sessionKey),
-        Redis.get(cacheKey),
-      ]);
+      [activeSession, cachedPermissions] = await measureRequestLatencyStage(
+        'auth.redis.session_permissions_get',
+        () => Promise.all([Redis.get(sessionKey), Redis.get(cacheKey)])
+      );
     } catch (error) {
       return sendUnauthorized(request, reply, 'redis_session_lookup_error', {
         error: error instanceof Error ? error.message : String(error),
@@ -270,9 +444,13 @@ async function authenticateJwt(
 
     if (!shouldBypassAttendanceGuard) {
       const userService = container.resolve(UserService);
-      const attendanceGuard = await userService.getAttendanceGuardStatus(
-        decoded.user_id,
-        decoded.account_id
+      const attendanceGuard = await measureRequestLatencyStage(
+        'auth.attendance_guard',
+        () =>
+          userService.getAttendanceGuardStatus(
+            decoded.user_id,
+            decoded.account_id
+          )
       );
 
       if (attendanceGuard.is_blocked_now) {
@@ -289,23 +467,38 @@ async function authenticateJwt(
       }
     }
 
-    const responseAuth = await handleApiKeyCacheWithCachedValue(
-      Redis,
-      cacheKey,
-      cachedPermissions,
-      decoded,
-      routeModule,
-      request.module,
-      permissions
+    const responseAuth = await measureRequestLatencyStage(
+      'auth.permissions.resolve',
+      () =>
+        handleApiKeyCacheWithCachedValue(
+          Redis,
+          cacheKey,
+          cachedPermissions,
+          decoded,
+          routeModule,
+          request.module,
+          permissions
+        ),
+      {
+        cached_permissions_present: Boolean(cachedPermissions),
+      }
     );
 
     if (!responseAuth) {
       return sendUnauthorized(request, reply, 'auth_viewer_empty');
     }
 
+    const permissionStart = Date.now();
     const hasPermission = hasRequiredPermission(
       responseAuth.actions,
       permissions
+    );
+    recordRequestLatencyStage(
+      'auth.permissions.check',
+      Date.now() - permissionStart,
+      {
+        allowed: hasPermission,
+      }
     );
 
     if (!hasPermission) {
@@ -319,7 +512,8 @@ async function authenticateJwt(
       decoded.user_id,
       decoded.session_id,
       decodedSessionPlatform,
-      responseAuth
+      responseAuth,
+      Redis
     );
 
     if (!tokenJwtData.account_id) {

@@ -5,15 +5,52 @@ import { setupErrorHandlers } from './errorHandlers';
 import { initializeSdk, shutdownSdk } from './sdk';
 import { logger } from './logger';
 import { telemetryEnvironment } from '@core/config/environments';
+import {
+  createRequestLatencyContext,
+  enterRequestLatencyContext,
+  MANAGER_SLOW_REQUEST_THRESHOLD_MS,
+  type RequestLatencyContext,
+} from './requestLatency';
 
 async function telemetryPlugin(fastify: FastifyInstance): Promise<void> {
   setupErrorHandlers();
   initializeSdk();
 
   const requestDurations = new WeakMap<FastifyRequest, number>();
+  const requestLatencyContexts = new WeakMap<
+    FastifyRequest,
+    RequestLatencyContext
+  >();
+
+  const snapshotPool = (pool: unknown) => {
+    if (
+      typeof pool !== 'object' ||
+      pool === null ||
+      !('totalCount' in pool) ||
+      !('idleCount' in pool) ||
+      !('waitingCount' in pool)
+    ) {
+      return null;
+    }
+
+    const currentPool = pool as {
+      totalCount: number;
+      idleCount: number;
+      waitingCount: number;
+    };
+
+    return {
+      totalCount: currentPool.totalCount,
+      idleCount: currentPool.idleCount,
+      waitingCount: currentPool.waitingCount,
+    };
+  };
 
   fastify.addHook('onRequest', async (request) => {
     requestDurations.set(request, Date.now());
+    const latencyContext = createRequestLatencyContext();
+    requestLatencyContexts.set(request, latencyContext);
+    enterRequestLatencyContext(latencyContext);
 
     request.log = logger.child({
       requestId: request.id,
@@ -49,6 +86,31 @@ async function telemetryPlugin(fastify: FastifyInstance): Promise<void> {
         http_route: request.routeOptions.url || request.url,
         http_status_code: reply.statusCode,
       });
+
+      if (
+        telemetryEnvironment.serviceName.includes('manager') &&
+        duration >= MANAGER_SLOW_REQUEST_THRESHOLD_MS
+      ) {
+        const latencyContext = requestLatencyContexts.get(request);
+
+        request.log.warn(
+          {
+            type: 'manager_slow_request_breakdown',
+            service: telemetryEnvironment.serviceName,
+            method: request.method,
+            route: request.routeOptions.url || request.url,
+            statusCode: reply.statusCode,
+            duration,
+            slow_threshold_ms: MANAGER_SLOW_REQUEST_THRESHOLD_MS,
+            stages: latencyContext?.stages ?? [],
+            database_pool: {
+              rw: snapshotPool(request.server.DatabasePoolRw),
+              ro: snapshotPool(request.server.DatabasePoolRo),
+            },
+          },
+          'Manager slow request breakdown'
+        );
+      }
     }
 
     return payload;

@@ -10,6 +10,13 @@ import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDas
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
 import { ListOfflineChannelsFinalResponse } from '@core/schema/dashboard/listOfflineChannels/response.schema';
 
+const DASHBOARD_OFFLINE_CHANNELS_CACHE_TTL_MS = 3000;
+
+let dashboardOfflineChannelsRequestInFlight: Promise<ListOfflineChannelsFinalResponse | null> | null =
+  null;
+let dashboardOfflineChannelsLastFetchedAt = 0;
+let dashboardOfflineChannelsHasFetched = false;
+
 export const useDashboardStore = defineStore('dashboard', {
   state: () => ({
     snackbar: {
@@ -118,32 +125,54 @@ export const useDashboardStore = defineStore('dashboard', {
         this.loadingAdditional = false;
       }
     },
-    async getDashboardOfflineChannels(): Promise<ListOfflineChannelsFinalResponse | null> {
-      try {
-        this.loadingOfflineChannels = true;
-
-        const response = await axios.get<
-          IApiResponse<ListOfflineChannelsFinalResponse>
-        >('/dashboard/offline-channels');
-
-        if (response.data.status && response.data.data) {
-          this.offlineChannels = response.data.data;
-          return response.data.data;
-        }
-
-        return null;
-      } catch (error) {
-        if (error instanceof AxiosError) {
-          const message =
-            error.response?.data?.message ||
-            this.i18n.global.t('dashboard_offline_channels_error');
-          this.showSnackbar(message, EColor.error);
-        }
-
-        return null;
-      } finally {
-        this.loadingOfflineChannels = false;
+    async getDashboardOfflineChannels(
+      force = false
+    ): Promise<ListOfflineChannelsFinalResponse | null> {
+      if (
+        !force &&
+        dashboardOfflineChannelsHasFetched &&
+        Date.now() - dashboardOfflineChannelsLastFetchedAt <
+          DASHBOARD_OFFLINE_CHANNELS_CACHE_TTL_MS
+      ) {
+        return this.offlineChannels;
       }
+
+      if (dashboardOfflineChannelsRequestInFlight) {
+        return dashboardOfflineChannelsRequestInFlight;
+      }
+
+      dashboardOfflineChannelsRequestInFlight = (async () => {
+        try {
+          this.loadingOfflineChannels = true;
+
+          const response = await axios.get<
+            IApiResponse<ListOfflineChannelsFinalResponse>
+          >('/dashboard/offline-channels');
+
+          if (response.data.status && response.data.data) {
+            this.offlineChannels = response.data.data;
+            dashboardOfflineChannelsHasFetched = true;
+            dashboardOfflineChannelsLastFetchedAt = Date.now();
+            return response.data.data;
+          }
+
+          return null;
+        } catch (error) {
+          if (error instanceof AxiosError) {
+            const message =
+              error.response?.data?.message ||
+              this.i18n.global.t('dashboard_offline_channels_error');
+            this.showSnackbar(message, EColor.error);
+          }
+
+          return null;
+        } finally {
+          this.loadingOfflineChannels = false;
+          dashboardOfflineChannelsRequestInFlight = null;
+        }
+      })();
+
+      return dashboardOfflineChannelsRequestInFlight;
     },
     updateOfflineChannelStatus(
       channelId: string,

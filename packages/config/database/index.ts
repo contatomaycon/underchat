@@ -273,9 +273,17 @@ async function dbConnector(fastify: FastifyInstance) {
   container.register<NodePgDatabase<typeof schema>>('DatabaseRo', {
     useValue: connectionRo,
   });
+  container.register<Pool>('DatabasePoolRw', {
+    useValue: poolRw,
+  });
+  container.register<Pool>('DatabasePoolRo', {
+    useValue: poolRo,
+  });
 
   fastify.decorate('DatabaseRw', connectionRw);
   fastify.decorate('DatabaseRo', connectionRo);
+  fastify.decorate('DatabasePoolRw', poolRw);
+  fastify.decorate('DatabasePoolRo', poolRo);
 
   fastify.addHook('onClose', async () => {
     await Promise.allSettled([poolRw.end(), poolRo.end()]);

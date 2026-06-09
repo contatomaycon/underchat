@@ -141,7 +141,7 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
   );
 
   if (!dashboardStore.offlineChannels.find((ch) => ch.id === data.worker_id)) {
-    void dashboardStore.getDashboardOfflineChannels().catch(() => {});
+    void dashboardStore.getDashboardOfflineChannels(true).catch(() => {});
   }
 };
 

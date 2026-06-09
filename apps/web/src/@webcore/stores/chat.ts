@@ -114,6 +114,19 @@ type ActiveMessageChangeType = 'created' | 'updated' | 'unchanged';
 let chatUnreadSummaryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let chatUnreadSummaryRequestInFlight = false;
 let chatUnreadSummaryRefreshQueued = false;
+let chatUnreadSummaryLastFetchedAt = 0;
+
+const CHAT_UNREAD_SUMMARY_CACHE_TTL_MS = 2000;
+
+type ChatMessagesRequestState = {
+  promise: Promise<ListMessageResponse | null>;
+  controller: AbortController;
+  sequence: number;
+};
+
+const chatMessagesRequests = new Map<string, ChatMessagesRequestState>();
+const latestChatMessagesSequenceByChatId = new Map<string, number>();
+let chatMessagesRequestSequence = 0;
 
 type ChatFilters = {
   filter_label_template_id?: string | null;
@@ -231,6 +244,40 @@ const stableStringify = (value: unknown): string => {
     return JSON.stringify(value);
   } catch {
     return String(value);
+  }
+};
+
+const buildChatMessagesRequestKey = (
+  chatId: string,
+  query: ListMessageChatsQuery
+): string => {
+  const queryKey = Object.entries(query)
+    .filter(([, value]) => value !== null && value !== undefined)
+    .sort(([firstKey], [secondKey]) => firstKey.localeCompare(secondKey))
+    .map(([key, value]) => `${key}=${stableStringify(value)}`)
+    .join('&');
+
+  return `${chatId}:${queryKey}`;
+};
+
+const isCanceledAxiosRequest = (error: unknown): boolean => {
+  return error instanceof AxiosError && error.code === 'ERR_CANCELED';
+};
+
+const abortPreviousChatMessagesRequests = (
+  chatId: string,
+  currentRequestKey: string
+): void => {
+  const requestPrefix = `${chatId}:`;
+
+  for (const [requestKey, requestState] of chatMessagesRequests) {
+    if (
+      requestKey.startsWith(requestPrefix) &&
+      requestKey !== currentRequestKey
+    ) {
+      requestState.controller.abort();
+      chatMessagesRequests.delete(requestKey);
+    }
   }
 };
 
@@ -679,6 +726,7 @@ export const useChatStore = defineStore('chat', {
       }
       chatUnreadSummaryRequestInFlight = false;
       chatUnreadSummaryRefreshQueued = false;
+      chatUnreadSummaryLastFetchedAt = 0;
     },
     scheduleUnreadSummaryRefresh(delayMs = 700): void {
       if (chatUnreadSummaryRefreshTimer) {
@@ -691,6 +739,14 @@ export const useChatStore = defineStore('chat', {
       }, delayMs);
     },
     async viewUnreadSummary(): Promise<number> {
+      if (
+        chatUnreadSummaryLastFetchedAt > 0 &&
+        Date.now() - chatUnreadSummaryLastFetchedAt <
+          CHAT_UNREAD_SUMMARY_CACHE_TTL_MS
+      ) {
+        return this.unreadSummaryCount;
+      }
+
       if (chatUnreadSummaryRequestInFlight) {
         chatUnreadSummaryRefreshQueued = true;
         return this.unreadSummaryCount;
@@ -703,6 +759,7 @@ export const useChatStore = defineStore('chat', {
           '/chat/unread-summary'
         );
         this.setUnreadSummaryCount(response.data?.data?.unread_count ?? 0);
+        chatUnreadSummaryLastFetchedAt = Date.now();
       } catch {
         // The menu badge is opportunistic; navigation must not be blocked by it.
       } finally {
@@ -1476,10 +1533,8 @@ export const useChatStore = defineStore('chat', {
       const hasParticipants = this.hasAnyParticipants(resolvedChat);
       const userSectors = getSectors();
       const sectorId = resolvedChat.sector?.id ?? null;
-      const isChatInUserSectors =
-        !sectorId || userSectors.includes(sectorId);
-      const canViewBySector =
-        canListAllChatsInSector && isChatInUserSectors;
+      const isChatInUserSectors = !sectorId || userSectors.includes(sectorId);
+      const canViewBySector = canListAllChatsInSector && isChatInUserSectors;
 
       if (hasParticipants && !isCurrentUserParticipant) {
         if (canViewBySector) {
@@ -4003,37 +4058,73 @@ export const useChatStore = defineStore('chat', {
       chatId: string,
       query: ListMessageChatsQuery
     ): Promise<ListMessageResponse | null> {
-      try {
-        const response = await axios.get<IApiResponse<ListMessageResponse>>(
-          `/chat/${chatId}`,
-          {
-            params: query,
-          }
-        );
+      const requestKey = buildChatMessagesRequestKey(chatId, query);
+      const existingRequest = chatMessagesRequests.get(requestKey);
+      if (existingRequest) {
+        return existingRequest.promise;
+      }
 
-        const data = response?.data;
+      abortPreviousChatMessagesRequests(chatId, requestKey);
 
-        if (!data?.status || !data?.data) {
-          return null;
-        }
+      const controller = new AbortController();
+      const sequence = ++chatMessagesRequestSequence;
+      latestChatMessagesSequenceByChatId.set(chatId, sequence);
 
-        return data.data;
-      } catch (error) {
-        if (error instanceof AxiosError) {
-          if (error.response?.status === 404) {
+      const promise = (async () => {
+        try {
+          const response = await axios.get<IApiResponse<ListMessageResponse>>(
+            `/chat/${chatId}`,
+            {
+              params: query,
+              signal: controller.signal,
+            }
+          );
+
+          if (latestChatMessagesSequenceByChatId.get(chatId) !== sequence) {
             return null;
           }
-          const errorMessage = error.response?.data?.message ?? error.message;
-          this.showSnackbar(errorMessage, EColor.error);
+
+          const data = response?.data;
+
+          if (!data?.status || !data?.data) {
+            return null;
+          }
+
+          return data.data;
+        } catch (error) {
+          if (isCanceledAxiosRequest(error)) {
+            return null;
+          }
+
+          if (error instanceof AxiosError) {
+            if (error.response?.status === 404) {
+              return null;
+            }
+            const errorMessage = error.response?.data?.message ?? error.message;
+            this.showSnackbar(errorMessage, EColor.error);
+            return null;
+          }
+
+          if (error instanceof Error) {
+            this.showSnackbar(error.message, EColor.error);
+          }
+
           return null;
+        } finally {
+          const currentRequest = chatMessagesRequests.get(requestKey);
+          if (currentRequest?.sequence === sequence) {
+            chatMessagesRequests.delete(requestKey);
+          }
         }
+      })();
 
-        if (error instanceof Error) {
-          this.showSnackbar(error.message, EColor.error);
-        }
+      chatMessagesRequests.set(requestKey, {
+        promise,
+        controller,
+        sequence,
+      });
 
-        return null;
-      }
+      return promise;
     },
 
     async loadMoreMessages(): Promise<boolean> {
