@@ -7,6 +7,7 @@ import {
   onMounted,
   reactive,
   ref,
+  shallowRef,
   watch,
 } from 'vue';
 import { storeToRefs } from 'pinia';
@@ -27,6 +28,7 @@ import UploadProgressBadge from '@/components/chat/UploadProgressBadge.vue';
 import InternalChatSearchSidebarContent from '@/components/chat/internal/InternalChatSearchSidebarContent.vue';
 import InternalChatNotificationSettingsDialog from '@/components/chat/internal/InternalChatNotificationSettingsDialog.vue';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
+import ConversationOpeningDialog from '@/components/chat/ConversationOpeningDialog.vue';
 import { Picker, EmojiIndex } from 'emoji-mart-vue-fast/src';
 import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
@@ -188,6 +190,7 @@ const groupCandidatePageSize = 50;
 const searchQuery = ref('');
 const searchQueryDebounced = refDebounced(searchQuery, 350);
 const activeSidebarTab = ref<InternalSidebarTab>('all');
+const openingConversationId = shallowRef<string | null>(null);
 const loadingSidebarAppend = ref(false);
 const composerText = ref('');
 const composerTextDebounced = refDebounced(composerText, 350);
@@ -3305,50 +3308,95 @@ const closeLeftSidebarOnMobile = () => {
   isLeftSidebarOpen.value = false;
 };
 
+const startOpeningConversation = (key: string): boolean => {
+  if (openingConversationId.value) return false;
+
+  openingConversationId.value = key;
+  return true;
+};
+
+const finishOpeningConversation = (key: string) => {
+  if (openingConversationId.value === key) {
+    openingConversationId.value = null;
+  }
+};
+
 const openConversation = async (conversationId: string) => {
-  shouldAutoScrollMessages.value = true;
-  await internalChatStore.openConversation(conversationId);
-  closeLeftSidebarOnMobile();
-  await scrollMessagesToBottom();
+  if (activeConversation.value?.conversation_id === conversationId) {
+    closeLeftSidebarOnMobile();
+    return;
+  }
+
+  if (!startOpeningConversation(conversationId)) return;
+
+  try {
+    shouldAutoScrollMessages.value = true;
+    await internalChatStore.openConversation(conversationId);
+    closeLeftSidebarOnMobile();
+    await scrollMessagesToBottom();
+  } finally {
+    finishOpeningConversation(conversationId);
+  }
 };
 
 const openConversationFromUser = async (userId: string) => {
-  shouldAutoScrollMessages.value = true;
-  const conversation = await internalChatStore.openDirect(userId);
-  if (!conversation) return;
+  const openingKey = `user:${userId}`;
+  if (!startOpeningConversation(openingKey)) return;
 
-  activeSidebarTab.value = 'all';
-  sidebarBodyRef.value?.scrollTo({ top: 0 });
-  closeLeftSidebarOnMobile();
-  await scrollMessagesToBottom();
+  try {
+    shouldAutoScrollMessages.value = true;
+    const conversation = await internalChatStore.openDirect(userId);
+    if (!conversation) return;
+
+    activeSidebarTab.value = 'all';
+    sidebarBodyRef.value?.scrollTo({ top: 0 });
+    closeLeftSidebarOnMobile();
+    await scrollMessagesToBottom();
+  } finally {
+    finishOpeningConversation(openingKey);
+  }
 };
 
 const openConversationFromGroupMember = async (member: InternalParticipant) => {
   if (member.user_id === internalChatStore.currentUserId) return;
 
-  shouldAutoScrollMessages.value = true;
-  const conversation = await internalChatStore.openDirect(member.user_id);
-  if (!conversation) return;
+  const openingKey = `member:${member.user_id}`;
+  if (!startOpeningConversation(openingKey)) return;
 
-  activeSidebarTab.value = 'all';
-  closeGroupInfoDrawer();
-  sidebarBodyRef.value?.scrollTo({ top: 0 });
-  await scrollMessagesToBottom();
+  try {
+    shouldAutoScrollMessages.value = true;
+    const conversation = await internalChatStore.openDirect(member.user_id);
+    if (!conversation) return;
+
+    activeSidebarTab.value = 'all';
+    closeGroupInfoDrawer();
+    sidebarBodyRef.value?.scrollTo({ top: 0 });
+    await scrollMessagesToBottom();
+  } finally {
+    finishOpeningConversation(openingKey);
+  }
 };
 
 const openConversationFromSelectedUserInfo = async () => {
   const userId = selectedUserInfoConversationUserId.value;
   if (!userId || userId === internalChatStore.currentUserId) return;
 
-  shouldAutoScrollMessages.value = true;
-  const conversation = await internalChatStore.openDirect(userId);
-  if (!conversation) return;
+  const openingKey = `selected-user:${userId}`;
+  if (!startOpeningConversation(openingKey)) return;
 
-  activeSidebarTab.value = 'all';
-  closeUserInfoDrawer();
-  closeGroupInfoDrawer();
-  sidebarBodyRef.value?.scrollTo({ top: 0 });
-  await scrollMessagesToBottom();
+  try {
+    shouldAutoScrollMessages.value = true;
+    const conversation = await internalChatStore.openDirect(userId);
+    if (!conversation) return;
+
+    activeSidebarTab.value = 'all';
+    closeUserInfoDrawer();
+    closeGroupInfoDrawer();
+    sidebarBodyRef.value?.scrollTo({ top: 0 });
+    await scrollMessagesToBottom();
+  } finally {
+    finishOpeningConversation(openingKey);
+  }
 };
 
 const openCreateGroupDialog = async () => {
@@ -6086,6 +6134,11 @@ onBeforeUnmount(async () => {
         </div>
       </div>
     </VNavigationDrawer>
+
+    <ConversationOpeningDialog
+      :visible="openingConversationId !== null"
+      :subtitle="t('conversation_opening_internal_messages')"
+    />
 
     <VMain class="internal-chat-main-container">
       <section class="internal-chat-main d-flex flex-column">

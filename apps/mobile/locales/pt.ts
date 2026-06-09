@@ -222,6 +222,10 @@ export const pt = {
   select_received_contact: 'Selecione um contato para abrir o cadastro',
   location_map_unavailable: 'Mapa indisponível',
   loading_more_messages: 'Carregando mensagens...',
+  opening_conversation_title: 'Abrindo conversa...',
+  opening_conversation_messages: 'Carregando mensagens da conversa.',
+  opening_internal_conversation_messages:
+    'Carregando mensagens do chat interno.',
   open_camera: 'Abrir câmera',
   open_emoji_keyboard: 'Abrir teclado de emoji',
   open_attachments: 'Abrir anexos',

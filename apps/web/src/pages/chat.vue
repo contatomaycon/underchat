@@ -7,8 +7,9 @@ import {
   onUnmounted,
   onBeforeUnmount,
   ref,
+  shallowRef,
 } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
@@ -29,6 +30,7 @@ import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
 import ChatProtocolBadgeDialog from '@/components/chat/ChatProtocolBadgeDialog.vue';
 import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
+import ConversationOpeningDialog from '@/components/chat/ConversationOpeningDialog.vue';
 import AiReplyModal from '@/components/chat/AiReplyModal.vue';
 import TranscribeModal from '@/components/chat/TranscribeModal.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
@@ -117,6 +119,7 @@ const chatStore = useChatStore();
 const channelStore = useChannelsStore();
 const chatSocket = useChatSocket();
 const route = useRoute();
+const router = useRouter();
 useSnackbarCleanup(chatStore);
 const { name, global } = useTheme();
 const vuetifyDisplays = useDisplay();
@@ -128,6 +131,7 @@ const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
 
 const currentPage = ref(1);
 const perPage = ref(10);
+const openingChatId = shallowRef<ListChatsResult['chat_id'] | null>(null);
 const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
@@ -1264,8 +1268,7 @@ const handleTransfer = async () => {
     const annotation = transferAnnotationText.value.trim() || null;
     const transferredChatId = chatStore.activeChat.chat_id;
     const routeChatId = resolveRouteChatId();
-    const wasRoutePointingToTransferredChat =
-      routeChatId === transferredChatId;
+    const wasRoutePointingToTransferredChat = routeChatId === transferredChatId;
 
     const success = await chatStore.transferChat(
       transferredChatId,
@@ -3038,79 +3041,93 @@ const openChat = async (
     return;
   }
 
-  linkPreview.value = null;
-  isLoadingLinkPreview.value = false;
-
-  const requestQueue: ListMessageChatsQuery = {
-    current_page: isSameChat ? currentPage.value : 1,
-    per_page: perPage.value,
-  };
-
-  const shouldPreserveCurrentMessages =
-    isSameChat && chatStore.listMessages.length > 0;
+  if (!isSameChat && openingChatId.value) {
+    return;
+  }
 
   if (!isSameChat) {
-    const messagesData = await chatStore.getChatMessagesById(
-      chatId,
-      requestQueue
-    );
+    openingChatId.value = chatId;
+  }
 
-    if (!messagesData) {
-      return;
-    }
-    chatStore.setActiveChat(chatId, options?.fallbackChat);
+  try {
+    linkPreview.value = null;
+    isLoadingLinkPreview.value = false;
 
-    if (chatStore.activeChat?.chat_id !== chatId) {
-      return;
-    }
+    const requestQueue: ListMessageChatsQuery = {
+      current_page: isSameChat ? currentPage.value : 1,
+      per_page: perPage.value,
+    };
 
-    chatStore.listMessages = [...messagesData.results].reverse();
-    chatStore.currentPage = messagesData.pagings.current_page;
-    chatStore.totalPages = messagesData.pagings.total_pages;
-    currentPage.value = messagesData.pagings.current_page;
-  } else {
-    if (!chatStore.activeChat) {
+    const shouldPreserveCurrentMessages =
+      isSameChat && chatStore.listMessages.length > 0;
+
+    if (!isSameChat) {
+      const messagesData = await chatStore.getChatMessagesById(
+        chatId,
+        requestQueue
+      );
+
+      if (!messagesData) {
+        return;
+      }
       chatStore.setActiveChat(chatId, options?.fallbackChat);
+
+      if (chatStore.activeChat?.chat_id !== chatId) {
+        return;
+      }
+
+      chatStore.listMessages = [...messagesData.results].reverse();
+      chatStore.currentPage = messagesData.pagings.current_page;
+      chatStore.totalPages = messagesData.pagings.total_pages;
+      currentPage.value = messagesData.pagings.current_page;
+    } else {
+      if (!chatStore.activeChat) {
+        chatStore.setActiveChat(chatId, options?.fallbackChat);
+      }
+
+      if (chatStore.activeChat?.chat_id !== chatId) {
+        return;
+      }
+      await chatStore.getChatById(requestQueue, chatId, {
+        preserveMessages: shouldPreserveCurrentMessages,
+        skipLoading: shouldPreserveCurrentMessages,
+      });
     }
 
-    if (chatStore.activeChat?.chat_id !== chatId) {
-      return;
+    if (chatLogPS.value) {
+      const scrollEl = chatLogPS.value.$el || chatLogPS.value;
+      if (scrollEl) {
+        scrollEl.scrollTop = 0;
+      }
     }
-    await chatStore.getChatById(requestQueue, chatId, {
-      preserveMessages: shouldPreserveCurrentMessages,
-      skipLoading: shouldPreserveCurrentMessages,
+
+    if (
+      chatStore.activeChat?.status === EChatStatus.in_chat &&
+      isChatParticipant(
+        chatStore.activeChat as unknown as IChat,
+        chatStore.user?.user_id
+      ) &&
+      (chatStore.activeChat.summary?.unread_count ?? 0) > 0 &&
+      !options?.skipClearSummary
+    ) {
+      chatStore.clearActiveChatUnreadCountLocally();
+      void chatStore.clearChatSummary(chatId);
+    }
+
+    if (vuetifyDisplays.smAndDown.value) {
+      isLeftSidebarOpen.value = false;
+    }
+
+    await nextTick();
+
+    requestAnimationFrame(() => {
+      scrollToBottomInChatLog();
     });
-  }
-
-  if (chatLogPS.value) {
-    const scrollEl = chatLogPS.value.$el || chatLogPS.value;
-    if (scrollEl) {
-      scrollEl.scrollTop = 0;
+  } finally {
+    if (openingChatId.value === chatId) {
+      openingChatId.value = null;
     }
   }
-
-  if (
-    chatStore.activeChat?.status === EChatStatus.in_chat &&
-    isChatParticipant(
-      chatStore.activeChat as unknown as IChat,
-      chatStore.user?.user_id
-    ) &&
-    (chatStore.activeChat.summary?.unread_count ?? 0) > 0 &&
-    !options?.skipClearSummary
-  ) {
-    chatStore.clearActiveChatUnreadCountLocally();
-    void chatStore.clearChatSummary(chatId);
-  }
-
-  if (vuetifyDisplays.smAndDown.value) {
-    isLeftSidebarOpen.value = false;
-  }
-
-  await nextTick();
-
-  requestAnimationFrame(() => {
-    scrollToBottomInChatLog();
-  });
 };
 
 const chatContentContainerBg = computed(() => {
@@ -6165,6 +6182,11 @@ onBeforeUnmount(() => {
         @close="isLeftSidebarOpen = false"
       />
     </VNavigationDrawer>
+
+    <ConversationOpeningDialog
+      :visible="openingChatId !== null"
+      :subtitle="t('conversation_opening_messages')"
+    />
 
     <VMain class="chat-content-container">
       <div class="chat-main-shell">

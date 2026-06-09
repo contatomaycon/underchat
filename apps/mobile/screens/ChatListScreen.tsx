@@ -38,6 +38,7 @@ import {
   listQueueChats,
   listChats,
   searchChats,
+  listMessages,
   clearChatSummary,
   getChatNotificationSettings,
   updateChatStatus,
@@ -91,7 +92,9 @@ import { UserSidebar } from '../components/UserSidebar';
 import { ChannelStatusBanner } from '../components/ChannelStatusBanner';
 import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { OpeningConversationModal } from '../components/OpeningConversationModal';
 import type { WorkerConfigForChat } from '../types/contact';
+import { CHAT_MESSAGES_PER_PAGE } from '../constants/chatMessages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
@@ -140,6 +143,7 @@ import {
   enableMobilePushNotifications,
   isAnyMobilePushPreferenceEnabled,
 } from '../services/pushNotifications';
+import { setChatMessagePreload } from '../utils/chatMessagePreload';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -1074,6 +1078,7 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [isTransferring, setIsTransferring] = useState(false);
   const [isClosingChat, setIsClosingChat] = useState(false);
   const [attendingChatId, setAttendingChatId] = useState<string | null>(null);
+  const [openingChatId, setOpeningChatId] = useState<string | null>(null);
   const [labelInfoModalVisible, setLabelInfoModalVisible] = useState(false);
   const [labelInfoNames, setLabelInfoNames] = useState<string[]>([]);
   const [closeServiceModalVisible, setCloseServiceModalVisible] =
@@ -1946,67 +1951,97 @@ export function ChatListScreen({ route, navigation }: Props) {
     }, [handleCloseProfileSidebar])
   );
 
-  const openChat = (
-    chat: ListChatsResult,
-    queueIndex: number | null = null
-  ) => {
-    dismissKeyboard();
-    openedSwipeableRef.current?.close();
-    const canOpenByVisibility = canViewChat(chat, {
-      permissions: socketPermissions,
-      userId: currentUserId,
-      userSectors,
+  const openChat = useCallback(
+    async (chat: ListChatsResult, queueIndex: number | null = null) => {
+      if (openingChatId) return;
+
+      dismissKeyboard();
+      openedSwipeableRef.current?.close();
+      const canOpenByVisibility = canViewChat(chat, {
+        permissions: socketPermissions,
+        userId: currentUserId,
+        userSectors,
+        userChannels,
+      });
+      if (!canOpenByVisibility) {
+        return;
+      }
+
+      if (
+        chat.status === 'queue' &&
+        !canPickAnyQueueChat &&
+        queueIndex !== null &&
+        queueIndex !== 0
+      ) {
+        return;
+      }
+
+      const shouldClearSummary =
+        chat.status === 'in_chat' && isChatParticipant(chat, currentUserId);
+
+      setOpeningChatId(chat.chat_id);
+      try {
+        const preloadedMessages = await listMessages(
+          chat.chat_id,
+          1,
+          CHAT_MESSAGES_PER_PAGE
+        );
+
+        if (!preloadedMessages) {
+          Alert.alert(pt.error_title, pt.messages_error);
+          return;
+        }
+
+        setChatMessagePreload(chat.chat_id, preloadedMessages);
+
+        if (shouldClearSummary) {
+          locallyClearedSummaryChatIdsRef.current.add(chat.chat_id);
+          setQueue((prev) =>
+            prev.map((item) =>
+              item.chat_id === chat.chat_id && item.summary
+                ? {
+                    ...item,
+                    summary: {
+                      ...item.summary,
+                      unread_count: 0,
+                    },
+                  }
+                : item
+            )
+          );
+          setInChat((prev) =>
+            prev.map((item) =>
+              item.chat_id === chat.chat_id && item.summary
+                ? {
+                    ...item,
+                    summary: {
+                      ...item.summary,
+                      unread_count: 0,
+                    },
+                  }
+                : item
+            )
+          );
+          void clearChatSummary(chat.chat_id);
+        }
+
+        navigation.push('ChatRoom', { chat });
+      } catch {
+        Alert.alert(pt.error_title, pt.messages_error);
+      } finally {
+        setOpeningChatId(null);
+      }
+    },
+    [
+      canPickAnyQueueChat,
+      currentUserId,
+      navigation,
+      openingChatId,
+      socketPermissions,
       userChannels,
-    });
-    if (!canOpenByVisibility) {
-      return;
-    }
-
-    if (
-      chat.status === 'queue' &&
-      !canPickAnyQueueChat &&
-      queueIndex !== null &&
-      queueIndex !== 0
-    ) {
-      return;
-    }
-
-    const shouldClearSummary =
-      chat.status === 'in_chat' && isChatParticipant(chat, currentUserId);
-
-    if (shouldClearSummary) {
-      locallyClearedSummaryChatIdsRef.current.add(chat.chat_id);
-      setQueue((prev) =>
-        prev.map((item) =>
-          item.chat_id === chat.chat_id && item.summary
-            ? {
-                ...item,
-                summary: {
-                  ...item.summary,
-                  unread_count: 0,
-                },
-              }
-            : item
-        )
-      );
-      setInChat((prev) =>
-        prev.map((item) =>
-          item.chat_id === chat.chat_id && item.summary
-            ? {
-                ...item,
-                summary: {
-                  ...item.summary,
-                  unread_count: 0,
-                },
-              }
-            : item
-        )
-      );
-      void clearChatSummary(chat.chat_id);
-    }
-
-    navigation.push('ChatRoom', { chat });
-  };
+      userSectors,
+    ]
+  );
 
   const closeTransferModal = useCallback(() => {
     if (isTransferring) return;
@@ -2948,6 +2983,10 @@ export function ChatListScreen({ route, navigation }: Props) {
         onClose={closeNotificationSheet}
         onSave={saveNotificationSettings}
       />
+      <OpeningConversationModal
+        visible={openingChatId !== null}
+        variant="chat"
+      />
       <AdvancedFilterModal
         visible={filterModalVisible}
         onClose={() => setFilterModalVisible(false)}
@@ -3452,9 +3491,13 @@ export function ChatListScreen({ route, navigation }: Props) {
                 onPressLabelDetails={openLabelInfoModal}
                 workerConfig={workerConfigById[item.worker?.id ?? ''] ?? null}
                 now={operatorReplyPendingNow}
-                disabled={isQueueItemLocked || !canOpenByVisibility}
+                disabled={
+                  isQueueItemLocked ||
+                  !canOpenByVisibility ||
+                  openingChatId !== null
+                }
                 onPress={() =>
-                  openChat(item, item.status === 'queue' ? index : null)
+                  void openChat(item, item.status === 'queue' ? index : null)
                 }
               />
             );

@@ -239,7 +239,6 @@ export const useInternalChatNotifications = () => {
 
       notification.onclick = () => {
         notification.close();
-        void internalChatStore.openConversation(conversationId);
         router.push({
           name: 'internal-chat',
           query: { conversation_id: conversationId },
@@ -482,7 +481,6 @@ export const useInternalChatNotifications = () => {
           messageEvent.data?.conversationId
         ) {
           const conversationId = messageEvent.data.conversationId;
-          void internalChatStore.openConversation(conversationId);
           router.push({
             name: 'internal-chat',
             query: { conversation_id: conversationId },

@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { OpeningConversationModal } from '../components/OpeningConversationModal';
 import { useInternalChat } from '../context/InternalChatContext';
 import { getPermissions, getUser, patchUser } from '../storage/authStorage';
 import { canCreateInternalChatGroup } from '../constants/chatAuthorization';
@@ -1131,24 +1132,7 @@ export function InternalChatListScreen() {
         />
       )}
 
-      <Modal
-        visible={openingChat}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => {}}
-      >
-        <View style={styles.openingOverlay}>
-          <View style={styles.openingCard}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.openingTitle}>Abrindo conversa...</Text>
-            <Text style={styles.openingText}>
-              Carregando mensagens do chat interno.
-            </Text>
-          </View>
-        </View>
-      </Modal>
+      <OpeningConversationModal visible={openingChat} variant="internal" />
 
       <InternalChatNotificationSettingsSheet
         visible={notificationSheetVisible}
@@ -1487,40 +1471,6 @@ const styles = StyleSheet.create({
     color: colors.grey600,
     fontSize: 14,
     textAlign: 'center',
-  },
-  openingOverlay: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    backgroundColor: 'rgba(0,0,0,0.28)',
-  },
-  openingCard: {
-    width: '100%',
-    maxWidth: 300,
-    borderRadius: 14,
-    paddingHorizontal: 22,
-    paddingVertical: 24,
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    shadowColor: '#000',
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
-  },
-  openingTitle: {
-    marginTop: 14,
-    color: colors.onSurface,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  openingText: {
-    marginTop: 6,
-    color: colors.grey600,
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,

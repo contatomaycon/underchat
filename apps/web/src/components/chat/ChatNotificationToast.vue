@@ -50,7 +50,10 @@ const notificationChatId = computed(() => {
 });
 
 const notificationChat = computed(() => {
-  if (props.notification.type === 'internal-message' || props.notification.type === 'transfer') {
+  if (
+    props.notification.type === 'internal-message' ||
+    props.notification.type === 'transfer'
+  ) {
     return null;
   }
 
@@ -86,7 +89,9 @@ const senderName = computed(() => {
     return props.notification.contact_name;
   }
 
-  return notificationChat.value?.name || notificationChat.value?.contact?.name || '';
+  return (
+    notificationChat.value?.name || notificationChat.value?.contact?.name || ''
+  );
 });
 
 const senderIcon = computed(() => {
@@ -104,9 +109,7 @@ const senderIcon = computed(() => {
   }
 
   if (props.notification.type === 'transfer') {
-    return (
-      props.notification.contact_photo || '/images/svg/avatar-default.svg'
-    );
+    return props.notification.contact_photo || '/images/svg/avatar-default.svg';
   }
 
   return (
@@ -204,7 +207,6 @@ function handleCardClick() {
 
   if (props.notification.type === 'internal-message') {
     const conversationId = props.notification.message.conversation_id;
-    void internalChatStore.openConversation(conversationId);
     router.push({
       name: 'internal-chat',
       query: { conversation_id: conversationId },
@@ -212,12 +214,20 @@ function handleCardClick() {
     return;
   }
 
-  if (chatStore.setActiveChat) {
-    chatStore.setActiveChat(notificationChatId.value);
+  const chatId = notificationChatId.value;
+
+  if (route.name === 'chat') {
+    globalThis.dispatchEvent(
+      new CustomEvent('open-chat-from-toast', {
+        detail: { chatId },
+      })
+    );
+    return;
   }
 
   router.push({
     name: 'chat',
+    query: { chat_id: chatId },
   });
 }
 
@@ -227,7 +237,6 @@ function goToTransferredChat() {
   }
 
   const chatId = props.notification.chat_id;
-  const fallbackChat = chatStore.findChatInLists(chatId);
 
   if (route.name === 'chat') {
     globalThis.dispatchEvent(
@@ -236,12 +245,9 @@ function goToTransferredChat() {
       })
     );
   } else {
-    if (chatStore.setActiveChat) {
-      chatStore.setActiveChat(chatId, fallbackChat ?? undefined);
-    }
-
     router.push({
       name: 'chat',
+      query: { chat_id: chatId },
     });
   }
 
@@ -296,13 +302,9 @@ onUnmounted(() => {
             <VAvatar size="40" :image="senderIcon" />
             <div class="flex-grow-1 min-width-0">
               <div class="text-body-1 font-weight-medium text-high-emphasis">
-                {{
-                  t('chat_notification_transfer_title')
-                }}
+                {{ t('chat_notification_transfer_title') }}
               </div>
-              <div
-                class="text-body-2 text-medium-emphasis text-truncate"
-              >
+              <div class="text-body-2 text-medium-emphasis text-truncate">
                 {{
                   t('chat_notification_transfer_contact', {
                     name: senderName,

@@ -170,6 +170,7 @@ import { useChatFilter } from '../context/ChatFilterContext';
 import { AppAvatar } from '../components/AppAvatar';
 import { LocationMessagePreview } from '../components/LocationMessagePreview';
 import { UploadProgressBadge } from '../components/UploadProgressBadge';
+import { OpeningConversationModal } from '../components/OpeningConversationModal';
 import {
   ContactFormModal,
   type ContactFormInitialValues,
@@ -181,6 +182,7 @@ import {
   type SelectOption,
 } from '../components/select';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { CHAT_MESSAGES_PER_PAGE } from '../constants/chatMessages';
 import { pt } from '../locales/pt';
 import { colors } from '../theme/colors';
 import { resolveImageUri } from '../utils/imageUri';
@@ -215,6 +217,7 @@ import {
   isClosureCommentRequiredFailure,
   shouldShowClosureReasonInput,
 } from '../utils/chatClosure';
+import { consumeChatMessagePreload } from '../utils/chatMessagePreload';
 import { normalizeLocationCoordinate } from '../utils/locationPreview';
 import type { UploadProgressState } from '../types/uploadProgress';
 
@@ -556,7 +559,6 @@ const WAVEFORM_FALLBACK_MAX_BARS = 28;
 const AUDIO_WAVEFORM_DEFAULT_BARS = 64;
 const VIDEO_FULLSCREEN_DISABLED = { enable: false } as const;
 const VIDEO_FULLSCREEN_ENABLED = { enable: true } as const;
-const CHAT_MESSAGES_PER_PAGE = 10;
 const CHAT_SOCKET_SYNC_PER_PAGE = 20;
 const AUDIO_PREFETCH_LIMIT = 20;
 const AUDIO_FINISH_THRESHOLD_SECONDS = 0.05;
@@ -5955,8 +5957,26 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
   const loadingOlderRef = useRef(false);
-  const currentPageRef = useRef(1);
-  const totalPagesRef = useRef(1);
+  const [initialMessageState] = useState(() => {
+    const preloaded = consumeChatMessagePreload(chat.chat_id);
+    if (!preloaded) return null;
+
+    const baseMessages = [...preloaded.results].reverse();
+    const pending = consumePendingMessages(chat.chat_id);
+
+    return {
+      response: preloaded,
+      messages: mergePendingSocketMessages(baseMessages, pending),
+    };
+  });
+  const resetChatStateInitializedRef = useRef(false);
+  const initialPreloadHandledRef = useRef(initialMessageState !== null);
+  const currentPageRef = useRef(
+    toPositiveInt(initialMessageState?.response.current_page, 1)
+  );
+  const totalPagesRef = useRef(
+    toPositiveInt(initialMessageState?.response.total_pages, 1)
+  );
   const socketSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null
   );
@@ -5967,7 +5987,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     previousOffset: number;
     previousContentHeight: number;
   } | null>(null);
-  const messagesRef = useRef<ListMessageResult[]>([]);
+  const messagesRef = useRef<ListMessageResult[]>(
+    initialMessageState?.messages ?? []
+  );
   const preloadedAudioUrlsRef = useRef<Set<string>>(new Set());
   const preloadingAudioUrlsRef = useRef<Set<string>>(new Set());
   const audioPrefetchSessionRef = useRef(0);
@@ -6113,7 +6135,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     string | null
   >(null);
-  const [messages, setMessages] = useState<ListMessageResult[]>([]);
+  const [messages, setMessages] = useState<ListMessageResult[]>(
+    () => initialMessageState?.messages ?? []
+  );
   const [uploadProgressByHash, setUploadProgressByHash] = useState<
     Record<string, UploadProgressState>
   >({});
@@ -6204,7 +6228,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [forwardLoading, setForwardLoading] = useState(false);
   const [forwardLoadingMore, setForwardLoadingMore] = useState(false);
   const [forwardSubmitting, setForwardSubmitting] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialMessageState === null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [input, setInput] = useState('');
   const [composerInputHeight, setComposerInputHeight] = useState(
@@ -6443,6 +6467,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   }, [chat]);
 
   useEffect(() => {
+    if (!resetChatStateInitializedRef.current) {
+      resetChatStateInitializedRef.current = true;
+      return;
+    }
+
     pendingScrollToBottomRef.current = true;
     scrollOffsetRef.current = 0;
     contentHeightRef.current = 0;
@@ -7663,6 +7692,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       preserveScrollOnPrependRef.current = null;
       setShowScrollToBottomButton(false);
       const hasLoadedMessages = messagesRef.current.length > 0;
+      if (initialPreloadHandledRef.current) {
+        initialPreloadHandledRef.current = false;
+        if (hasLoadedMessages) {
+          void syncMessagesStatus(true);
+        }
+        return;
+      }
       if (hasLoadedMessages) {
         void syncMessagesStatus(true);
         return;
@@ -17210,6 +17246,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           </PanGestureHandler>
         </View>
       </Modal>
+      <OpeningConversationModal
+        visible={loading && messages.length === 0}
+        variant="chat"
+      />
     </KeyboardAvoidingView>
   );
 }
