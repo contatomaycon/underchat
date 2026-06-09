@@ -7,11 +7,6 @@ export const getPushPublicKeySchema = {
   description: 'Retorna a chave pública VAPID para push notifications',
   tags: [ETagSwagger.config],
   produces: ['application/json'],
-  security: [
-    {
-      authenticateJwt: [],
-    },
-  ],
   headers: Type.Object({
     'Accept-Language': Type.Optional(
       Type.String({
@@ -30,24 +25,6 @@ export const getPushPublicKeySchema = {
         data: getPushPublicKeyResponseSchema,
       },
       { description: 'Successful' }
-    ),
-    401: Type.Object(
-      {
-        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-        status: Type.Boolean({ default: false }),
-        message: Type.String(),
-        data: Type.Null(),
-      },
-      { description: 'Unauthorized' }
-    ),
-    403: Type.Object(
-      {
-        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-        status: Type.Boolean({ default: false }),
-        message: Type.String(),
-        data: Type.Null(),
-      },
-      { description: 'Forbidden' }
     ),
     500: Type.Object(
       {

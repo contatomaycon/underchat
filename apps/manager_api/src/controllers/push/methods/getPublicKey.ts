@@ -31,9 +31,9 @@ export async function getPublicKey(
 
     reply.header(
       'Cache-Control',
-      'private, max-age=3600, stale-while-revalidate=300'
+      'public, max-age=3600, stale-while-revalidate=300'
     );
-    reply.header('Vary', 'Authorization, Accept-Language');
+    reply.header('Vary', 'Accept-Language');
 
     return sendResponse(reply, {
       message: t('push_public_key_retrieved_successfully'),

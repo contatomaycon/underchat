@@ -114,7 +114,7 @@ export const useInternalChatNotifications = () => {
 
   const isMasterNotificationsEnabled = () => {
     const chatUser = getChatUser();
-    return chatUser?.notifications_internal_chat !== false;
+    return Boolean(chatUser) && chatUser?.notifications_internal_chat !== false;
   };
 
   const isSoundNotificationsEnabled = () =>

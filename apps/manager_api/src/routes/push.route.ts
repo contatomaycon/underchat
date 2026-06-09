@@ -17,7 +17,6 @@ export default function pushRoutes(server: FastifyInstance) {
   server.get('/push/public-key', {
     schema: getPushPublicKeySchema,
     handler: pushController.getPublicKey,
-    preHandler: (request, reply) => server.authenticateJwt(request, reply),
   });
 
   server.delete('/push/unsubscribe', {
