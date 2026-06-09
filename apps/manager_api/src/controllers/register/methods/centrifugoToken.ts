@@ -41,7 +41,7 @@ export const centrifugoToken = async (
         httpStatusCode: EHTTPStatusCode.ok,
         data: {
           token,
-          url: centrifugoEnvironment.centrifugoWsUrl,
+          url: centrifugoEnvironment.centrifugoPublicWsUrl,
         },
       });
     }

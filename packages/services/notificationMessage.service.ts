@@ -621,7 +621,7 @@ export class NotificationMessageService {
       validation_text: validationText,
       whatsapp_url: this.buildWhatsappUrl(workerNumber, validationText),
       target_phone: workerNumber,
-      centrifugo_url: centrifugoEnvironment.centrifugoWsUrl,
+      centrifugo_url: centrifugoEnvironment.centrifugoPublicWsUrl,
       centrifugo_token: centrifugoToken,
       centrifugo_channel: channel,
     };

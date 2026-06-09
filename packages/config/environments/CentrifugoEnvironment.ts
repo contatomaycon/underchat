@@ -13,14 +13,34 @@ export class CentrifugoEnvironment {
     return key;
   }
 
-  public get centrifugoWsUrl(): string {
-    const url = process.env.CENTRIFUGO_WS_URL;
+  public get centrifugoPublicWsUrl(): string {
+    const url =
+      process.env.CENTRIFUGO_PUBLIC_WS_URL ?? process.env.CENTRIFUGO_WS_URL;
 
     if (!url) {
-      throw new InvalidConfigurationError('CENTRIFUGO_WS_URL is not defined.');
+      throw new InvalidConfigurationError(
+        'CENTRIFUGO_PUBLIC_WS_URL is not defined.'
+      );
     }
 
     return url;
+  }
+
+  public get centrifugoPrivateWsUrl(): string {
+    const url =
+      process.env.CENTRIFUGO_PRIVATE_WS_URL ?? process.env.CENTRIFUGO_WS_URL;
+
+    if (!url) {
+      throw new InvalidConfigurationError(
+        'CENTRIFUGO_PRIVATE_WS_URL is not defined.'
+      );
+    }
+
+    return url;
+  }
+
+  public get centrifugoWsUrl(): string {
+    return this.centrifugoPrivateWsUrl;
   }
 
   public get centrifugoHttpApiUrl(): string {

@@ -35,7 +35,7 @@ export const realtimeToken = async (
       httpStatusCode: EHTTPStatusCode.ok,
       data: {
         token,
-        url: centrifugoEnvironment.centrifugoWsUrl,
+        url: centrifugoEnvironment.centrifugoPublicWsUrl,
       },
     });
   } catch (error) {

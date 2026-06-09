@@ -44,7 +44,7 @@ export class WorkerExternalConnectionViewerUseCase {
       status: worker.status,
       type: worker.type,
       expires_at: new Date(payload.exp).toISOString(),
-      centrifugo_url: centrifugoEnvironment.centrifugoWsUrl,
+      centrifugo_url: centrifugoEnvironment.centrifugoPublicWsUrl,
       centrifugo_connection_token: this.generateConnectionToken(
         subject,
         payload
