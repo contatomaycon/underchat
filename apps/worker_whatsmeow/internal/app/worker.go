@@ -1519,14 +1519,15 @@ func (w *Worker) handleWebhookIntegration(ctx context.Context, msg kafka.Message
 	defer func() {
 		finishLifecycleSpan(err)
 	}()
+	kafkaKey := incomingUpsertKafkaKey(w.cfg, &upsert)
 	recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
 		"stage":     "whatsmeow.webhook.kafka.publish.start",
 		"decision":  "publish_webhook_upsert",
 		"outcome":   "started",
 		"topic":     topicUpsertMessage,
-		"kafka_key": valueString(upsert.Message["key"], "id"),
+		"kafka_key": kafkaKey,
 	})
-	err = w.kafka.SendJSON(lifecycleCtx, topicUpsertMessage, valueString(upsert.Message["key"], "id"), upsert)
+	err = w.kafka.SendJSON(lifecycleCtx, topicUpsertMessage, kafkaKey, upsert)
 	if err != nil {
 		recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
 			"stage":     "whatsmeow.webhook.kafka.publish.error",
@@ -1535,7 +1536,7 @@ func (w *Worker) handleWebhookIntegration(ctx context.Context, msg kafka.Message
 			"reason":    "producer_send_failed",
 			"level":     "error",
 			"topic":     topicUpsertMessage,
-			"kafka_key": valueString(upsert.Message["key"], "id"),
+			"kafka_key": kafkaKey,
 			"error":     err.Error(),
 		})
 		return err
@@ -1545,7 +1546,7 @@ func (w *Worker) handleWebhookIntegration(ctx context.Context, msg kafka.Message
 		"decision":  "publish_webhook_upsert",
 		"outcome":   "published",
 		"topic":     topicUpsertMessage,
-		"kafka_key": valueString(upsert.Message["key"], "id"),
+		"kafka_key": kafkaKey,
 	})
 	return nil
 }

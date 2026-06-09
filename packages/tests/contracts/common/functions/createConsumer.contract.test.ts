@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+import { logger } from '@core/plugins/telemetry/logger';
 
 jest.mock('@core/common/functions/ensureKafkaTopic', () => ({
   ensureKafkaTopic: jest.fn(async () => undefined),
@@ -163,6 +164,50 @@ describe('createConsumer managed kafka consumer', () => {
     ]);
     expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
     expect(onConnected).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restart the consumer for stale commit generation errors', async () => {
+    const firstConsumer = new FakeKafkaConsumer();
+    const kafka = {
+      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+
+    consumer.subscribe(['upsert.message']);
+    consumer.consume();
+    consumer.connect({}, jest.fn());
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+
+    const error = new Error(
+      'Broker: Specified group generation id is not valid'
+    ) as Error & { code: number };
+    error.code = 22;
+    firstConsumer.commitSync.mockImplementationOnce(() => {
+      throw error;
+    });
+
+    expect(() =>
+      consumer.commitSync([
+        { topic: 'upsert.message', partition: 0, offset: 10 },
+      ])
+    ).toThrow('Broker: Specified group generation id is not valid');
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'kafka.commit.stale_generation',
+        group_id: 'group-1',
+      }),
+      'Kafka consumer commit skipped after group generation changed'
+    );
+
+    jest.advanceTimersByTime(1000);
+    await flushPromises();
+
+    expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
+    expect(firstConsumer.disconnect).not.toHaveBeenCalled();
   });
 
   it('does not restart a worker send consumer just because it is idle', async () => {

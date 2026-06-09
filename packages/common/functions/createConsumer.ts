@@ -58,6 +58,30 @@ function isWorkerSendTopic(topic: string): boolean {
   );
 }
 
+function kafkaErrorCode(error: unknown): number | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === 'number') {
+    return code;
+  }
+  if (typeof code === 'string' && code.trim() !== '') {
+    const parsed = Number(code);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function isStaleCommitGenerationError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  const code = kafkaErrorCode(error);
+
+  return (
+    code === 22 ||
+    message.includes('specified group generation id is not valid') ||
+    message.includes('illegal generation') ||
+    message.includes('rebalance in progress')
+  );
+}
+
 class ManagedKafkaConsumer extends EventEmitter {
   readonly __managedKafkaConsumer = true;
 
@@ -192,6 +216,19 @@ class ManagedKafkaConsumer extends EventEmitter {
       return result;
     } catch (error) {
       this.lastError = getErrorMessage(error);
+      if (isStaleCommitGenerationError(error)) {
+        logger.warn(
+          {
+            type: 'kafka.commit.stale_generation',
+            group_id: this.groupId,
+            topics: this.topics,
+            error: this.lastError,
+          },
+          'Kafka consumer commit skipped after group generation changed'
+        );
+        throw error;
+      }
+
       logger.error(
         {
           type: 'kafka.commit.error',

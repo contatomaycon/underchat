@@ -816,6 +816,30 @@ func TestIncomingUpsertKafkaKeyFallsBackToMessageID(t *testing.T) {
 	}
 }
 
+func TestIncomingUpsertKafkaKeyUsesUpsertScopeAndStableRemote(t *testing.T) {
+	cfg := Config{
+		AccountID: "config-account",
+		WorkerID:  "config-worker",
+	}
+	upsert := &UpsertMessage{
+		AccountID: "account-1",
+		WorkerID:  "worker-1",
+		Message: map[string]any{
+			"key": map[string]any{
+				"id":           "call-1",
+				"remoteJid":    "252067352473847@lid",
+				"remoteJidAlt": "556481342084@s.whatsapp.net",
+			},
+		},
+	}
+
+	got := incomingUpsertKafkaKey(cfg, upsert)
+	want := "account-1:worker-1:556481342084@s.whatsapp.net"
+	if got != want {
+		t.Fatalf("unexpected kafka key %q want %q", got, want)
+	}
+}
+
 func TestIncomingMessageDebugLogsNormalMessage(t *testing.T) {
 	manager := &WhatsAppManager{cfg: Config{
 		WorkerID:                       "worker-1",

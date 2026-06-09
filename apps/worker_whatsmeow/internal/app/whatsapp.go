@@ -2459,7 +2459,7 @@ func (m *WhatsAppManager) handleCallOffer(ctx context.Context, callFrom types.JI
 	}
 	callCtx, finishCallSpan := startMessageLifecycleSpan(ctx, m.cfg, messageLifecycleFromUpsert(m.cfg, &upsert))
 	defer finishCallSpan(nil)
-	kafkaKey := m.cfg.AccountID + ":" + callID
+	kafkaKey := incomingUpsertKafkaKey(m.cfg, &upsert)
 	recordMessageLifecycle(callCtx, m.cfg, map[string]any{
 		"stage":     "whatsmeow.call.kafka.publish.start",
 		"decision":  "publish_call_upsert",
@@ -2731,21 +2731,23 @@ func incomingUpsertKafkaKey(cfg Config, upsert *UpsertMessage) string {
 		return cfg.AccountID
 	}
 
+	accountID := firstNonEmpty(upsert.AccountID, cfg.AccountID)
+	workerID := firstNonEmpty(upsert.WorkerID, cfg.WorkerID)
 	messageKey := asMap(upsert.Message["key"])
 	remoteKey := stableRemotePartitionKey(
 		valueString(messageKey, "remoteJid"),
 		valueString(messageKey, "remoteJidAlt"),
 	)
 	if remoteKey != "" {
-		return fmt.Sprintf("%s:%s:%s", cfg.AccountID, cfg.WorkerID, remoteKey)
+		return fmt.Sprintf("%s:%s:%s", accountID, workerID, remoteKey)
 	}
 
 	messageID := valueString(messageKey, "id")
 	if messageID != "" {
-		return fmt.Sprintf("%s:%s", cfg.AccountID, messageID)
+		return fmt.Sprintf("%s:%s", accountID, messageID)
 	}
 
-	return cfg.AccountID
+	return accountID
 }
 
 func stableRemotePartitionKey(remoteJID, remoteJIDAlt string) string {
