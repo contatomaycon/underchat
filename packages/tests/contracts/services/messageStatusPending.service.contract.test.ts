@@ -14,8 +14,14 @@ jest.mock('@core/plugins/telemetry/observability', () => ({
 
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { MessageStatusPendingService } from '@core/services/messageStatusPending.service';
+import { logger } from '@core/plugins/telemetry/logger';
+import { incrementCounter } from '@core/plugins/telemetry/observability';
 
 describe('MessageStatusPendingService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   const makeService = () => {
     const redis = {
       get: jest.fn(),
@@ -103,6 +109,34 @@ describe('MessageStatusPendingService', () => {
     expect(redis.hdel).not.toHaveBeenCalled();
   });
 
+  it('resets retry count when waking a parked status', async () => {
+    const { redis, service } = makeService();
+    const payload = {
+      ...makeStatusUpdate({ is_delivered: true }),
+      retry_count: 99,
+      parked_at: 123,
+    };
+    redis.hget.mockResolvedValue(JSON.stringify(payload));
+
+    await service.wakePendingStatus('acc-1', 'wa-1');
+
+    expect(redis.hset).toHaveBeenCalledWith(
+      'message-status:update:pending:payloads',
+      'acc-1:wa-1',
+      expect.any(String)
+    );
+    const wakePayload = JSON.parse(redis.hset.mock.calls[0][2]);
+    expect(wakePayload.retry_count).toBe(0);
+    expect(wakePayload.parked_at).toBe(123);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        retry_count: 0,
+        type: 'message_status_pending_woken',
+      }),
+      expect.any(String)
+    );
+  });
+
   it('marks applied status updates and clears retry plus parking state', async () => {
     const { redis, service } = makeService();
 
@@ -184,6 +218,38 @@ describe('MessageStatusPendingService', () => {
       'message-status:update:pending:parking',
       expect.any(Number),
       'acc-1:wa-1'
+    );
+    const parkedPayload = JSON.parse(
+      redis.hset.mock.calls[redis.hset.mock.calls.length - 1][2]
+    );
+    expect(parkedPayload.parked_at).toEqual(expect.any(Number));
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message_status_pending_parking_lot',
+      }),
+      expect.any(String)
+    );
+  });
+
+  it('does not emit another parking error for an already parked status', async () => {
+    const { redis, service } = makeService();
+    const payload = {
+      ...makeStatusUpdate({ is_seen: true }),
+      retry_count: 10,
+      parked_at: 123,
+    };
+    redis.hget.mockResolvedValue(JSON.stringify(payload));
+
+    await service.deferMissingStatusUpdate(payload, payload.patch, {
+      batchSize: 1,
+      duration: 50,
+    });
+
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(incrementCounter).not.toHaveBeenCalledWith(
+      'message_status_update_pending_parking_lot',
+      expect.any(Number),
+      expect.any(Object)
     );
   });
 });

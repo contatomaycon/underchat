@@ -265,13 +265,20 @@ export class MessageStatusPendingService {
       );
     }
 
-    logger.warn(
-      {
-        ...logPayload,
-        type: 'message_status_update_deferred_missing_message',
-      },
-      'Message status update deferred because target message was not indexed yet'
-    );
+    const shouldLogDeferral =
+      !retryPayload.parked_at &&
+      ((retryPayload.retry_count ?? 0) <= 1 ||
+        (retryPayload.retry_count ?? 0) === this.pendingRetryDelaysMs.length);
+
+    if (shouldLogDeferral) {
+      logger.info(
+        {
+          ...logPayload,
+          type: 'message_status_update_deferred_missing_message',
+        },
+        'Message status update deferred because target message was not indexed yet'
+      );
+    }
 
     incrementCounter('message_status_update_deferred_missing_message', 1, {
       account_id: data.account_id,
@@ -304,11 +311,19 @@ export class MessageStatusPendingService {
     context: { batchSize: number; duration: number }
   ): Promise<void> {
     const member = this.getStatusKafkaKey(data);
+    const existingPayload = this.parsePayload(
+      await this.redis.hget(this.pendingPayloadHashKey, member)
+    );
+    const alreadyParked = Boolean(existingPayload?.parked_at);
+    const parkingPayload: IMessageStatusUpdate = {
+      ...data,
+      parked_at: existingPayload?.parked_at ?? data.parked_at ?? Date.now(),
+    };
 
     await this.redis.hset(
       this.pendingPayloadHashKey,
       member,
-      JSON.stringify(data)
+      JSON.stringify(parkingPayload)
     );
     await Promise.all([
       this.redis.zrem(this.pendingSetKey, member),
@@ -316,20 +331,22 @@ export class MessageStatusPendingService {
       this.redis.zadd(this.pendingParkingSetKey, Date.now(), member),
     ]);
 
-    logger.error(
-      {
+    if (!alreadyParked) {
+      logger.error(
+        {
+          account_id: data.account_id,
+          message_id: data.message_id,
+          retry_count: data.retry_count ?? 0,
+          batch_size: context.batchSize,
+          duration: context.duration,
+          type: 'message_status_pending_parking_lot',
+        },
+        'Message status update remains pending after all normal retry delays'
+      );
+      incrementCounter('message_status_update_pending_parking_lot', 1, {
         account_id: data.account_id,
-        message_id: data.message_id,
-        retry_count: data.retry_count ?? 0,
-        batch_size: context.batchSize,
-        duration: context.duration,
-        type: 'message_status_pending_parking_lot',
-      },
-      'Message status update remains pending after all normal retry delays'
-    );
-    incrementCounter('message_status_update_pending_parking_lot', 1, {
-      account_id: data.account_id,
-    });
+      });
+    }
   }
 
   async claimDuePendingStatuses(): Promise<IMessageStatusUpdate[]> {
@@ -428,6 +445,23 @@ export class MessageStatusPendingService {
       await this.clearPendingMember(member);
       return false;
     }
+    const isParked =
+      payload.parked_at !== undefined ||
+      (await this.redis.zscore(this.pendingParkingSetKey, member)) !== null;
+    const wakePayload: IMessageStatusUpdate = isParked
+      ? {
+          ...payload,
+          retry_count: 0,
+        }
+      : payload;
+
+    if (wakePayload !== payload) {
+      await this.redis.hset(
+        this.pendingPayloadHashKey,
+        member,
+        JSON.stringify(wakePayload)
+      );
+    }
 
     await Promise.all([
       this.redis.zrem(this.pendingParkingSetKey, member),
@@ -439,7 +473,7 @@ export class MessageStatusPendingService {
       {
         account_id: accountId,
         message_id: whatsAppMessageId,
-        retry_count: payload.retry_count ?? 0,
+        retry_count: wakePayload.retry_count ?? 0,
         type: 'message_status_pending_woken',
       },
       'Pending message status update scheduled for immediate reconciliation'

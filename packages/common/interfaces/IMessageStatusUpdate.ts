@@ -8,4 +8,5 @@ export interface IMessageStatusUpdate {
   key?: WAMessageKey;
   retry_count?: number;
   first_seen_at?: number;
+  parked_at?: number;
 }

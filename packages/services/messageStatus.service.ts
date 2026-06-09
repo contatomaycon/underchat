@@ -707,7 +707,7 @@ export class MessageStatusService {
       }
     }
 
-    logger.warn(
+    logger.info(
       {
         type: 'ack_match_miss',
         account_id: accountId,
