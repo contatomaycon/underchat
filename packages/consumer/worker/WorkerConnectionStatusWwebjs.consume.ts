@@ -110,6 +110,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     const isSessionInvalid =
       currentCode === ECodeMessage.badSession ||
       currentCode === ECodeMessage.loggedOut;
+    let shouldResetStaleSessionForQr = false;
 
     if (this.wwebjsService.hasSession() && !isSessionInvalid) {
       this.logConnectionEvent('handle_online_restore_wait_start', {
@@ -135,6 +136,23 @@ export class WorkerConnectionStatusWwebjsConsume {
         connection_attempt_id: data.connection_attempt_id,
         connection_lifecycle_id: data.connection_lifecycle_id,
       });
+
+      shouldResetStaleSessionForQr =
+        data.type === EBaileysConnectionType.qrcode && data.qr_pending === true;
+      if (shouldResetStaleSessionForQr) {
+        this.logConnectionEvent('connection_stale_session_clearing_for_qr', {
+          reason: 'existing_session_not_connected_after_wait',
+          code: currentCode,
+          connection_attempt_id: data.connection_attempt_id,
+          connection_lifecycle_id: data.connection_lifecycle_id,
+        });
+        await this.wwebjsService.disconnect({
+          initial_connection: true,
+          disconnected_user: false,
+          preserve_session: false,
+          remove_session: true,
+        });
+      }
     }
 
     if (this.activeConnectionRequest) {
@@ -215,9 +233,9 @@ export class WorkerConnectionStatusWwebjsConsume {
     }
 
     return this.connectWithService(data, {
-      fromDisconnectRestart: isSessionInvalid,
+      fromDisconnectRestart: isSessionInvalid || shouldResetStaleSessionForQr,
       requestedByUser: true,
-      allowRestore: !isSessionInvalid,
+      allowRestore: !(isSessionInvalid || shouldResetStaleSessionForQr),
     });
   }
 

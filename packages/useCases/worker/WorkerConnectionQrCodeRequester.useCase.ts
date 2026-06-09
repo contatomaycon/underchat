@@ -195,8 +195,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_type: workerTypeId,
       worker_type_id: workerTypeId,
       worker_status_id: workerStatusId,
-      stream_key: this.redisQueueService.streamKey(workerId),
-      consumer_group: this.redisQueueService.consumerGroup(workerId),
+      stream_key: this.redisQueueService.streamKey(workerId, workerTypeId),
+      consumer_group: this.redisQueueService.consumerGroup(
+        workerId,
+        workerTypeId
+      ),
     });
 
     recordConnectionLifecycle({
@@ -207,7 +210,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_type: workerTypeId,
       worker_type_id: workerTypeId,
     });
-    let existing = await this.getActiveAttempt(workerId);
+    let existing = await this.getActiveAttempt(workerId, workerTypeId);
     recordConnectionLifecycle({
       stage: 'connection.manager.qrcode_request.active_attempt_lookup_result',
       decision: 'lookup_active_qrcode_attempt',
@@ -230,7 +233,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       );
 
       if (invalidReason) {
-        await this.redis.del(this.activeAttemptKey(workerId));
+        await this.redis.del(this.activeAttemptKey(workerId, workerTypeId));
         recordConnectionLifecycle({
           stage: 'connection.manager.qrcode_request.active_attempt_invalid',
           decision: 'validate_active_qrcode_attempt',
@@ -322,7 +325,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     if (existing) {
       const existingConnectionAttemptId = existing.ack.connection_attempt_id;
       if (!existingConnectionAttemptId) {
-        await this.redis.del(this.activeAttemptKey(workerId));
+        await this.redis.del(this.activeAttemptKey(workerId, workerTypeId));
         recordConnectionLifecycle({
           stage: 'connection.manager.qrcode_request.active_attempt_invalid',
           decision: 'validate_active_qrcode_attempt',
@@ -394,8 +397,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
     const connectionAttemptId = uuidv7();
     const lifecycleContext = buildConnectionLifecycleContext();
-    const streamKey = this.redisQueueService.streamKey(workerId);
-    const consumerGroup = this.redisQueueService.consumerGroup(workerId);
+    const streamKey = this.redisQueueService.streamKey(workerId, workerTypeId);
+    const consumerGroup = this.redisQueueService.consumerGroup(
+      workerId,
+      workerTypeId
+    );
     const ack = this.buildPendingResponse(
       accountId,
       workerId,
@@ -429,9 +435,13 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       source,
       ttl_seconds: this.activeAttemptTtlSeconds,
     });
-    const claimed = await this.claimActiveAttempt(workerId, activeAttempt);
+    const claimed = await this.claimActiveAttempt(
+      workerId,
+      workerTypeId,
+      activeAttempt
+    );
     if (!claimed) {
-      const current = await this.getActiveAttempt(workerId);
+      const current = await this.getActiveAttempt(workerId, workerTypeId);
       if (current) {
         recordConnectionLifecycle({
           stage:
@@ -519,6 +529,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       const streamId = await this.redisQueueService.enqueue(payload);
       await this.storeActiveAttemptStreamId(
         workerId,
+        workerTypeId,
         connectionAttemptId,
         streamId
       );
@@ -553,7 +564,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         reason: 'queued',
       });
     } catch (error) {
-      await this.clearActiveAttempt(workerId, connectionAttemptId);
+      await this.clearActiveAttempt(
+        workerId,
+        workerTypeId,
+        connectionAttemptId
+      );
       recordConnectionLifecycle({
         stage: 'connection.manager.qrcode_request.redis_enqueue_error',
         decision: 'enqueue_connection_qrcode_request_redis_stream',
@@ -583,19 +598,20 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     return ack;
   }
 
-  private activeAttemptKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:active_attempt`;
+  private activeAttemptKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:active_attempt`;
   }
 
   private processedAttemptKey(
     workerId: string,
+    workerTypeId: string,
     connectionAttemptId: string
   ): string {
-    return `connection:qrcode:${workerId}:processed:${connectionAttemptId}`;
+    return `connection:qrcode:${workerTypeId}:${workerId}:processed:${connectionAttemptId}`;
   }
 
-  private qrAttemptCacheKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:attempt`;
+  private qrAttemptCacheKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:attempt`;
   }
 
   private async getActiveAttemptInvalidReason(
@@ -613,7 +629,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     }
 
     const processed = await this.redis.get(
-      this.processedAttemptKey(workerId, connectionAttemptId)
+      this.processedAttemptKey(workerId, workerTypeId, connectionAttemptId)
     );
     if (processed) {
       return 'active_attempt_already_processed';
@@ -632,13 +648,15 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
   private async storeActiveAttemptStreamId(
     workerId: string,
+    workerTypeId: string,
     connectionAttemptId: string,
     streamId: string
   ): Promise<void> {
-    const current = await this.getActiveAttempt(workerId);
+    const current = await this.getActiveAttempt(workerId, workerTypeId);
     if (current?.ack.connection_attempt_id !== connectionAttemptId) {
       recordConnectionLifecycle({
-        stage: 'connection.manager.qrcode_request.active_attempt_stream_id_skip',
+        stage:
+          'connection.manager.qrcode_request.active_attempt_stream_id_skip',
         decision: 'store_active_qrcode_attempt_stream_id',
         outcome: 'skipped',
         reason: current
@@ -652,7 +670,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     }
 
     await this.redis.set(
-      this.activeAttemptKey(workerId),
+      this.activeAttemptKey(workerId, workerTypeId),
       JSON.stringify({
         ...current,
         stream_id: streamId,
@@ -663,9 +681,12 @@ export class WorkerConnectionQrCodeRequesterUseCase {
   }
 
   private async getActiveAttempt(
-    workerId: string
+    workerId: string,
+    workerTypeId: string
   ): Promise<ActiveQrAttempt | null> {
-    const raw = await this.redis.get(this.activeAttemptKey(workerId));
+    const raw = await this.redis.get(
+      this.activeAttemptKey(workerId, workerTypeId)
+    );
     if (!raw) {
       return null;
     }
@@ -677,7 +698,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       }
       return parsed;
     } catch {
-      await this.redis.del(this.activeAttemptKey(workerId));
+      await this.redis.del(this.activeAttemptKey(workerId, workerTypeId));
       return null;
     }
   }
@@ -688,7 +709,9 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     workerTypeId: string,
     workerStatusId?: string
   ): Promise<IBaileysConnectionState | null> {
-    const raw = await this.redis.get(this.qrAttemptCacheKey(workerId));
+    const raw = await this.redis.get(
+      this.qrAttemptCacheKey(workerId, workerTypeId)
+    );
     if (!raw) {
       return null;
     }
@@ -795,10 +818,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
   private async claimActiveAttempt(
     workerId: string,
+    workerTypeId: string,
     attempt: ActiveQrAttempt
   ): Promise<boolean> {
     const result = await this.redis.set(
-      this.activeAttemptKey(workerId),
+      this.activeAttemptKey(workerId, workerTypeId),
       JSON.stringify(attempt),
       'EX',
       this.activeAttemptTtlSeconds,
@@ -818,13 +842,14 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
   private async clearActiveAttempt(
     workerId: string,
+    workerTypeId: string,
     connectionAttemptId: string
   ): Promise<void> {
-    const current = await this.getActiveAttempt(workerId);
+    const current = await this.getActiveAttempt(workerId, workerTypeId);
     if (current?.ack.connection_attempt_id !== connectionAttemptId) {
       return;
     }
-    await this.redis.del(this.activeAttemptKey(workerId));
+    await this.redis.del(this.activeAttemptKey(workerId, workerTypeId));
   }
 
   private async publishPendingAck(

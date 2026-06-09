@@ -17,6 +17,7 @@ export interface ConnectionQrSummaryInput {
   account_id?: string;
   connection_attempt_id?: string;
   worker_type?: EWorkerType | string;
+  previous_worker_type_id?: EWorkerType | string;
   grpc_address?: string;
   status?: string;
   code?: ECodeMessage | number;

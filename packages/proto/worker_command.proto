@@ -30,6 +30,7 @@ message WorkerPayload {
   bool remove_session = 9;
   bool remove_volume = 10;
   string lifecycle_operation_id = 11;
+  string previous_worker_type_id = 12;
 }
 
 message ChangeConnectionStatusRequest {

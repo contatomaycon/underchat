@@ -37,24 +37,28 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
   constructor(@inject('Redis') private readonly redis: Redis) {}
 
-  streamKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:requests`;
+  streamKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:requests`;
   }
 
-  consumerGroup(workerId: string): string {
-    return `connection:qrcode:${workerId}:group`;
+  consumerGroup(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:group`;
   }
 
   consumerName(workerId: string, workerTypeId: string): string {
     return `${workerTypeId}:${workerId}:${process.pid}`;
   }
 
-  processedAttemptKey(workerId: string, connectionAttemptId: string): string {
-    return `connection:qrcode:${workerId}:processed:${connectionAttemptId}`;
+  processedAttemptKey(
+    workerId: string,
+    workerTypeId: string,
+    connectionAttemptId: string
+  ): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:processed:${connectionAttemptId}`;
   }
 
   async enqueue(payload: IWorkerConnectionQrCodeQueueMessage): Promise<string> {
-    const streamKey = this.streamKey(payload.worker_id);
+    const streamKey = this.streamKey(payload.worker_id, payload.worker_type_id);
     const fields = this.payloadToFields(payload);
     const streamId = await this.client().xadd(
       streamKey,
@@ -72,9 +76,9 @@ export class WorkerConnectionQrCodeRedisQueueService {
     return streamId;
   }
 
-  async ensureGroup(workerId: string): Promise<void> {
-    const streamKey = this.streamKey(workerId);
-    const consumerGroup = this.consumerGroup(workerId);
+  async ensureGroup(workerId: string, workerTypeId: string): Promise<void> {
+    const streamKey = this.streamKey(workerId, workerTypeId);
+    const consumerGroup = this.consumerGroup(workerId, workerTypeId);
 
     try {
       await this.client().xgroup(
@@ -89,6 +93,8 @@ export class WorkerConnectionQrCodeRedisQueueService {
         decision: 'ensure_qrcode_redis_stream_group',
         outcome: 'created',
         worker_id: workerId,
+        worker_type: workerTypeId,
+        worker_type_id: workerTypeId,
         stream_key: streamKey,
         consumer_group: consumerGroup,
       });
@@ -99,6 +105,8 @@ export class WorkerConnectionQrCodeRedisQueueService {
           decision: 'ensure_qrcode_redis_stream_group',
           outcome: 'exists',
           worker_id: workerId,
+          worker_type: workerTypeId,
+          worker_type_id: workerTypeId,
           stream_key: streamKey,
           consumer_group: consumerGroup,
         });
@@ -112,6 +120,8 @@ export class WorkerConnectionQrCodeRedisQueueService {
         reason: 'redis_xgroup_create_failed',
         level: 'error',
         worker_id: workerId,
+        worker_type: workerTypeId,
+        worker_type_id: workerTypeId,
         stream_key: streamKey,
         consumer_group: consumerGroup,
         error: getErrorMessage(error),
@@ -122,10 +132,11 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
   async readNew(
     workerId: string,
+    workerTypeId: string,
     consumerName: string
   ): Promise<WorkerConnectionQrCodeRedisStreamMessage[]> {
-    const streamKey = this.streamKey(workerId);
-    const consumerGroup = this.consumerGroup(workerId);
+    const streamKey = this.streamKey(workerId, workerTypeId);
+    const consumerGroup = this.consumerGroup(workerId, workerTypeId);
     const response = await this.client().xreadgroup(
       'GROUP',
       consumerGroup,
@@ -149,10 +160,11 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
   async claimPending(
     workerId: string,
+    workerTypeId: string,
     consumerName: string
   ): Promise<WorkerConnectionQrCodeRedisStreamMessage[]> {
-    const streamKey = this.streamKey(workerId);
-    const consumerGroup = this.consumerGroup(workerId);
+    const streamKey = this.streamKey(workerId, workerTypeId);
+    const consumerGroup = this.consumerGroup(workerId, workerTypeId);
     const response = await this.client().xautoclaim(
       streamKey,
       consumerGroup,
@@ -173,10 +185,11 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
   async ackAndDelete(
     workerId: string,
+    workerTypeId: string,
     streamId: string
   ): Promise<{ acked: number; deleted: number }> {
-    const streamKey = this.streamKey(workerId);
-    const consumerGroup = this.consumerGroup(workerId);
+    const streamKey = this.streamKey(workerId, workerTypeId);
+    const consumerGroup = this.consumerGroup(workerId, workerTypeId);
     const [acked, deleted] = await Promise.all([
       this.client().xack(streamKey, consumerGroup, streamId),
       this.client().xdel(streamKey, streamId),
@@ -191,6 +204,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
     await this.redis.set(
       this.processedAttemptKey(
         payload.worker_id,
+        payload.worker_type_id,
         payload.connection_attempt_id
       ),
       '1',
@@ -201,12 +215,13 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
   async getDeliveryCount(
     workerId: string,
+    workerTypeId: string,
     streamId: string
   ): Promise<number | undefined> {
     try {
       const response = await this.client().xpending(
-        this.streamKey(workerId),
-        this.consumerGroup(workerId),
+        this.streamKey(workerId, workerTypeId),
+        this.consumerGroup(workerId, workerTypeId),
         streamId,
         streamId,
         1

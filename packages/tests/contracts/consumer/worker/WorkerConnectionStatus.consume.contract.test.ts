@@ -159,4 +159,56 @@ describe('Worker connection status consumers', () => {
       })
     );
   });
+
+  it('clears a stale WWebJS session before generating a queued QR', async () => {
+    jest.useFakeTimers();
+    const wwebjsService = {
+      isConnected: jest.fn(() => false),
+      hasSession: jest.fn(() => true),
+      getStatus: jest.fn(() => EBaileysConnectionStatus.disconnected),
+      getCode: jest.fn(() => ECodeMessage.awaitConnection),
+      socket: undefined,
+      connect: jest.fn(async () => ({
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        worker_id: 'worker-w',
+        account_id: 'account-w',
+      })),
+      disconnect: jest.fn(async () => undefined),
+      republishLastState: jest.fn(),
+    };
+    const sut = new WorkerConnectionStatusWwebjsConsume(
+      wwebjsService as never,
+      { notifyWorkerStatus: jest.fn() } as never,
+      { publishSub: jest.fn() } as never
+    );
+
+    try {
+      const pending = sut.requestConnection({
+        ...payload,
+        qr_pending: true,
+        connection_attempt_id: 'attempt-1',
+        connection_lifecycle_id: 'lifecycle-1',
+      });
+
+      await jest.advanceTimersByTimeAsync(3000);
+      await pending;
+
+      expect(wwebjsService.disconnect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preserve_session: false,
+          remove_session: true,
+        })
+      );
+      expect(wwebjsService.connect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          allow_restore: false,
+          from_disconnect_restart: true,
+          requested_by_user: true,
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

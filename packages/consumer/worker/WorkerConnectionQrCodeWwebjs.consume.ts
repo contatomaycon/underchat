@@ -74,14 +74,20 @@ export class WorkerConnectionQrCodeWwebjsConsume {
     }
 
     const workerId = wwebjsEnvironment.wwebjsWorkerId;
-    const streamKey = this.redisQueueService.streamKey(workerId);
-    const consumerGroup = this.redisQueueService.consumerGroup(workerId);
+    const streamKey = this.redisQueueService.streamKey(
+      workerId,
+      EWorkerType.wwebjs
+    );
+    const consumerGroup = this.redisQueueService.consumerGroup(
+      workerId,
+      EWorkerType.wwebjs
+    );
     const consumerName = this.redisQueueService.consumerName(
       workerId,
       EWorkerType.wwebjs
     );
 
-    await this.redisQueueService.ensureGroup(workerId);
+    await this.redisQueueService.ensureGroup(workerId, EWorkerType.wwebjs);
     this.stopped = false;
     this.isRunning = true;
 
@@ -130,6 +136,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       try {
         const claimed = await this.redisQueueService.claimPending(
           workerId,
+          EWorkerType.wwebjs,
           consumerName
         );
         if (claimed.length > 0) {
@@ -139,6 +146,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
 
         const messages = await this.redisQueueService.readNew(
           workerId,
+          EWorkerType.wwebjs,
           consumerName
         );
         await this.processMessages(messages);
@@ -153,8 +161,14 @@ export class WorkerConnectionQrCodeWwebjsConsume {
           account_id: wwebjsEnvironment.wwebjsAccountId,
           worker_type: EWorkerType.wwebjs,
           worker_type_id: EWorkerType.wwebjs,
-          stream_key: this.redisQueueService.streamKey(workerId),
-          consumer_group: this.redisQueueService.consumerGroup(workerId),
+          stream_key: this.redisQueueService.streamKey(
+            workerId,
+            EWorkerType.wwebjs
+          ),
+          consumer_group: this.redisQueueService.consumerGroup(
+            workerId,
+            EWorkerType.wwebjs
+          ),
           consumer_name: consumerName,
           redis_status: this.redisStatus(),
           error: error instanceof Error ? error.message : String(error),
@@ -201,6 +215,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       message.delivery_count ??
       (await this.redisQueueService.getDeliveryCount(
         data.worker_id,
+        data.worker_type_id,
         message.stream_id
       ));
     const contextData = buildConnectionLifecycleContext({
@@ -346,6 +361,47 @@ export class WorkerConnectionQrCodeWwebjsConsume {
 
       await this.cacheQrAttemptState(state, data, message);
 
+      if (this.isTerminalNoQrState(state)) {
+        recordConnectionLifecycle({
+          stage:
+            'connection.wwebjs.qrcode_redis_stream.local_request_terminal_no_qr',
+          decision: 'request_local_connection_qrcode',
+          outcome: 'terminal',
+          reason: state.reason ?? 'qrcode_terminal_without_qr',
+          level: 'warn',
+          stream_key: message.stream_key,
+          stream_id: message.stream_id,
+          consumer_group: message.consumer_group,
+          consumer_name: message.consumer_name,
+          delivery_count: message.delivery_count,
+          status: state.status,
+          code: state.code,
+          worker_status_id: state.worker_status_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? data.connection_attempt_id,
+          connection_lifecycle_id:
+            state.connection_lifecycle_id ?? data.connection_lifecycle_id,
+          requested_at: data.requested_at,
+          queue_latency_ms: message.queue_latency_ms,
+          has_qr: false,
+          has_pairing_code: false,
+          qr_pending: state.qr_pending === true,
+          time_to_first_qr_ms: state.time_to_first_qr_ms,
+        });
+        await this.releaseActiveAttemptIfCurrent(
+          data.worker_id,
+          data.connection_attempt_id,
+          message,
+          state.reason ?? 'qrcode_terminal_without_qr'
+        );
+        await this.redisQueueService.markProcessed(data);
+        await this.ackAndDelete(
+          message,
+          state.reason ?? 'qrcode_terminal_without_qr'
+        );
+        return;
+      }
+
       if (!this.shouldCompleteQrRequest(state)) {
         recordConnectionLifecycle({
           stage:
@@ -399,7 +455,9 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         stage: 'connection.wwebjs.qrcode_redis_stream.process_error',
         decision: 'request_local_connection_qrcode',
         outcome: 'error',
-        reason: 'local_connection_request_failed',
+        reason: this.isLocalRequestTimeoutError(error)
+          ? 'local_request_timeout'
+          : 'local_connection_request_failed',
         level: 'error',
         stream_key: message.stream_key,
         stream_id: message.stream_id,
@@ -410,6 +468,31 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         connection_lifecycle_id: data.connection_lifecycle_id,
         error: error instanceof Error ? error.message : String(error),
       });
+
+      if (this.isLocalRequestTimeoutError(error)) {
+        await this.releaseActiveAttemptIfCurrent(
+          data.worker_id,
+          data.connection_attempt_id,
+          message,
+          'local_request_timeout'
+        );
+        await this.redisQueueService.markProcessed(data);
+        recordConnectionLifecycle({
+          stage: 'connection.wwebjs.qrcode_redis_stream.mark_processed_success',
+          decision: 'mark_qrcode_attempt_processed',
+          outcome: 'success',
+          reason: 'local_request_timeout',
+          stream_key: message.stream_key,
+          stream_id: message.stream_id,
+          consumer_group: message.consumer_group,
+          consumer_name: message.consumer_name,
+          connection_attempt_id: data.connection_attempt_id,
+          connection_lifecycle_id: data.connection_lifecycle_id,
+          worker_type: EWorkerType.wwebjs,
+          worker_type_id: EWorkerType.wwebjs,
+        });
+        await this.ackAndDelete(message, 'local_request_timeout');
+      }
     }
   }
 
@@ -452,12 +535,6 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         this.workerConnectionStatusConsume.cancelConnectionAttempt(
           'qrcode_redis_stream_local_request_timeout'
         );
-        void this.releaseActiveAttemptIfCurrent(
-          payload.worker_id,
-          payload.connection_attempt_id,
-          message,
-          'local_request_timeout'
-        );
         reject(
           new Error(
             `WWebJS local QR request timed out after ${WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_TIMEOUT_MS}ms`
@@ -484,6 +561,25 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         }
       );
     });
+  }
+
+  private isTerminalNoQrState(state: IBaileysConnectionState): boolean {
+    if (state.qrcode || state.pairing_code) {
+      return false;
+    }
+
+    return (
+      state.reason === 'qr_event_timeout' ||
+      state.reason === 'first_qr_timeout' ||
+      state.reason === 'connection_attempt_guard_timeout'
+    );
+  }
+
+  private isLocalRequestTimeoutError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      error.message.includes('WWebJS local QR request timed out')
+    );
   }
 
   private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
@@ -514,12 +610,12 @@ export class WorkerConnectionQrCodeWwebjsConsume {
     );
   }
 
-  private activeAttemptKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:active_attempt`;
+  private activeAttemptKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:active_attempt`;
   }
 
-  private qrAttemptCacheKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:attempt`;
+  private qrAttemptCacheKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:attempt`;
   }
 
   private async isActiveAttempt(
@@ -567,6 +663,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       const processed = await this.redisGetWithTimeout(
         this.redisQueueService.processedAttemptKey(
           data.worker_id,
+          data.worker_type_id,
           data.connection_attempt_id
         ),
         'processed_attempt'
@@ -580,7 +677,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       }
 
       const raw = await this.redisGetWithTimeout(
-        this.activeAttemptKey(data.worker_id),
+        this.activeAttemptKey(data.worker_id, data.worker_type_id),
         'active_attempt'
       );
       if (!raw) {
@@ -701,7 +798,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
     }
 
     try {
-      const key = this.activeAttemptKey(workerId);
+      const key = this.activeAttemptKey(workerId, EWorkerType.wwebjs);
       const raw = await this.redisGetWithTimeout(key, 'active_attempt_release');
       if (!raw) {
         recordConnectionLifecycle({
@@ -807,7 +904,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
 
     try {
       await this.redis.set(
-        this.qrAttemptCacheKey(normalized.worker_id),
+        this.qrAttemptCacheKey(normalized.worker_id, EWorkerType.wwebjs),
         JSON.stringify(normalized),
         'EX',
         ttlSeconds
@@ -906,6 +1003,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
   ): Promise<void> {
     const result = await this.redisQueueService.ackAndDelete(
       message.payload?.worker_id ?? wwebjsEnvironment.wwebjsWorkerId,
+      message.payload?.worker_type_id ?? EWorkerType.wwebjs,
       message.stream_id
     );
     recordConnectionLifecycle({

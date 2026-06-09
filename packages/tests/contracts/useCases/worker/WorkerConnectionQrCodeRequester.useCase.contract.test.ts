@@ -76,11 +76,11 @@ function makeUseCase(
   };
   const redis = makeRedis(overrides.redisInitial);
   const redisQueueService = {
-    streamKey: jest.fn((workerId: string) => {
-      return `connection:qrcode:${workerId}:requests`;
+    streamKey: jest.fn((workerId: string, workerTypeId: string) => {
+      return `connection:qrcode:${workerTypeId}:${workerId}:requests`;
     }),
-    consumerGroup: jest.fn((workerId: string) => {
-      return `connection:qrcode:${workerId}:group`;
+    consumerGroup: jest.fn((workerId: string, workerTypeId: string) => {
+      return `connection:qrcode:${workerTypeId}:${workerId}:group`;
     }),
     enqueue: jest.fn(async (_payload: IWorkerConnectionQrCodeQueueMessage) => {
       if (overrides.enqueueError) {
@@ -144,16 +144,18 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       })
     );
     expect(deps.redis.set).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:active_attempt',
+      `connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`,
       expect.stringContaining(
-        '"stream_key":"connection:qrcode:worker-1:requests"'
+        `"stream_key":"connection:qrcode:${EWorkerType.baileys}:worker-1:requests"`
       ),
       'EX',
       expect.any(Number),
       'NX'
     );
     expect(
-      deps.redis.store.get('connection:qrcode:worker-1:active_attempt')
+      deps.redis.store.get(
+        `connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`
+      )
     ).toContain('"stream_id":"1710000000000-0"');
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
@@ -199,14 +201,14 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         reason: 'queued',
       },
       queued_at: new Date().toISOString(),
-      stream_key: 'connection:qrcode:worker-1:requests',
-      consumer_group: 'connection:qrcode:worker-1:group',
+      stream_key: `connection:qrcode:${EWorkerType.baileys}:worker-1:requests`,
+      consumer_group: `connection:qrcode:${EWorkerType.baileys}:worker-1:group`,
       source: 'manager',
       worker_type_id: EWorkerType.baileys,
     };
     const deps = makeUseCase({
       redisInitial: {
-        'connection:qrcode:worker-1:active_attempt':
+        [`connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`]:
           JSON.stringify(activeAttempt),
       },
     });
@@ -245,7 +247,8 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     };
     const deps = makeUseCase({
       redisInitial: {
-        'connection:qrcode:worker-1:attempt': JSON.stringify(cachedQr),
+        [`connection:qrcode:${EWorkerType.baileys}:worker-1:attempt`]:
+          JSON.stringify(cachedQr),
       },
     });
 
@@ -287,7 +290,8 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     const deps = makeUseCase({
       workerTypeId: EWorkerType.wwebjs,
       redisInitial: {
-        'connection:qrcode:worker-1:attempt': JSON.stringify(cachedQr),
+        [`connection:qrcode:${EWorkerType.baileys}:worker-1:attempt`]:
+          JSON.stringify(cachedQr),
       },
     });
 
@@ -312,16 +316,17 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         reason: 'queued',
       },
       queued_at: new Date().toISOString(),
-      stream_key: 'connection:qrcode:worker-1:requests',
-      consumer_group: 'connection:qrcode:worker-1:group',
+      stream_key: `connection:qrcode:${EWorkerType.baileys}:worker-1:requests`,
+      consumer_group: `connection:qrcode:${EWorkerType.baileys}:worker-1:group`,
       source: 'manager',
       worker_type_id: EWorkerType.baileys,
     };
     const deps = makeUseCase({
       redisInitial: {
-        'connection:qrcode:worker-1:active_attempt':
+        [`connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`]:
           JSON.stringify(activeAttempt),
-        'connection:qrcode:worker-1:processed:attempt-processed': '1',
+        [`connection:qrcode:${EWorkerType.baileys}:worker-1:processed:attempt-processed`]:
+          '1',
       },
     });
 
@@ -329,7 +334,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
 
     expect(response.connection_attempt_id).not.toBe('attempt-processed');
     expect(deps.redis.del).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:active_attempt'
+      `connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`
     );
     expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
   });
@@ -347,15 +352,15 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         reason: 'queued',
       },
       queued_at: new Date(Date.now() - 121_000).toISOString(),
-      stream_key: 'connection:qrcode:worker-1:requests',
+      stream_key: `connection:qrcode:${EWorkerType.baileys}:worker-1:requests`,
       stream_id: '1710000000000-0',
-      consumer_group: 'connection:qrcode:worker-1:group',
+      consumer_group: `connection:qrcode:${EWorkerType.baileys}:worker-1:group`,
       source: 'manager',
       worker_type_id: EWorkerType.baileys,
     };
     const deps = makeUseCase({
       redisInitial: {
-        'connection:qrcode:worker-1:active_attempt':
+        [`connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`]:
           JSON.stringify(activeAttempt),
       },
     });
@@ -364,7 +369,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
 
     expect(response.connection_attempt_id).not.toBe('attempt-old');
     expect(deps.redis.del).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:active_attempt'
+      `connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`
     );
     expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
   });
@@ -379,7 +384,7 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     ).rejects.toThrow('xadd failed');
 
     expect(deps.redis.del).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:active_attempt'
+      `connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`
     );
     expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
   });

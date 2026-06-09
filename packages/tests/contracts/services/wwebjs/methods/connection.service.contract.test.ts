@@ -208,6 +208,38 @@ describe('WwebjsConnectionService', () => {
     expect(startConnectionSpy).toHaveBeenCalled();
   });
 
+  it('bypasses session restore for a user QR request with an existing stale session', async () => {
+    const { service, servicePrivate } = makeService();
+    const state: IBaileysConnectionState = {
+      status: Status.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      worker_id: 'worker-w',
+      account_id: 'account-w',
+    };
+
+    servicePrivate.status = Status.disconnected;
+    jest.spyOn(service, 'hasSession').mockReturnValue(true);
+    const startConnectionSpy = jest
+      .spyOn(servicePrivate, 'startConnection')
+      .mockResolvedValue(state);
+
+    await service.connect({
+      initial_connection: true,
+      allow_restore: true,
+      requested_by_user: true,
+      type: EBaileysConnectionType.qrcode,
+    });
+
+    expect(servicePrivate.logConnectionEvent).toHaveBeenCalledWith(
+      'connect_restore_bypassed',
+      expect.objectContaining({
+        reason: 'manual_qrcode_request',
+        requested_by_user: true,
+      })
+    );
+    expect(startConnectionSpy).toHaveBeenCalled();
+  });
+
   it('tears down the active client before reconnecting after a health-check disconnect', () => {
     const { servicePrivate, healthCheckService } = makeService();
 

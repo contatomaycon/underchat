@@ -32,6 +32,10 @@ export function protoToWorkerPayload(
   if (proto.name) {
     payload.name = proto.name;
   }
+  if (proto.previous_worker_type_id) {
+    payload.previous_worker_type_id =
+      proto.previous_worker_type_id as EWorkerType;
+  }
   if (proto.previous_worker_status_id) {
     payload.previous_worker_status_id =
       proto.previous_worker_status_id as EWorkerStatus;
@@ -66,6 +70,9 @@ export function workerPayloadToProto(
   }
   if (payload.name) {
     proto.name = payload.name;
+  }
+  if (payload.previous_worker_type_id) {
+    proto.previous_worker_type_id = payload.previous_worker_type_id;
   }
   if (payload.previous_worker_status_id) {
     proto.previous_worker_status_id = payload.previous_worker_status_id;

@@ -430,9 +430,13 @@ export class WwebjsConnectionService {
       this.cancelAttempt(false);
     }
 
+    const shouldBypassRestoreForQrRequest =
+      typeConnection === EBaileysConnectionType.qrcode && requestedByUser;
+
     if (
       (this.status === Status.initial || this.status === Status.disconnected) &&
       allowRestore &&
+      !shouldBypassRestoreForQrRequest &&
       this.hasSession()
     ) {
       this.logConnectionEvent('connect_short_circuit', {
@@ -440,6 +444,20 @@ export class WwebjsConnectionService {
         allow_restore: allowRestore,
       });
       return this.startConnection(fromDisconnectRestart);
+    }
+
+    if (
+      (this.status === Status.initial || this.status === Status.disconnected) &&
+      allowRestore &&
+      shouldBypassRestoreForQrRequest &&
+      this.hasSession()
+    ) {
+      this.logConnectionEvent('connect_restore_bypassed', {
+        reason: 'manual_qrcode_request',
+        allow_restore: allowRestore,
+        requested_by_user: requestedByUser,
+        connection_type: typeConnection,
+      });
     }
 
     if (

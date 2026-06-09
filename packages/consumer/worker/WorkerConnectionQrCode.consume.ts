@@ -66,14 +66,20 @@ export class WorkerConnectionQrCodeConsume {
     }
 
     const workerId = baileysEnvironment.baileysWorkerId;
-    const streamKey = this.redisQueueService.streamKey(workerId);
-    const consumerGroup = this.redisQueueService.consumerGroup(workerId);
+    const streamKey = this.redisQueueService.streamKey(
+      workerId,
+      EWorkerType.baileys
+    );
+    const consumerGroup = this.redisQueueService.consumerGroup(
+      workerId,
+      EWorkerType.baileys
+    );
     const consumerName = this.redisQueueService.consumerName(
       workerId,
       EWorkerType.baileys
     );
 
-    await this.redisQueueService.ensureGroup(workerId);
+    await this.redisQueueService.ensureGroup(workerId, EWorkerType.baileys);
     this.stopped = false;
     this.isRunning = true;
 
@@ -122,6 +128,7 @@ export class WorkerConnectionQrCodeConsume {
       try {
         const claimed = await this.redisQueueService.claimPending(
           workerId,
+          EWorkerType.baileys,
           consumerName
         );
         if (claimed.length > 0) {
@@ -131,6 +138,7 @@ export class WorkerConnectionQrCodeConsume {
 
         const messages = await this.redisQueueService.readNew(
           workerId,
+          EWorkerType.baileys,
           consumerName
         );
         await this.processMessages(messages);
@@ -145,8 +153,14 @@ export class WorkerConnectionQrCodeConsume {
           account_id: baileysEnvironment.baileysAccountId,
           worker_type: EWorkerType.baileys,
           worker_type_id: EWorkerType.baileys,
-          stream_key: this.redisQueueService.streamKey(workerId),
-          consumer_group: this.redisQueueService.consumerGroup(workerId),
+          stream_key: this.redisQueueService.streamKey(
+            workerId,
+            EWorkerType.baileys
+          ),
+          consumer_group: this.redisQueueService.consumerGroup(
+            workerId,
+            EWorkerType.baileys
+          ),
           consumer_name: consumerName,
           redis_status: this.redisStatus(),
           error: error instanceof Error ? error.message : String(error),
@@ -193,6 +207,7 @@ export class WorkerConnectionQrCodeConsume {
       message.delivery_count ??
       (await this.redisQueueService.getDeliveryCount(
         data.worker_id,
+        data.worker_type_id,
         message.stream_id
       ));
     const contextData = buildConnectionLifecycleContext({
@@ -430,12 +445,12 @@ export class WorkerConnectionQrCodeConsume {
     );
   }
 
-  private activeAttemptKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:active_attempt`;
+  private activeAttemptKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:active_attempt`;
   }
 
-  private qrAttemptCacheKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:attempt`;
+  private qrAttemptCacheKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:attempt`;
   }
 
   private async isActiveAttempt(
@@ -484,6 +499,7 @@ export class WorkerConnectionQrCodeConsume {
       const processed = await this.redisGetWithTimeout(
         this.redisQueueService.processedAttemptKey(
           data.worker_id,
+          data.worker_type_id,
           data.connection_attempt_id
         ),
         'processed_attempt'
@@ -497,7 +513,7 @@ export class WorkerConnectionQrCodeConsume {
       }
 
       const raw = await this.redisGetWithTimeout(
-        this.activeAttemptKey(data.worker_id),
+        this.activeAttemptKey(data.worker_id, data.worker_type_id),
         'active_attempt'
       );
       if (!raw) {
@@ -616,7 +632,7 @@ export class WorkerConnectionQrCodeConsume {
 
     try {
       await this.redis.set(
-        this.qrAttemptCacheKey(normalized.worker_id),
+        this.qrAttemptCacheKey(normalized.worker_id, EWorkerType.baileys),
         JSON.stringify(normalized),
         'EX',
         ttlSeconds
@@ -715,6 +731,7 @@ export class WorkerConnectionQrCodeConsume {
   ): Promise<void> {
     const result = await this.redisQueueService.ackAndDelete(
       message.payload?.worker_id ?? baileysEnvironment.baileysWorkerId,
+      message.payload?.worker_type_id ?? EWorkerType.baileys,
       message.stream_id
     );
     recordConnectionLifecycle({

@@ -522,6 +522,7 @@ export class WorkerCommandHandlerService {
     await this.invalidateQrAttemptState(data.worker_id, {
       accountId: data.account_id,
       workerType,
+      previousWorkerType: data.previous_worker_type_id,
       reason: 'warm_activation_runtime_replacement',
       recreateReason:
         data.remove_volume === true
@@ -1974,12 +1975,22 @@ export class WorkerCommandHandlerService {
     });
   }
 
-  private qrAttemptCacheKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:attempt`;
+  private qrAttemptCacheKey(
+    workerId: string,
+    workerTypeId?: EWorkerType | string
+  ): string {
+    return workerTypeId
+      ? `connection:qrcode:${workerTypeId}:${workerId}:attempt`
+      : `connection:qrcode:${workerId}:attempt`;
   }
 
-  private activeQrAttemptKey(workerId: string): string {
-    return `connection:qrcode:${workerId}:active_attempt`;
+  private activeQrAttemptKey(
+    workerId: string,
+    workerTypeId?: EWorkerType | string
+  ): string {
+    return workerTypeId
+      ? `connection:qrcode:${workerTypeId}:${workerId}:active_attempt`
+      : `connection:qrcode:${workerId}:active_attempt`;
   }
 
   private qrGeneratedAtMs(
@@ -2058,10 +2069,13 @@ export class WorkerCommandHandlerService {
   }
 
   private async getCachedQrAttemptState(
-    workerId: string
+    workerId: string,
+    workerTypeId?: EWorkerType | string
   ): Promise<IBaileysConnectionState | undefined> {
     try {
-      const raw = await this.redis.get(this.qrAttemptCacheKey(workerId));
+      const raw = await this.redis.get(
+        this.qrAttemptCacheKey(workerId, workerTypeId)
+      );
       if (!raw) {
         return undefined;
       }
@@ -2073,7 +2087,7 @@ export class WorkerCommandHandlerService {
 
       const state = parsed as IBaileysConnectionState;
       if (this.isQrExpired(state)) {
-        await this.redis.del(this.qrAttemptCacheKey(workerId));
+        await this.redis.del(this.qrAttemptCacheKey(workerId, workerTypeId));
         recordConnectionQrSummary({
           event: 'balancer_qrcode_cache_expired',
           ...summarizeConnectionQrState(state),
@@ -2135,15 +2149,21 @@ export class WorkerCommandHandlerService {
     cachedState?: IBaileysConnectionState;
     shouldReturnCached: boolean;
   }> {
-    const cached = await this.getCachedQrAttemptState(input.worker_id);
-    const workerData = cached
-      ? await this.resolveWorkerDataForContainer(input.worker_id, accountId)
-      : null;
+    const workerData = await this.resolveWorkerDataForContainer(
+      input.worker_id,
+      accountId
+    );
+    const cached = await this.getCachedQrAttemptState(
+      input.worker_id,
+      workerData?.workerTypeId
+    );
     const cachedIdentityMismatch = cached
       ? this.getCachedQrIdentityMismatchReason(cached, workerData)
       : undefined;
     if (cached && cachedIdentityMismatch) {
-      await this.redis.del(this.qrAttemptCacheKey(input.worker_id));
+      await this.redis.del(
+        this.qrAttemptCacheKey(input.worker_id, workerData?.workerTypeId)
+      );
       recordConnectionQrSummary({
         event: 'balancer_qrcode_cached_attempt_invalidated',
         ...summarizeConnectionQrState(cached),
@@ -2390,16 +2410,19 @@ export class WorkerCommandHandlerService {
   ): Promise<void> {
     const ttlSeconds = this.qrCacheTtlForState(state);
     await this.redis.setex(
-      this.qrAttemptCacheKey(state.worker_id),
+      this.qrAttemptCacheKey(state.worker_id, state.worker_type_id),
       ttlSeconds,
       JSON.stringify(state)
     );
   }
 
   private async getActiveQrAttempt(
-    workerId: string
+    workerId: string,
+    workerTypeId?: EWorkerType | string
   ): Promise<ActiveQrAttempt | null> {
-    const raw = await this.redis.get(this.activeQrAttemptKey(workerId));
+    const raw = await this.redis.get(
+      this.activeQrAttemptKey(workerId, workerTypeId)
+    );
     if (!raw) {
       return null;
     }
@@ -2411,17 +2434,18 @@ export class WorkerCommandHandlerService {
       }
       return parsed;
     } catch {
-      await this.redis.del(this.activeQrAttemptKey(workerId));
+      await this.redis.del(this.activeQrAttemptKey(workerId, workerTypeId));
       return null;
     }
   }
 
   private async claimActiveQrAttempt(
     workerId: string,
+    workerTypeId: EWorkerType,
     attempt: ActiveQrAttempt
   ): Promise<boolean> {
     const result = await this.redis.set(
-      this.activeQrAttemptKey(workerId),
+      this.activeQrAttemptKey(workerId, workerTypeId),
       JSON.stringify(attempt),
       'EX',
       this.qrAttemptTtlSeconds,
@@ -2432,16 +2456,17 @@ export class WorkerCommandHandlerService {
 
   private async clearQrAttemptAfterEnqueueFailure(
     workerId: string,
+    workerTypeId: EWorkerType,
     connectionAttemptId?: string
   ): Promise<void> {
-    await this.redis.del(this.qrAttemptCacheKey(workerId));
+    await this.redis.del(this.qrAttemptCacheKey(workerId, workerTypeId));
     if (!connectionAttemptId) {
       return;
     }
 
-    const active = await this.getActiveQrAttempt(workerId);
+    const active = await this.getActiveQrAttempt(workerId, workerTypeId);
     if (active?.ack.connection_attempt_id === connectionAttemptId) {
-      await this.redis.del(this.activeQrAttemptKey(workerId));
+      await this.redis.del(this.activeQrAttemptKey(workerId, workerTypeId));
     }
   }
 
@@ -2450,20 +2475,35 @@ export class WorkerCommandHandlerService {
     options: {
       accountId?: string;
       workerType?: EWorkerType;
+      previousWorkerType?: EWorkerType | string;
       reason: string;
       recreateReason?: string;
     }
   ): Promise<void> {
     try {
-      await this.redis.del(
+      const keys = new Set<string>([
         this.qrAttemptCacheKey(workerId),
-        this.activeQrAttemptKey(workerId)
-      );
+        this.activeQrAttemptKey(workerId),
+      ]);
+      for (const workerType of [
+        options.workerType,
+        options.previousWorkerType,
+      ]) {
+        if (!workerType) {
+          continue;
+        }
+        keys.add(this.qrAttemptCacheKey(workerId, workerType));
+        keys.add(this.activeQrAttemptKey(workerId, workerType));
+        keys.add(this.redisQueueService.streamKey(workerId, workerType));
+      }
+
+      await this.redis.del(...keys);
       recordConnectionQrSummary({
         event: 'balancer_qrcode_attempt_invalidated',
         worker_id: workerId,
         account_id: options.accountId,
         worker_type: options.workerType,
+        previous_worker_type_id: options.previousWorkerType,
         reason: options.reason,
         recreate_reason: options.recreateReason,
         publish_source: 'recreate_worker',
@@ -2475,6 +2515,7 @@ export class WorkerCommandHandlerService {
         worker_id: workerId,
         account_id: options.accountId,
         worker_type: options.workerType,
+        previous_worker_type_id: options.previousWorkerType,
         reason: options.reason,
         recreate_reason: options.recreateReason,
         error: getErrorMessage(err),
@@ -2491,7 +2532,10 @@ export class WorkerCommandHandlerService {
       return { ignored: false };
     }
 
-    const cached = await this.getCachedQrAttemptState(state.worker_id);
+    const cached = await this.getCachedQrAttemptState(
+      state.worker_id,
+      state.worker_type_id
+    );
     if (!this.isActiveQrAttemptState(cached)) {
       return { ignored: false };
     }
@@ -2664,7 +2708,7 @@ export class WorkerCommandHandlerService {
 
     try {
       const raw = await this.redis.get(
-        this.activeQrAttemptKey(state.worker_id)
+        this.activeQrAttemptKey(state.worker_id, state.worker_type_id)
       );
       if (!raw) {
         return state;
@@ -2777,8 +2821,14 @@ export class WorkerCommandHandlerService {
     pending.worker_type_id = workerData.workerTypeId;
     pending.worker_status_id = workerData.workerStatusId;
 
-    const streamKey = this.redisQueueService.streamKey(workerId);
-    const consumerGroup = this.redisQueueService.consumerGroup(workerId);
+    const streamKey = this.redisQueueService.streamKey(
+      workerId,
+      workerData.workerTypeId
+    );
+    const consumerGroup = this.redisQueueService.consumerGroup(
+      workerId,
+      workerData.workerTypeId
+    );
     const activeAttempt: ActiveQrAttempt = {
       ack: pending,
       queued_at: new Date().toISOString(),
@@ -2787,9 +2837,16 @@ export class WorkerCommandHandlerService {
       source: 'manager',
       worker_type_id: workerData.workerTypeId,
     };
-    const claimed = await this.claimActiveQrAttempt(workerId, activeAttempt);
+    const claimed = await this.claimActiveQrAttempt(
+      workerId,
+      workerData.workerTypeId,
+      activeAttempt
+    );
     if (!claimed) {
-      const current = await this.getActiveQrAttempt(workerId);
+      const current = await this.getActiveQrAttempt(
+        workerId,
+        workerData.workerTypeId
+      );
       if (current) {
         recordConnectionLifecycle({
           stage:
@@ -2818,6 +2875,7 @@ export class WorkerCommandHandlerService {
 
       const reclaimed = await this.claimActiveQrAttempt(
         workerId,
+        workerData.workerTypeId,
         activeAttempt
       );
       if (!reclaimed) {
@@ -2863,6 +2921,7 @@ export class WorkerCommandHandlerService {
       });
       await this.clearQrAttemptAfterEnqueueFailure(
         workerId,
+        workerData.workerTypeId,
         queueRequest.connection_attempt_id
       );
       throw err;
@@ -2873,9 +2932,13 @@ export class WorkerCommandHandlerService {
     payload: StatusConnectionWorkerRequest,
     workerData: ResolvedWorkerDataForContainer
   ): Promise<void> {
-    const streamKey = this.redisQueueService.streamKey(payload.worker_id);
+    const streamKey = this.redisQueueService.streamKey(
+      payload.worker_id,
+      workerData.workerTypeId
+    );
     const consumerGroup = this.redisQueueService.consumerGroup(
-      payload.worker_id
+      payload.worker_id,
+      workerData.workerTypeId
     );
     const queuePayload: IWorkerConnectionQrCodeQueueMessage = {
       request_id: uuidv7(),
@@ -4035,6 +4098,7 @@ export class WorkerCommandHandlerService {
     await this.invalidateQrAttemptState(data.worker_id, {
       accountId: data.account_id,
       workerType,
+      previousWorkerType: data.previous_worker_type_id,
       reason: 'worker_recreate',
       recreateReason: shouldRemoveVolume
         ? 'recreate_with_volume_reset'

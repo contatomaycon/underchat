@@ -407,11 +407,11 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 }
 
 func (w *Worker) connectionQRCodeRedisStreamKey(workerID string) string {
-	return "connection:qrcode:" + workerID + ":requests"
+	return "connection:qrcode:" + WorkerTypeWhatsmeow + ":" + workerID + ":requests"
 }
 
 func (w *Worker) connectionQRCodeRedisStreamGroup(workerID string) string {
-	return "connection:qrcode:" + workerID + ":group"
+	return "connection:qrcode:" + WorkerTypeWhatsmeow + ":" + workerID + ":group"
 }
 
 func (w *Worker) connectionQRCodeRedisStreamConsumer(workerID string) string {
@@ -848,15 +848,15 @@ type activeConnectionQRCodeAttemptEnvelope struct {
 }
 
 func (w *Worker) activeConnectionQRCodeAttemptKey(workerID string) string {
-	return "connection:qrcode:" + workerID + ":active_attempt"
+	return "connection:qrcode:" + WorkerTypeWhatsmeow + ":" + workerID + ":active_attempt"
 }
 
 func (w *Worker) connectionQRCodeAttemptCacheKey(workerID string) string {
-	return "connection:qrcode:" + workerID + ":attempt"
+	return "connection:qrcode:" + WorkerTypeWhatsmeow + ":" + workerID + ":attempt"
 }
 
 func (w *Worker) processedConnectionQRCodeAttemptKey(data WorkerConnectionQRCodeQueueMessage) string {
-	return "connection:qrcode:" + data.WorkerID + ":processed:" + data.ConnectionAttemptID
+	return "connection:qrcode:" + data.WorkerTypeID + ":" + data.WorkerID + ":processed:" + data.ConnectionAttemptID
 }
 
 func (w *Worker) isActiveConnectionQRCodeAttempt(ctx context.Context, data WorkerConnectionQRCodeQueueMessage) (bool, error) {

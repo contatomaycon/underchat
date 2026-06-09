@@ -278,11 +278,11 @@ function buildHandler(
     }),
   };
   const redisQueueService = {
-    streamKey: jest.fn((workerId: string) => {
-      return `connection:qrcode:${workerId}:requests`;
+    streamKey: jest.fn((workerId: string, workerTypeId: string) => {
+      return `connection:qrcode:${workerTypeId}:${workerId}:requests`;
     }),
-    consumerGroup: jest.fn((workerId: string) => {
-      return `connection:qrcode:${workerId}:group`;
+    consumerGroup: jest.fn((workerId: string, workerTypeId: string) => {
+      return `connection:qrcode:${workerTypeId}:${workerId}:group`;
     }),
     enqueue: jest.fn(async () => '1710000000000-0'),
   };
@@ -514,7 +514,7 @@ describe('WorkerCommandHandlerService connection', () => {
     });
 
     expect(deps.redis.setex).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
       expect.any(Number),
       expect.stringContaining('"qrcode":"data:image/png;base64,qr"')
     );
@@ -574,7 +574,7 @@ describe('WorkerCommandHandlerService connection', () => {
       deps.containerHealthService.checkServiceHealth
     ).not.toHaveBeenCalled();
     expect(deps.redis.setex).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
       180,
       expect.stringContaining('"connection_attempt_id":"uuid-v7"')
     );
@@ -682,7 +682,7 @@ describe('WorkerCommandHandlerService connection', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-06-04T13:45:00.000Z'));
     const deps = buildHandler();
     deps.redisStore.set(
-      'connection:qrcode:worker-1:attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
       JSON.stringify({
         code: ECodeMessage.awaitingReadQrCode,
         status: EBaileysConnectionStatus.connecting,
@@ -723,7 +723,7 @@ describe('WorkerCommandHandlerService connection', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-06-04T13:45:00.000Z'));
     const deps = buildHandler();
     deps.redisStore.set(
-      'connection:qrcode:worker-1:attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
       JSON.stringify({
         code: ECodeMessage.awaitingReadQrCode,
         status: EBaileysConnectionStatus.connecting,
@@ -758,7 +758,7 @@ describe('WorkerCommandHandlerService connection', () => {
       expect(response.qrcode).toBeUndefined();
       expect(response.qr_generated_at).toBeUndefined();
       expect(deps.redis.setex).toHaveBeenCalledWith(
-        'connection:qrcode:worker-1:attempt',
+        `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
         180,
         expect.not.stringContaining('qr-expired')
       );
@@ -953,7 +953,7 @@ describe('WorkerCommandHandlerService connection', () => {
     ).rejects.toThrow('xadd failed');
 
     expect(deps.redis.del).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:active_attempt'
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:active_attempt`
     );
     expect(deps.kafkaBaileysQueueService.ensure).not.toHaveBeenCalled();
   });
@@ -1025,7 +1025,7 @@ describe('WorkerCommandHandlerService connection', () => {
     jest.useFakeTimers();
     const deps = buildHandler();
     deps.redisStore.set(
-      'connection:qrcode:worker-1:attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
       JSON.stringify({
         code: ECodeMessage.awaitingReadQrCode,
         status: EBaileysConnectionStatus.connecting,
@@ -1076,7 +1076,7 @@ describe('WorkerCommandHandlerService connection', () => {
       'account-1'
     );
     deps.redisStore.set(
-      'connection:qrcode:worker-1:attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
       JSON.stringify({
         code: ECodeMessage.awaitingReadQrCode,
         status: EBaileysConnectionStatus.connecting,
@@ -1105,6 +1105,7 @@ describe('WorkerCommandHandlerService connection', () => {
         status: EBaileysConnectionStatus.connecting,
         worker_id: 'worker-1',
         account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
         connection_attempt_id: 'uuid-v7',
         qr_pending: true,
       },
@@ -1124,7 +1125,7 @@ describe('WorkerCommandHandlerService connection', () => {
   it('publishes non-QR availability events even when an old QR is cached', async () => {
     const deps = buildHandler();
     deps.redisStore.set(
-      'connection:qrcode:worker-1:attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
       JSON.stringify({
         code: ECodeMessage.awaitingReadQrCode,
         status: EBaileysConnectionStatus.connecting,
@@ -1554,7 +1555,10 @@ describe('WorkerCommandHandlerService connection', () => {
     );
     expect(deps.redis.del).toHaveBeenCalledWith(
       'connection:qrcode:worker-1:attempt',
-      'connection:qrcode:worker-1:active_attempt'
+      'connection:qrcode:worker-1:active_attempt',
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:active_attempt`,
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:requests`
     );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
       expect.any(String),
