@@ -26,6 +26,9 @@ const server = fastify({
   pluginTimeout: 600000,
   connectionTimeout: 600000,
   keepAliveTimeout: 600000,
+  routerOptions: {
+    maxParamLength: 2048,
+  },
   genReqId: () => v7(),
   logger: true,
 });
