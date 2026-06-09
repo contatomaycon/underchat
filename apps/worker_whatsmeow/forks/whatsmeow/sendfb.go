@@ -133,9 +133,9 @@ func (cli *Client) SendFBMessage(
 
 	start := time.Now()
 	// Sending multiple messages at a time can cause weird issues and makes it harder to retry safely
-	cli.messageSendLock.Lock()
+	unlockMessageSend := cli.messageSendLocks.Lock(messageSendLockKey(to))
 	resp.DebugTimings.Queue = time.Since(start)
-	defer cli.messageSendLock.Unlock()
+	defer unlockMessageSend()
 
 	if !req.Peer {
 		err = cli.addRecentMessage(ctx, to, req.ID, nil, messageAppProto)

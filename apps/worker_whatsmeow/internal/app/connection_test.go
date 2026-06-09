@@ -112,6 +112,12 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if cfg.OutboundReadyTimeout != time.Minute {
 		t.Fatalf("unexpected outbound ready timeout %s", cfg.OutboundReadyTimeout)
 	}
+	if cfg.SendMaxInFlight != 256 {
+		t.Fatalf("unexpected send max in-flight %d", cfg.SendMaxInFlight)
+	}
+	if cfg.SendQueueTimeout != 10*time.Minute {
+		t.Fatalf("unexpected send queue timeout %s", cfg.SendQueueTimeout)
+	}
 	if cfg.KafkaSendConsumerIdleRecreateInterval != 0 {
 		t.Fatalf("unexpected kafka send idle recreate interval %s", cfg.KafkaSendConsumerIdleRecreateInterval)
 	}

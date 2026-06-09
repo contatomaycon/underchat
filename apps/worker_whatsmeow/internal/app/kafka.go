@@ -374,6 +374,10 @@ func (k *KafkaClient) ensureConsumerTopic(ctx context.Context, topic string, top
 }
 
 func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, handler KafkaMessageHandler) error {
+	if isWorkerSendTopic(topic) {
+		return k.consumeWorkerSendReader(ctx, reader, topic, groupID, state, handler)
+	}
+
 	idleRecreateInterval := k.consumerIdleRecreateInterval(topic)
 	for {
 		msg, err := k.fetchMessage(ctx, reader, idleRecreateInterval)
@@ -479,6 +483,200 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 	}
 }
 
+func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, handler KafkaMessageHandler) error {
+	sequencer := newKeyedSequencer()
+	commits := newPartitionCommitCoordinator(func(commitCtx context.Context, msg kafka.Message) error {
+		return reader.CommitMessages(commitCtx, msg)
+	})
+	consumeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	maxInFlight := k.sendMaxInFlight()
+	inFlight := make(chan struct{}, maxInFlight)
+	var wg sync.WaitGroup
+	var firstErrMu sync.Mutex
+	var firstErr error
+
+	setFirstErr := func(err error) {
+		if err == nil {
+			return
+		}
+		firstErrMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+			cancel()
+		}
+		firstErrMu.Unlock()
+	}
+	getFirstErr := func() error {
+		firstErrMu.Lock()
+		defer firstErrMu.Unlock()
+		return firstErr
+	}
+	waitAndReturn := func(err error) error {
+		wg.Wait()
+		if first := getFirstErr(); first != nil {
+			return first
+		}
+		return err
+	}
+
+	idleRecreateInterval := k.consumerIdleRecreateInterval(topic)
+	for {
+		select {
+		case inFlight <- struct{}{}:
+		case <-consumeCtx.Done():
+			return waitAndReturn(consumeCtx.Err())
+		}
+
+		currentIdleRecreateInterval := idleRecreateInterval
+		if len(inFlight) > 1 {
+			currentIdleRecreateInterval = 0
+		}
+		msg, err := k.fetchMessage(consumeCtx, reader, currentIdleRecreateInterval)
+		if err != nil {
+			<-inFlight
+			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+				state.LastError = err.Error()
+			})
+			if ctx.Err() != nil {
+				return waitAndReturn(ctx.Err())
+			}
+			if first := getFirstErr(); first != nil {
+				return waitAndReturn(first)
+			}
+			if errors.Is(err, errKafkaConsumerIdleRecreate) {
+				recordMessageLifecycle(ctx, k.cfg, map[string]any{
+					"stage":       "whatsmeow.outgoing.kafka.consumer.recreate",
+					"decision":    "recreate_consumer",
+					"outcome":     "retrying",
+					"reason":      "fetch_idle_timeout",
+					"level":       "warn",
+					"topic":       topic,
+					"group_id":    groupID,
+					"idle_ms":     idleRecreateInterval.Milliseconds(),
+					"worker_id":   k.cfg.WorkerID,
+					"account_id":  k.cfg.AccountID,
+					"worker_type": "whatsmeow",
+				})
+				return waitAndReturn(err)
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return waitAndReturn(err)
+			}
+			log.Printf("kafka fetch error topic=%s group=%s: %v", topic, groupID, err)
+			time.Sleep(k.fetchErrorBackoff())
+			continue
+		}
+
+		k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+			state.LastMessageAt = time.Now()
+			state.LastError = ""
+		})
+
+		carrier := propagation.MapCarrier{}
+		for _, header := range msg.Headers {
+			carrier.Set(header.Key, string(header.Value))
+		}
+		messageCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
+		queueKey := workerSendQueueKey(msg.Value)
+		commits.register(msg)
+
+		recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+			"stage":     "whatsmeow.outgoing.kafka.queue.enqueued",
+			"decision":  "enqueue_send_message",
+			"outcome":   "enqueued",
+			"topic":     topic,
+			"partition": msg.Partition,
+			"offset":    msg.Offset,
+			"queue_key": queueKey,
+			"kafka_key": string(msg.Key),
+		})
+
+		done := sequencer.enqueue(consumeCtx, messageCtx, queueKey, k.cfg.SendQueueTimeout, func(taskCtx context.Context) error {
+			return handler(taskCtx, msg)
+		})
+
+		wg.Add(1)
+		go func(msg kafka.Message, messageCtx context.Context, queueKey string, done <-chan error) {
+			defer wg.Done()
+			defer func() {
+				<-inFlight
+			}()
+
+			if err := <-done; err != nil {
+				k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+					state.LastError = err.Error()
+				})
+				log.Printf("kafka async handler error topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, err)
+				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+					"stage":     "whatsmeow.outgoing.kafka.commit.skipped",
+					"decision":  "commit_message",
+					"outcome":   "error",
+					"reason":    "handler_failed",
+					"level":     "error",
+					"topic":     topic,
+					"partition": msg.Partition,
+					"offset":    msg.Offset,
+					"queue_key": queueKey,
+					"error":     err.Error(),
+				})
+				setFirstErr(fmt.Errorf("kafka handler failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err))
+				return
+			}
+
+			committed, err := commits.complete(messageCtx, msg)
+			if err != nil {
+				k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+					state.LastError = err.Error()
+				})
+				log.Printf("kafka commit error topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, err)
+				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+					"stage":     "whatsmeow.outgoing.kafka.commit.error",
+					"decision":  "commit_message",
+					"outcome":   "error",
+					"reason":    "commit_failed",
+					"level":     "error",
+					"topic":     topic,
+					"partition": msg.Partition,
+					"offset":    msg.Offset,
+					"queue_key": queueKey,
+					"error":     err.Error(),
+				})
+				setFirstErr(fmt.Errorf("kafka commit failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err))
+				return
+			}
+			if !committed {
+				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+					"stage":     "whatsmeow.outgoing.kafka.commit.deferred",
+					"decision":  "commit_message",
+					"outcome":   "deferred",
+					"reason":    "waiting_for_contiguous_offset",
+					"topic":     topic,
+					"partition": msg.Partition,
+					"offset":    msg.Offset,
+					"queue_key": queueKey,
+				})
+				return
+			}
+
+			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+				state.LastCommitAt = time.Now()
+				state.LastError = ""
+			})
+			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+				"stage":     "whatsmeow.outgoing.kafka.commit.success",
+				"decision":  "commit_message",
+				"outcome":   "success",
+				"topic":     topic,
+				"partition": msg.Partition,
+				"offset":    msg.Offset,
+				"queue_key": queueKey,
+			})
+		}(msg, messageCtx, queueKey, done)
+	}
+}
+
 func (k *KafkaClient) fetchMessage(ctx context.Context, reader *kafka.Reader, idleRecreateInterval time.Duration) (kafka.Message, error) {
 	if idleRecreateInterval <= 0 {
 		return reader.FetchMessage(ctx)
@@ -515,6 +713,13 @@ func (k *KafkaClient) handlerErrorBackoff() time.Duration {
 		return time.Second
 	}
 	return k.cfg.KafkaHandlerErrorBackoff
+}
+
+func (k *KafkaClient) sendMaxInFlight() int {
+	if k.cfg.SendMaxInFlight <= 0 {
+		return 256
+	}
+	return k.cfg.SendMaxInFlight
 }
 
 func isWorkerSendTopic(topic string) bool {
