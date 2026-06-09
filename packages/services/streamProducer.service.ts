@@ -1,4 +1,4 @@
-import { injectable, inject } from 'tsyringe';
+import { singleton, inject } from 'tsyringe';
 import type { Producer, LibrdKafkaError, MessageHeader } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { toError, getErrorMessage } from '@core/common/functions/toError';
@@ -20,7 +20,7 @@ import {
 } from '@core/common/functions/kafkaTopicConfig';
 import { logger } from '@core/plugins/telemetry/logger';
 
-@injectable()
+@singleton()
 export class StreamProducerService {
   private producer: Producer | null = null;
   private producerReady: Promise<Producer> | null = null;

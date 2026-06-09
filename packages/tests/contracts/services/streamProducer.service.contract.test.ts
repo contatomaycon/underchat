@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { container } from 'tsyringe';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
@@ -24,8 +25,24 @@ jest.mock('@core/plugins/telemetry/messageLifecycleDebug', () => ({
 }));
 
 describe('StreamProducerService topic recovery', () => {
-  beforeEach(() => {
+  afterEach(() => {
     jest.clearAllMocks();
+    container.clearInstances();
+    container.reset();
+  });
+
+  it('reuses the same producer service instance through dependency injection', () => {
+    const kafka = {
+      createProducer: jest.fn(),
+      getBroker: jest.fn(() => 'broker:9092'),
+    };
+
+    container.register('Kafka', { useValue: kafka });
+
+    const firstService = container.resolve(StreamProducerService);
+    const secondService = container.resolve(StreamProducerService);
+
+    expect(secondService).toBe(firstService);
   });
 
   it('ensures worker topic and retries once when produce fails with unknown topic', async () => {
