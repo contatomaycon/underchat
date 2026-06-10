@@ -94,6 +94,7 @@ describe('WorkerMonitorService', () => {
           output: [
             'under-balance-api||',
             'worker-1||',
+            '019dfe2c-2c30-730d-88e9-63b839bb1b37|true|pool-assigned',
             'warm-pool-1|true|pool-1',
             'warm-pool-2||pool-2',
             'warm-legacy||',
@@ -108,6 +109,10 @@ describe('WorkerMonitorService', () => {
       {} as never
     );
 
-    expect(containers).toEqual(['under-balance-api', 'worker-1']);
+    expect(containers).toEqual([
+      'under-balance-api',
+      'worker-1',
+      '019dfe2c-2c30-730d-88e9-63b839bb1b37',
+    ]);
   });
 });

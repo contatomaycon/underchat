@@ -208,4 +208,30 @@ describe('WorkerWarmPoolRepository warm channels', () => {
     expect(whereSql).toContain('2026-06-01T00:00:00.000Z');
     expect(whereSql).toContain('2026-06-06T00:00:00.000Z');
   });
+
+  it('does not reserve a warm pool already linked to an active runtime', async () => {
+    const tx = {
+      execute: jest.fn(async (_query: unknown) => ({ rows: [] })),
+    };
+    const dbRw = {
+      transaction: jest.fn(async (callback) => callback(tx)),
+    };
+    const repository = new WorkerWarmPoolRepository(dbRw as never, {} as never);
+
+    await expect(
+      repository.reserveReady(
+        'server-1',
+        EWorkerType.baileys,
+        'worker-1',
+        '2026-06-10T15:00:00.000Z'
+      )
+    ).resolves.toBeNull();
+
+    const reserveSql = collectSqlParts(tx.execute.mock.calls[0][0]).join(' ');
+
+    expect(reserveSql).toContain('worker_runtime');
+    expect(reserveSql).toContain('warm_pool_id');
+    expect(reserveSql).toContain('container_id');
+    expect(reserveSql).toContain('warm-%');
+  });
 });

@@ -121,10 +121,14 @@ export class WorkerWarmPoolRepository {
     const filters: SQL[] = [];
 
     if (query.warm_pool_id) {
-      filters.push(ilike(workerWarmPool.warm_pool_id, `%${query.warm_pool_id}%`));
+      filters.push(
+        ilike(workerWarmPool.warm_pool_id, `%${query.warm_pool_id}%`)
+      );
     }
     if (query.container_id) {
-      filters.push(ilike(workerWarmPool.container_id, `%${query.container_id}%`));
+      filters.push(
+        ilike(workerWarmPool.container_id, `%${query.container_id}%`)
+      );
     }
     if (query.container_name) {
       filters.push(
@@ -187,7 +191,9 @@ export class WorkerWarmPoolRepository {
       filters.push(lte(workerWarmPool.updated_at, query.updated_at_to));
     }
     if (query.last_health_at_from) {
-      filters.push(gte(workerWarmPool.last_health_at, query.last_health_at_from));
+      filters.push(
+        gte(workerWarmPool.last_health_at, query.last_health_at_from)
+      );
     }
     if (query.last_health_at_to) {
       filters.push(lte(workerWarmPool.last_health_at, query.last_health_at_to));
@@ -386,6 +392,16 @@ export class WorkerWarmPoolRepository {
         WHERE "server_id" = ${serverId}
           AND "worker_type_id" = ${workerTypeId}
           AND "state" = ${EWorkerWarmPoolState.ready}
+          AND ("container_name" IS NULL OR "container_name" LIKE 'warm-%')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "worker_runtime"
+            WHERE "worker_runtime"."warm_pool_id" = "worker_warm_pool"."warm_pool_id"
+              OR (
+                "worker_warm_pool"."container_id" IS NOT NULL
+                AND "worker_runtime"."container_id" = "worker_warm_pool"."container_id"
+              )
+          )
         ORDER BY "last_health_at" DESC NULLS LAST, "created_at" ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED

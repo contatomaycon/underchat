@@ -584,8 +584,13 @@ export class WorkerMonitorService {
 
     const warmStandby = rawWarmStandby?.trim().toLowerCase() === 'true';
     const warmPoolId = rawWarmPoolId?.trim();
+    const isActivatedWorkerName =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        name
+      );
     const isWarmStandby =
-      warmStandby || !!warmPoolId || name.startsWith('warm-');
+      name.startsWith('warm-') ||
+      (!isActivatedWorkerName && (warmStandby || !!warmPoolId));
 
     return {
       name,

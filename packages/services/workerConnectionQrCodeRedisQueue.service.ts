@@ -31,9 +31,19 @@ export interface WorkerConnectionQrCodeRedisStreamMessage {
 export class WorkerConnectionQrCodeRedisQueueService {
   static readonly STREAM_MAXLEN = 1000;
   static readonly READ_BLOCK_MS = 1000;
+  static readonly READ_TIMEOUT_MS = Math.max(
+    5_000,
+    Math.min(
+      60_000,
+      Number(process.env.CONNECTION_QRCODE_REDIS_STREAM_READ_TIMEOUT_MS) ||
+        10_000
+    )
+  );
   static readonly CLAIM_MIN_IDLE_MS = 3000;
   static readonly READ_COUNT = 10;
   static readonly PROCESSED_TTL_SECONDS = 300;
+
+  private streamReadRedis: Redis | null = null;
 
   constructor(@inject('Redis') private readonly redis: Redis) {}
 
@@ -137,17 +147,19 @@ export class WorkerConnectionQrCodeRedisQueueService {
   ): Promise<WorkerConnectionQrCodeRedisStreamMessage[]> {
     const streamKey = this.streamKey(workerId, workerTypeId);
     const consumerGroup = this.consumerGroup(workerId, workerTypeId);
-    const response = await this.client().xreadgroup(
-      'GROUP',
-      consumerGroup,
-      consumerName,
-      'COUNT',
-      WorkerConnectionQrCodeRedisQueueService.READ_COUNT,
-      'BLOCK',
-      WorkerConnectionQrCodeRedisQueueService.READ_BLOCK_MS,
-      'STREAMS',
-      streamKey,
-      '>'
+    const response = await this.runStreamReadWithTimeout('XREADGROUP', () =>
+      this.readClient().xreadgroup(
+        'GROUP',
+        consumerGroup,
+        consumerName,
+        'COUNT',
+        WorkerConnectionQrCodeRedisQueueService.READ_COUNT,
+        'BLOCK',
+        WorkerConnectionQrCodeRedisQueueService.READ_BLOCK_MS,
+        'STREAMS',
+        streamKey,
+        '>'
+      )
     );
 
     return this.parseReadResponse(response, {
@@ -165,14 +177,16 @@ export class WorkerConnectionQrCodeRedisQueueService {
   ): Promise<WorkerConnectionQrCodeRedisStreamMessage[]> {
     const streamKey = this.streamKey(workerId, workerTypeId);
     const consumerGroup = this.consumerGroup(workerId, workerTypeId);
-    const response = await this.client().xautoclaim(
-      streamKey,
-      consumerGroup,
-      consumerName,
-      WorkerConnectionQrCodeRedisQueueService.CLAIM_MIN_IDLE_MS,
-      '0-0',
-      'COUNT',
-      WorkerConnectionQrCodeRedisQueueService.READ_COUNT
+    const response = await this.runStreamReadWithTimeout('XAUTOCLAIM', () =>
+      this.readClient().xautoclaim(
+        streamKey,
+        consumerGroup,
+        consumerName,
+        WorkerConnectionQrCodeRedisQueueService.CLAIM_MIN_IDLE_MS,
+        '0-0',
+        'COUNT',
+        WorkerConnectionQrCodeRedisQueueService.READ_COUNT
+      )
     );
 
     return this.parseAutoClaimResponse(response, {
@@ -241,6 +255,73 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
   private client(): RedisStreamClient {
     return this.redis as RedisStreamClient;
+  }
+
+  private readClient(): RedisStreamClient {
+    if (
+      this.streamReadRedis &&
+      this.streamReadRedis.status !== 'end' &&
+      this.streamReadRedis.status !== 'close'
+    ) {
+      return this.streamReadRedis as RedisStreamClient;
+    }
+
+    this.streamReadRedis = this.redis.duplicate();
+    return this.streamReadRedis as RedisStreamClient;
+  }
+
+  private resetReadClient(): void {
+    const client = this.streamReadRedis;
+    this.streamReadRedis = null;
+    if (!client) {
+      return;
+    }
+
+    client.disconnect(false);
+  }
+
+  private runStreamReadWithTimeout<T>(
+    operation: string,
+    action: () => Promise<T>
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        this.resetReadClient();
+        fail(
+          new Error(
+            `Redis Stream ${operation} timeout after ${WorkerConnectionQrCodeRedisQueueService.READ_TIMEOUT_MS}ms`
+          )
+        );
+      }, WorkerConnectionQrCodeRedisQueueService.READ_TIMEOUT_MS);
+
+      const finish = (): boolean => {
+        if (settled) {
+          return false;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        return true;
+      };
+
+      const succeed = (value: T): void => {
+        if (finish()) {
+          resolve(value);
+        }
+      };
+
+      const fail = (error: unknown): void => {
+        if (finish()) {
+          reject(error);
+        }
+      };
+
+      try {
+        action().then(succeed, fail);
+      } catch (error) {
+        fail(error);
+      }
+    });
   }
 
   private payloadToFields(
