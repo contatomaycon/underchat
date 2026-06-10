@@ -2736,15 +2736,32 @@ function mergeMessageLists(
   return next;
 }
 
+function messageBelongsToChat(
+  message: Pick<ListMessageResult, 'chat_id'> | null | undefined,
+  chatId: string | null | undefined
+): boolean {
+  const expectedChatId = readNonEmptyString(chatId);
+  const messageChatId = readNonEmptyString(message?.chat_id);
+  return !!expectedChatId && messageChatId === expectedChatId;
+}
+
+function filterMessagesForChat(
+  messages: ListMessageResult[],
+  chatId: string | null | undefined
+): ListMessageResult[] {
+  return messages.filter((message) => messageBelongsToChat(message, chatId));
+}
+
 function mergePendingSocketMessages(
   current: ListMessageResult[],
-  pending: SocketMessagePayload[]
+  pending: SocketMessagePayload[],
+  chatId: string
 ): ListMessageResult[] {
-  if (pending.length === 0) return current;
-  let next = current;
+  if (pending.length === 0) return filterMessagesForChat(current, chatId);
+  let next = filterMessagesForChat(current, chatId);
   for (const payload of pending) {
     const normalized = normalizeSocketMessageToListMessage(payload);
-    if (!normalized) continue;
+    if (!normalized || !messageBelongsToChat(normalized, chatId)) continue;
     next = mergeMessageLists(next, normalized);
   }
   return next;
@@ -2752,12 +2769,13 @@ function mergePendingSocketMessages(
 
 function mergeMessageBatch(
   current: ListMessageResult[],
-  incoming: ListMessageResult[]
+  incoming: ListMessageResult[],
+  chatId: string
 ): ListMessageResult[] {
-  if (incoming.length === 0) return current;
+  if (incoming.length === 0) return filterMessagesForChat(current, chatId);
 
-  let next = current;
-  for (const message of incoming) {
+  let next = filterMessagesForChat(current, chatId);
+  for (const message of filterMessagesForChat(incoming, chatId)) {
     next = mergeMessageLists(next, message);
   }
   return next;
@@ -2765,14 +2783,15 @@ function mergeMessageBatch(
 
 function mergeSnapshotMessagesWithCurrent(
   current: ListMessageResult[],
-  snapshot: ListMessageResult[]
+  snapshot: ListMessageResult[],
+  chatId: string
 ): ListMessageResult[] {
   if (snapshot.length === 0) return [];
 
   const currentByHash = new Map<string, ListMessageResult>();
   const currentByMessageId = new Map<string, ListMessageResult>();
 
-  for (const message of current) {
+  for (const message of filterMessagesForChat(current, chatId)) {
     const hash = readNonEmptyString(message.hash);
     if (hash && !currentByHash.has(hash)) {
       currentByHash.set(hash, message);
@@ -2785,7 +2804,7 @@ function mergeSnapshotMessagesWithCurrent(
   }
 
   let next: ListMessageResult[] = [];
-  for (const message of snapshot) {
+  for (const message of filterMessagesForChat(snapshot, chatId)) {
     const hash = readNonEmptyString(message.hash);
     const messageId = readNonEmptyString(message.message_id);
     const previous =
@@ -5966,7 +5985,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     return {
       response: preloaded,
-      messages: mergePendingSocketMessages(baseMessages, pending),
+      messages: mergePendingSocketMessages(baseMessages, pending, chat.chat_id),
     };
   });
   const resetChatStateInitializedRef = useRef(false);
@@ -7417,7 +7436,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         const pending = consumePendingMessages(chatInfo.chat_id);
         const mergedMessages = mergePendingSocketMessages(
           baseMessages,
-          pending
+          pending,
+          chatInfo.chat_id
         );
 
         currentPageRef.current = toPositiveInt(res.current_page, 1);
@@ -7426,7 +7446,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         pendingScrollToBottomRef.current = true;
 
         setMessages((previous) =>
-          mergeSnapshotMessagesWithCurrent(previous, mergedMessages)
+          mergeSnapshotMessagesWithCurrent(
+            previous,
+            mergedMessages,
+            chatInfo.chat_id
+          )
         );
       } finally {
         if (!silent) {
@@ -7441,7 +7465,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     const res = await listMessages(chatInfo.chat_id, 1, CHAT_MESSAGES_PER_PAGE);
     if (!res) return;
     const latestMessages = [...res.results].reverse();
-    setMessages((prev) => mergeMessageBatch(prev, latestMessages));
+    setMessages((prev) =>
+      mergeMessageBatch(prev, latestMessages, chatInfo.chat_id)
+    );
   }, [chatInfo.chat_id]);
 
   const syncMessagesStatus = useCallback(
@@ -7463,7 +7489,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       if (!res) return;
 
       const latestMessages = [...res.results].reverse();
-      setMessages((prev) => mergeMessageBatch(prev, latestMessages));
+      setMessages((prev) =>
+        mergeMessageBatch(prev, latestMessages, chatInfo.chat_id)
+      );
     },
     [chatInfo.chat_id]
   );
@@ -7504,7 +7532,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         return;
       }
 
-      setMessages((prev) => mergeMessageBatch(prev, olderMessages));
+      setMessages((prev) =>
+        mergeMessageBatch(prev, olderMessages, chatInfo.chat_id)
+      );
     } finally {
       loadingOlderRef.current = false;
       setLoadingOlder(false);
@@ -7754,7 +7784,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }
 
       const normalized = normalizeSocketMessageToListMessage(payload);
-      if (!normalized) return;
+      if (!normalized || !messageBelongsToChat(normalized, chatInfo.chat_id)) {
+        return;
+      }
       setMessages((prev) => mergeMessageLists(prev, normalized));
 
       if (shouldAutoScroll) {

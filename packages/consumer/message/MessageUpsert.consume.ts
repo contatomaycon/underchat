@@ -82,6 +82,7 @@ import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdConte
 import { ChatMessageService } from '@core/services/chatMessage.service';
 import { hasProtocolTag } from '@core/common/functions/hasProtocolTag';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
+import { messageBelongsToChatAndAccount } from '@core/common/functions/chatMessageOwnership';
 import {
   isAttendanceHoursConfigEnabledValid,
   isNowWithinAttendanceHours,
@@ -540,18 +541,47 @@ export class MessageUpsertConsume {
   private centrifugoChatPublish(
     dataPublish: IChatMessage
   ): Promise<PublishResult> {
+    if (
+      !messageBelongsToChatAndAccount(
+        dataPublish,
+        dataPublish.chat_id,
+        dataPublish.account?.id
+      )
+    ) {
+      logger.error(
+        {
+          type: 'message_upsert_invalid_centrifugo_message_payload',
+          chat_id: dataPublish.chat_id,
+          message_id: dataPublish.message_id,
+          account_id: dataPublish.account?.id,
+        },
+        'Blocked Centrifugo publish for message without matching chat/account ownership'
+      );
+      incrementCounter('message_upsert_invalid_centrifugo_message_payload');
+      recordMessageLifecycle({
+        stage: 'message_upsert.centrifugo.message_publish_blocked',
+        decision: 'publish_centrifugo',
+        outcome: 'blocked',
+        reason: 'invalid_message_ownership',
+        level: 'error',
+        chat_id: dataPublish.chat_id,
+        chat_message_id: dataPublish.message_id,
+        account_id: dataPublish.account?.id,
+      });
+      return Promise.resolve({} as PublishResult);
+    }
+
+    const channel = chatAccountCentrifugo(dataPublish.account.id);
+
     recordMessageLifecycle({
       stage: 'message_upsert.centrifugo.message_publish_start',
       decision: 'publish_centrifugo',
       outcome: 'started',
-      channel: chatAccountCentrifugo(dataPublish.account.id),
+      channel,
       chat_id: dataPublish.chat_id,
       chat_message_id: dataPublish.message_id,
     });
-    const promise = this.centrifugoService.publishSub(
-      chatAccountCentrifugo(dataPublish.account.id),
-      dataPublish
-    );
+    const promise = this.centrifugoService.publishSub(channel, dataPublish);
 
     return promise
       .then((result) => {
@@ -559,7 +589,7 @@ export class MessageUpsertConsume {
           stage: 'message_upsert.centrifugo.message_publish_success',
           decision: 'publish_centrifugo',
           outcome: 'published',
-          channel: chatAccountCentrifugo(dataPublish.account.id),
+          channel,
           chat_id: dataPublish.chat_id,
           chat_message_id: dataPublish.message_id,
         });
@@ -572,7 +602,7 @@ export class MessageUpsertConsume {
           outcome: 'error',
           reason: 'publish_failed',
           level: 'error',
-          channel: chatAccountCentrifugo(dataPublish.account.id),
+          channel,
           chat_id: dataPublish.chat_id,
           chat_message_id: dataPublish.message_id,
           error: error instanceof Error ? error.message : String(error),

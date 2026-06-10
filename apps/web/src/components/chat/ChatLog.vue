@@ -2136,9 +2136,16 @@ const goToQuoted = (m: ListMessageResult) => {
 };
 
 const sourceVisibleMessages = computed(() => {
+  const activeChatId = activeChat.value?.chat_id;
+  if (!activeChatId) {
+    return [];
+  }
+
   return chatStore.listMessages.filter(
     (message) =>
-      !isGhostPinMessage(message) && !isGhostEmptyTextMessage(message)
+      message.chat_id === activeChatId &&
+      !isGhostPinMessage(message) &&
+      !isGhostEmptyTextMessage(message)
   );
 });
 
@@ -2153,19 +2160,9 @@ watch(
   [sourceVisibleMessages, () => activeChat.value?.chat_id],
   ([messages, chatId], [_previousMessages, previousChatId]) => {
     if (chatId !== previousChatId) {
-      if (messages.length > 0 || lastVisibleMessages.value.length === 0) {
-        clearTransientMessagesTimer();
-        isPreservingTransientMessages.value = false;
-        lastVisibleMessages.value = messages;
-        return;
-      }
-
-      isPreservingTransientMessages.value = true;
       clearTransientMessagesTimer();
-      transientMessagesTimer = setTimeout(() => {
-        isPreservingTransientMessages.value = false;
-        transientMessagesTimer = null;
-      }, 1200);
+      isPreservingTransientMessages.value = false;
+      lastVisibleMessages.value = messages;
       return;
     }
 
@@ -2934,8 +2931,8 @@ onUnmounted(() => {
         v-for="(item, index) in messagesWithSeparators"
         :key="
           item.type === 'separator'
-            ? `separator-${item.separatorDate}`
-            : `msg-${getMessageRenderKey(item.message)}`
+            ? `separator-${activeChat?.chat_id ?? 'no-chat'}-${item.separatorDate}`
+            : `msg-${activeChat?.chat_id ?? 'no-chat'}-${getMessageRenderKey(item.message)}`
         "
       >
         <div

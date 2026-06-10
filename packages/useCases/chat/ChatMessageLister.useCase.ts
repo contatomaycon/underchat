@@ -16,10 +16,13 @@ import { TFunction } from 'i18next';
 import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 import { ChatClosureCommentListerRepository } from '@core/repositories/chat/ChatClosureCommentLister.repository';
 import { enrichMessagesWithClosureAnnotationSubtype } from '@core/common/functions/enrichMessagesWithClosureAnnotationSubtype';
+import { filterMessagesForChat } from '@core/common/functions/chatMessageOwnership';
 import {
   measureRequestLatencyStage,
   recordRequestLatencyStage,
 } from '@core/plugins/telemetry/requestLatency';
+import { logger } from '@core/plugins/telemetry/logger';
+import { incrementCounter } from '@core/plugins/telemetry/observability';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -82,8 +85,29 @@ export class ChatMessageListerUseCase {
     const messages = result.hits.hits.map(
       (hit) => hit._source
     ) as ListMessageResult[];
+    const filteredMessages = filterMessagesForChat(messages, params.chat_id);
+    const droppedMessages = messages.length - filteredMessages.length;
 
-    return [messages, total.value];
+    if (droppedMessages > 0) {
+      logger.warn(
+        {
+          type: 'chat_message_lister_cross_chat_hits_dropped',
+          account_id: accountId,
+          chat_id: params.chat_id,
+          dropped_messages: droppedMessages,
+        },
+        'Dropped Elasticsearch message hits that do not belong to requested chat'
+      );
+      incrementCounter(
+        'chat.messages.cross_chat_hits_dropped',
+        droppedMessages,
+        {
+          account_id: accountId,
+        }
+      );
+    }
+
+    return [filteredMessages, total.value];
   }
 
   async execute(

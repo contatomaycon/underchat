@@ -75,6 +75,7 @@ import {
   isChatPrimary,
   isChatSecondary,
 } from '@core/common/functions/chatParticipants';
+import { filterMessagesForChat } from '@core/common/functions/chatMessageOwnership';
 import {
   ISelectedPhotoPreview,
   ISelectedDocumentPreview,
@@ -132,6 +133,7 @@ const { isLeftSidebarOpen } = useResponsiveLeftSidebar(
 const currentPage = ref(1);
 const perPage = ref(10);
 const openingChatId = shallowRef<ListChatsResult['chat_id'] | null>(null);
+let openChatRequestSequence = 0;
 const chatLogPS = ref();
 const resizeHandler = ref<(() => void) | null>(null);
 const q = ref('');
@@ -3037,9 +3039,12 @@ const openChat = async (
   options?: OpenChatOptions
 ) => {
   const isSameChat = chatStore.activeChat?.chat_id === chatId;
+  const activeChatIdBeforeOpen = chatStore.activeChat?.chat_id ?? null;
   if (isSameChat && !options?.forceReload) {
     return;
   }
+
+  const requestSequence = ++openChatRequestSequence;
 
   if (!isSameChat && openingChatId.value) {
     return;
@@ -3070,13 +3075,26 @@ const openChat = async (
       if (!messagesData) {
         return;
       }
+
+      if (
+        requestSequence !== openChatRequestSequence ||
+        (chatStore.activeChat?.chat_id &&
+          chatStore.activeChat.chat_id !== activeChatIdBeforeOpen &&
+          chatStore.activeChat.chat_id !== chatId)
+      ) {
+        return;
+      }
+
       chatStore.setActiveChat(chatId, options?.fallbackChat);
 
       if (chatStore.activeChat?.chat_id !== chatId) {
         return;
       }
 
-      chatStore.listMessages = [...messagesData.results].reverse();
+      chatStore.listMessages = filterMessagesForChat(
+        [...messagesData.results].reverse(),
+        chatId
+      );
       chatStore.currentPage = messagesData.pagings.current_page;
       chatStore.totalPages = messagesData.pagings.total_pages;
       currentPage.value = messagesData.pagings.current_page;
@@ -5931,13 +5949,24 @@ const handleGlobalChatUpdate = async (e: Event) => {
         return;
       }
 
+      if (
+        chatStore.activeChat?.chat_id &&
+        chatStore.activeChat.chat_id !== activeChatIdBeforeUpdate &&
+        chatStore.activeChat.chat_id !== chatData.chat_id
+      ) {
+        return;
+      }
+
       chatStore.setActiveChat(chatData.chat_id, chatData as ListChatsResult);
 
       if (chatStore.activeChat?.chat_id !== chatData.chat_id) {
         return;
       }
 
-      chatStore.listMessages = [...messagesData.results].reverse();
+      chatStore.listMessages = filterMessagesForChat(
+        [...messagesData.results].reverse(),
+        chatData.chat_id
+      );
       chatStore.currentPage = messagesData.pagings.current_page;
       chatStore.totalPages = messagesData.pagings.total_pages;
       currentPage.value = messagesData.pagings.current_page;

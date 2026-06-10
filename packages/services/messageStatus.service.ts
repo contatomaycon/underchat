@@ -4,6 +4,7 @@ import { CentrifugoService } from './centrifugo.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
+import { messageBelongsToChatAndAccount } from '@core/common/functions/chatMessageOwnership';
 import {
   MessageSummaryBaseline,
   MessageSummaryScriptParams,
@@ -157,7 +158,8 @@ export class MessageStatusService {
 
     await this.publishCentrifugoImmediate(
       chatAccountCentrifugo(channelAccountId),
-      publishedMessage
+      publishedMessage,
+      channelAccountId
     );
 
     return publishedMessage;
@@ -201,7 +203,8 @@ export class MessageStatusService {
 
     await this.publishCentrifugoImmediate(
       chatAccountCentrifugo(channelAccountId),
-      publishedMessage
+      publishedMessage,
+      channelAccountId
     );
 
     return publishedMessage;
@@ -233,8 +236,33 @@ export class MessageStatusService {
    */
   private async publishCentrifugoImmediate(
     channel: string,
-    message: IChatMessage
+    message: IChatMessage,
+    expectedAccountId: string
   ): Promise<void> {
+    if (
+      !messageBelongsToChatAndAccount(
+        message,
+        message.chat_id,
+        expectedAccountId
+      )
+    ) {
+      logger.error(
+        {
+          type: 'message_status_invalid_centrifugo_message_payload',
+          message_id: message.message_id,
+          chat_id: message.chat_id,
+          account_id: message.account?.id,
+          expected_account_id: expectedAccountId,
+          channel,
+        },
+        'Blocked Centrifugo publish for status update without matching chat/account ownership'
+      );
+      incrementCounter('message_status_invalid_centrifugo_message_payload', 1, {
+        channel,
+      });
+      return;
+    }
+
     try {
       await this.centrifugoService.publishSubImmediate(channel, message);
     } catch (error) {

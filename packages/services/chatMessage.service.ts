@@ -45,12 +45,15 @@ import {
 } from '@core/common/interfaces/ISendMessageOptions';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
+import { messageBelongsToChatAndAccount } from '@core/common/functions/chatMessageOwnership';
 import {
   appendSecurityKeyToText,
   shouldApplySecurityKey,
 } from '@core/common/functions/securityKeyConfig';
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
+import { logger } from '@core/plugins/telemetry/logger';
+import { incrementCounter } from '@core/plugins/telemetry/observability';
 import {
   recordMessageLifecycle,
   runWithMessageLifecycleContext,
@@ -321,6 +324,38 @@ export class ChatMessageService {
   }
 
   private centrifugoChatPublish(dataPublish: IChatMessage): Promise<any> {
+    if (
+      !messageBelongsToChatAndAccount(
+        dataPublish,
+        dataPublish.chat_id,
+        dataPublish.account?.id
+      )
+    ) {
+      logger.error(
+        {
+          type: 'chat_message_service_invalid_centrifugo_message_payload',
+          chat_id: dataPublish.chat_id,
+          message_id: dataPublish.message_id,
+          account_id: dataPublish.account?.id,
+        },
+        'Blocked Centrifugo publish for outbound message without matching chat/account ownership'
+      );
+      incrementCounter(
+        'chat_message_service_invalid_centrifugo_message_payload'
+      );
+      recordMessageLifecycle({
+        stage: 'service.outgoing.centrifugo.publish_blocked',
+        decision: 'publish_message',
+        outcome: 'blocked',
+        reason: 'invalid_message_ownership',
+        level: 'error',
+        message_id: dataPublish.message_id,
+        chat_id: dataPublish.chat_id,
+        account_id: dataPublish.account?.id,
+      });
+      return Promise.resolve(null);
+    }
+
     return this.centrifugoService.publishSub(
       chatAccountCentrifugo(dataPublish.account.id),
       dataPublish

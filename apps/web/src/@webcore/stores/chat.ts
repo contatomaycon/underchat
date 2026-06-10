@@ -88,6 +88,10 @@ import { extractArrayFieldValue } from '@core/common/functions/extractArrayField
 import type { FieldValue } from '@core/common/interfaces/IFieldValue';
 import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 import type { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
+import {
+  filterMessagesForChat,
+  messageBelongsToChat,
+} from '@core/common/functions/chatMessageOwnership';
 
 type LocalMessageState = {
   status: 'uploading' | 'error';
@@ -500,30 +504,45 @@ const mergeMessageDeliverySummary = (
 const mergeLoadedChatMessages = (
   loadedMessages: ListMessageResult[],
   existingMessages: ListMessageResult[],
-  localMessageState: Record<string, LocalMessageState>
+  localMessageState: Record<string, LocalMessageState>,
+  chatId: string
 ): ListMessageResult[] => {
-  const existingIndex = buildMessageIdentityIndex(existingMessages);
+  const scopedLoadedMessages = filterMessagesForChat(loadedMessages, chatId);
+  const scopedExistingMessages = filterMessagesForChat(
+    existingMessages,
+    chatId
+  );
+  const existingIndex = buildMessageIdentityIndex(scopedExistingMessages);
   const consumedExistingMessages = new Set<ListMessageResult>();
 
-  const mergedMessages: ListMessageResult[] = loadedMessages.map((message) => {
-    const existing =
-      findMessageByIdentity(message, existingIndex) ??
-      findPendingLocalEchoMessage(message, existingMessages, localMessageState);
-    if (existing) {
-      consumedExistingMessages.add(existing);
-    }
+  const mergedMessages: ListMessageResult[] = scopedLoadedMessages.map(
+    (message) => {
+      const existing =
+        findMessageByIdentity(message, existingIndex) ??
+        findPendingLocalEchoMessage(
+          message,
+          scopedExistingMessages,
+          localMessageState
+        );
+      if (existing) {
+        consumedExistingMessages.add(existing);
+      }
 
-    const preservedHash = message.hash ?? existing?.hash ?? null;
-    if (preservedHash && localMessageState[preservedHash]) {
-      delete localMessageState[preservedHash];
-    }
+      const preservedHash = message.hash ?? existing?.hash ?? null;
+      if (preservedHash && localMessageState[preservedHash]) {
+        delete localMessageState[preservedHash];
+      }
 
-    return {
-      ...message,
-      hash: preservedHash,
-      summary: mergeMessageDeliverySummary(message.summary, existing?.summary),
-    };
-  });
+      return {
+        ...message,
+        hash: preservedHash,
+        summary: mergeMessageDeliverySummary(
+          message.summary,
+          existing?.summary
+        ),
+      };
+    }
+  );
 
   const loadedIndex = buildMessageIdentityIndex(mergedMessages);
   const loadedDates = mergedMessages
@@ -532,7 +551,7 @@ const mergeLoadedChatMessages = (
   const oldestLoadedAt = loadedDates.length > 0 ? Math.min(...loadedDates) : 0;
   const newestLoadedAt = loadedDates.length > 0 ? Math.max(...loadedDates) : 0;
 
-  for (const existing of existingMessages) {
+  for (const existing of scopedExistingMessages) {
     if (
       consumedExistingMessages.has(existing) ||
       findMessageByIdentity(existing, loadedIndex)
@@ -1105,6 +1124,11 @@ export const useChatStore = defineStore('chat', {
       delete this.localMessageState[hash];
     },
     upsertLocalMessage(message: ListMessageResult) {
+      const activeChatId = this.activeChat?.chat_id;
+      if (!activeChatId || !messageBelongsToChat(message, activeChatId)) {
+        return;
+      }
+
       if (!message.hash) {
         this.listMessages.push({
           ...message,
@@ -1146,6 +1170,11 @@ export const useChatStore = defineStore('chat', {
       this.clearLocalMessageState(hash);
     },
     addMessageActiveChat(message: IChatMessage): ActiveMessageChangeType {
+      const activeChatId = this.activeChat?.chat_id;
+      if (!activeChatId || !messageBelongsToChat(message, activeChatId)) {
+        return 'unchanged';
+      }
+
       const input: ListMessageResult = {
         message_id: message.message_id,
         chat_id: message.chat_id,
@@ -3977,7 +4006,10 @@ export const useChatStore = defineStore('chat', {
           return;
         }
 
-        const existingMessages = [...this.listMessages];
+        const existingMessages = filterMessagesForChat(
+          [...this.listMessages],
+          targetChatId
+        );
 
         if (shouldHandleLoading) {
           this.loading = true;
@@ -4005,7 +4037,17 @@ export const useChatStore = defineStore('chat', {
           return;
         }
 
-        const loadedMessages = [...data.data.results].reverse();
+        if (
+          this.activeChat?.chat_id &&
+          this.activeChat.chat_id !== targetChatId
+        ) {
+          return;
+        }
+
+        const loadedMessages = filterMessagesForChat(
+          [...data.data.results].reverse(),
+          targetChatId
+        );
         const existingIndex = buildMessageIdentityIndex(existingMessages);
         const normalizedLoadedMessages = loadedMessages.map((message) => {
           const existing = findMessageByIdentity(message, existingIndex);
@@ -4023,7 +4065,8 @@ export const useChatStore = defineStore('chat', {
           ? mergeLoadedChatMessages(
               loadedMessages,
               existingMessages,
-              this.localMessageState
+              this.localMessageState,
+              targetChatId
             )
           : normalizedLoadedMessages;
         this.currentPage = data.data.pagings.current_page;
@@ -4090,7 +4133,10 @@ export const useChatStore = defineStore('chat', {
             return null;
           }
 
-          return data.data;
+          return {
+            ...data.data,
+            results: filterMessagesForChat(data.data.results, chatId),
+          };
         } catch (error) {
           if (isCanceledAxiosRequest(error)) {
             return null;
@@ -4132,11 +4178,16 @@ export const useChatStore = defineStore('chat', {
         return false;
       }
 
+      const targetChatId = this.activeChat?.chat_id;
+      if (!targetChatId) {
+        return false;
+      }
+
       try {
         this.loadingMoreMessages = true;
 
         const response = await axios.get<IApiResponse<ListMessageResponse>>(
-          `/chat/${this.activeChat?.chat_id}`,
+          `/chat/${targetChatId}`,
           {
             params: {
               current_page: this.currentPage + 1,
@@ -4153,9 +4204,20 @@ export const useChatStore = defineStore('chat', {
           return false;
         }
 
+        if (this.activeChat?.chat_id !== targetChatId) {
+          this.loadingMoreMessages = false;
+          return false;
+        }
+
         this.currentPage = data.data.pagings.current_page;
-        const reversedResults = data.data.results.toReversed();
-        this.listMessages = [...reversedResults, ...this.listMessages];
+        const reversedResults = filterMessagesForChat(
+          data.data.results.toReversed(),
+          targetChatId
+        );
+        this.listMessages = [
+          ...reversedResults,
+          ...filterMessagesForChat(this.listMessages, targetChatId),
+        ];
         this.loadingMoreMessages = false;
 
         return true;
@@ -4921,9 +4983,18 @@ export const useChatStore = defineStore('chat', {
 
       if (!this.canViewChat(chat as IChat)) {
         this.activeChat = null;
+        this.listMessages = [];
+        this.currentPage = 1;
+        this.totalPages = 1;
+        this.messageReply = null;
         this.removeChatIfNotAuthorized(chat as IChat);
         return;
       }
+
+      this.listMessages = [];
+      this.currentPage = 1;
+      this.totalPages = 1;
+      this.messageReply = null;
 
       this.activeChat = {
         chat_id: chat.chat_id,

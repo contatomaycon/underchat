@@ -103,4 +103,69 @@ describe('ChatMessageListerUseCase request breakdown', () => {
       ])
     );
   });
+
+  it('drops Elasticsearch hits that do not belong to the requested chat', async () => {
+    const messages = [
+      {
+        message_id: 'message-1',
+        chat_id: 'chat-1',
+        date: '2026-06-09T12:00:00.000Z',
+        content: {
+          type: EMessageType.text,
+          message: 'right chat',
+        },
+      },
+      {
+        message_id: 'message-2',
+        chat_id: 'chat-2',
+        date: '2026-06-09T12:01:00.000Z',
+        content: {
+          type: EMessageType.text,
+          message: 'wrong chat',
+        },
+      },
+    ];
+    const elasticDatabaseService = {
+      select: jest.fn().mockResolvedValue({
+        hits: {
+          total: {
+            value: 2,
+            relation: 'eq',
+          },
+          hits: messages.map((message) => ({ _source: message })),
+        },
+      }),
+    } as unknown as ElasticDatabaseService;
+    const chatService = {
+      findChatByChatId: jest.fn().mockResolvedValue({
+        chat_id: 'chat-1',
+        status: EChatStatus.queue,
+        worker: { id: 'worker-1' },
+      } as IChat),
+    } as unknown as ChatService;
+    const closureRepository = {
+      listByChatId: jest.fn().mockResolvedValue([]),
+    } as unknown as ChatClosureCommentListerRepository;
+    const useCase = new ChatMessageListerUseCase(
+      elasticDatabaseService,
+      chatService,
+      closureRepository
+    );
+
+    const response = await useCase.execute(
+      ((key: string) => key) as never,
+      'account-1',
+      { current_page: 1, per_page: 10 },
+      { chat_id: 'chat-1' },
+      'user-1',
+      [buildAction(EGeneralPermissions.full_access)],
+      [],
+      []
+    );
+
+    expect(response.results).toEqual([messages[0]]);
+    expect(
+      response.results.every((message) => message.chat_id === 'chat-1')
+    ).toBe(true);
+  });
 });
