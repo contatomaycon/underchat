@@ -20,7 +20,6 @@ RUN apt-get update && \
 
 RUN corepack enable && \
     corepack prepare pnpm@10.28.2 --activate && \
-    corepack prepare yarn@4.9.2 --activate && \
     npm add -g turbo@2.6.3
 
 FROM turbo AS pruned
