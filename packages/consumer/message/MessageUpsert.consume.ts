@@ -1611,11 +1611,8 @@ export class MessageUpsertConsume {
               },
             },
             {
-              nested: {
-                path: 'worker',
-                query: {
-                  term: { 'worker.id': workerId },
-                },
+              term: {
+                'worker.id': workerId,
               },
             },
             {

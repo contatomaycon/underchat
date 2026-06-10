@@ -369,6 +369,56 @@ describe('MessageUpsertConsume edit fallback', () => {
     });
   };
 
+  const queryHasNestedPath = (query: unknown, path: string): boolean => {
+    if (!query || typeof query !== 'object') {
+      return false;
+    }
+
+    if (
+      'nested' in query &&
+      query.nested &&
+      typeof query.nested === 'object' &&
+      (query.nested as Record<string, unknown>).path === path
+    ) {
+      return true;
+    }
+
+    return Object.values(query).some((value) => {
+      if (Array.isArray(value)) {
+        return value.some((item) => queryHasNestedPath(item, path));
+      }
+
+      return queryHasNestedPath(value, path);
+    });
+  };
+
+  const queryHasTerm = (
+    query: unknown,
+    field: string,
+    expectedValue: unknown
+  ): boolean => {
+    if (!query || typeof query !== 'object') {
+      return false;
+    }
+
+    if (
+      'term' in query &&
+      query.term &&
+      typeof query.term === 'object' &&
+      (query.term as Record<string, unknown>)[field] === expectedValue
+    ) {
+      return true;
+    }
+
+    return Object.values(query).some((value) => {
+      if (Array.isArray(value)) {
+        return value.some((item) => queryHasTerm(item, field, expectedValue));
+      }
+
+      return queryHasTerm(value, field, expectedValue);
+    });
+  };
+
   const makeConsumer = (selectResult: unknown = emptyElasticResult) => {
     const redis = {
       get: jest.fn(async () => null),
@@ -429,7 +479,9 @@ describe('MessageUpsertConsume edit fallback', () => {
       sendNotificationForChatTransfer: jest.fn(async () => undefined),
     };
     const elasticDatabaseService = {
-      select: jest.fn(async () => selectResult),
+      select: jest.fn<Promise<unknown>, [unknown, unknown]>(
+        async () => selectResult
+      ),
       updateWithScriptOCC: jest.fn(async () => 'updated'),
       isReadOnlyAllowDeleteBlockError: jest.fn(() => false),
     };
@@ -636,9 +688,8 @@ describe('MessageUpsertConsume edit fallback', () => {
 
   it('keeps normal edit behavior when the target message exists', async () => {
     const existingMessage = makeExistingMessage();
-    const { consumer, chat, chatService } = makeConsumer(
-      elasticHit(existingMessage)
-    );
+    const { consumer, chat, chatService, elasticDatabaseService } =
+      makeConsumer(elasticHit(existingMessage));
 
     const result = await (consumer as any).createChatMessage(
       chat,
@@ -648,6 +699,9 @@ describe('MessageUpsertConsume edit fallback', () => {
     expect(result.handled).toBe(true);
     expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
     expect(chatService.updateMessageChat).toHaveBeenCalledTimes(1);
+    const lookupQuery = elasticDatabaseService.select.mock.calls[0][1];
+    expect(queryHasNestedPath(lookupQuery, 'worker')).toBe(false);
+    expect(queryHasTerm(lookupQuery, 'worker.id', 'worker-1')).toBe(true);
 
     const updatedMessage = chatService.updateMessageChat.mock
       .calls[0][0] as IChatMessage;

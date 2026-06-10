@@ -626,11 +626,8 @@ export class MessageHistorySyncConsume {
               },
             },
             {
-              nested: {
-                path: 'worker',
-                query: {
-                  term: { 'worker.id': workerId },
-                },
+              term: {
+                'worker.id': workerId,
               },
             },
             {
