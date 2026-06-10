@@ -1,5 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
+import Redis from 'ioredis';
 import { DashboardStatsRepository } from '@core/repositories/dashboard/DashboardStats.repository';
 import { DashboardConversationsRepository } from '@core/repositories/dashboard/DashboardConversations.repository';
 import { DashboardContactsRepository } from '@core/repositories/dashboard/DashboardContacts.repository';
@@ -15,6 +16,10 @@ import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDas
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
 import { ListOfflineChannelsFinalResponse } from '@core/schema/dashboard/listOfflineChannels/response.schema';
 import { ListChannelsStatusFinalResponse } from '@core/schema/dashboard/listChannelsStatus/response.schema';
+import { safeRedisGet, safeRedisSet } from '@core/plugins/redis';
+
+const DASHBOARD_CHANNEL_CACHE_TTL_SECONDS = 10;
+const DASHBOARD_CHANNEL_CACHE_JITTER_SECONDS = 5;
 
 @injectable()
 export class DashboardService {
@@ -38,7 +43,8 @@ export class DashboardService {
     @inject(DashboardOfflineChannelsRepository)
     private readonly dashboardOfflineChannelsRepository: DashboardOfflineChannelsRepository,
     @inject(DashboardChannelsStatusRepository)
-    private readonly dashboardChannelsStatusRepository: DashboardChannelsStatusRepository
+    private readonly dashboardChannelsStatusRepository: DashboardChannelsStatusRepository,
+    @inject('Redis') private readonly redis: Redis
   ) {}
 
   getDashboardStats = async (
@@ -185,15 +191,94 @@ export class DashboardService {
   getDashboardOfflineChannels = async (
     accountId: string
   ): Promise<ListOfflineChannelsFinalResponse> => {
-    return this.dashboardOfflineChannelsRepository.listOfflineChannels(
-      accountId
+    return this.getCachedDashboardChannelData(
+      'offline_channels',
+      accountId,
+      () =>
+        this.dashboardOfflineChannelsRepository.listOfflineChannels(accountId)
     );
   };
 
   getDashboardChannelsStatus = async (
     accountId: string
   ): Promise<ListChannelsStatusFinalResponse> => {
-    return this.dashboardChannelsStatusRepository.listChannelsStatus(accountId);
+    return this.getCachedDashboardChannelData(
+      'channels_status',
+      accountId,
+      () => this.dashboardChannelsStatusRepository.listChannelsStatus(accountId)
+    );
+  };
+
+  private readonly getCachedDashboardChannelData = async <T>(
+    cacheScope: 'offline_channels' | 'channels_status',
+    accountId: string,
+    loader: () => Promise<T>
+  ): Promise<T> => {
+    const cacheKey = this.createDashboardChannelCacheKey(cacheScope, accountId);
+    const cached = await this.readJsonCache<T>(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    const data = await loader();
+    await this.writeJsonCache(
+      cacheKey,
+      data,
+      this.dashboardChannelCacheTtlSeconds(cacheScope, accountId)
+    );
+
+    return data;
+  };
+
+  private readonly readJsonCache = async <T>(
+    key: string
+  ): Promise<T | null> => {
+    try {
+      const cached = await safeRedisGet(this.redis, key);
+      if (!cached) {
+        return null;
+      }
+
+      return JSON.parse(cached) as T;
+    } catch {
+      return null;
+    }
+  };
+
+  private readonly writeJsonCache = async (
+    key: string,
+    value: unknown,
+    ttlSeconds: number
+  ): Promise<void> => {
+    try {
+      await safeRedisSet(
+        this.redis,
+        key,
+        JSON.stringify(value),
+        'EX',
+        ttlSeconds
+      );
+    } catch {
+      // Cache failures must not block dashboard reads.
+    }
+  };
+
+  private readonly createDashboardChannelCacheKey = (
+    cacheScope: 'offline_channels' | 'channels_status',
+    accountId: string
+  ): string => `manager:dashboard:${cacheScope}:${accountId}:v1`;
+
+  private readonly dashboardChannelCacheTtlSeconds = (
+    cacheScope: string,
+    accountId: string
+  ): number => {
+    const jitterSeed = `${cacheScope}:${accountId}`;
+    const jitter =
+      [...jitterSeed].reduce((sum, char) => sum + char.charCodeAt(0), 0) %
+      (DASHBOARD_CHANNEL_CACHE_JITTER_SECONDS + 1);
+
+    return DASHBOARD_CHANNEL_CACHE_TTL_SECONDS + jitter;
   };
 
   private readonly formatRenewalDate = (

@@ -559,6 +559,7 @@ export class ChatListerUseCase {
         {
           'account.name.keyword': {
             order: sortOrder,
+            unmapped_type: 'keyword',
             nested: {
               path: 'account',
             },
@@ -572,6 +573,7 @@ export class ChatListerUseCase {
         {
           'worker.name.keyword': {
             order: sortOrder,
+            unmapped_type: 'keyword',
             nested: {
               path: 'worker',
             },
@@ -585,6 +587,7 @@ export class ChatListerUseCase {
         {
           'user.name.keyword': {
             order: sortOrder,
+            unmapped_type: 'keyword',
             nested: {
               path: 'user',
             },
@@ -598,6 +601,7 @@ export class ChatListerUseCase {
         {
           'sector.name.keyword': {
             order: sortOrder,
+            unmapped_type: 'keyword',
             nested: {
               path: 'sector',
             },
@@ -611,6 +615,7 @@ export class ChatListerUseCase {
         {
           'summary.last_date': {
             order: sortOrder,
+            unmapped_type: 'date',
             nested: {
               path: 'summary',
             },

@@ -836,6 +836,7 @@ export class ChatSearcherUseCase {
           {
             'account.name.keyword': {
               order: orderValue,
+              unmapped_type: 'keyword',
               nested: {
                 path: 'account',
               },
@@ -849,6 +850,7 @@ export class ChatSearcherUseCase {
           {
             'worker.name.keyword': {
               order: orderValue,
+              unmapped_type: 'keyword',
               nested: {
                 path: 'worker',
               },
@@ -862,6 +864,7 @@ export class ChatSearcherUseCase {
           {
             'user.name.keyword': {
               order: orderValue,
+              unmapped_type: 'keyword',
               nested: {
                 path: 'user',
               },
@@ -875,6 +878,7 @@ export class ChatSearcherUseCase {
           {
             'sector.name.keyword': {
               order: orderValue,
+              unmapped_type: 'keyword',
               nested: {
                 path: 'sector',
               },
@@ -888,6 +892,7 @@ export class ChatSearcherUseCase {
           {
             'summary.last_date': {
               order: orderValue,
+              unmapped_type: 'date',
               nested: {
                 path: 'summary',
               },
