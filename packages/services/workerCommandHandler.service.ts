@@ -577,6 +577,11 @@ export class WorkerCommandHandlerService {
       data.warm_pool_id,
       data.worker_id
     );
+    await this.cleanupAssignedWarmPoolReferences(data.worker_id, {
+      workerType,
+      currentWarmPoolId: data.warm_pool_id,
+      reason: 'warm_activation_replaced_previous_assigned_pool',
+    });
     const shouldClearSessionMetadata =
       data.remove_session === true ||
       data.remove_volume === true ||
@@ -2525,6 +2530,52 @@ export class WorkerCommandHandlerService {
     }
   }
 
+  private async cleanupAssignedWarmPoolReferences(
+    workerId: string,
+    options: {
+      workerType?: EWorkerType;
+      currentWarmPoolId?: string | null;
+      reason: string;
+    }
+  ): Promise<void> {
+    try {
+      const deleted =
+        await this.workerWarmPoolRepository?.deleteAssignedByWorkerId(
+          workerId,
+          options.currentWarmPoolId
+        );
+
+      if (!deleted) {
+        return;
+      }
+
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.assigned_reference_cleanup',
+        decision: 'cleanup_assigned_warm_pool_references',
+        outcome: 'deleted',
+        reason: options.reason,
+        worker_id: workerId,
+        worker_type: options.workerType,
+        worker_type_id: options.workerType,
+        warm_pool_id: options.currentWarmPoolId ?? undefined,
+        count: deleted,
+      });
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage: 'connection.balancer.warm_pool.assigned_reference_cleanup_error',
+        decision: 'cleanup_assigned_warm_pool_references',
+        outcome: 'error',
+        reason: options.reason,
+        level: 'warn',
+        worker_id: workerId,
+        worker_type: options.workerType,
+        worker_type_id: options.workerType,
+        warm_pool_id: options.currentWarmPoolId ?? undefined,
+        error: getErrorMessage(err),
+      });
+    }
+  }
+
   private async shouldIgnoreQrAttemptState(
     state: IBaileysConnectionState
   ): Promise<{ ignored: boolean; reason?: string }> {
@@ -4322,6 +4373,10 @@ export class WorkerCommandHandlerService {
       session_volume_name: preservedSessionVolumeName ?? data.worker_id,
       activated_at: currentTime(),
     });
+    await this.cleanupAssignedWarmPoolReferences(data.worker_id, {
+      workerType,
+      reason: 'cold_recreate_replaced_assigned_pool_runtime',
+    });
 
     return this.publishWorkerRecreateFinalState(data, reconciliation);
   }
@@ -4955,6 +5010,10 @@ export class WorkerCommandHandlerService {
       container_name: data.worker_id,
       session_volume_name: data.worker_id,
       activated_at: currentTime(),
+    });
+    await this.cleanupAssignedWarmPoolReferences(data.worker_id, {
+      workerType,
+      reason: 'cold_create_replaced_assigned_pool_runtime',
     });
 
     const dataPublish: IBaileysConnectionState = {

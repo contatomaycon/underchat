@@ -139,6 +139,7 @@ function buildHandler(
       viewById: jest.Mock;
       markAssigned: jest.Mock;
       markRuntime: jest.Mock;
+      deleteAssignedByWorkerId: jest.Mock;
     };
     workerInspection?: WorkerContainerInspection;
   } = {}
@@ -300,6 +301,7 @@ function buildHandler(
     })),
     markAssigned: jest.fn(async () => true),
     markRuntime: jest.fn(async () => true),
+    deleteAssignedByWorkerId: jest.fn(async () => 0),
   };
   const workerRuntimeRepository = overrides.workerRuntimeRepository;
 
@@ -1240,6 +1242,9 @@ describe('WorkerCommandHandlerService connection', () => {
         connection_date: null,
       })
     );
+    expect(
+      deps.workerWarmPoolRepository.deleteAssignedByWorkerId
+    ).toHaveBeenCalledWith('worker-1', 'warm-1');
   });
 
   it('does not recreate a proxied container from the QR request', async () => {
@@ -1635,6 +1640,9 @@ describe('WorkerCommandHandlerService connection', () => {
         session_volume_name: 'warm-123',
       })
     );
+    expect(
+      deps.workerWarmPoolRepository.deleteAssignedByWorkerId
+    ).toHaveBeenCalledWith('worker-1', undefined);
   });
 
   it('aborts recreate before removing the container when the preserved volume is missing', async () => {

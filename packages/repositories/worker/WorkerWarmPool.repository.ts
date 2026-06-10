@@ -21,6 +21,7 @@ import {
   inArray,
   isNull,
   lte,
+  ne,
   or,
   sql,
   SQL,
@@ -512,6 +513,27 @@ export class WorkerWarmPoolRepository {
       .execute();
 
     return result.rowCount === 1;
+  }
+
+  async deleteAssignedByWorkerId(
+    workerId: string,
+    exceptWarmPoolId?: string | null
+  ): Promise<number> {
+    const filters: SQLWrapper[] = [
+      eq(workerWarmPool.state, EWorkerWarmPoolState.assigned),
+      eq(workerWarmPool.reserved_by_worker_id, workerId),
+    ];
+
+    if (exceptWarmPoolId) {
+      filters.push(ne(workerWarmPool.warm_pool_id, exceptWarmPoolId));
+    }
+
+    const result = await this.dbRw
+      .delete(workerWarmPool)
+      .where(and(...filters))
+      .execute();
+
+    return result.rowCount ?? 0;
   }
 
   async releaseExpiredReservations(

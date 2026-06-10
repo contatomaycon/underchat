@@ -39,6 +39,18 @@ function createExecuteChain(result: unknown[]) {
   return { queryBuilder, select };
 }
 
+function createDeleteChain(rowCount: number) {
+  const queryBuilder = {
+    where: jest.fn(),
+    execute: jest.fn(async () => ({ rowCount })),
+  } as any;
+  queryBuilder.where.mockReturnValue(queryBuilder);
+
+  const deleteFn = jest.fn(() => queryBuilder);
+
+  return { queryBuilder, deleteFn };
+}
+
 function collectSqlParts(value: unknown): string[] {
   if (!value) {
     return [];
@@ -233,5 +245,26 @@ describe('WorkerWarmPoolRepository warm channels', () => {
     expect(reserveSql).toContain('warm_pool_id');
     expect(reserveSql).toContain('container_id');
     expect(reserveSql).toContain('warm-%');
+  });
+
+  it('deletes stale assigned warm pool references for a worker while preserving the current warm pool', async () => {
+    const chain = createDeleteChain(2);
+    const repository = new WorkerWarmPoolRepository(
+      { delete: chain.deleteFn } as never,
+      {} as never
+    );
+
+    await expect(
+      repository.deleteAssignedByWorkerId('worker-1', 'warm-current')
+    ).resolves.toBe(2);
+
+    const whereSql = collectSqlParts(
+      chain.queryBuilder.where.mock.calls[0][0]
+    ).join(' ');
+
+    expect(chain.deleteFn).toHaveBeenCalled();
+    expect(whereSql).toContain(EWorkerWarmPoolState.assigned);
+    expect(whereSql).toContain('worker-1');
+    expect(whereSql).toContain('warm-current');
   });
 });
