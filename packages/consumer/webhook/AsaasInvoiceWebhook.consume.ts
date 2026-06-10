@@ -147,7 +147,8 @@ export class AsaasInvoiceWebhookConsume {
 
     return (
       error.message.startsWith('Unhandled event type:') ||
-      error.message.startsWith('Status desconhecido:')
+      error.message.startsWith('Status desconhecido:') ||
+      error.message.startsWith('Pagamento não encontrado:')
     );
   }
 
