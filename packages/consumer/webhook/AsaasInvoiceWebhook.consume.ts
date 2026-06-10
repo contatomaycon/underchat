@@ -61,17 +61,20 @@ export class AsaasInvoiceWebhookConsume {
         await this.handleWebhookEvent(data);
         await this.commitNext(topic, message.partition, message.offset);
       } catch (error) {
+        if (this.shouldCommitOnError(error)) {
+          server.log.warn(
+            { err: error },
+            `Skipping non-retryable invoice webhook event: ${data.event}`
+          );
+          await this.commitNext(topic, message.partition, message.offset);
+
+          return;
+        }
+
         server.log.error(
           error,
           `Error processing webhook event: ${data.event}`
         );
-
-        if (this.shouldCommitOnError(error)) {
-          server.log.warn(
-            `Skipping non-retryable invoice webhook event: ${data.event}`
-          );
-          await this.commitNext(topic, message.partition, message.offset);
-        }
       }
     });
 
