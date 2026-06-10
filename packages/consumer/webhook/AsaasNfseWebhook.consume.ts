@@ -127,7 +127,10 @@ export class AsaasNfseWebhookConsume {
       return false;
     }
 
-    return error.message.includes('Payment ID não encontrado no webhook');
+    return (
+      error.message.includes('Payment ID não encontrado no webhook') ||
+      error.message.startsWith('Account payment não encontrado para billing:')
+    );
   }
 
   private parseMessage(value: Buffer | null): AsaasNfseWebhookRequest | null {
