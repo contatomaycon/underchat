@@ -125,7 +125,7 @@ export class StorageService {
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = this.fileProcessor.normalizeFilename(normalizedName);
+    const key = this.fileProcessor.generateUniqueObjectKey(normalizedName);
     const mimetype = file.mimetype ?? 'application/octet-stream';
 
     const bucketId = await this.ensureBucket(accountId);
@@ -166,7 +166,7 @@ export class StorageService {
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = this.fileProcessor.normalizeFilename(normalizedName);
+    const key = this.fileProcessor.generateUniqueObjectKey(normalizedName);
     const mimetype = file.mimetype ?? 'video/mp4';
 
     const bucketId = await this.ensureBucket(accountId);
@@ -208,7 +208,7 @@ export class StorageService {
       filename,
       extension
     );
-    const key = this.fileProcessor.normalizeFilename(normalizedName);
+    const key = this.fileProcessor.generateUniqueObjectKey(normalizedName);
 
     const bucketId = await this.ensureBucket(accountId);
 
@@ -246,7 +246,7 @@ export class StorageService {
     const normalizedName = initialExtension
       ? file.filename
       : `${file.filename}.${extension}`;
-    const key = this.fileProcessor.normalizeFilename(normalizedName);
+    const key = this.fileProcessor.generateUniqueObjectKey(normalizedName);
     const mimetype = file.mimetype ?? 'audio/ogg; codecs=opus';
 
     const bucketId = await this.ensureBucket(accountId);
@@ -286,7 +286,7 @@ export class StorageService {
       filename,
       extension
     );
-    const key = this.fileProcessor.normalizeFilename(normalizedName);
+    const key = this.fileProcessor.generateUniqueObjectKey(normalizedName);
 
     const bucketId = await this.ensureBucket(accountId);
 
@@ -331,7 +331,7 @@ export class StorageService {
     const urlName = this.fileProcessor.extractFilenameFromUrl(url);
 
     const guessedName =
-      filenameHint ?? dispoName ?? urlName ?? `file-${Date.now()}`;
+      filenameHint || dispoName || urlName || `file-${Date.now()}`;
 
     const arrayBuf = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuf);
@@ -353,10 +353,10 @@ export class StorageService {
     const baseName = this.fileProcessor.getFileExtension(guessedName)
       ? guessedName
       : `${guessedName}.${finalExt}`;
-    const normalizedBaseName = this.fileProcessor.normalizeFilename(baseName);
-    const key = pathPrefix
-      ? `${pathPrefix}/${normalizedBaseName}`
-      : normalizedBaseName;
+    const key = this.fileProcessor.generateUniqueObjectKey(
+      baseName,
+      pathPrefix
+    );
 
     const mimeToStore = sniffedMime ?? contentTypeHeader;
 
@@ -419,7 +419,7 @@ export class StorageService {
       ext,
       accountId
     );
-    const key = this.fileProcessor.normalizeFilename(baseName);
+    const key = this.fileProcessor.generateUniqueObjectKey(baseName);
 
     const bucketId = await this.ensureBucket(accountId);
 

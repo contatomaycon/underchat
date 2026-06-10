@@ -82,6 +82,15 @@ export class FileProcessor {
     return `${uuidv7()}.${extension}`;
   }
 
+  generateUniqueObjectKey(filename: string, pathPrefix?: string): string {
+    const uniqueFilename = `${uuidv7()}-${this.normalizeFilename(filename)}`;
+    if (!pathPrefix) {
+      return uniqueFilename;
+    }
+
+    return `${pathPrefix.replace(/\/+$/, '')}/${uniqueFilename}`;
+  }
+
   parseDispositionFilename(disposition?: string | null): string {
     if (!disposition) {
       return '';

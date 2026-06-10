@@ -119,6 +119,12 @@ describe('FileProcessor', () => {
 
   it('generates unique filename and parses disposition/url names', () => {
     expect(service.generateUniqueFilename('mp3')).toBe('uuid-v7-mock.mp3');
+    expect(service.generateUniqueObjectKey('my file.pdf')).toBe(
+      'uuid-v7-mock-my_file.pdf'
+    );
+    expect(service.generateUniqueObjectKey('my file.pdf', 'docs/')).toBe(
+      'docs/uuid-v7-mock-my_file.pdf'
+    );
 
     expect(
       service.parseDispositionFilename(

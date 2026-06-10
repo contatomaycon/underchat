@@ -71,6 +71,7 @@ describe('StorageService', () => {
       validateAudioSize: jest.fn(),
     };
 
+    let uniqueObjectKeySequence = 0;
     const fileProcessor = {
       getFileExtension: jest.fn((name: string) => {
         const match = /\.([^./\\]+)$/.exec(name);
@@ -79,6 +80,14 @@ describe('StorageService', () => {
       extFromMime: jest.fn((_: string) => null as string | null),
       generateUniqueFilename: jest.fn(() => 'generated.jpg'),
       normalizeFilename: jest.fn((name: string) => name.replaceAll(' ', '_')),
+      generateUniqueObjectKey: jest.fn((name: string, pathPrefix?: string) => {
+        uniqueObjectKeySequence += 1;
+        const key = `unique-${uniqueObjectKeySequence}-${name.replaceAll(
+          ' ',
+          '_'
+        )}`;
+        return pathPrefix ? `${pathPrefix.replace(/\/+$/, '')}/${key}` : key;
+      }),
       normalizeFileNameWithExtension: jest.fn((name: string, ext: string) =>
         name.endsWith(`.${ext}`) ? name : `${name}.${ext}`
       ),
@@ -254,7 +263,7 @@ describe('StorageService', () => {
     );
     expect(uploader.uploadWithRetry).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: 'invoice.pdf',
+        key: 'unique-1-invoice.pdf',
         contentType: 'application/octet-stream',
       })
     );
@@ -290,6 +299,58 @@ describe('StorageService', () => {
     expect(document?.name).toBe('contract.pdf');
     expect(video?.name).toBe('movie.mp4');
     expect(audio?.name).toBe('voice.ogg');
+  });
+
+  it('uses unique object keys for repeated document/video/audio uploads while preserving display names', async () => {
+    const { service, fileProcessor, uploader } = makeService();
+
+    fileProcessor.getFileExtension
+      .mockReturnValueOnce('pdf')
+      .mockReturnValueOnce('pdf')
+      .mockReturnValueOnce('mp4')
+      .mockReturnValueOnce('mp4')
+      .mockReturnValueOnce('ogg')
+      .mockReturnValueOnce('ogg');
+
+    const documentA = await service.uploadDocument(
+      makeFile('teste.pdf', 'application/pdf', Buffer.from('doc-a')) as never,
+      'acc-dup'
+    );
+    const documentB = await service.uploadDocument(
+      makeFile('teste.pdf', 'application/pdf', Buffer.from('doc-b')) as never,
+      'acc-dup'
+    );
+    const videoA = await service.uploadVideo(
+      makeFile('clip.mp4', 'video/mp4', Buffer.from('video-a')) as never,
+      'acc-dup'
+    );
+    const videoB = await service.uploadVideo(
+      makeFile('clip.mp4', 'video/mp4', Buffer.from('video-b')) as never,
+      'acc-dup'
+    );
+    const audioA = await service.uploadAudio(
+      makeFile('voice.ogg', 'audio/ogg', Buffer.from('audio-a')) as never,
+      'acc-dup'
+    );
+    const audioB = await service.uploadAudio(
+      makeFile('voice.ogg', 'audio/ogg', Buffer.from('audio-b')) as never,
+      'acc-dup'
+    );
+
+    const uploadedKeys = uploader.uploadWithRetry.mock.calls.map(
+      ([params]) => params.key
+    );
+
+    expect(new Set(uploadedKeys).size).toBe(uploadedKeys.length);
+    expect(documentA?.name).toBe('teste.pdf');
+    expect(documentB?.name).toBe('teste.pdf');
+    expect(videoA?.name).toBe('clip.mp4');
+    expect(videoB?.name).toBe('clip.mp4');
+    expect(audioA?.name).toBe('voice.ogg');
+    expect(audioB?.name).toBe('voice.ogg');
+    expect(documentA?.url).not.toBe(documentB?.url);
+    expect(videoA?.url).not.toBe(videoB?.url);
+    expect(audioA?.url).not.toBe(audioB?.url);
   });
 
   it('uploads video and audio using fallback extensions and default mimetypes', async () => {
@@ -406,9 +467,6 @@ describe('StorageService', () => {
   it('uploads from url using sniffed type, path prefix and image metadata', async () => {
     const { service, fileProcessor, uploader } = makeService();
 
-    fileProcessor.parseDispositionFilename.mockReturnValueOnce(
-      undefined as never
-    );
     fileProcessor.extractFilenameFromUrl.mockReturnValueOnce('download');
     fileProcessor.getFileExtension.mockReturnValue('');
     fileProcessor.extFromMime.mockReturnValueOnce(null);
@@ -445,12 +503,12 @@ describe('StorageService', () => {
 
     expect(uploader.uploadWithRetry).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: 'prefix/download.png',
+        key: 'prefix/unique-1-download.png',
         contentType: 'image/png',
       })
     );
     expect(result).toEqual({
-      url: 'https://primary-s3.example.com/acc-7/prefix/download.png',
+      url: 'https://primary-s3.example.com/acc-7/prefix/unique-1-download.png',
       name: 'download.png',
       extension: 'png',
       size: 3,
@@ -576,6 +634,71 @@ describe('StorageService', () => {
     expect(withoutOptions?.name).toBe('acc-9.bin');
     expect(withoutOptions?.extension).toBe('bin');
     expect(withoutOptions?.mimetype).toBe('application/octet-stream');
+  });
+
+  it('uses unique object keys for repeated generic buffer and url uploads while preserving display names', async () => {
+    const { service, fileProcessor } = makeService();
+
+    fileProcessor.detectFileType
+      .mockResolvedValueOnce({ ext: 'txt', mime: 'text/plain' })
+      .mockResolvedValueOnce({ ext: 'txt', mime: 'text/plain' });
+    fileProcessor.getFileExtension
+      .mockReturnValueOnce('txt')
+      .mockReturnValueOnce('txt');
+    fileProcessor.determineBaseName
+      .mockReturnValueOnce('notes.txt')
+      .mockReturnValueOnce('notes.txt');
+
+    const bufferA = await service.uploadFromBuffer(
+      Buffer.from('text-a'),
+      'acc-9',
+      {
+        fileName: 'notes.txt',
+        mimetype: 'text/plain',
+      }
+    );
+    const bufferB = await service.uploadFromBuffer(
+      Buffer.from('text-b'),
+      'acc-9',
+      {
+        fileName: 'notes.txt',
+        mimetype: 'text/plain',
+      }
+    );
+
+    expect(bufferA?.name).toBe('notes.txt');
+    expect(bufferB?.name).toBe('notes.txt');
+    expect(bufferA?.url).not.toBe(bufferB?.url);
+
+    fileProcessor.parseDispositionFilename.mockReturnValue(undefined as never);
+    fileProcessor.extractFilenameFromUrl.mockReturnValue('download.pdf');
+    fileProcessor.getFileExtension.mockReturnValue('pdf');
+
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: {
+        get: (key: string) => {
+          if (key === 'content-type') return 'application/pdf';
+          return null;
+        },
+      },
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    })) as never;
+
+    const urlA = await service.uploadFromUrl(
+      'https://example.com/download.pdf',
+      'acc-9'
+    );
+    const urlB = await service.uploadFromUrl(
+      'https://example.com/download.pdf',
+      'acc-9'
+    );
+
+    expect(urlA?.name).toBe('download.pdf');
+    expect(urlB?.name).toBe('download.pdf');
+    expect(urlA?.url).not.toBe(urlB?.url);
   });
 
   it('uploads pdf with normalized path and verified bucket shortcut', async () => {
