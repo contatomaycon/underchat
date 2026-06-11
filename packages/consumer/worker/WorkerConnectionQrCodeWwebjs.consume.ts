@@ -17,23 +17,21 @@ import {
   WorkerConnectionQrCodeRedisQueueService,
   WorkerConnectionQrCodeRedisStreamMessage,
 } from '@core/services/workerConnectionQrCodeRedisQueue.service';
+import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 
 interface ActiveQrAttemptEnvelope {
+  worker_type_id?: string;
+  runtime_generation?: number;
   ack?: {
     connection_attempt_id?: string;
+    worker_type_id?: string;
+    runtime_generation?: number;
   };
 }
 
 @singleton()
 export class WorkerConnectionQrCodeWwebjsConsume {
   private static readonly ACTIVE_ATTEMPT_REDIS_TIMEOUT_MS = 1_000;
-  private static readonly ACTIVE_ATTEMPT_MISSING_ACCEPT_MS = Math.max(
-    5_000,
-    Math.min(
-      600_000,
-      Number(process.env.CONNECTION_QRCODE_MISSING_ACTIVE_ACCEPT_MS) || 60_000
-    )
-  );
   private static readonly QR_CACHE_TTL_SECONDS = Math.max(
     1,
     Math.min(
@@ -260,6 +258,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       connection_lifecycle_id: data.connection_lifecycle_id,
       source: data.source,
       requested_at: data.requested_at,
+      runtime_generation: data.runtime_generation,
       queue_latency_ms: message.queue_latency_ms,
       redis_status: this.redisStatus(),
     });
@@ -330,6 +329,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
           type: EBaileysConnectionType.qrcode,
           connection_attempt_id: data.connection_attempt_id,
           connection_lifecycle_id: data.connection_lifecycle_id,
+          runtime_generation: data.runtime_generation,
           qr_pending: true,
         },
         message
@@ -497,14 +497,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
   }
 
   private requestLocalConnectionWithTimeout(
-    payload: {
-      worker_id: string;
-      status: EWorkerStatus;
-      type: EBaileysConnectionType;
-      connection_attempt_id: string;
-      connection_lifecycle_id: string;
-      qr_pending: boolean;
-    },
+    payload: StatusConnectionWorkerRequest,
     message: WorkerConnectionQrCodeRedisStreamMessage
   ): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
@@ -681,29 +674,39 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         'active_attempt'
       );
       if (!raw) {
-        const queueLatencyMs = this.getQueueLatencyMs(data, message);
-        const acceptMissingActive =
-          queueLatencyMs !== undefined &&
-          queueLatencyMs <=
-            WorkerConnectionQrCodeWwebjsConsume.ACTIVE_ATTEMPT_MISSING_ACCEPT_MS;
         this.logActiveAttemptCheckResult(data, message, {
-          active: acceptMissingActive,
-          reason: acceptMissingActive
-            ? 'active_attempt_missing_recent_message'
-            : 'active_attempt_missing',
-          queue_latency_ms: queueLatencyMs,
+          active: false,
+          reason: 'active_attempt_missing',
+          queue_latency_ms: this.getQueueLatencyMs(data, message),
         });
-        return acceptMissingActive;
+        return false;
       }
 
       try {
         const parsed = JSON.parse(raw) as ActiveQrAttemptEnvelope;
+        const activeRuntimeGeneration =
+          parsed.runtime_generation ?? parsed.ack?.runtime_generation;
+        const activeWorkerTypeId =
+          parsed.worker_type_id ?? parsed.ack?.worker_type_id;
         const active =
-          parsed.ack?.connection_attempt_id === data.connection_attempt_id;
+          parsed.ack?.connection_attempt_id === data.connection_attempt_id &&
+          (!activeWorkerTypeId || activeWorkerTypeId === data.worker_type_id) &&
+          !(
+            data.runtime_generation !== undefined &&
+            activeRuntimeGeneration === undefined
+          ) &&
+          (activeRuntimeGeneration === undefined ||
+            activeRuntimeGeneration === data.runtime_generation);
         this.logActiveAttemptCheckResult(data, message, {
           active,
-          reason: active ? 'active_attempt_matches' : 'active_attempt_mismatch',
+          reason: this.activeAttemptMismatchReason({
+            active,
+            activeRuntimeGeneration,
+            activeWorkerTypeId,
+            data,
+          }),
           active_connection_attempt_id: parsed.ack?.connection_attempt_id,
+          active_runtime_generation: activeRuntimeGeneration,
         });
         return active;
       } catch (error) {
@@ -733,8 +736,42 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         worker_type_id: EWorkerType.wwebjs,
         error: error instanceof Error ? error.message : String(error),
       });
-      return true;
+      return false;
     }
+  }
+
+  private activeAttemptMismatchReason(input: {
+    active: boolean;
+    activeRuntimeGeneration?: number;
+    activeWorkerTypeId?: string;
+    data: IWorkerConnectionQrCodeQueueMessage;
+  }): string {
+    if (input.active) {
+      return 'active_attempt_matches';
+    }
+
+    if (
+      input.data.runtime_generation !== undefined &&
+      input.activeRuntimeGeneration === undefined
+    ) {
+      return 'active_attempt_missing_runtime_generation';
+    }
+
+    if (
+      input.activeRuntimeGeneration !== undefined &&
+      input.activeRuntimeGeneration !== input.data.runtime_generation
+    ) {
+      return 'active_attempt_runtime_generation_mismatch';
+    }
+
+    if (
+      input.activeWorkerTypeId &&
+      input.activeWorkerTypeId !== input.data.worker_type_id
+    ) {
+      return 'active_attempt_worker_type_mismatch';
+    }
+
+    return 'active_attempt_mismatch';
   }
 
   private logActiveAttemptCheckResult(
@@ -744,6 +781,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       active: boolean;
       reason: string;
       active_connection_attempt_id?: string;
+      active_runtime_generation?: number;
       queue_latency_ms?: number;
       error?: string;
     }
@@ -765,6 +803,8 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       connection_lifecycle_id: data.connection_lifecycle_id,
       worker_type: EWorkerType.wwebjs,
       worker_type_id: EWorkerType.wwebjs,
+      runtime_generation: data.runtime_generation,
+      active_runtime_generation: result.active_runtime_generation,
       queue_latency_ms: result.queue_latency_ms,
       error: result.error,
     });
@@ -887,6 +927,30 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       return;
     }
 
+    if (state.worker_type_id && state.worker_type_id !== EWorkerType.wwebjs) {
+      recordConnectionLifecycle({
+        stage: 'connection.wwebjs.qrcode_redis_stream.qr_cache_write_rejected',
+        decision: 'cache_connection_qrcode_attempt',
+        outcome: 'rejected',
+        reason: 'runtime_type_mismatch',
+        level: 'warn',
+        stream_key: message.stream_key,
+        stream_id: message.stream_id,
+        consumer_group: message.consumer_group,
+        consumer_name: message.consumer_name,
+        connection_attempt_id:
+          state.connection_attempt_id ?? data.connection_attempt_id,
+        connection_lifecycle_id:
+          state.connection_lifecycle_id ?? data.connection_lifecycle_id,
+        request_worker_type_id: data.worker_type_id,
+        response_worker_type_id: state.worker_type_id,
+        worker_type: EWorkerType.wwebjs,
+        worker_type_id: EWorkerType.wwebjs,
+        runtime_generation: data.runtime_generation,
+      });
+      return;
+    }
+
     const normalized: IBaileysConnectionState = {
       ...state,
       worker_id: state.worker_id || data.worker_id,
@@ -896,9 +960,11 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         state.connection_attempt_id || data.connection_attempt_id,
       connection_lifecycle_id:
         state.connection_lifecycle_id || data.connection_lifecycle_id,
+      runtime_generation: state.runtime_generation ?? data.runtime_generation,
       qr_pending: false,
       qr_generated_at: state.qr_generated_at || new Date().toISOString(),
     };
+    normalized.expires_at ??= this.qrExpiresAt(normalized);
     const ttlSeconds = this.qrCacheTtlForState(normalized);
     const startedAt = Date.now();
 
@@ -979,6 +1045,21 @@ export class WorkerConnectionQrCodeWwebjsConsume {
       WorkerConnectionQrCodeWwebjsConsume.QR_CACHE_TTL_SECONDS,
       remainingSeconds
     );
+  }
+
+  private qrExpiresAt(state: IBaileysConnectionState): string | undefined {
+    if (!state.qr_generated_at) {
+      return undefined;
+    }
+
+    const generatedAtMs = Date.parse(state.qr_generated_at);
+    if (!Number.isFinite(generatedAtMs)) {
+      return undefined;
+    }
+
+    return new Date(
+      generatedAtMs + WorkerConnectionQrCodeWwebjsConsume.QR_MAX_AGE_MS
+    ).toISOString();
   }
 
   private getQueueLatencyMs(

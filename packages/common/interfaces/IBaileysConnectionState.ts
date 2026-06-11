@@ -23,6 +23,7 @@ export interface IBaileysConnectionState {
   connection_lifecycle_id?: string;
   qr_pending?: boolean;
   qr_generated_at?: string;
+  expires_at?: string;
   reason?: string;
   error?: string;
   time_to_first_qr_ms?: number;

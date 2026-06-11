@@ -145,6 +145,7 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "status", state.Status)
 	setDynamicString(out, "worker_id", state.WorkerID)
 	setDynamicString(out, "account_id", state.AccountID)
+	setDynamicString(out, "worker_type_id", state.WorkerTypeID)
 	setDynamicString(out, "qrcode", state.QRCode)
 	setDynamicBool(out, "is_new_login", state.IsNewLogin)
 	setDynamicInt64(out, "time", state.Time)
@@ -158,6 +159,7 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "connection_attempt_id", state.ConnectionAttemptID)
 	setDynamicBool(out, "qr_pending", state.QRPending)
 	setDynamicString(out, "qr_generated_at", state.QRGeneratedAt)
+	setDynamicString(out, "expires_at", state.ExpiresAt)
 	setDynamicString(out, "connection_lifecycle_id", state.ConnectionLifecycleID)
 	setDynamicString(out, "reason", state.Reason)
 	setDynamicString(out, "error", state.Error)
@@ -255,6 +257,10 @@ func (s *WorkerConnectionGRPCServer) RuntimeHealth(ctx context.Context, msg *dyn
 	setDynamicString(out, "warm_pool_id", resp.WarmPoolID)
 	setDynamicBool(out, "has_session", resp.HasSession)
 	setDynamicBool(out, "has_qr", resp.HasQR)
+	setDynamicString(out, "worker_type_id", resp.WorkerTypeID)
+	setDynamicInt32(out, "runtime_generation", int32(resp.RuntimeGeneration))
+	setDynamicString(out, "runtime_state", resp.RuntimeState)
+	setDynamicBool(out, "qr_stream_ready", resp.QRStreamReady)
 	setDynamicString(out, "error", resp.Error)
 	return out, nil
 }

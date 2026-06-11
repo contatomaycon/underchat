@@ -33,4 +33,8 @@ export interface IWorkerRuntimeHealthResponseProto {
   has_session?: boolean;
   has_qr?: boolean;
   error?: string;
+  worker_type_id?: string;
+  runtime_generation?: number | string;
+  runtime_state?: string;
+  qr_stream_ready?: boolean;
 }

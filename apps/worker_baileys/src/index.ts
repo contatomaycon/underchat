@@ -36,6 +36,7 @@ const server = fastify({
 
 server.decorateRequest('module', ERouteModule.worker_baileys);
 server.decorate('baileysInitialized', Promise.resolve());
+server.decorate('qrStreamReady', false);
 
 server.register(safePlugin(telemetryPlugin, 'telemetry'));
 server.register(safePlugin(corsPlugin, 'cors'));

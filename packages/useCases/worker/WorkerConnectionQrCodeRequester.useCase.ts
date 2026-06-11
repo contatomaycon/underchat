@@ -16,6 +16,7 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { WorkerService } from '@core/services/worker.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { WorkerConnectionQrCodeRedisQueueService } from '@core/services/workerConnectionQrCodeRedisQueue.service';
+import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
 import {
   buildConnectionLifecycleContext,
   recordConnectionLifecycle,
@@ -33,6 +34,7 @@ interface ActiveQrAttempt {
   consumer_group: string;
   source: WorkerConnectionQrCodeQueueSource;
   worker_type_id?: string;
+  runtime_generation?: number;
 }
 
 @injectable()
@@ -67,7 +69,9 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     @inject(WorkerConnectionQrCodeRedisQueueService)
     private readonly redisQueueService: WorkerConnectionQrCodeRedisQueueService = new WorkerConnectionQrCodeRedisQueueService(
       redis
-    )
+    ),
+    @inject(WorkerRuntimeRepository)
+    private readonly workerRuntimeRepository: WorkerRuntimeRepository = undefined as never
   ) {}
 
   async execute(
@@ -123,6 +127,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     const workerTypeId = view?.type?.id;
     const workerStatusId = view?.status?.id;
     const serverId = view?.server?.id;
+    const runtimeGeneration =
+      await this.resolveRuntimeGenerationSafely(workerId);
 
     if (!view || !serverId || !workerTypeId) {
       recordConnectionLifecycle({
@@ -134,6 +140,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         server_id: serverId,
         worker_type: workerTypeId,
         worker_status_id: workerStatusId,
+        runtime_generation: runtimeGeneration,
       });
       throw new Error(t('worker_not_found'));
     }
@@ -185,6 +192,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_type: workerTypeId,
       worker_type_id: workerTypeId,
       worker_status_id: workerStatusId,
+      runtime_generation: runtimeGeneration,
     });
 
     recordConnectionLifecycle({
@@ -195,6 +203,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_type: workerTypeId,
       worker_type_id: workerTypeId,
       worker_status_id: workerStatusId,
+      runtime_generation: runtimeGeneration,
       stream_key: this.redisQueueService.streamKey(workerId, workerTypeId),
       consumer_group: this.redisQueueService.consumerGroup(
         workerId,
@@ -224,12 +233,15 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       source: existing?.source,
       stream_key: existing?.stream_key,
       consumer_group: existing?.consumer_group,
+      runtime_generation:
+        existing?.runtime_generation ?? existing?.ack.runtime_generation,
     });
     if (existing) {
       const invalidReason = await this.getActiveAttemptInvalidReason(
         workerId,
         workerTypeId,
-        existing
+        existing,
+        runtimeGeneration
       );
 
       if (invalidReason) {
@@ -251,6 +263,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           source: existing.source,
           active_worker_type_id: existing.worker_type_id,
           qr_pending_age_ms: this.getActiveAttemptAgeMs(existing),
+          runtime_generation:
+            existing.runtime_generation ?? existing.ack.runtime_generation,
         });
         existing = null;
       }
@@ -264,12 +278,14 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_type: workerTypeId,
       worker_type_id: workerTypeId,
       worker_status_id: workerStatusId,
+      runtime_generation: runtimeGeneration,
     });
     const cachedQr = await this.getCachedQrAttemptState(
       workerId,
       accountId,
       workerTypeId,
-      workerStatusId
+      workerStatusId,
+      runtimeGeneration
     );
     if (cachedQr?.qrcode) {
       const response = this.hydrateCachedQrResponse(cachedQr, existing);
@@ -290,6 +306,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         worker_type_id: workerTypeId,
         connection_attempt_id: response.connection_attempt_id,
         connection_lifecycle_id: response.connection_lifecycle_id,
+        runtime_generation: response.runtime_generation,
         qr_pending: false,
       });
       recordConnectionAttemptTelemetry({
@@ -320,6 +337,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_type: workerTypeId,
       worker_type_id: workerTypeId,
       worker_status_id: workerStatusId,
+      runtime_generation: runtimeGeneration,
     });
 
     if (existing) {
@@ -338,6 +356,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           stream_key: existing.stream_key,
           consumer_group: existing.consumer_group,
           source: existing.source,
+          runtime_generation:
+            existing.runtime_generation ?? existing.ack.runtime_generation,
         });
       } else {
         const activeAttemptAgeMs = this.getActiveAttemptAgeMs(existing);
@@ -349,6 +369,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           qr_pending: true,
           qrcode: undefined,
           pairing_code: undefined,
+          runtime_generation:
+            existing.ack.runtime_generation ?? runtimeGeneration,
         };
 
         await this.publishPendingAck(response, {
@@ -373,6 +395,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           consumer_group: existing.consumer_group,
           source: existing.source,
           qr_pending_age_ms: activeAttemptAgeMs,
+          runtime_generation: response.runtime_generation,
         });
         recordConnectionAttemptTelemetry({
           event: 'manager_qrcode_request_duplicate_active_attempt',
@@ -390,6 +413,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           outcome: 'deduped',
           reason: 'active_connection_attempt_exists',
           qr_pending_age_ms: activeAttemptAgeMs,
+          runtime_generation: response.runtime_generation,
         });
         return response;
       }
@@ -408,7 +432,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       connectionAttemptId,
       lifecycleContext.connection_lifecycle_id,
       workerTypeId,
-      workerStatusId
+      workerStatusId,
+      runtimeGeneration
     );
 
     const activeAttempt: ActiveQrAttempt = {
@@ -418,6 +443,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       consumer_group: consumerGroup,
       source,
       worker_type_id: workerTypeId,
+      runtime_generation: runtimeGeneration,
     };
 
     recordConnectionLifecycle({
@@ -434,6 +460,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       consumer_group: consumerGroup,
       source,
       ttl_seconds: this.activeAttemptTtlSeconds,
+      runtime_generation: runtimeGeneration,
     });
     const claimed = await this.claimActiveAttempt(
       workerId,
@@ -459,6 +486,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           stream_id: current.stream_id,
           consumer_group: current.consumer_group,
           source: current.source,
+          runtime_generation:
+            current.runtime_generation ?? current.ack.runtime_generation,
         });
         return {
           ...current.ack,
@@ -468,6 +497,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           qr_pending: true,
           qrcode: undefined,
           pairing_code: undefined,
+          runtime_generation:
+            current.ack.runtime_generation ?? runtimeGeneration,
         };
       }
 
@@ -499,8 +530,10 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       consumer_group: consumerGroup,
       source,
       ttl_seconds: this.activeAttemptTtlSeconds,
+      runtime_generation: runtimeGeneration,
     });
 
+    const requestedAt = new Date();
     const payload: IWorkerConnectionQrCodeQueueMessage = {
       request_id: uuidv7(),
       connection_attempt_id: connectionAttemptId,
@@ -508,8 +541,12 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       worker_id: workerId,
       account_id: accountId,
       worker_type_id: workerTypeId,
+      runtime_generation: runtimeGeneration,
       source,
-      requested_at: new Date().toISOString(),
+      requested_at: requestedAt.toISOString(),
+      expires_at: new Date(
+        requestedAt.getTime() + this.activeAttemptDedupeMaxAgeMs
+      ).toISOString(),
     };
 
     try {
@@ -525,6 +562,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         stream_key: streamKey,
         consumer_group: consumerGroup,
         source,
+        runtime_generation: runtimeGeneration,
       });
       const streamId = await this.redisQueueService.enqueue(payload);
       await this.storeActiveAttemptStreamId(
@@ -547,6 +585,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         stream_id: streamId,
         consumer_group: consumerGroup,
         source,
+        runtime_generation: runtimeGeneration,
       });
       recordConnectionAttemptTelemetry({
         event: 'manager_qrcode_request_redis_stream_queued',
@@ -562,6 +601,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         code: ack.code,
         outcome: 'queued',
         reason: 'queued',
+        runtime_generation: runtimeGeneration,
       });
     } catch (error) {
       await this.clearActiveAttempt(
@@ -583,6 +623,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         stream_key: streamKey,
         consumer_group: consumerGroup,
         error: getErrorMessage(error),
+        runtime_generation: runtimeGeneration,
       });
       throw error;
     }
@@ -602,6 +643,44 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     return `connection:qrcode:${workerTypeId}:${workerId}:active_attempt`;
   }
 
+  private async resolveRuntimeGenerationSafely(
+    workerId: string
+  ): Promise<number | undefined> {
+    if (!this.workerRuntimeRepository) {
+      return undefined;
+    }
+
+    try {
+      const runtime =
+        await this.workerRuntimeRepository.viewByWorkerId(workerId);
+      return runtime?.runtime_generation;
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.qrcode_request.runtime_generation_error',
+        decision: 'resolve_worker_runtime_generation',
+        outcome: 'error',
+        reason: 'worker_runtime_lookup_failed',
+        level: 'warn',
+        worker_id: workerId,
+        error: getErrorMessage(error),
+      });
+      return undefined;
+    }
+  }
+
+  private qrExpiresAt(qrGeneratedAt?: string): string | undefined {
+    if (!qrGeneratedAt) {
+      return undefined;
+    }
+
+    const generatedAtMs = Date.parse(qrGeneratedAt);
+    if (!Number.isFinite(generatedAtMs)) {
+      return undefined;
+    }
+
+    return new Date(generatedAtMs + this.cachedQrMaxAgeMs).toISOString();
+  }
+
   private processedAttemptKey(
     workerId: string,
     workerTypeId: string,
@@ -617,7 +696,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
   private async getActiveAttemptInvalidReason(
     workerId: string,
     workerTypeId: string,
-    attempt: ActiveQrAttempt
+    attempt: ActiveQrAttempt,
+    runtimeGeneration?: number
   ): Promise<string | undefined> {
     const connectionAttemptId = attempt.ack.connection_attempt_id;
     if (!connectionAttemptId) {
@@ -626,6 +706,23 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
     if (attempt.worker_type_id && attempt.worker_type_id !== workerTypeId) {
       return 'active_attempt_worker_type_mismatch';
+    }
+
+    const activeRuntimeGeneration =
+      attempt.runtime_generation ?? attempt.ack.runtime_generation;
+    if (
+      runtimeGeneration !== undefined &&
+      activeRuntimeGeneration === undefined
+    ) {
+      return 'active_attempt_missing_runtime_generation';
+    }
+
+    if (
+      activeRuntimeGeneration !== undefined &&
+      runtimeGeneration !== undefined &&
+      activeRuntimeGeneration !== runtimeGeneration
+    ) {
+      return 'active_attempt_runtime_generation_mismatch';
     }
 
     const processed = await this.redis.get(
@@ -707,7 +804,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     workerId: string,
     accountId: string,
     workerTypeId: string,
-    workerStatusId?: string
+    workerStatusId?: string,
+    runtimeGeneration?: number
   ): Promise<IBaileysConnectionState | null> {
     const raw = await this.redis.get(
       this.qrAttemptCacheKey(workerId, workerTypeId)
@@ -745,6 +843,48 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         return null;
       }
 
+      if (
+        runtimeGeneration !== undefined &&
+        parsed.runtime_generation === undefined
+      ) {
+        recordConnectionLifecycle({
+          stage: 'connection.manager.qrcode_request.cached_qr_ignored',
+          decision: 'validate_cached_qrcode_runtime_generation',
+          outcome: 'ignored',
+          reason: 'cached_qr_missing_runtime_generation',
+          level: 'warn',
+          worker_type: workerTypeId,
+          worker_type_id: workerTypeId,
+          worker_status_id: workerStatusId,
+          connection_attempt_id: parsed.connection_attempt_id,
+          connection_lifecycle_id: parsed.connection_lifecycle_id,
+          runtime_generation: runtimeGeneration,
+        });
+        return null;
+      }
+
+      if (
+        parsed.runtime_generation !== undefined &&
+        runtimeGeneration !== undefined &&
+        parsed.runtime_generation !== runtimeGeneration
+      ) {
+        recordConnectionLifecycle({
+          stage: 'connection.manager.qrcode_request.cached_qr_ignored',
+          decision: 'validate_cached_qrcode_runtime_generation',
+          outcome: 'ignored',
+          reason: 'cached_qr_runtime_generation_mismatch',
+          level: 'warn',
+          worker_type: workerTypeId,
+          worker_type_id: workerTypeId,
+          worker_status_id: workerStatusId,
+          connection_attempt_id: parsed.connection_attempt_id,
+          connection_lifecycle_id: parsed.connection_lifecycle_id,
+          cached_runtime_generation: parsed.runtime_generation,
+          runtime_generation: runtimeGeneration,
+        });
+        return null;
+      }
+
       if (this.isCachedQrExpired(parsed)) {
         recordConnectionLifecycle({
           stage: 'connection.manager.qrcode_request.cached_qr_ignored',
@@ -767,6 +907,9 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         account_id: accountId,
         worker_type_id: workerTypeId as EWorkerType,
         worker_status_id: workerStatusId as EWorkerStatus | undefined,
+        runtime_generation: parsed.runtime_generation ?? runtimeGeneration,
+        expires_at:
+          parsed.expires_at ?? this.qrExpiresAt(parsed.qr_generated_at),
         qr_pending: false,
       } as IBaileysConnectionState;
     } catch (error) {
@@ -788,7 +931,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     }
 
     if (!state.qr_generated_at) {
-      return false;
+      return true;
     }
 
     const generatedAtMs = Date.parse(state.qr_generated_at);
@@ -811,6 +954,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       connection_lifecycle_id:
         cached.connection_lifecycle_id ??
         activeAttempt?.ack.connection_lifecycle_id,
+      runtime_generation:
+        cached.runtime_generation ??
+        activeAttempt?.runtime_generation ??
+        activeAttempt?.ack.runtime_generation,
+      expires_at: cached.expires_at ?? this.qrExpiresAt(cached.qr_generated_at),
       qr_pending: false,
       reason: cached.reason ?? 'cached_qr_available',
     };
@@ -880,6 +1028,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         qr_pending: ack.qr_pending === true,
         has_qr: Boolean(ack.qrcode),
         has_pairing_code: Boolean(ack.pairing_code),
+        runtime_generation: ack.runtime_generation,
       });
       await this.centrifugoService.publishSub(
         workerCentrifugoQueue(ack.account_id),
@@ -900,6 +1049,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         consumer_group: context.consumer_group,
         source: context.source,
         qr_pending: true,
+        runtime_generation: ack.runtime_generation,
       });
       recordConnectionQrSummary({
         event: 'manager_qrcode_request_pending_ack_published',
@@ -927,6 +1077,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         stream_key: context.stream_key,
         consumer_group: context.consumer_group,
         error: getErrorMessage(error),
+        runtime_generation: ack.runtime_generation,
       });
     }
   }
@@ -955,6 +1106,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         qr_pending: state.qr_pending === true,
         has_qr: Boolean(state.qrcode),
         has_pairing_code: Boolean(state.pairing_code),
+        runtime_generation: state.runtime_generation,
+        expires_at: state.expires_at,
       });
       await this.centrifugoService.publishSub(
         workerCentrifugoQueue(state.account_id),
@@ -974,6 +1127,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         source: context.source,
         qr_pending: false,
         has_qr: true,
+        runtime_generation: state.runtime_generation,
+        expires_at: state.expires_at,
       });
     } catch (error) {
       recordConnectionLifecycle({
@@ -990,6 +1145,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         connection_attempt_id: state.connection_attempt_id,
         connection_lifecycle_id: state.connection_lifecycle_id,
         error: getErrorMessage(error),
+        runtime_generation: state.runtime_generation,
       });
     }
   }
@@ -1000,7 +1156,8 @@ export class WorkerConnectionQrCodeRequesterUseCase {
     connectionAttemptId: string,
     connectionLifecycleId: string,
     workerTypeId: string,
-    workerStatusId?: string
+    workerStatusId?: string,
+    runtimeGeneration?: number
   ): IBaileysConnectionState {
     return {
       code: ECodeMessage.awaitingReadQrCode,
@@ -1013,6 +1170,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       connection_lifecycle_id: connectionLifecycleId,
       qr_pending: true,
       reason: 'queued',
+      runtime_generation: runtimeGeneration,
     };
   }
 }

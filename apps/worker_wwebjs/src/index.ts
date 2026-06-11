@@ -34,6 +34,7 @@ const server = fastify({
 
 server.decorateRequest('module', ERouteModule.worker_wwebjs);
 server.decorate('wwebjsInitialized', Promise.resolve());
+server.decorate('qrStreamReady', false);
 
 server.register(safePlugin(telemetryPlugin, 'telemetry'));
 server.register(safePlugin(corsPlugin, 'cors'));

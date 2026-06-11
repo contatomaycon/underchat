@@ -41,6 +41,9 @@ export interface ConnectionQrSummaryInput {
   qr_expired?: boolean;
   publish_source?: string;
   ignored_stale?: boolean;
+  redis_delete_count?: number;
+  scanned_processed_keys?: number;
+  redis_key_count?: number;
   proxy_status?: string;
   proxy_error_code?: string;
   proxy_fallback?: string;
@@ -132,6 +135,9 @@ export function recordConnectionQrSummary(
     qr_expired: input.qr_expired === true,
     publish_source: input.publish_source,
     ignored_stale: input.ignored_stale === true,
+    redis_delete_count: input.redis_delete_count,
+    scanned_processed_keys: input.scanned_processed_keys,
+    redis_key_count: input.redis_key_count,
     proxy_status: input.proxy_status,
     proxy_error_code: input.proxy_error_code,
     proxy_fallback: input.proxy_fallback,

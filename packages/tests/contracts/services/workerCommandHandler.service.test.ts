@@ -286,6 +286,17 @@ function buildHandler(
       return `connection:qrcode:${workerTypeId}:${workerId}:group`;
     }),
     enqueue: jest.fn(async () => '1710000000000-0'),
+    invalidateWorkerState: jest.fn(async () => ({
+      deleted_keys: 5,
+      scanned_processed_keys: 0,
+      keys: [
+        'connection:qrcode:worker-1:attempt',
+        'connection:qrcode:worker-1:active_attempt',
+        `connection:qrcode:${EWorkerType.baileys}:worker-1:requests`,
+        `connection:qrcode:${EWorkerType.wwebjs}:worker-1:requests`,
+        `connection:qrcode:${EWorkerType.whatsmeow}:worker-1:requests`,
+      ],
+    })),
   };
   const workerWarmPoolRepository = overrides.workerWarmPoolRepository ?? {
     viewById: jest.fn(async () => ({
@@ -1558,12 +1569,14 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(deps.workerService.existsVolumeByName).toHaveBeenCalledWith(
       'worker-1'
     );
-    expect(deps.redis.del).toHaveBeenCalledWith(
-      'connection:qrcode:worker-1:attempt',
-      'connection:qrcode:worker-1:active_attempt',
-      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
-      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:active_attempt`,
-      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:requests`
+    expect(deps.redisQueueService.invalidateWorkerState).toHaveBeenCalledWith(
+      'worker-1',
+      expect.objectContaining({
+        accountId: 'account-1',
+        workerTypeId: EWorkerType.wwebjs,
+        reason: 'worker_recreate',
+        source: 'worker_command_handler',
+      })
     );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
       expect.any(String),

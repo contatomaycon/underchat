@@ -31,6 +31,9 @@ func TestDynamicWorkerConnectionDescriptorIncludesRuntimeActivation(t *testing.T
 	if number := descs.workerRuntimeHealthResponse.Fields().ByName("ready").Number(); number != protoreflect.FieldNumber(6) {
 		t.Fatalf("ready field number = %d, want 6", number)
 	}
+	if number := descs.workerRuntimeHealthResponse.Fields().ByName("qr_stream_ready").Number(); number != protoreflect.FieldNumber(13) {
+		t.Fatalf("qr_stream_ready field number = %d, want 13", number)
+	}
 }
 
 func TestRuntimeHealthReportsWarmStandbyReady(t *testing.T) {
@@ -52,5 +55,8 @@ func TestRuntimeHealthReportsWarmStandbyReady(t *testing.T) {
 	}
 	if !resp.Ready || !resp.Standby || resp.Activated {
 		t.Fatalf("RuntimeHealth() = %+v, want ready standby and not activated", resp)
+	}
+	if resp.WorkerTypeID != WorkerTypeWhatsmeow || resp.RuntimeState != "warm_standby" || resp.QRStreamReady {
+		t.Fatalf("RuntimeHealth() = %+v, want whatsmeow warm standby without QR stream", resp)
 	}
 }

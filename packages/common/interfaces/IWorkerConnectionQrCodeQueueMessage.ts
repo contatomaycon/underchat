@@ -7,6 +7,8 @@ export interface IWorkerConnectionQrCodeQueueMessage {
   worker_id: string;
   account_id: string;
   worker_type_id: string;
+  runtime_generation?: number;
   source: WorkerConnectionQrCodeQueueSource;
   requested_at: string;
+  expires_at?: string;
 }

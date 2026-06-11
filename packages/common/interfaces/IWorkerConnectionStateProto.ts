@@ -3,6 +3,7 @@ export interface IWorkerConnectionStateProto {
   status?: string;
   worker_id?: string;
   account_id?: string;
+  worker_type_id?: string;
   qrcode?: string;
   is_new_login?: boolean;
   time?: number | string;
@@ -16,6 +17,7 @@ export interface IWorkerConnectionStateProto {
   connection_attempt_id?: string;
   qr_pending?: boolean;
   qr_generated_at?: string;
+  expires_at?: string;
   connection_lifecycle_id?: string;
   reason?: string;
   error?: string;

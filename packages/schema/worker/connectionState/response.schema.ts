@@ -1,6 +1,7 @@
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { Static, Type } from '@sinclair/typebox';
 
 const codeMessageValues = Object.values(ECodeMessage).filter(
@@ -12,6 +13,9 @@ export const workerConnectionStateResponseSchema = Type.Object({
   status: Type.String({ enum: Object.values(EBaileysConnectionStatus) }),
   worker_id: Type.String(),
   account_id: Type.String(),
+  worker_type_id: Type.Optional(
+    Type.String({ enum: Object.values(EWorkerType) })
+  ),
   qrcode: Type.Optional(Type.String()),
   is_new_login: Type.Optional(Type.Boolean()),
   time: Type.Optional(Type.Number()),
@@ -28,6 +32,7 @@ export const workerConnectionStateResponseSchema = Type.Object({
   connection_lifecycle_id: Type.Optional(Type.String()),
   qr_pending: Type.Optional(Type.Boolean()),
   qr_generated_at: Type.Optional(Type.String()),
+  expires_at: Type.Optional(Type.String()),
   reason: Type.Optional(Type.String()),
   error: Type.Optional(Type.String()),
   time_to_first_qr_ms: Type.Optional(Type.Number()),

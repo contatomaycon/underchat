@@ -52,6 +52,8 @@ message WorkerConnectionResponse {
   string container_id = 26;
   int32 runtime_generation = 27;
   string warm_pool_id = 28;
+  string worker_type_id = 29;
+  string expires_at = 30;
 }
 
 message PhoneValidationRequest {
@@ -107,4 +109,8 @@ message WorkerRuntimeHealthResponse {
   bool has_session = 7;
   bool has_qr = 8;
   string error = 9;
+  string worker_type_id = 10;
+  int32 runtime_generation = 11;
+  string runtime_state = 12;
+  bool qr_stream_ready = 13;
 }

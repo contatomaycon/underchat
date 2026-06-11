@@ -1,6 +1,7 @@
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 
@@ -30,6 +31,9 @@ export function protoToConnectionState(
   };
 
   if (proto.qrcode) state.qrcode = proto.qrcode;
+  if (proto.worker_type_id) {
+    state.worker_type_id = proto.worker_type_id as EWorkerType;
+  }
   if (proto.is_new_login) state.is_new_login = proto.is_new_login;
   if (proto.phone) state.phone = proto.phone;
   if (proto.disconnected_user) {
@@ -50,6 +54,9 @@ export function protoToConnectionState(
   }
   if (proto.qr_generated_at) {
     state.qr_generated_at = proto.qr_generated_at;
+  }
+  if (proto.expires_at) {
+    state.expires_at = proto.expires_at;
   }
   if (proto.reason) {
     state.reason = proto.reason;
@@ -111,6 +118,7 @@ export function connectionStateToProto(
     status: state.status,
     worker_id: state.worker_id,
     account_id: state.account_id,
+    worker_type_id: state.worker_type_id ?? '',
     qrcode: state.qrcode ?? '',
     is_new_login: state.is_new_login ?? false,
     time: state.time ?? 0,
@@ -124,6 +132,7 @@ export function connectionStateToProto(
     connection_attempt_id: state.connection_attempt_id ?? '',
     qr_pending: state.qr_pending ?? false,
     qr_generated_at: state.qr_generated_at ?? '',
+    expires_at: state.expires_at ?? '',
     connection_lifecycle_id: state.connection_lifecycle_id ?? '',
     reason: state.reason ?? '',
     error: state.error ?? '',

@@ -10,11 +10,12 @@ import (
 )
 
 type Config struct {
-	WorkerID    string
-	AccountID   string
-	DataDir     string
-	WarmStandby bool
-	WarmPoolID  string
+	WorkerID          string
+	AccountID         string
+	RuntimeGeneration int
+	DataDir           string
+	WarmStandby       bool
+	WarmPoolID        string
 
 	HTTPAddr string
 	GRPCAddr string
@@ -94,6 +95,7 @@ func LoadConfig() (Config, error) {
 	cfg := Config{
 		WorkerID:             strings.TrimSpace(os.Getenv("WORKER_ID")),
 		AccountID:            strings.TrimSpace(os.Getenv("ACCOUNT_ID")),
+		RuntimeGeneration:    envIntDefault("RUNTIME_GENERATION", 0),
 		DataDir:              envDefault("WORKER_DATA_DIR", "/app/data"),
 		WarmStandby:          envBoolDefault("WARM_STANDBY", false),
 		WarmPoolID:           strings.TrimSpace(os.Getenv("WARM_POOL_ID")),

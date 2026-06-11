@@ -28,6 +28,7 @@ declare module 'fastify' {
     Centrifuge: Centrifuge;
     Kafka: KafkaClient;
     Redis: Redis;
+    qrStreamReady: boolean;
     authenticateJwt: (
       request: FastifyRequest,
       reply: FastifyReply,

@@ -15,6 +15,7 @@ import {
 import { recordException, recordMessage } from '@/@webcore/observability';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
@@ -53,6 +54,7 @@ const workerConnectionChannel = computed(() =>
 );
 
 const MIN_PAIRING_STAGE_MS = 900;
+const QR_MAX_AGE_MS = 120_000;
 const QR_HISTORY_RECOVERY_LIMIT = 250;
 const QR_HISTORY_RECOVERY_DELAYS_MS = [
   1_500, 5_000, 10_000, 20_000, 40_000, 80_000, 120_000, 180_000, 240_000,
@@ -71,6 +73,7 @@ const statusConnection = shallowRef<EBaileysConnectionStatus>(
 const statusCode = shallowRef<ECodeMessage>(ECodeMessage.awaitConnection);
 const qrcode = shallowRef<string | undefined>();
 const connectionAttemptId = shallowRef<string | undefined>();
+const connectionRuntimeGeneration = shallowRef<number | undefined>();
 const qrPending = shallowRef(false);
 const qrAttempt = shallowRef(0);
 const qrMaxAttempts = shallowRef(0);
@@ -98,7 +101,11 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   worker_id: channelId.value ?? '',
   account_id: accountId.value ?? '',
   qrcode: qrcode.value,
+  worker_type_id: activeWorkerTypeId.value
+    ? (activeWorkerTypeId.value as EWorkerType)
+    : undefined,
   connection_attempt_id: connectionAttemptId.value,
+  runtime_generation: connectionRuntimeGeneration.value,
   qr_pending: qrPending.value,
   attempt: qrAttempt.value || undefined,
   max_attempts: qrMaxAttempts.value || undefined,
@@ -374,70 +381,189 @@ function clearQrHistoryRecovery() {
   qrHistoryRecoveryAttemptId = undefined;
 }
 
-function shouldIgnoreConnectionPayloadForWorkerType(
-  data: Partial<IBaileysConnectionState>,
-  options: { trustWorkerType?: boolean } = {}
-): boolean {
-  const expectedWorkerTypeId = activeWorkerTypeId.value ?? channelType.value;
-  if (!expectedWorkerTypeId) {
+function qrPayloadAgeMs(data: Partial<IBaileysConnectionState>) {
+  if (!data.qr_generated_at) {
+    return undefined;
+  }
+
+  const generatedAtMs = Date.parse(data.qr_generated_at);
+  if (!Number.isFinite(generatedAtMs)) {
+    return undefined;
+  }
+
+  return Math.max(0, Date.now() - generatedAtMs);
+}
+
+function isQrPayloadExpired(data: Partial<IBaileysConnectionState>) {
+  if (!data.qrcode) {
     return false;
   }
 
-  const isCurrentAttemptPayload = Boolean(
-    connectionAttemptId.value &&
-      data.connection_attempt_id &&
-      data.connection_attempt_id === connectionAttemptId.value
-  );
-
-  if (data.worker_type_id && data.worker_type_id !== expectedWorkerTypeId) {
-    if (options.trustWorkerType || isCurrentAttemptPayload) {
-      activeWorkerTypeId.value = data.worker_type_id;
-      recordMessage('connection.qrcode.worker_type_mismatch_allowed', 'warn', {
-        source: 'connection_dialog',
-        worker_id: data.worker_id,
-        expected_worker_type_id: expectedWorkerTypeId,
-        incoming_worker_type_id: data.worker_type_id,
-        connection_attempt_id: data.connection_attempt_id,
-        has_qrcode: Boolean(data.qrcode),
-        reason: options.trustWorkerType
-          ? 'trusted_direct_response'
-          : 'current_connection_attempt',
-      });
-      return false;
+  if (data.expires_at) {
+    const expiresAtMs = Date.parse(data.expires_at);
+    if (Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) {
+      return true;
     }
+  }
 
+  const ageMs = qrPayloadAgeMs(data);
+  return ageMs === undefined || ageMs >= QR_MAX_AGE_MS;
+}
+
+function shouldIgnoreConnectionPayloadIdentity(
+  data: Partial<IBaileysConnectionState>,
+  options: { directResponse?: boolean } = {}
+): boolean {
+  let expectedWorkerTypeId = activeWorkerTypeId.value ?? channelType.value;
+
+  if (
+    options.directResponse &&
+    data.worker_type_id &&
+    data.worker_type_id !== expectedWorkerTypeId
+  ) {
+    recordMessage('connection.qrcode.worker_type_reconciled', 'warn', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      expected_worker_type_id: expectedWorkerTypeId,
+      incoming_worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      has_qrcode: Boolean(data.qrcode),
+      reason: 'direct_response_authoritative_worker_type',
+    });
+    activeWorkerTypeId.value = data.worker_type_id;
+    expectedWorkerTypeId = data.worker_type_id;
+  }
+
+  if (
+    options.directResponse &&
+    data.runtime_generation !== undefined &&
+    connectionRuntimeGeneration.value !== undefined &&
+    data.runtime_generation !== connectionRuntimeGeneration.value
+  ) {
+    recordMessage('connection.qrcode.runtime_generation_reconciled', 'warn', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      current_runtime_generation: connectionRuntimeGeneration.value,
+      incoming_runtime_generation: data.runtime_generation,
+      has_qrcode: Boolean(data.qrcode),
+      reason: 'direct_response_authoritative_runtime_generation',
+    });
+    connectionRuntimeGeneration.value = data.runtime_generation;
+  }
+
+  if (
+    expectedWorkerTypeId &&
+    data.worker_type_id &&
+    data.worker_type_id !== expectedWorkerTypeId
+  ) {
     recordMessage('connection.qrcode.worker_type_mismatch_ignored', 'warn', {
       source: 'connection_dialog',
       worker_id: data.worker_id,
       expected_worker_type_id: expectedWorkerTypeId,
       incoming_worker_type_id: data.worker_type_id,
       connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
       has_qrcode: Boolean(data.qrcode),
     });
     return true;
   }
 
   if (data.qrcode && !data.worker_type_id) {
-    if (options.trustWorkerType || isCurrentAttemptPayload) {
-      recordMessage('connection.qrcode.missing_worker_type_allowed', 'warn', {
-        source: 'connection_dialog',
-        worker_id: data.worker_id,
-        expected_worker_type_id: expectedWorkerTypeId,
-        connection_attempt_id: data.connection_attempt_id,
-        qrcode_len: data.qrcode.length,
-        reason: options.trustWorkerType
-          ? 'trusted_direct_response'
-          : 'current_connection_attempt',
-      });
-      return false;
-    }
-
     recordMessage('connection.qrcode.missing_worker_type_ignored', 'warn', {
       source: 'connection_dialog',
       worker_id: data.worker_id,
       expected_worker_type_id: expectedWorkerTypeId,
       connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
       qrcode_len: data.qrcode.length,
+    });
+    return true;
+  }
+
+  if (data.qrcode && !data.connection_attempt_id) {
+    recordMessage('connection.qrcode.missing_attempt_ignored', 'warn', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      worker_type_id: data.worker_type_id,
+      runtime_generation: data.runtime_generation,
+      qrcode_len: data.qrcode.length,
+    });
+    return true;
+  }
+
+  if (
+    data.qrcode &&
+    connectionAttemptId.value &&
+    data.connection_attempt_id &&
+    data.connection_attempt_id !== connectionAttemptId.value
+  ) {
+    recordMessage('connection.qrcode.attempt_mismatch_ignored', 'warn', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      worker_type_id: data.worker_type_id,
+      current_connection_attempt_id: connectionAttemptId.value,
+      incoming_connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      qrcode_len: data.qrcode.length,
+    });
+    return true;
+  }
+
+  if (
+    data.qrcode &&
+    connectionRuntimeGeneration.value !== undefined &&
+    data.runtime_generation === undefined
+  ) {
+    recordMessage(
+      'connection.qrcode.missing_runtime_generation_ignored',
+      'warn',
+      {
+        source: 'connection_dialog',
+        worker_id: data.worker_id,
+        worker_type_id: data.worker_type_id,
+        connection_attempt_id: data.connection_attempt_id,
+        current_runtime_generation: connectionRuntimeGeneration.value,
+        qrcode_len: data.qrcode.length,
+      }
+    );
+    return true;
+  }
+
+  if (
+    data.runtime_generation !== undefined &&
+    connectionRuntimeGeneration.value !== undefined &&
+    data.runtime_generation !== connectionRuntimeGeneration.value
+  ) {
+    recordMessage(
+      'connection.qrcode.runtime_generation_mismatch_ignored',
+      'warn',
+      {
+        source: 'connection_dialog',
+        worker_id: data.worker_id,
+        worker_type_id: data.worker_type_id,
+        connection_attempt_id: data.connection_attempt_id,
+        current_runtime_generation: connectionRuntimeGeneration.value,
+        incoming_runtime_generation: data.runtime_generation,
+        has_qrcode: Boolean(data.qrcode),
+      }
+    );
+    return true;
+  }
+
+  if (isQrPayloadExpired(data)) {
+    recordMessage('connection.qrcode.expired_ignored', 'warn', {
+      source: 'connection_dialog',
+      worker_id: data.worker_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      qr_generated_at: data.qr_generated_at,
+      expires_at: data.expires_at,
+      qr_age_ms: qrPayloadAgeMs(data),
+      qrcode_len: data.qrcode?.length,
     });
     return true;
   }
@@ -624,6 +750,7 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
   const shouldPreserveQr = options.preserveQr === true && Boolean(qrcode.value);
   const currentQrCode = qrcode.value;
   const currentConnectionAttemptId = connectionAttemptId.value;
+  const currentRuntimeGeneration = connectionRuntimeGeneration.value;
   const currentQrPending = qrPending.value;
   const currentQrAttempt = qrAttempt.value;
   const currentQrMaxAttempts = qrMaxAttempts.value;
@@ -634,6 +761,9 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
   qrcode.value = shouldPreserveQr ? currentQrCode : undefined;
   connectionAttemptId.value = shouldPreserveQr
     ? currentConnectionAttemptId
+    : undefined;
+  connectionRuntimeGeneration.value = shouldPreserveQr
+    ? currentRuntimeGeneration
     : undefined;
   qrPending.value = shouldPreserveQr ? currentQrPending : true;
   if (shouldPreserveQr) {
@@ -664,6 +794,7 @@ function prepareInitialModalState() {
   statusCode.value = ECodeMessage.connectionEstablished;
   qrcode.value = undefined;
   connectionAttemptId.value = undefined;
+  connectionRuntimeGeneration.value = undefined;
   qrPending.value = false;
   resetQrAttempts();
   phoneNumber.value = props.initialPhone
@@ -736,6 +867,7 @@ async function recreateChannelWithFullCleanup() {
   qrcode.value = undefined;
   qrPending.value = false;
   connectionAttemptId.value = undefined;
+  connectionRuntimeGeneration.value = undefined;
   clearQrHistoryRecovery();
   resetQrAttempts();
   resetPairingCodes();
@@ -814,18 +946,22 @@ function shouldIgnorePhoneUnavailableState(
 
 function applyReducedConnectionState(
   data: IBaileysConnectionState,
-  options: { trustWorkerType?: boolean } = {}
+  options: { directResponse?: boolean } = {}
 ) {
   if (!channelId.value || data.worker_id !== channelId.value) {
     return;
   }
 
-  if (shouldIgnoreConnectionPayloadForWorkerType(data, options)) {
+  if (shouldIgnoreConnectionPayloadIdentity(data, options)) {
     return;
   }
 
   if (data.worker_type_id) {
     activeWorkerTypeId.value = data.worker_type_id;
+  }
+
+  if (data.runtime_generation !== undefined) {
+    connectionRuntimeGeneration.value = data.runtime_generation;
   }
 
   if (shouldIgnorePhoneUnavailableState(data)) {
@@ -864,6 +1000,10 @@ function applyReducedConnectionState(
     connectionAttemptId.value = next.connection_attempt_id;
   }
 
+  if (next.runtime_generation !== undefined) {
+    connectionRuntimeGeneration.value = next.runtime_generation;
+  }
+
   qrPending.value = next.qr_pending === true;
 
   if (next.disconnected_user !== undefined) {
@@ -887,6 +1027,9 @@ function applyReducedConnectionState(
       worker_type_id: data.worker_type_id,
       connection_attempt_id: next.connection_attempt_id,
       connection_lifecycle_id: next.connection_lifecycle_id,
+      runtime_generation: next.runtime_generation,
+      qr_generated_at: next.qr_generated_at,
+      expires_at: next.expires_at,
       qrcode_len: next.qrcode.length,
       recovered_from_history: hadRecoveryScheduled,
     });
@@ -933,7 +1076,7 @@ function applyReducedConnectionState(
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
-  applyReducedConnectionState(data, { trustWorkerType: true });
+  applyReducedConnectionState(data, { directResponse: true });
 }
 
 async function recoverQrAfterCentrifugoRecoveryFailure() {
@@ -976,7 +1119,7 @@ function handleWorkerConnectionMessage(
     return;
   }
 
-  if (shouldIgnoreConnectionPayloadForWorkerType(data)) {
+  if (shouldIgnoreConnectionPayloadIdentity(data)) {
     return;
   }
 
@@ -995,6 +1138,7 @@ function handleWorkerConnectionMessage(
     qrcode.value = undefined;
     qrPending.value = false;
     connectionAttemptId.value = data.connection_attempt_id;
+    connectionRuntimeGeneration.value = data.runtime_generation;
     pairingStartedAt.value = null;
     resetPairingCodes();
     clearQrHistoryRecovery();
@@ -1060,6 +1204,7 @@ watch(
   () => props.channelType,
   (workerTypeId) => {
     activeWorkerTypeId.value = workerTypeId ?? null;
+    connectionRuntimeGeneration.value = undefined;
   }
 );
 

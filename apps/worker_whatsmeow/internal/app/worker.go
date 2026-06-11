@@ -37,9 +37,8 @@ type Worker struct {
 }
 
 const (
-	connectionQRCodeMissingActiveAcceptAge = 60 * time.Second
-	connectionQRCodeCacheTTL               = 115 * time.Second
-	connectionQRCodeMaxAge                 = 120 * time.Second
+	connectionQRCodeCacheTTL = 115 * time.Second
+	connectionQRCodeMaxAge   = 120 * time.Second
 )
 
 func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
@@ -263,6 +262,7 @@ func (w *Worker) ActivateRuntime(ctx context.Context, req WorkerRuntimeActivatio
 	nextCfg := w.cfg
 	nextCfg.WorkerID = req.WorkerID
 	nextCfg.AccountID = req.AccountID
+	nextCfg.RuntimeGeneration = req.RuntimeGeneration
 	nextCfg.WarmStandby = false
 	if req.WarmPoolID != "" {
 		nextCfg.WarmPoolID = req.WarmPoolID
@@ -327,7 +327,16 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 	w.runtimeMu.RLock()
 	defer w.runtimeMu.RUnlock()
 	standby := w.cfg.WarmStandby && !w.runtimeStarted
-	ready := w.whatsapp != nil && (standby || w.runtimeStarted)
+	qrStreamReady := w.runtimeStarted
+	ready := w.whatsapp != nil && (standby || qrStreamReady)
+	runtimeState := "inactive"
+	if standby {
+		runtimeState = "warm_standby"
+	} else if w.runtimeStarted {
+		runtimeState = "active"
+	} else if w.whatsapp != nil {
+		runtimeState = "activating"
+	}
 	hasSession := false
 	hasQR := false
 	if w.whatsapp != nil {
@@ -340,14 +349,18 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		w.whatsapp.mu.RUnlock()
 	}
 	return WorkerRuntimeHealthResponse{
-		Ready:      ready,
-		Standby:    standby,
-		Activated:  w.runtimeStarted,
-		WorkerID:   w.cfg.WorkerID,
-		AccountID:  w.cfg.AccountID,
-		WarmPoolID: firstNonEmpty(req.WarmPoolID, w.cfg.WarmPoolID),
-		HasSession: hasSession,
-		HasQR:      hasQR,
+		Ready:             ready,
+		Standby:           standby,
+		Activated:         w.runtimeStarted,
+		WorkerID:          w.cfg.WorkerID,
+		AccountID:         w.cfg.AccountID,
+		WarmPoolID:        firstNonEmpty(req.WarmPoolID, w.cfg.WarmPoolID),
+		HasSession:        hasSession,
+		HasQR:             hasQR,
+		WorkerTypeID:      WorkerTypeWhatsmeow,
+		RuntimeGeneration: w.cfg.RuntimeGeneration,
+		RuntimeState:      runtimeState,
+		QRStreamReady:     qrStreamReady,
 	}, nil
 }
 
@@ -555,6 +568,7 @@ func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamK
 		Type:                  "qrcode",
 		ConnectionAttemptID:   data.ConnectionAttemptID,
 		ConnectionLifecycleID: data.ConnectionLifecycleID,
+		RuntimeGeneration:     data.RuntimeGeneration,
 	}
 	lifecycle := connectionLifecycleFromRequest(w.cfg, req, "consume_qrcode_request")
 	if data.ConnectionLifecycleID != "" {
@@ -585,6 +599,7 @@ func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamK
 		"connection_lifecycle_id": data.ConnectionLifecycleID,
 		"source":                  data.Source,
 		"requested_at":            data.RequestedAt,
+		"runtime_generation":      data.RuntimeGeneration,
 		"queue_latency_ms":        queueLatencyMS,
 	})
 
@@ -738,8 +753,10 @@ func workerConnectionQRCodeQueueMessageFromRedis(message redis.XMessage) (Worker
 		WorkerID:              redisStreamString(message.Values, "worker_id"),
 		AccountID:             redisStreamString(message.Values, "account_id"),
 		WorkerTypeID:          redisStreamString(message.Values, "worker_type_id"),
+		RuntimeGeneration:     redisStreamInt(message.Values, "runtime_generation"),
 		Source:                redisStreamString(message.Values, "source"),
 		RequestedAt:           redisStreamString(message.Values, "requested_at"),
+		ExpiresAt:             redisStreamString(message.Values, "expires_at"),
 	}
 	if data.RequestID == "" || data.ConnectionAttemptID == "" || data.ConnectionLifecycleID == "" || data.WorkerID == "" || data.AccountID == "" || data.WorkerTypeID == "" || data.RequestedAt == "" {
 		return data, fmt.Errorf("missing required redis stream fields")
@@ -760,6 +777,18 @@ func redisStreamString(values map[string]interface{}, key string) string {
 	default:
 		return fmt.Sprint(typed)
 	}
+}
+
+func redisStreamInt(values map[string]interface{}, key string) int {
+	raw := strings.TrimSpace(redisStreamString(values, key))
+	if raw == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return parsed
 }
 
 func connectionQRCodeQueueLatencyMS(requestedAt string) int64 {
@@ -842,8 +871,12 @@ func (w *Worker) logConnectionQRCodeRedisReadError(ctx context.Context, streamKe
 }
 
 type activeConnectionQRCodeAttemptEnvelope struct {
-	Ack struct {
+	WorkerTypeID      string `json:"worker_type_id"`
+	RuntimeGeneration int    `json:"runtime_generation"`
+	Ack               struct {
 		ConnectionAttemptID string `json:"connection_attempt_id"`
+		WorkerTypeID        string `json:"worker_type_id"`
+		RuntimeGeneration   int    `json:"runtime_generation"`
 	} `json:"ack"`
 }
 
@@ -873,7 +906,7 @@ func (w *Worker) isActiveConnectionQRCodeAttempt(ctx context.Context, data Worke
 
 	raw, err := w.redis.Get(ctx, w.activeConnectionQRCodeAttemptKey(data.WorkerID)).Result()
 	if errors.Is(err, redis.Nil) {
-		return connectionQRCodeRequestRecent(data), nil
+		return false, nil
 	}
 	if err != nil {
 		return false, err
@@ -883,15 +916,24 @@ func (w *Worker) isActiveConnectionQRCodeAttempt(ctx context.Context, data Worke
 	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
 		return false, nil
 	}
-	return envelope.Ack.ConnectionAttemptID == data.ConnectionAttemptID, nil
-}
 
-func connectionQRCodeRequestRecent(data WorkerConnectionQRCodeQueueMessage) bool {
-	requestedAt, err := time.Parse(time.RFC3339Nano, data.RequestedAt)
-	if err != nil {
-		return false
+	activeWorkerTypeID := firstNonEmpty(envelope.WorkerTypeID, envelope.Ack.WorkerTypeID)
+	if activeWorkerTypeID != "" && activeWorkerTypeID != data.WorkerTypeID {
+		return false, nil
 	}
-	return time.Since(requestedAt) <= connectionQRCodeMissingActiveAcceptAge
+
+	activeRuntimeGeneration := envelope.RuntimeGeneration
+	if activeRuntimeGeneration == 0 {
+		activeRuntimeGeneration = envelope.Ack.RuntimeGeneration
+	}
+	if data.RuntimeGeneration != 0 && activeRuntimeGeneration == 0 {
+		return false, nil
+	}
+	if activeRuntimeGeneration != 0 && activeRuntimeGeneration != data.RuntimeGeneration {
+		return false, nil
+	}
+
+	return envelope.Ack.ConnectionAttemptID == data.ConnectionAttemptID, nil
 }
 
 func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state ConnectionState, data WorkerConnectionQRCodeQueueMessage) {
@@ -907,6 +949,9 @@ func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state Co
 		normalized.AccountID = data.AccountID
 	}
 	normalized.WorkerTypeID = WorkerTypeWhatsmeow
+	if normalized.RuntimeGeneration == 0 {
+		normalized.RuntimeGeneration = data.RuntimeGeneration
+	}
 	if normalized.ConnectionAttemptID == "" {
 		normalized.ConnectionAttemptID = data.ConnectionAttemptID
 	}
@@ -915,6 +960,11 @@ func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state Co
 	}
 	if normalized.QRGeneratedAt == "" {
 		normalized.QRGeneratedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	if normalized.ExpiresAt == "" {
+		if generatedAt, err := time.Parse(time.RFC3339Nano, normalized.QRGeneratedAt); err == nil {
+			normalized.ExpiresAt = generatedAt.Add(connectionQRCodeMaxAge).UTC().Format(time.RFC3339Nano)
+		}
 	}
 	normalized.QRPending = false
 

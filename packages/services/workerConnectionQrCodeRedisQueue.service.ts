@@ -1,6 +1,7 @@
 import { inject, injectable } from 'tsyringe';
 import Redis from 'ioredis';
 import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 import { getErrorMessage } from '@core/common/functions/toError';
 
@@ -14,6 +15,22 @@ type RedisStreamClient = Redis & {
   xdel(...args: RedisStreamValue[]): Promise<number>;
   xpending(...args: RedisStreamValue[]): Promise<unknown>;
 };
+
+export interface WorkerConnectionQrCodeRedisStateInvalidationOptions {
+  accountId?: string;
+  workerTypeId?: string;
+  previousWorkerTypeId?: string;
+  reason: string;
+  recreateReason?: string;
+  source?: string;
+  runtimeGeneration?: number;
+}
+
+export interface WorkerConnectionQrCodeRedisStateInvalidationResult {
+  deleted_keys: number;
+  scanned_processed_keys: number;
+  keys: string[];
+}
 
 export interface WorkerConnectionQrCodeRedisStreamMessage {
   stream_key: string;
@@ -42,6 +59,11 @@ export class WorkerConnectionQrCodeRedisQueueService {
   static readonly CLAIM_MIN_IDLE_MS = 3000;
   static readonly READ_COUNT = 10;
   static readonly PROCESSED_TTL_SECONDS = 300;
+  static readonly SUPPORTED_WORKER_TYPES = [
+    EWorkerType.baileys,
+    EWorkerType.wwebjs,
+    EWorkerType.whatsmeow,
+  ] as const;
 
   private streamReadRedis: Redis | null = null;
 
@@ -65,6 +87,97 @@ export class WorkerConnectionQrCodeRedisQueueService {
     connectionAttemptId: string
   ): string {
     return `connection:qrcode:${workerTypeId}:${workerId}:processed:${connectionAttemptId}`;
+  }
+
+  activeAttemptKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:active_attempt`;
+  }
+
+  qrAttemptCacheKey(workerId: string, workerTypeId: string): string {
+    return `connection:qrcode:${workerTypeId}:${workerId}:attempt`;
+  }
+
+  legacyStreamKey(workerId: string): string {
+    return `connection:qrcode:${workerId}:requests`;
+  }
+
+  legacyConsumerGroup(workerId: string): string {
+    return `connection:qrcode:${workerId}:group`;
+  }
+
+  legacyActiveAttemptKey(workerId: string): string {
+    return `connection:qrcode:${workerId}:active_attempt`;
+  }
+
+  legacyQrAttemptCacheKey(workerId: string): string {
+    return `connection:qrcode:${workerId}:attempt`;
+  }
+
+  async invalidateWorkerState(
+    workerId: string,
+    options: WorkerConnectionQrCodeRedisStateInvalidationOptions
+  ): Promise<WorkerConnectionQrCodeRedisStateInvalidationResult> {
+    const workerTypes = this.workerTypesForInvalidation(options);
+    const keys = new Set<string>([
+      this.legacyStreamKey(workerId),
+      this.legacyQrAttemptCacheKey(workerId),
+      this.legacyActiveAttemptKey(workerId),
+    ]);
+
+    for (const workerTypeId of workerTypes) {
+      keys.add(this.qrAttemptCacheKey(workerId, workerTypeId));
+      keys.add(this.activeAttemptKey(workerId, workerTypeId));
+      keys.add(this.streamKey(workerId, workerTypeId));
+    }
+
+    const typedProcessedKeys = await this.scanKeys(
+      `connection:qrcode:*:${workerId}:processed:*`
+    );
+    const legacyProcessedKeys = await this.scanKeys(
+      `connection:qrcode:${workerId}:processed:*`
+    );
+    const processedKeys = [...typedProcessedKeys, ...legacyProcessedKeys];
+    for (const key of processedKeys) {
+      keys.add(key);
+    }
+
+    await this.destroyGroupByKey(
+      workerId,
+      this.legacyStreamKey(workerId),
+      this.legacyConsumerGroup(workerId),
+      options
+    );
+    for (const workerTypeId of workerTypes) {
+      await this.destroyGroupIfPresent(workerId, workerTypeId, options);
+    }
+
+    const keyList = [...keys];
+    const deletedKeys = keyList.length ? await this.redis.del(...keyList) : 0;
+
+    recordConnectionLifecycle({
+      stage: 'connection.qrcode.redis_state.invalidated',
+      decision: 'invalidate_qrcode_redis_state',
+      outcome: 'deleted',
+      worker_id: workerId,
+      account_id: options.accountId,
+      worker_type: options.workerTypeId,
+      worker_type_id: options.workerTypeId,
+      previous_worker_type_id: options.previousWorkerTypeId,
+      reason: options.reason,
+      recreate_reason: options.recreateReason,
+      source: options.source,
+      runtime_generation: options.runtimeGeneration,
+      redis_delete_count: deletedKeys,
+      scanned_processed_keys: processedKeys.length,
+      key_count: keyList.length,
+      worker_type_count: workerTypes.length,
+    });
+
+    return {
+      deleted_keys: deletedKeys,
+      scanned_processed_keys: processedKeys.length,
+      keys: keyList,
+    };
   }
 
   async enqueue(payload: IWorkerConnectionQrCodeQueueMessage): Promise<string> {
@@ -327,7 +440,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
   private payloadToFields(
     payload: IWorkerConnectionQrCodeQueueMessage
   ): RedisStreamValue[] {
-    return [
+    const fields: RedisStreamValue[] = [
       'request_id',
       payload.request_id,
       'connection_attempt_id',
@@ -345,6 +458,16 @@ export class WorkerConnectionQrCodeRedisQueueService {
       'requested_at',
       payload.requested_at,
     ];
+
+    if (payload.runtime_generation !== undefined) {
+      fields.push('runtime_generation', payload.runtime_generation);
+    }
+
+    if (payload.expires_at) {
+      fields.push('expires_at', payload.expires_at);
+    }
+
+    return fields;
   }
 
   private parseReadResponse(
@@ -484,8 +607,10 @@ export class WorkerConnectionQrCodeRedisQueueService {
       worker_id: fields.worker_id,
       account_id: fields.account_id,
       worker_type_id: fields.worker_type_id,
+      runtime_generation: this.optionalNumber(fields.runtime_generation),
       source: fields.source,
       requested_at: fields.requested_at,
+      expires_at: fields.expires_at,
     };
 
     if (
@@ -502,6 +627,97 @@ export class WorkerConnectionQrCodeRedisQueueService {
     }
 
     return payload as IWorkerConnectionQrCodeQueueMessage;
+  }
+
+  private workerTypesForInvalidation(
+    options: WorkerConnectionQrCodeRedisStateInvalidationOptions
+  ): string[] {
+    return [
+      ...new Set(
+        [
+          ...WorkerConnectionQrCodeRedisQueueService.SUPPORTED_WORKER_TYPES,
+          options.workerTypeId,
+          options.previousWorkerTypeId,
+        ].filter((value): value is string => Boolean(value))
+      ),
+    ];
+  }
+
+  private async destroyGroupIfPresent(
+    workerId: string,
+    workerTypeId: string,
+    options: WorkerConnectionQrCodeRedisStateInvalidationOptions
+  ): Promise<void> {
+    const streamKey = this.streamKey(workerId, workerTypeId);
+    const consumerGroup = this.consumerGroup(workerId, workerTypeId);
+
+    await this.destroyGroupByKey(
+      workerId,
+      streamKey,
+      consumerGroup,
+      options,
+      workerTypeId
+    );
+  }
+
+  private async destroyGroupByKey(
+    workerId: string,
+    streamKey: string,
+    consumerGroup: string,
+    options: WorkerConnectionQrCodeRedisStateInvalidationOptions,
+    workerTypeId?: string
+  ): Promise<void> {
+    try {
+      await this.client().xgroup('DESTROY', streamKey, consumerGroup);
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.qrcode.redis_state.group_destroy_skipped',
+        decision: 'destroy_qrcode_redis_stream_group',
+        outcome: 'skipped',
+        reason: 'group_destroy_failed_or_missing',
+        level: 'debug',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type: workerTypeId,
+        worker_type_id: workerTypeId,
+        previous_worker_type_id: options.previousWorkerTypeId,
+        stream_key: streamKey,
+        consumer_group: consumerGroup,
+        source: options.source,
+        error: getErrorMessage(error),
+      });
+    }
+  }
+
+  private async scanKeys(match: string): Promise<string[]> {
+    const keys: string[] = [];
+    let cursor = '0';
+
+    do {
+      const response = await this.redis.scan(
+        cursor,
+        'MATCH',
+        match,
+        'COUNT',
+        100
+      );
+      cursor = String(response[0]);
+      const batch = Array.isArray(response[1]) ? response[1] : [];
+      for (const key of batch) {
+        keys.push(String(key));
+      }
+    } while (cursor !== '0');
+
+    return keys;
+  }
+
+  private optionalNumber(value: string | undefined): number | undefined {
+    if (value === undefined || !value.trim()) {
+      return undefined;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 
   private queueLatencyMs(requestedAt: string): number | undefined {

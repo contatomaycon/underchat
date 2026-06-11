@@ -50,6 +50,7 @@ function makeUseCase(
     workerTypeId?: EWorkerType | string;
     redisInitial?: Record<string, string>;
     enqueueError?: Error;
+    runtimeGeneration?: number;
   } = {}
 ) {
   const workerTypeId = overrides.workerTypeId ?? EWorkerType.baileys;
@@ -75,6 +76,15 @@ function makeUseCase(
     publishSub: jest.fn(async () => ({})),
   };
   const redis = makeRedis(overrides.redisInitial);
+  const workerRuntimeRepository = overrides.runtimeGeneration
+    ? {
+        viewByWorkerId: jest.fn(async () => ({
+          worker_id: 'worker-1',
+          session_volume_name: 'worker-1',
+          runtime_generation: overrides.runtimeGeneration,
+        })),
+      }
+    : undefined;
   const redisQueueService = {
     streamKey: jest.fn((workerId: string, workerTypeId: string) => {
       return `connection:qrcode:${workerTypeId}:${workerId}:requests`;
@@ -94,7 +104,8 @@ function makeUseCase(
     workerService as never,
     centrifugoService as never,
     redis as never,
-    redisQueueService as never
+    redisQueueService as never,
+    workerRuntimeRepository as never
   );
 
   return {
@@ -103,6 +114,7 @@ function makeUseCase(
     centrifugoService,
     redis,
     redisQueueService,
+    workerRuntimeRepository,
   };
 }
 
@@ -174,6 +186,36 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       reason: 'queued',
     });
     expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('includes runtime generation in the pending response, active attempt and stream payload', async () => {
+    const deps = makeUseCase({ runtimeGeneration: 3 });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response.runtime_generation).toBe(3);
+    expect(deps.workerRuntimeRepository?.viewByWorkerId).toHaveBeenCalledWith(
+      'worker-1'
+    );
+    expect(deps.redisQueueService.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_type_id: EWorkerType.baileys,
+        runtime_generation: 3,
+        expires_at: expect.any(String),
+      })
+    );
+
+    const activeAttempt = JSON.parse(
+      deps.redis.store.get(
+        `connection:qrcode:${EWorkerType.baileys}:worker-1:active_attempt`
+      ) ?? '{}'
+    );
+    expect(activeAttempt).toMatchObject({
+      runtime_generation: 3,
+      ack: expect.objectContaining({
+        runtime_generation: 3,
+      }),
+    });
   });
 
   it('does not enqueue when worker status cannot request QR', async () => {

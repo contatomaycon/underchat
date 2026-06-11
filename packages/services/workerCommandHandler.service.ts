@@ -117,9 +117,11 @@ interface ActiveQrAttempt {
   ack: IBaileysConnectionState;
   queued_at: string;
   stream_key: string;
+  stream_id?: string;
   consumer_group: string;
   source: 'manager';
   worker_type_id: EWorkerType;
+  runtime_generation?: number;
 }
 
 interface RecreateSessionVolumeResolution {
@@ -2018,6 +2020,17 @@ export class WorkerCommandHandlerService {
     return Math.max(0, Date.now() - generatedAtMs);
   }
 
+  private qrExpiresAt(
+    state: Partial<IBaileysConnectionState>
+  ): string | undefined {
+    const generatedAtMs = this.qrGeneratedAtMs(state);
+    if (generatedAtMs === undefined) {
+      return undefined;
+    }
+
+    return new Date(generatedAtMs + this.qrMaxAgeMs).toISOString();
+  }
+
   private isQrExpired(state: Partial<IBaileysConnectionState>): boolean {
     if (!state.qrcode) {
       return false;
@@ -2052,6 +2065,7 @@ export class WorkerCommandHandlerService {
     };
     delete pending.qrcode;
     delete pending.qr_generated_at;
+    delete pending.expires_at;
     return pending;
   }
 
@@ -2064,6 +2078,7 @@ export class WorkerCommandHandlerService {
 
     const normalized: IBaileysConnectionState = { ...state };
     normalized.qr_generated_at ??= new Date().toISOString();
+    normalized.expires_at ??= this.qrExpiresAt(normalized);
 
     if (!this.isQrExpired(normalized)) {
       normalized.qr_pending = false;
@@ -2252,6 +2267,13 @@ export class WorkerCommandHandlerService {
     }
 
     if (
+      workerData.runtimeGeneration !== undefined &&
+      cached.runtime_generation === undefined
+    ) {
+      return 'cached_qr_missing_runtime_generation';
+    }
+
+    if (
       cached.runtime_generation !== undefined &&
       workerData.runtimeGeneration !== undefined &&
       cached.runtime_generation !== workerData.runtimeGeneration
@@ -2331,6 +2353,8 @@ export class WorkerCommandHandlerService {
       connection_lifecycle_id:
         state.connection_lifecycle_id ??
         this.ensureQrConnectionLifecycleId(payload),
+      runtime_generation:
+        state.runtime_generation ?? payload.runtime_generation,
       qr_pending: true,
       reason: state.reason ?? 'queued',
     };
@@ -2357,6 +2381,9 @@ export class WorkerCommandHandlerService {
       connection_lifecycle_id:
         state.connection_lifecycle_id ??
         this.ensureQrConnectionLifecycleId(payload),
+      runtime_generation:
+        state.runtime_generation ?? payload.runtime_generation,
+      expires_at: state.expires_at ?? this.qrExpiresAt(state),
       qr_pending: false,
       reason: state.reason ?? 'cached_qr_available',
     };
@@ -2393,6 +2420,8 @@ export class WorkerCommandHandlerService {
     };
 
     if (normalized.qrcode) {
+      normalized.qr_generated_at ??= new Date().toISOString();
+      normalized.expires_at ??= this.qrExpiresAt(normalized);
       normalized.qr_pending = false;
       return normalized;
     }
@@ -2486,23 +2515,17 @@ export class WorkerCommandHandlerService {
     }
   ): Promise<void> {
     try {
-      const keys = new Set<string>([
-        this.qrAttemptCacheKey(workerId),
-        this.activeQrAttemptKey(workerId),
-      ]);
-      for (const workerType of [
-        options.workerType,
-        options.previousWorkerType,
-      ]) {
-        if (!workerType) {
-          continue;
+      const invalidated = await this.redisQueueService.invalidateWorkerState(
+        workerId,
+        {
+          accountId: options.accountId,
+          workerTypeId: options.workerType,
+          previousWorkerTypeId: options.previousWorkerType,
+          reason: options.reason,
+          recreateReason: options.recreateReason,
+          source: 'worker_command_handler',
         }
-        keys.add(this.qrAttemptCacheKey(workerId, workerType));
-        keys.add(this.activeQrAttemptKey(workerId, workerType));
-        keys.add(this.redisQueueService.streamKey(workerId, workerType));
-      }
-
-      await this.redis.del(...keys);
+      );
       recordConnectionQrSummary({
         event: 'balancer_qrcode_attempt_invalidated',
         worker_id: workerId,
@@ -2511,6 +2534,9 @@ export class WorkerCommandHandlerService {
         previous_worker_type_id: options.previousWorkerType,
         reason: options.reason,
         recreate_reason: options.recreateReason,
+        redis_delete_count: invalidated.deleted_keys,
+        scanned_processed_keys: invalidated.scanned_processed_keys,
+        redis_key_count: invalidated.keys.length,
         publish_source: 'recreate_worker',
         level: 'info',
       });
@@ -2583,15 +2609,91 @@ export class WorkerCommandHandlerService {
       return { ignored: false };
     }
 
+    if (!this.isNotifyQrAttemptState(state)) {
+      return { ignored: false };
+    }
+
+    if (
+      state.qrcode &&
+      (!state.connection_attempt_id || !state.worker_type_id)
+    ) {
+      return {
+        ignored: true,
+        reason: !state.connection_attempt_id
+          ? 'incoming_connection_attempt_missing'
+          : 'incoming_worker_type_missing',
+      };
+    }
+
+    const active = await this.getActiveQrAttempt(
+      state.worker_id,
+      state.worker_type_id
+    );
+    if (active) {
+      const activeAttempt = active.ack.connection_attempt_id;
+      const incomingAttempt = state.connection_attempt_id;
+      const activeRuntimeGeneration =
+        active.runtime_generation ?? active.ack.runtime_generation;
+
+      if (
+        active.worker_type_id &&
+        state.worker_type_id &&
+        active.worker_type_id !== state.worker_type_id
+      ) {
+        return {
+          ignored: true,
+          reason: 'active_worker_type_mismatch',
+        };
+      }
+
+      if (
+        state.runtime_generation !== undefined &&
+        activeRuntimeGeneration === undefined
+      ) {
+        return {
+          ignored: true,
+          reason: 'active_runtime_generation_missing',
+        };
+      }
+
+      if (activeRuntimeGeneration !== undefined) {
+        if (state.runtime_generation === undefined) {
+          return {
+            ignored: true,
+            reason: 'incoming_runtime_generation_missing',
+          };
+        }
+
+        if (activeRuntimeGeneration !== state.runtime_generation) {
+          return {
+            ignored: true,
+            reason: 'active_runtime_generation_mismatch',
+          };
+        }
+      }
+
+      if (!incomingAttempt) {
+        return {
+          ignored: true,
+          reason: 'incoming_connection_attempt_missing',
+        };
+      }
+
+      if (activeAttempt && activeAttempt !== incomingAttempt) {
+        return {
+          ignored: true,
+          reason: 'active_attempt_mismatch',
+        };
+      }
+
+      return { ignored: false };
+    }
+
     const cached = await this.getCachedQrAttemptState(
       state.worker_id,
       state.worker_type_id
     );
     if (!this.isActiveQrAttemptState(cached)) {
-      return { ignored: false };
-    }
-
-    if (!this.isNotifyQrAttemptState(state)) {
       return { ignored: false };
     }
 
@@ -2768,6 +2870,7 @@ export class WorkerCommandHandlerService {
       const parsed = JSON.parse(raw) as {
         ack?: Partial<IBaileysConnectionState>;
         worker_type_id?: EWorkerType;
+        runtime_generation?: number;
       };
       const ack = parsed.ack;
       if (!ack || ack.worker_id !== state.worker_id) {
@@ -2782,6 +2885,12 @@ export class WorkerCommandHandlerService {
           state.connection_lifecycle_id ?? ack.connection_lifecycle_id,
         worker_type_id:
           state.worker_type_id ?? ack.worker_type_id ?? parsed.worker_type_id,
+        runtime_generation:
+          state.runtime_generation ??
+          ack.runtime_generation ??
+          parsed.runtime_generation,
+        warm_pool_id: state.warm_pool_id ?? ack.warm_pool_id,
+        container_id: state.container_id ?? ack.container_id,
       };
 
       if (
@@ -2887,6 +2996,7 @@ export class WorkerCommandHandlerService {
       consumer_group: consumerGroup,
       source: 'manager',
       worker_type_id: workerData.workerTypeId,
+      runtime_generation: workerData.runtimeGeneration,
     };
     const claimed = await this.claimActiveQrAttempt(
       workerId,
@@ -2899,29 +3009,61 @@ export class WorkerCommandHandlerService {
         workerData.workerTypeId
       );
       if (current) {
-        recordConnectionLifecycle({
-          stage:
-            'connection.balancer.command_handler.qrcode_active_attempt_conflict',
-          decision: 'claim_active_qrcode_attempt',
-          outcome: 'deduped',
-          reason: 'active_attempt_claim_conflict_current_found',
-          worker_type: current.worker_type_id,
-          worker_type_id: current.worker_type_id,
-          worker_status_id: workerData.workerStatusId,
-          stream_key: current.stream_key,
-          consumer_group: current.consumer_group,
-          connection_attempt_id: current.ack.connection_attempt_id,
-          connection_lifecycle_id: current.ack.connection_lifecycle_id,
-        });
-        return {
-          ...current.ack,
-          worker_type_id: workerData.workerTypeId,
-          worker_status_id: workerData.workerStatusId,
-          qr_pending: true,
-          qrcode: undefined,
-          pairing_code: undefined,
-          reason: current.ack.reason ?? 'queued',
-        };
+        const currentRuntimeGeneration =
+          current.runtime_generation ?? current.ack.runtime_generation;
+        if (
+          workerData.runtimeGeneration !== undefined &&
+          (currentRuntimeGeneration === undefined ||
+            currentRuntimeGeneration !== workerData.runtimeGeneration)
+        ) {
+          await this.redis.del(
+            this.activeQrAttemptKey(workerId, workerData.workerTypeId)
+          );
+          recordConnectionLifecycle({
+            stage:
+              'connection.balancer.command_handler.qrcode_active_attempt_stale_generation',
+            decision: 'claim_active_qrcode_attempt',
+            outcome: 'invalidated',
+            reason:
+              currentRuntimeGeneration === undefined
+                ? 'active_attempt_missing_runtime_generation'
+                : 'active_attempt_runtime_generation_mismatch',
+            level: 'warn',
+            worker_type: current.worker_type_id,
+            worker_type_id: current.worker_type_id,
+            worker_status_id: workerData.workerStatusId,
+            stream_key: current.stream_key,
+            consumer_group: current.consumer_group,
+            connection_attempt_id: current.ack.connection_attempt_id,
+            connection_lifecycle_id: current.ack.connection_lifecycle_id,
+            active_runtime_generation: currentRuntimeGeneration,
+            runtime_generation: workerData.runtimeGeneration,
+          });
+        } else {
+          recordConnectionLifecycle({
+            stage:
+              'connection.balancer.command_handler.qrcode_active_attempt_conflict',
+            decision: 'claim_active_qrcode_attempt',
+            outcome: 'deduped',
+            reason: 'active_attempt_claim_conflict_current_found',
+            worker_type: current.worker_type_id,
+            worker_type_id: current.worker_type_id,
+            worker_status_id: workerData.workerStatusId,
+            stream_key: current.stream_key,
+            consumer_group: current.consumer_group,
+            connection_attempt_id: current.ack.connection_attempt_id,
+            connection_lifecycle_id: current.ack.connection_lifecycle_id,
+          });
+          return {
+            ...current.ack,
+            worker_type_id: workerData.workerTypeId,
+            worker_status_id: workerData.workerStatusId,
+            qr_pending: true,
+            qrcode: undefined,
+            pairing_code: undefined,
+            reason: current.ack.reason ?? 'queued',
+          };
+        }
       }
 
       const reclaimed = await this.claimActiveQrAttempt(
@@ -2998,8 +3140,10 @@ export class WorkerCommandHandlerService {
       worker_id: payload.worker_id,
       account_id: workerData.accountIdResolved,
       worker_type_id: workerData.workerTypeId,
+      runtime_generation: payload.runtime_generation,
       source: 'manager',
       requested_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + this.qrMaxAgeMs).toISOString(),
     };
     const startedAt = Date.now();
 

@@ -20,6 +20,7 @@ import { WorkerConnectionStatusConsume } from '@core/consumer/worker/WorkerConne
 import { WorkerConnectionStatusWwebjsConsume } from '@core/consumer/worker/WorkerConnectionStatusWwebjs.consume';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { BaileysService } from '@core/services/baileys';
@@ -106,6 +107,10 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       : baileysEnvironment.grpcPort;
   const sourceProvider =
     module === ERouteModule.worker_wwebjs ? 'wwebjs' : 'baileys';
+  const fallbackWorkerTypeId =
+    module === ERouteModule.worker_wwebjs
+      ? EWorkerType.wwebjs
+      : EWorkerType.baileys;
   const grpcServer = new Server();
 
   const getAccountId = () =>
@@ -128,6 +133,26 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       ? wwebjsEnvironment.isRuntimeActivated
       : baileysEnvironment.isRuntimeActivated;
 
+  const getWorkerTypeId = () =>
+    (module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.workerTypeId
+      : baileysEnvironment.workerTypeId) ?? fallbackWorkerTypeId;
+
+  const getRuntimeGeneration = () =>
+    module === ERouteModule.worker_wwebjs
+      ? wwebjsEnvironment.runtimeGeneration
+      : baileysEnvironment.runtimeGeneration;
+
+  const getRuntimeState = () => {
+    if (isWarmStandby()) {
+      return 'warm_standby';
+    }
+    if (isRuntimeActivated()) {
+      return fastify.qrStreamReady ? 'active' : 'activating';
+    }
+    return 'inactive';
+  };
+
   const activateEnvironment = (
     request: IWorkerRuntimeActivationRequestProto
   ) => {
@@ -135,6 +160,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       worker_id: request.worker_id ?? '',
       account_id: request.account_id ?? '',
       worker_type_id: request.worker_type_id,
+      runtime_generation: request.runtime_generation,
       warm_pool_id: request.warm_pool_id,
       session_volume_name: request.session_volume_name,
     };
@@ -243,15 +269,20 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       connectionConsume
         .requestConnection(payload)
         .then((response) => {
+          const responseState = {
+            ...response,
+            worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
+            runtime_generation:
+              response.runtime_generation ?? payload.runtime_generation,
+            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+            connection_attempt_id:
+              response.connection_attempt_id ?? payload.connection_attempt_id,
+            connection_lifecycle_id:
+              response.connection_lifecycle_id ??
+              payload.connection_lifecycle_id,
+          };
           const responseWithAttempt: IWorkerConnectionStateProto =
-            connectionStateToProto({
-              ...response,
-              connection_attempt_id:
-                response.connection_attempt_id ?? payload.connection_attempt_id,
-              connection_lifecycle_id:
-                response.connection_lifecycle_id ??
-                payload.connection_lifecycle_id,
-            });
+            connectionStateToProto(responseState);
           recordConnectionLifecycle({
             stage: 'connection.worker.grpc.request_success',
             decision: 'worker_connection_request',
@@ -268,9 +299,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             connection_lifecycle_id:
               response.connection_lifecycle_id ??
               payload.connection_lifecycle_id,
-            runtime_generation:
-              response.runtime_generation ?? payload.runtime_generation,
-            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+            runtime_generation: responseState.runtime_generation,
+            warm_pool_id: responseState.warm_pool_id,
+            worker_type_id: responseState.worker_type_id,
             container_id: response.container_id,
             reason: response.reason,
             qr_pending: response.qr_pending === true,
@@ -524,16 +555,23 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     callback: sendUnaryData<IWorkerRuntimeHealthResponseProto>
   ) => {
     try {
+      const qrStreamReady = fastify.qrStreamReady === true;
+      const runtimeActivated = isRuntimeActivated();
+      const warmStandby = isWarmStandby();
       callback(null, {
-        worker_id: isRuntimeActivated() ? getWorkerId() : '',
-        account_id: isRuntimeActivated() ? getAccountId() : '',
+        worker_id: runtimeActivated ? getWorkerId() : '',
+        account_id: runtimeActivated ? getAccountId() : '',
         warm_pool_id:
           call.request.warm_pool_id ?? process.env.WARM_POOL_ID ?? '',
-        standby: isWarmStandby(),
-        activated: isRuntimeActivated(),
-        ready: isWarmStandby() || isRuntimeActivated(),
+        standby: warmStandby,
+        activated: runtimeActivated,
+        ready: warmStandby || qrStreamReady,
         has_session: false,
         has_qr: false,
+        worker_type_id: getWorkerTypeId(),
+        runtime_generation: getRuntimeGeneration(),
+        runtime_state: getRuntimeState(),
+        qr_stream_ready: qrStreamReady,
         error: '',
       });
     } catch (err) {
@@ -547,6 +585,10 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         ready: false,
         has_session: false,
         has_qr: false,
+        worker_type_id: fallbackWorkerTypeId,
+        runtime_generation: 0,
+        runtime_state: 'error',
+        qr_stream_ready: false,
         error: err instanceof Error ? err.message : String(err),
       });
     }

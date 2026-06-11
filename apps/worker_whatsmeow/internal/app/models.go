@@ -70,6 +70,7 @@ type ConnectionState struct {
 	ConnectionLifecycleID   string `json:"connection_lifecycle_id,omitempty"`
 	QRPending               bool   `json:"qr_pending,omitempty"`
 	QRGeneratedAt           string `json:"qr_generated_at,omitempty"`
+	ExpiresAt               string `json:"expires_at,omitempty"`
 	Reason                  string `json:"reason,omitempty"`
 	Error                   string `json:"error,omitempty"`
 	TimeToFirstQRMS         int    `json:"time_to_first_qr_ms,omitempty"`
@@ -101,8 +102,10 @@ type WorkerConnectionQRCodeQueueMessage struct {
 	WorkerID              string `json:"worker_id"`
 	AccountID             string `json:"account_id"`
 	WorkerTypeID          string `json:"worker_type_id"`
+	RuntimeGeneration     int    `json:"runtime_generation,omitempty"`
 	Source                string `json:"source"`
 	RequestedAt           string `json:"requested_at"`
+	ExpiresAt             string `json:"expires_at,omitempty"`
 }
 
 type PhoneValidationRequest struct {
@@ -150,15 +153,19 @@ type WorkerRuntimeHealthRequest struct {
 }
 
 type WorkerRuntimeHealthResponse struct {
-	Ready      bool   `json:"ready"`
-	Standby    bool   `json:"standby"`
-	Activated  bool   `json:"activated"`
-	WorkerID   string `json:"worker_id,omitempty"`
-	AccountID  string `json:"account_id,omitempty"`
-	WarmPoolID string `json:"warm_pool_id,omitempty"`
-	HasSession bool   `json:"has_session,omitempty"`
-	HasQR      bool   `json:"has_qr,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Ready             bool   `json:"ready"`
+	Standby           bool   `json:"standby"`
+	Activated         bool   `json:"activated"`
+	WorkerID          string `json:"worker_id,omitempty"`
+	AccountID         string `json:"account_id,omitempty"`
+	WarmPoolID        string `json:"warm_pool_id,omitempty"`
+	HasSession        bool   `json:"has_session,omitempty"`
+	HasQR             bool   `json:"has_qr,omitempty"`
+	WorkerTypeID      string `json:"worker_type_id,omitempty"`
+	RuntimeGeneration int    `json:"runtime_generation,omitempty"`
+	RuntimeState      string `json:"runtime_state,omitempty"`
+	QRStreamReady     bool   `json:"qr_stream_ready,omitempty"`
+	Error             string `json:"error,omitempty"`
 }
 
 type MessageKey struct {

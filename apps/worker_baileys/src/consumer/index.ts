@@ -21,9 +21,12 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function startConsumers(server: FastifyInstance): Promise<void> {
+  server.qrStreamReady = false;
   try {
     registerWorkerConsumer(await startConnectionQrCodeConsume(server));
+    server.qrStreamReady = true;
   } catch (err) {
+    server.qrStreamReady = false;
     server.log.error({ err }, 'Erro ao iniciar consumidor Redis de QR');
     throw err;
   }
