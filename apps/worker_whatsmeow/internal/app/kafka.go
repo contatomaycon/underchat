@@ -29,14 +29,23 @@ type KafkaClient struct {
 }
 
 type kafkaConsumerHealthState struct {
-	Topic         string
-	GroupID       string
-	Connected     bool
-	LastMessageAt time.Time
-	LastCommitAt  time.Time
-	LastRestartAt time.Time
-	RestartCount  int
-	LastError     string
+	Topic                        string
+	GroupID                      string
+	Connected                    bool
+	Unhealthy                    bool
+	StallReason                  string
+	LastMessageAt                time.Time
+	LastCommitAt                 time.Time
+	LastProgressAt               time.Time
+	LastRestartAt                time.Time
+	LastWatchdogAt               time.Time
+	RestartCount                 int
+	ConsecutiveStallRestartCount int
+	LastError                    string
+	Pending                      map[string]time.Time
+	Lag                          int64
+	HighWatermark                *int64
+	CommittedOffset              *int64
 }
 
 func NewKafkaClient(cfg Config) (*KafkaClient, error) {
@@ -174,6 +183,49 @@ func (k *KafkaClient) SendJSON(ctx context.Context, topic string, key string, va
 	return k.writer.WriteMessages(ctx, msg)
 }
 
+func (k *KafkaClient) publishSendMessageDLQ(ctx context.Context, msg kafka.Message, groupID, reason string, cause error) error {
+	return k.publishKafkaDLQ(ctx, topicWorkerSendMessageDLQ(k.cfg.WorkerID), msg, groupID, reason, cause)
+}
+
+func (k *KafkaClient) publishConsumerDLQ(ctx context.Context, msg kafka.Message, groupID, reason string, cause error) error {
+	return k.publishKafkaDLQ(ctx, topicWorkerConsumerDLQ(k.cfg.WorkerID), msg, groupID, reason, cause)
+}
+
+func (k *KafkaClient) publishKafkaDLQ(ctx context.Context, topic string, msg kafka.Message, groupID, reason string, cause error) error {
+	if cause == nil {
+		cause = errors.New(reason)
+	}
+	_ = k.EnsureTopic(ctx, topic, 1, 2)
+
+	payload := map[string]any{
+		"provider":         "whatsmeow",
+		"worker_id":        k.cfg.WorkerID,
+		"account_id":       k.cfg.AccountID,
+		"source_topic":     msg.Topic,
+		"group_id":         groupID,
+		"partition":        msg.Partition,
+		"offset":           msg.Offset,
+		"kafka_key":        string(msg.Key),
+		"error":            cause.Error(),
+		"reason":           reason,
+		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
+		"original_payload": kafkaOriginalPayload(msg.Value),
+	}
+	key := string(msg.Key)
+	if key == "" {
+		key = fmt.Sprintf("%s:%d:%d", msg.Topic, msg.Partition, msg.Offset)
+	}
+	return k.SendJSON(ctx, topic, key, payload)
+}
+
+func kafkaOriginalPayload(raw []byte) any {
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err == nil {
+		return decoded
+	}
+	return string(raw)
+}
+
 type KafkaMessageHandler func(ctx context.Context, msg kafka.Message) error
 
 type KafkaTopicConfig struct {
@@ -210,7 +262,11 @@ func (k *KafkaClient) ensureConsumerHealth(topic, groupID string) *kafkaConsumer
 	if state := k.consumers[key]; state != nil {
 		return state
 	}
-	state := &kafkaConsumerHealthState{Topic: topic, GroupID: groupID}
+	state := &kafkaConsumerHealthState{
+		Topic:   topic,
+		GroupID: groupID,
+		Pending: make(map[string]time.Time),
+	}
 	k.consumers[key] = state
 	return state
 }
@@ -224,24 +280,109 @@ func (k *KafkaClient) updateConsumerHealth(state *kafkaConsumerHealthState, upda
 	update(state)
 }
 
+func (k *KafkaClient) markConsumerPendingStart(state *kafkaConsumerHealthState, msg kafka.Message) {
+	now := time.Now()
+	k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+		if state.Pending == nil {
+			state.Pending = make(map[string]time.Time)
+		}
+		state.Pending[kafkaPendingKey(msg)] = now
+		state.LastMessageAt = now
+		state.LastError = ""
+	})
+}
+
+func (k *KafkaClient) markConsumerPendingDone(state *kafkaConsumerHealthState, msg kafka.Message, err error, committed bool) {
+	now := time.Now()
+	k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+		delete(state.Pending, kafkaPendingKey(msg))
+		if err != nil {
+			state.LastError = err.Error()
+			return
+		}
+		if committed {
+			state.LastCommitAt = now
+		}
+		state.LastProgressAt = now
+		state.LastError = ""
+		state.Unhealthy = false
+		state.StallReason = ""
+		state.ConsecutiveStallRestartCount = 0
+	})
+}
+
+func kafkaPendingKey(msg kafka.Message) string {
+	return fmt.Sprintf("%s:%d:%d", msg.Topic, msg.Partition, msg.Offset)
+}
+
+func kafkaPendingHealth(state *kafkaConsumerHealthState) (int, time.Duration) {
+	if state == nil || len(state.Pending) == 0 {
+		return 0, 0
+	}
+
+	var oldest time.Time
+	for _, seenAt := range state.Pending {
+		if seenAt.IsZero() {
+			continue
+		}
+		if oldest.IsZero() || seenAt.Before(oldest) {
+			oldest = seenAt
+		}
+	}
+	if oldest.IsZero() {
+		return len(state.Pending), 0
+	}
+	return len(state.Pending), time.Since(oldest)
+}
+
 func (k *KafkaClient) ConsumerHealthSnapshot() []map[string]any {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
 	out := make([]map[string]any, 0, len(k.consumers))
 	for _, state := range k.consumers {
+		pendingCount, oldestPendingAge := kafkaPendingHealth(state)
 		out = append(out, map[string]any{
-			"topic":           state.Topic,
-			"group_id":        state.GroupID,
-			"connected":       state.Connected,
-			"last_message_at": healthTime(state.LastMessageAt),
-			"last_commit_at":  healthTime(state.LastCommitAt),
-			"last_restart_at": healthTime(state.LastRestartAt),
-			"restart_count":   state.RestartCount,
-			"last_error":      state.LastError,
+			"topic":                           state.Topic,
+			"group_id":                        state.GroupID,
+			"connected":                       state.Connected,
+			"unhealthy":                       state.Unhealthy,
+			"stall_reason":                    state.StallReason,
+			"lag":                             state.Lag,
+			"high_watermark":                  nullableInt64(state.HighWatermark),
+			"committed_offset":                nullableInt64(state.CommittedOffset),
+			"pending_count":                   pendingCount,
+			"oldest_pending_age_ms":           oldestPendingAge.Milliseconds(),
+			"last_message_at":                 healthTime(state.LastMessageAt),
+			"last_commit_at":                  healthTime(state.LastCommitAt),
+			"last_progress_at":                healthTime(state.LastProgressAt),
+			"last_restart_at":                 healthTime(state.LastRestartAt),
+			"last_watchdog_at":                healthTime(state.LastWatchdogAt),
+			"restart_count":                   state.RestartCount,
+			"consecutive_stall_restart_count": state.ConsecutiveStallRestartCount,
+			"last_error":                      state.LastError,
 		})
 	}
 	return out
+}
+
+func (k *KafkaClient) HasUnhealthyConsumers() bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	for _, state := range k.consumers {
+		if state.Unhealthy {
+			return true
+		}
+	}
+	return false
+}
+
+func nullableInt64(value *int64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func (k *KafkaClient) newReader(topic, groupID string) *kafka.Reader {
@@ -293,6 +434,7 @@ func (k *KafkaClient) runConsumer(ctx context.Context, topic, groupID string, to
 			state.Connected = false
 			state.LastRestartAt = time.Now()
 			state.RestartCount++
+			state.Pending = make(map[string]time.Time)
 			if err != nil {
 				state.LastError = err.Error()
 			}
@@ -336,8 +478,11 @@ func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string
 	reader := k.newReader(topic, groupID)
 	k.addReader(reader)
 	k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
+		now := time.Now()
 		state.Connected = true
+		state.Pending = make(map[string]time.Time)
 		state.LastError = ""
+		state.LastProgressAt = now
 	})
 	defer func() {
 		k.removeReader(reader)
@@ -349,7 +494,18 @@ func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string
 		}
 	}()
 
-	return k.consumeReader(ctx, reader, topic, groupID, state, handler)
+	consumeCtx, cancel := context.WithCancel(ctx)
+	watchdogDone := make(chan struct{})
+	go func() {
+		defer close(watchdogDone)
+		k.watchConsumer(consumeCtx, reader, topic, groupID, state, cancel)
+	}()
+	defer func() {
+		cancel()
+		<-watchdogDone
+	}()
+
+	return k.consumeReader(consumeCtx, reader, topic, groupID, state, handler)
 }
 
 func (k *KafkaClient) ensureConsumerTopic(ctx context.Context, topic string, topicConfig KafkaTopicConfig) error {
@@ -371,6 +527,100 @@ func (k *KafkaClient) ensureConsumerTopic(ctx context.Context, topic string, top
 		return err
 	}
 	return nil
+}
+
+func (k *KafkaClient) watchConsumer(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, cancel context.CancelFunc) {
+	interval := k.cfg.KafkaConsumerStallCheckInterval
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if k.consumerWatchdogStalled(reader, topic, groupID, state) {
+				cancel()
+				if err := reader.Close(); err != nil && ctx.Err() == nil {
+					log.Printf("kafka watchdog reader close error topic=%s group=%s: %v", topic, groupID, err)
+				}
+				return
+			}
+		}
+	}
+}
+
+func (k *KafkaClient) consumerWatchdogStalled(reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState) bool {
+	timeout := k.cfg.KafkaConsumerStallTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	maxStallRestarts := k.cfg.KafkaConsumerMaxStallRestarts
+	if maxStallRestarts <= 0 {
+		maxStallRestarts = 3
+	}
+
+	stats := reader.Stats()
+	now := time.Now()
+	var stalled bool
+	var reason string
+
+	k.mu.Lock()
+	if state.Pending == nil {
+		state.Pending = make(map[string]time.Time)
+	}
+	state.LastWatchdogAt = now
+	state.Lag = stats.Lag
+	if state.Lag < 0 {
+		state.Lag = 0
+	}
+	committedOffset := stats.Offset
+	highWatermark := stats.Offset + state.Lag
+	state.CommittedOffset = &committedOffset
+	state.HighWatermark = &highWatermark
+
+	_, oldestPendingAge := kafkaPendingHealth(state)
+	if oldestPendingAge >= timeout {
+		stalled = true
+		reason = "pending_offset_stall"
+	} else if state.Lag > 0 && !state.LastProgressAt.IsZero() && now.Sub(state.LastProgressAt) >= timeout {
+		stalled = true
+		reason = "lag_no_commit_progress"
+	}
+
+	if stalled {
+		state.StallReason = reason
+		state.LastError = reason
+		state.ConsecutiveStallRestartCount++
+		if state.ConsecutiveStallRestartCount >= maxStallRestarts {
+			state.Unhealthy = true
+		}
+	}
+	k.mu.Unlock()
+
+	if !stalled {
+		return false
+	}
+
+	log.Printf("kafka consumer watchdog stalled topic=%s group=%s reason=%s lag=%d timeout=%s", topic, groupID, reason, stats.Lag, timeout)
+	recordMessageLifecycle(context.Background(), k.cfg, map[string]any{
+		"stage":       "whatsmeow.kafka.consumer.watchdog.stalled",
+		"decision":    "restart_consumer",
+		"outcome":     "retrying",
+		"reason":      reason,
+		"level":       "warn",
+		"topic":       topic,
+		"group_id":    groupID,
+		"lag":         stats.Lag,
+		"timeout_ms":  timeout.Milliseconds(),
+		"worker_id":   k.cfg.WorkerID,
+		"account_id":  k.cfg.AccountID,
+		"worker_type": "whatsmeow",
+	})
+	return true
 }
 
 func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, handler KafkaMessageHandler) error {
@@ -411,10 +661,7 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 			time.Sleep(k.fetchErrorBackoff())
 			continue
 		}
-		k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-			state.LastMessageAt = time.Now()
-			state.LastError = ""
-		})
+		k.markConsumerPendingStart(state, msg)
 
 		carrier := propagation.MapCarrier{}
 		for _, header := range msg.Headers {
@@ -427,58 +674,36 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 				state.LastError = err.Error()
 			})
 			log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
-			if isWorkerSendTopic(topic) {
-				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-					"stage":     "whatsmeow.outgoing.kafka.commit.skipped",
-					"decision":  "commit_message",
-					"outcome":   "error",
-					"reason":    "handler_failed",
-					"level":     "error",
-					"topic":     topic,
-					"partition": msg.Partition,
-					"offset":    msg.Offset,
-					"error":     err.Error(),
-				})
-				return fmt.Errorf("kafka handler failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err)
+			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+				"stage":     "whatsmeow.kafka.consumer.handler.error",
+				"decision":  "route_to_dlq",
+				"outcome":   "error",
+				"reason":    "handler_failed",
+				"level":     "error",
+				"topic":     topic,
+				"group_id":  groupID,
+				"partition": msg.Partition,
+				"offset":    msg.Offset,
+				"error":     err.Error(),
+			})
+			if dlqErr := k.publishConsumerDLQ(messageCtx, msg, groupID, "handler_failed", err); dlqErr != nil {
+				k.markConsumerPendingDone(state, msg, dlqErr, false)
+				return fmt.Errorf("kafka consumer dlq publish failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, dlqErr)
 			}
-			time.Sleep(k.handlerErrorBackoff())
+			if commitErr := reader.CommitMessages(messageCtx, msg); commitErr != nil {
+				k.markConsumerPendingDone(state, msg, commitErr, false)
+				return fmt.Errorf("kafka commit failed after dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr)
+			}
+			k.markConsumerPendingDone(state, msg, nil, true)
 			continue
 		}
 
 		if err := reader.CommitMessages(ctx, msg); err != nil {
-			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-				state.LastError = err.Error()
-			})
+			k.markConsumerPendingDone(state, msg, err, false)
 			log.Printf("kafka commit error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
-			if isWorkerSendTopic(topic) {
-				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-					"stage":     "whatsmeow.outgoing.kafka.commit.error",
-					"decision":  "commit_message",
-					"outcome":   "error",
-					"reason":    "commit_failed",
-					"level":     "error",
-					"topic":     topic,
-					"partition": msg.Partition,
-					"offset":    msg.Offset,
-					"error":     err.Error(),
-				})
-				return fmt.Errorf("kafka commit failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err)
-			}
+			return fmt.Errorf("kafka commit failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err)
 		} else {
-			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-				state.LastCommitAt = time.Now()
-				state.LastError = ""
-			})
-		}
-		if isWorkerSendTopic(topic) {
-			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-				"stage":     "whatsmeow.outgoing.kafka.commit.success",
-				"decision":  "commit_message",
-				"outcome":   "success",
-				"topic":     topic,
-				"partition": msg.Partition,
-				"offset":    msg.Offset,
-			})
+			k.markConsumerPendingDone(state, msg, nil, true)
 		}
 	}
 }
@@ -569,10 +794,7 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 			continue
 		}
 
-		k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-			state.LastMessageAt = time.Now()
-			state.LastError = ""
-		})
+		k.markConsumerPendingStart(state, msg)
 
 		carrier := propagation.MapCarrier{}
 		for _, header := range msg.Headers {
@@ -609,6 +831,48 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 					state.LastError = err.Error()
 				})
 				log.Printf("kafka async handler error topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, err)
+				if errors.Is(err, context.DeadlineExceeded) {
+					terminalErr := fmt.Errorf("send queue timeout after %s: %w", k.cfg.SendQueueTimeout, err)
+					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+						"stage":     "whatsmeow.outgoing.kafka.dlq.timeout",
+						"decision":  "route_to_dlq",
+						"outcome":   "terminal",
+						"reason":    "handler_timeout",
+						"level":     "warn",
+						"topic":     topic,
+						"group_id":  groupID,
+						"partition": msg.Partition,
+						"offset":    msg.Offset,
+						"queue_key": queueKey,
+						"error":     terminalErr.Error(),
+					})
+					if dlqErr := k.publishSendMessageDLQ(messageCtx, msg, groupID, "handler_timeout", terminalErr); dlqErr != nil {
+						k.markConsumerPendingDone(state, msg, dlqErr, false)
+						setFirstErr(fmt.Errorf("kafka send dlq publish failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, dlqErr))
+						return
+					}
+
+					committed, commitErr := commits.complete(messageCtx, msg)
+					if commitErr != nil {
+						k.markConsumerPendingDone(state, msg, commitErr, false)
+						setFirstErr(fmt.Errorf("kafka commit failed after send dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr))
+						return
+					}
+					k.markConsumerPendingDone(state, msg, nil, committed)
+					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
+						"stage":     "whatsmeow.outgoing.kafka.dlq.committed",
+						"decision":  "commit_message",
+						"outcome":   "success",
+						"reason":    "handler_timeout",
+						"topic":     topic,
+						"group_id":  groupID,
+						"partition": msg.Partition,
+						"offset":    msg.Offset,
+						"queue_key": queueKey,
+						"committed": committed,
+					})
+					return
+				}
 				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
 					"stage":     "whatsmeow.outgoing.kafka.commit.skipped",
 					"decision":  "commit_message",
@@ -621,15 +885,14 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 					"queue_key": queueKey,
 					"error":     err.Error(),
 				})
+				k.markConsumerPendingDone(state, msg, err, false)
 				setFirstErr(fmt.Errorf("kafka handler failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err))
 				return
 			}
 
 			committed, err := commits.complete(messageCtx, msg)
 			if err != nil {
-				k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-					state.LastError = err.Error()
-				})
+				k.markConsumerPendingDone(state, msg, err, false)
 				log.Printf("kafka commit error topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, err)
 				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
 					"stage":     "whatsmeow.outgoing.kafka.commit.error",
@@ -647,6 +910,7 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 				return
 			}
 			if !committed {
+				k.markConsumerPendingDone(state, msg, nil, false)
 				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
 					"stage":     "whatsmeow.outgoing.kafka.commit.deferred",
 					"decision":  "commit_message",
@@ -660,10 +924,7 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 				return
 			}
 
-			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-				state.LastCommitAt = time.Now()
-				state.LastError = ""
-			})
+			k.markConsumerPendingDone(state, msg, nil, true)
 			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
 				"stage":     "whatsmeow.outgoing.kafka.commit.success",
 				"decision":  "commit_message",
@@ -733,6 +994,10 @@ func topicWorkerSendMessage(workerID string) string {
 
 func topicWorkerSendMessageDLQ(workerID string) string {
 	return "worker." + workerID + ".send.message.dlq"
+}
+
+func topicWorkerConsumerDLQ(workerID string) string {
+	return "worker." + workerID + ".consumer.dlq"
 }
 
 func topicWorkerScheduleSend(workerID string) string {

@@ -3,12 +3,29 @@ export interface IKafkaConsumerHealthSnapshot {
   topics: string[];
   connected: boolean;
   consuming: boolean;
+  unhealthy?: boolean;
+  stall_reason?: string;
   assignments?: Array<{ topic: string; partition: number }>;
   assigned_topics?: string[];
+  partitions?: Array<{
+    topic: string;
+    partition: number;
+    committed_offset: number | null;
+    high_watermark: number | null;
+    lag: number;
+  }>;
+  lag?: number;
+  high_watermark?: number | null;
+  committed_offset?: number | null;
+  pending_count?: number;
+  oldest_pending_age_ms?: number;
   restart_count: number;
+  consecutive_stall_restart_count?: number;
   last_message_at: number;
   last_commit_at: number;
+  last_progress_at?: number;
   last_restart_at: number;
+  last_watchdog_at?: number;
   last_error: string;
 }
 

@@ -147,7 +147,9 @@ func (w *Worker) startHTTP() error {
 			health = manager.ConnectionHealth()
 		}
 		health["kafka_consumers"] = w.kafka.ConsumerHealthSnapshot()
-		if ready, _ := health["ready"].(bool); ready {
+		kafkaUnhealthy := w.kafka.HasUnhealthyConsumers()
+		health["kafka_unhealthy"] = kafkaUnhealthy
+		if ready, _ := health["ready"].(bool); ready && !kafkaUnhealthy {
 			writeJSON(resp, http.StatusOK, health)
 			return
 		}
@@ -380,6 +382,7 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 	}{
 		{topicWorkerSendMessage(workerID), workerTopicConfig},
 		{topicWorkerSendMessageDLQ(workerID), workerTopicConfig},
+		{topicWorkerConsumerDLQ(workerID), workerTopicConfig},
 		{topicWorkerScheduleSend(workerID), workerTopicConfig},
 		{topicWorkerValidatePhone(workerID), workerTopicConfig},
 		{topicWorkerNotification(workerID), workerTopicConfig},
@@ -1973,6 +1976,7 @@ func (w *Worker) publishRecoveredOutboundUpdate(ctx context.Context, data ChatMe
 func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data ChatMessage, reason string, cause error) error {
 	topic := topicWorkerSendMessageDLQ(w.cfg.WorkerID)
 	payload := map[string]any{
+		"provider":         "whatsmeow",
 		"worker_id":        w.cfg.WorkerID,
 		"account_id":       firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID),
 		"message_id":       data.MessageID,
@@ -1981,10 +1985,14 @@ func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data Cha
 		"reason":           reason,
 		"error":            cause.Error(),
 		"source_topic":     msg.Topic,
+		"group_id":         "group-underchat-whatsmeow-send-" + w.cfg.WorkerID,
+		"partition":        msg.Partition,
+		"offset":           msg.Offset,
 		"source_partition": msg.Partition,
 		"source_offset":    msg.Offset,
 		"kafka_key":        string(msg.Key),
 		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
+		"original_payload": kafkaOriginalPayload(msg.Value),
 		"payload":          json.RawMessage(msg.Value),
 	}
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.start", msg, data, map[string]any{

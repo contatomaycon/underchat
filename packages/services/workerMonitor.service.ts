@@ -22,6 +22,7 @@ import { AccountService } from './account.service';
 import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
+import { logger } from '@core/plugins/telemetry/logger';
 
 const mapConcurrent = async <T, R>(
   items: T[],
@@ -651,7 +652,7 @@ export class WorkerMonitorService {
     serverId: string,
     sshConfig: ConnectConfig
   ): Promise<boolean> => {
-    const command = String.raw`bash -c "docker exec ${workerId} sh -c 'curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3005/v1/connection/health/check'"`;
+    const command = String.raw`bash -c "docker exec ${workerId} sh -c 'curl -s -w \"__HTTP_STATUS__%{http_code}\" http://127.0.0.1:3005/v1/connection/health/check'"`;
 
     try {
       const outputs = await this.sshService.runCommands(
@@ -662,8 +663,22 @@ export class WorkerMonitorService {
       );
 
       const rawOutput = outputs.map((r) => r.output).join('');
-      const code = this.parseHttpCode(rawOutput);
+      const health = this.parseHttpResponse(rawOutput);
+      const code = health.code;
       const healthy = code === 200;
+      if (!healthy) {
+        logger.warn(
+          {
+            type: 'worker_monitor.connection_health_unhealthy',
+            worker_id: workerId,
+            server_id: serverId,
+            http_code: code,
+            kafka_unhealthy: this.readKafkaUnhealthy(health.body),
+            health: health.body,
+          },
+          'Worker connection health check failed'
+        );
+      }
       return healthy;
     } catch {
       return false;
@@ -678,6 +693,55 @@ export class WorkerMonitorService {
     }
 
     return numeric;
+  };
+
+  private readonly parseHttpResponse = (
+    raw: string
+  ): { code: number | null; body: unknown } => {
+    const marker = '__HTTP_STATUS__';
+    const markerIndex = raw.lastIndexOf(marker);
+    if (markerIndex < 0) {
+      return {
+        code: this.parseHttpCode(raw),
+        body: null,
+      };
+    }
+
+    const bodyRaw = raw.slice(0, markerIndex).trim();
+    const code = this.parseHttpCode(raw.slice(markerIndex + marker.length));
+    return {
+      code,
+      body: this.parseJsonBody(bodyRaw),
+    };
+  };
+
+  private readonly parseJsonBody = (raw: string): unknown => {
+    if (!raw) {
+      return null;
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  };
+
+  private readonly readKafkaUnhealthy = (body: unknown): boolean => {
+    if (!body || typeof body !== 'object') {
+      return false;
+    }
+
+    const record = body as Record<string, unknown>;
+    if (record.kafka_unhealthy === true) {
+      return true;
+    }
+
+    const data = record.data;
+    return (
+      !!data &&
+      typeof data === 'object' &&
+      (data as Record<string, unknown>).kafka_unhealthy === true
+    );
   };
 
   private readonly removeContainer = async (

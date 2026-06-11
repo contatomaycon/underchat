@@ -69,6 +69,9 @@ type Config struct {
 
 	KafkaSendConsumerIdleRecreateInterval time.Duration
 	KafkaHandlerErrorBackoff              time.Duration
+	KafkaConsumerStallTimeout             time.Duration
+	KafkaConsumerStallCheckInterval       time.Duration
+	KafkaConsumerMaxStallRestarts         int
 
 	OutboundFailureReconnectThreshold int
 	OutboundFailureReconnectCooldown  time.Duration
@@ -92,6 +95,8 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
+	kafkaConsumerStallTimeout := envMillisDurationDefault("KAFKA_CONSUMER_STALL_MS", 5*time.Minute)
+
 	cfg := Config{
 		WorkerID:             strings.TrimSpace(os.Getenv("WORKER_ID")),
 		AccountID:            strings.TrimSpace(os.Getenv("ACCOUNT_ID")),
@@ -142,9 +147,12 @@ func LoadConfig() (Config, error) {
 		KafkaPollInterval:                      250 * time.Millisecond,
 		OutboundReadyTimeout:                   envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
 		SendMaxInFlight:                        envIntDefault("WORKER_SEND_MAX_IN_FLIGHT", 256),
-		SendQueueTimeout:                       envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", 10*time.Minute),
+		SendQueueTimeout:                       envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
 		KafkaSendConsumerIdleRecreateInterval:  envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
 		KafkaHandlerErrorBackoff:               envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
+		KafkaConsumerStallTimeout:              kafkaConsumerStallTimeout,
+		KafkaConsumerStallCheckInterval:        envMillisDurationDefault("KAFKA_CONSUMER_STALL_CHECK_MS", 30*time.Second),
+		KafkaConsumerMaxStallRestarts:          envIntDefault("KAFKA_CONSUMER_MAX_RESTARTS_BEFORE_UNHEALTHY", 3),
 		OutboundFailureReconnectThreshold:      envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
 		OutboundFailureReconnectCooldown:       envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
 		SendIdempotencyInProgressTTL:           envDurationDefault("WORKER_SEND_IDEMPOTENCY_IN_PROGRESS_TTL", 10*time.Minute),
@@ -213,10 +221,19 @@ func LoadConfig() (Config, error) {
 		cfg.SendMaxInFlight = 256
 	}
 	if cfg.SendQueueTimeout <= 0 {
-		cfg.SendQueueTimeout = 10 * time.Minute
+		cfg.SendQueueTimeout = cfg.KafkaConsumerStallTimeout
 	}
 	if cfg.KafkaHandlerErrorBackoff <= 0 {
 		cfg.KafkaHandlerErrorBackoff = time.Second
+	}
+	if cfg.KafkaConsumerStallTimeout <= 0 {
+		cfg.KafkaConsumerStallTimeout = 5 * time.Minute
+	}
+	if cfg.KafkaConsumerStallCheckInterval <= 0 {
+		cfg.KafkaConsumerStallCheckInterval = 30 * time.Second
+	}
+	if cfg.KafkaConsumerMaxStallRestarts <= 0 {
+		cfg.KafkaConsumerMaxStallRestarts = 3
 	}
 	if cfg.SendIdempotencyInProgressTTL <= 0 {
 		cfg.SendIdempotencyInProgressTTL = 10 * time.Minute

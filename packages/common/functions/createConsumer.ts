@@ -3,6 +3,8 @@ import type {
   KafkaConsumer,
   LibrdKafkaError,
   Metadata,
+  TopicPartitionOffset,
+  WatermarkOffsets,
 } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { EventEmitter } from 'node:events';
@@ -27,6 +29,18 @@ interface ITopicPartition {
   partition: number;
 }
 
+interface IPendingOffsetState {
+  firstSeenAt: number;
+}
+
+interface IPartitionLagSnapshot {
+  topic: string;
+  partition: number;
+  committed_offset: number | null;
+  high_watermark: number | null;
+  lag: number;
+}
+
 function readPositiveIntegerEnv(name: string, fallback: number): number {
   const raw = Number(process.env[name]);
   if (!Number.isFinite(raw) || raw <= 0) {
@@ -45,6 +59,19 @@ const RESTART_BASE_MS = 1000;
 const RESTART_MAX_MS = 30000;
 const SEND_IDLE_RESTART_MS = Number(
   process.env.KAFKA_CONSUMER_SEND_IDLE_RESTART_MS ?? 0
+);
+const STALL_MS = readPositiveIntegerEnv('KAFKA_CONSUMER_STALL_MS', 300000);
+const STALL_CHECK_MS = readPositiveIntegerEnv(
+  'KAFKA_CONSUMER_STALL_CHECK_MS',
+  30000
+);
+const MAX_STALL_RESTARTS_BEFORE_UNHEALTHY = readPositiveIntegerEnv(
+  'KAFKA_CONSUMER_MAX_RESTARTS_BEFORE_UNHEALTHY',
+  3
+);
+const WATERMARK_TIMEOUT_MS = readPositiveIntegerEnv(
+  'KAFKA_CONSUMER_WATERMARK_TIMEOUT_MS',
+  2000
 );
 
 function isWorkerSendTopic(topic: string): boolean {
@@ -98,7 +125,15 @@ class ManagedKafkaConsumer extends EventEmitter {
   private lastMessageAt = 0;
   private lastCommitAt = 0;
   private lastRestartAt = 0;
+  private lastProgressAt = 0;
+  private connectedAt = 0;
+  private lastWatchdogAt = 0;
   private lastError = '';
+  private unhealthy = false;
+  private stallReason = '';
+  private consecutiveStallRestarts = 0;
+  private partitionLag = new Map<string, IPartitionLagSnapshot>();
+  private pendingOffsets = new Map<string, Map<number, IPendingOffsetState>>();
 
   constructor(
     private readonly kafka: KafkaClient,
@@ -109,20 +144,42 @@ class ManagedKafkaConsumer extends EventEmitter {
 
   __health() {
     const assignments = this.getAssignments();
+    const pending = this.getPendingHealth();
+    const partitions = Array.from(this.partitionLag.values());
+    const lag = partitions.reduce((total, item) => total + item.lag, 0);
+    const highWatermarks = partitions
+      .map((item) => item.high_watermark)
+      .filter((value): value is number => typeof value === 'number');
+    const committedOffsets = partitions
+      .map((item) => item.committed_offset)
+      .filter((value): value is number => typeof value === 'number');
 
     return {
       group_id: this.groupId,
       topics: this.topics,
       connected: this.connected,
       consuming: this.consuming,
+      unhealthy: this.unhealthy,
+      stall_reason: this.stallReason,
       assignments,
       assigned_topics: Array.from(
         new Set(assignments.map((assignment) => assignment.topic))
       ),
+      partitions,
+      lag,
+      high_watermark:
+        highWatermarks.length > 0 ? Math.max(...highWatermarks) : null,
+      committed_offset:
+        committedOffsets.length > 0 ? Math.min(...committedOffsets) : null,
+      pending_count: pending.pendingCount,
+      oldest_pending_age_ms: pending.oldestPendingAgeMs,
       restart_count: this.restartCount,
+      consecutive_stall_restart_count: this.consecutiveStallRestarts,
       last_message_at: this.lastMessageAt,
       last_commit_at: this.lastCommitAt,
+      last_progress_at: this.lastProgressAt,
       last_restart_at: this.lastRestartAt,
+      last_watchdog_at: this.lastWatchdogAt,
       last_error: this.lastError,
     };
   }
@@ -212,7 +269,7 @@ class ManagedKafkaConsumer extends EventEmitter {
 
     try {
       const result = consumer.commitSync(offsets as never);
-      this.lastCommitAt = Date.now();
+      this.recordCommit(offsets);
       return result;
     } catch (error) {
       this.lastError = getErrorMessage(error);
@@ -241,6 +298,37 @@ class ManagedKafkaConsumer extends EventEmitter {
       this.scheduleRestart('commit_error', error);
       throw error;
     }
+  }
+
+  commit(offsets?: ITopicPartitionOffset | ITopicPartitionOffset[]): this {
+    const consumer = this.current;
+    if (!consumer || !this.connected) {
+      return this;
+    }
+
+    try {
+      const commit = (
+        consumer as unknown as { commit: (offsets?: unknown) => unknown }
+      ).commit.bind(consumer);
+      if (typeof offsets === 'undefined') {
+        commit();
+      } else {
+        commit(offsets);
+      }
+    } catch (error) {
+      this.lastError = getErrorMessage(error);
+      logger.debug(
+        {
+          type: 'kafka.commit.heartbeat_error',
+          group_id: this.groupId,
+          topics: this.topics,
+          error: this.lastError,
+        },
+        'Kafka consumer heartbeat commit failed'
+      );
+    }
+
+    return this;
   }
 
   pause(assignments: Array<{ topic: string; partition: number }>): unknown {
@@ -399,7 +487,7 @@ class ManagedKafkaConsumer extends EventEmitter {
     });
 
     consumer.on('data', (message) => {
-      this.lastMessageAt = Date.now();
+      this.recordMessage(message);
       this.emit('data', message);
     });
 
@@ -464,6 +552,8 @@ class ManagedKafkaConsumer extends EventEmitter {
 
     this.connected = true;
     this.connecting = false;
+    this.connectedAt = Date.now();
+    this.lastProgressAt = Math.max(this.lastProgressAt, this.connectedAt);
     this.lastError = '';
 
     logger.info(
@@ -601,12 +691,21 @@ class ManagedKafkaConsumer extends EventEmitter {
       ? isRecoverableKafkaTopicError(error)
       : false;
     this.restartCount += 1;
+    if (reason.includes('stall') || reason.includes('watchdog')) {
+      this.consecutiveStallRestarts += 1;
+      if (
+        this.consecutiveStallRestarts >= MAX_STALL_RESTARTS_BEFORE_UNHEALTHY
+      ) {
+        this.unhealthy = true;
+        this.stallReason = reason;
+      }
+    }
     this.lastRestartAt = Date.now();
 
     logger.warn(
       {
         type:
-          reason === 'send_idle_watchdog'
+          reason.includes('watchdog') || reason.includes('stall')
             ? 'kafka.consumer.stalled'
             : 'kafka.consumer.restart',
         group_id: this.groupId,
@@ -654,28 +753,257 @@ class ManagedKafkaConsumer extends EventEmitter {
 
   private armWatchdog(): void {
     this.clearWatchdog();
-    if (SEND_IDLE_RESTART_MS <= 0 || !this.topics.some(isWorkerSendTopic)) {
+    if (STALL_MS <= 0 || STALL_CHECK_MS <= 0) {
       return;
     }
 
     this.watchdogTimer = setTimeout(() => {
-      if (this.closed || !this.connected) {
-        return;
-      }
+      void this.runWatchdogCheck().finally(() => {
+        if (!this.closed) {
+          this.armWatchdog();
+        }
+      });
+    }, STALL_CHECK_MS);
+  }
 
-      const lastActivity = Math.max(
-        this.lastMessageAt,
-        this.lastCommitAt,
-        this.lastRestartAt
-      );
-      const idleMs = Date.now() - lastActivity;
+  private async runWatchdogCheck(): Promise<void> {
+    if (this.closed || !this.connected || !this.current) {
+      return;
+    }
+
+    this.lastWatchdogAt = Date.now();
+    const assignments = this.getAssignments();
+    if (assignments.length === 0) {
+      return;
+    }
+
+    await this.refreshLagSnapshot(this.current, assignments);
+
+    const pending = this.getPendingHealth();
+    if (pending.oldestPendingAgeMs >= STALL_MS) {
+      this.stallReason = 'pending_offset_stall';
+      this.scheduleRestart('pending_offset_stall_watchdog');
+      return;
+    }
+
+    const lag = Array.from(this.partitionLag.values()).reduce(
+      (total, item) => total + item.lag,
+      0
+    );
+    const noCommitProgressMs = Date.now() - this.lastProgressAt;
+    if (lag > 0 && noCommitProgressMs >= STALL_MS) {
+      this.stallReason = 'lag_no_commit_progress';
+      this.scheduleRestart('lag_no_commit_progress_watchdog');
+      return;
+    }
+
+    if (
+      SEND_IDLE_RESTART_MS > 0 &&
+      this.topics.some(isWorkerSendTopic) &&
+      (lag > 0 || pending.pendingCount > 0)
+    ) {
+      const idleMs =
+        Date.now() -
+        Math.max(this.lastMessageAt, this.lastCommitAt, this.lastRestartAt);
       if (idleMs >= SEND_IDLE_RESTART_MS) {
+        this.stallReason = 'send_idle_with_backlog';
         this.scheduleRestart('send_idle_watchdog');
-        return;
+      }
+    }
+  }
+
+  private recordMessage(message: {
+    topic?: string;
+    partition?: number;
+    offset?: number;
+  }): void {
+    const now = Date.now();
+    this.lastMessageAt = now;
+
+    const topic =
+      typeof message.topic === 'string' && message.topic.length > 0
+        ? message.topic
+        : this.topics.length === 1
+          ? this.topics[0]
+          : '';
+    if (
+      !topic ||
+      typeof message.partition !== 'number' ||
+      typeof message.offset !== 'number'
+    ) {
+      return;
+    }
+
+    const key = this.partitionKey(topic, message.partition);
+    const offsets = this.pendingOffsets.get(key) ?? new Map();
+    offsets.set(message.offset, { firstSeenAt: now });
+    this.pendingOffsets.set(key, offsets);
+  }
+
+  private recordCommit(offsets: ITopicPartitionOffset[]): void {
+    const now = Date.now();
+    this.lastCommitAt = now;
+    this.lastProgressAt = now;
+    this.unhealthy = false;
+    this.stallReason = '';
+    this.consecutiveStallRestarts = 0;
+
+    for (const offset of offsets) {
+      if (
+        !offset.topic ||
+        typeof offset.partition !== 'number' ||
+        typeof offset.offset !== 'number'
+      ) {
+        continue;
       }
 
-      this.armWatchdog();
-    }, SEND_IDLE_RESTART_MS);
+      const key = this.partitionKey(offset.topic, offset.partition);
+      const pending = this.pendingOffsets.get(key);
+      if (pending) {
+        for (const pendingOffset of pending.keys()) {
+          if (pendingOffset < offset.offset) {
+            pending.delete(pendingOffset);
+          }
+        }
+        if (pending.size === 0) {
+          this.pendingOffsets.delete(key);
+        }
+      }
+
+      const existing = this.partitionLag.get(key);
+      this.partitionLag.set(key, {
+        topic: offset.topic,
+        partition: offset.partition,
+        committed_offset: offset.offset,
+        high_watermark: existing?.high_watermark ?? null,
+        lag:
+          typeof existing?.high_watermark === 'number'
+            ? Math.max(0, existing.high_watermark - offset.offset)
+            : 0,
+      });
+    }
+  }
+
+  private getPendingHealth(): {
+    pendingCount: number;
+    oldestPendingAgeMs: number;
+  } {
+    let pendingCount = 0;
+    let oldestSeenAt = 0;
+
+    for (const offsets of this.pendingOffsets.values()) {
+      pendingCount += offsets.size;
+      for (const pending of offsets.values()) {
+        if (oldestSeenAt === 0 || pending.firstSeenAt < oldestSeenAt) {
+          oldestSeenAt = pending.firstSeenAt;
+        }
+      }
+    }
+
+    return {
+      pendingCount,
+      oldestPendingAgeMs: oldestSeenAt > 0 ? Date.now() - oldestSeenAt : 0,
+    };
+  }
+
+  private async refreshLagSnapshot(
+    consumer: KafkaConsumer,
+    assignments: ITopicPartition[]
+  ): Promise<void> {
+    let committedOffsets: TopicPartitionOffset[] = [];
+    try {
+      committedOffsets = await new Promise<TopicPartitionOffset[]>(
+        (resolve, reject) => {
+          consumer.committed(
+            assignments as never,
+            WATERMARK_TIMEOUT_MS,
+            (err: LibrdKafkaError, offsets: TopicPartitionOffset[]) => {
+              if (err) {
+                reject(err);
+                return;
+              }
+              resolve(offsets ?? []);
+            }
+          );
+        }
+      );
+    } catch (error) {
+      this.lastError = getErrorMessage(error);
+      logger.debug(
+        {
+          type: 'kafka.consumer.watchdog.committed_error',
+          group_id: this.groupId,
+          topics: this.topics,
+          error: this.lastError,
+        },
+        'Kafka consumer watchdog failed to read committed offsets'
+      );
+    }
+
+    await Promise.all(
+      assignments.map(async (assignment) => {
+        const key = this.partitionKey(assignment.topic, assignment.partition);
+        const committed = committedOffsets.find(
+          (item) =>
+            item.topic === assignment.topic &&
+            item.partition === assignment.partition
+        );
+        const committedOffset =
+          typeof committed?.offset === 'number' && committed.offset >= 0
+            ? committed.offset
+            : null;
+        let highWatermark: number | null = null;
+
+        try {
+          const offsets = await new Promise<WatermarkOffsets>(
+            (resolve, reject) => {
+              consumer.queryWatermarkOffsets(
+                assignment.topic,
+                assignment.partition,
+                WATERMARK_TIMEOUT_MS,
+                (err: LibrdKafkaError, watermark: WatermarkOffsets) => {
+                  if (err) {
+                    reject(err);
+                    return;
+                  }
+                  resolve(watermark);
+                }
+              );
+            }
+          );
+          highWatermark =
+            typeof offsets?.highOffset === 'number' ? offsets.highOffset : null;
+        } catch (error) {
+          this.lastError = getErrorMessage(error);
+          logger.debug(
+            {
+              type: 'kafka.consumer.watchdog.watermark_error',
+              group_id: this.groupId,
+              topic: assignment.topic,
+              partition: assignment.partition,
+              error: this.lastError,
+            },
+            'Kafka consumer watchdog failed to read watermark offsets'
+          );
+        }
+
+        const effectiveCommittedOffset = committedOffset ?? 0;
+        this.partitionLag.set(key, {
+          topic: assignment.topic,
+          partition: assignment.partition,
+          committed_offset: committedOffset,
+          high_watermark: highWatermark,
+          lag:
+            typeof highWatermark === 'number'
+              ? Math.max(0, highWatermark - effectiveCommittedOffset)
+              : 0,
+        });
+      })
+    );
+  }
+
+  private partitionKey(topic: string, partition: number): string {
+    return `${topic}:${partition}`;
   }
 
   private clearTimers(): void {

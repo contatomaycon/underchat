@@ -11,7 +11,11 @@ import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
 import { BaileysService } from '@core/services/baileys';
-import { getWorkerConsumers, registerWorkerConsumer } from './registry';
+import {
+  getWorkerConsumers,
+  registerWorkerConsumer,
+  startKafkaConsumerSupervisor,
+} from './registry';
 import { baileysEnvironment } from '@core/config/environments';
 
 const CONSUMER_STAGGER_DELAY_MS = 500;
@@ -32,6 +36,7 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
   }
 
   void startDeferredConsumers(server);
+  startKafkaConsumerSupervisor(server.log);
 }
 
 async function startDeferredConsumers(server: FastifyInstance): Promise<void> {

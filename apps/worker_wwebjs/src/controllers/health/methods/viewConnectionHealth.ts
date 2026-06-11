@@ -3,7 +3,10 @@ import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WwebjsService } from '@core/services/wwebjs';
-import { getKafkaConsumerHealthSnapshots } from '@/consumer/registry';
+import {
+  getKafkaConsumerHealthSnapshots,
+  hasUnhealthyKafkaConsumer,
+} from '@/consumer/registry';
 
 export const viewConnectionHealth = async (
   _request: FastifyRequest,
@@ -11,12 +14,14 @@ export const viewConnectionHealth = async (
 ) => {
   const wwebjsService = container.resolve(WwebjsService);
   const isConnected = wwebjsService.isConnected();
+  const kafkaUnhealthy = hasUnhealthyKafkaConsumer();
   const data = {
     connected: isConnected,
+    kafka_unhealthy: kafkaUnhealthy,
     kafka_consumers: getKafkaConsumerHealthSnapshots(),
   };
 
-  if (isConnected) {
+  if (isConnected && !kafkaUnhealthy) {
     return sendResponse(reply, {
       httpStatusCode: EHTTPStatusCode.ok,
       data,

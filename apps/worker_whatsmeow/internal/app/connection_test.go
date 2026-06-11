@@ -115,8 +115,17 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if cfg.SendMaxInFlight != 256 {
 		t.Fatalf("unexpected send max in-flight %d", cfg.SendMaxInFlight)
 	}
-	if cfg.SendQueueTimeout != 10*time.Minute {
+	if cfg.SendQueueTimeout != 5*time.Minute {
 		t.Fatalf("unexpected send queue timeout %s", cfg.SendQueueTimeout)
+	}
+	if cfg.KafkaConsumerStallTimeout != 5*time.Minute {
+		t.Fatalf("unexpected kafka consumer stall timeout %s", cfg.KafkaConsumerStallTimeout)
+	}
+	if cfg.KafkaConsumerStallCheckInterval != 30*time.Second {
+		t.Fatalf("unexpected kafka consumer stall check interval %s", cfg.KafkaConsumerStallCheckInterval)
+	}
+	if cfg.KafkaConsumerMaxStallRestarts != 3 {
+		t.Fatalf("unexpected kafka max stall restarts %d", cfg.KafkaConsumerMaxStallRestarts)
 	}
 	if cfg.KafkaSendConsumerIdleRecreateInterval != 0 {
 		t.Fatalf("unexpected kafka send idle recreate interval %s", cfg.KafkaSendConsumerIdleRecreateInterval)
@@ -190,6 +199,8 @@ func TestKafkaConsumerHealthSnapshotIncludesRegisteredConsumer(t *testing.T) {
 	state := client.ensureConsumerHealth("worker.w1.send.message", "group-1")
 	client.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
 		state.Connected = true
+		state.Unhealthy = true
+		state.StallReason = "pending_offset_stall"
 		state.RestartCount = 2
 		state.LastError = "forced"
 	})
@@ -209,6 +220,15 @@ func TestKafkaConsumerHealthSnapshotIncludesRegisteredConsumer(t *testing.T) {
 	}
 	if snapshot[0]["restart_count"] != 2 {
 		t.Fatalf("expected restart count 2, got %#v", snapshot[0]["restart_count"])
+	}
+	if snapshot[0]["unhealthy"] != true {
+		t.Fatalf("expected unhealthy true, got %#v", snapshot[0]["unhealthy"])
+	}
+	if snapshot[0]["stall_reason"] != "pending_offset_stall" {
+		t.Fatalf("unexpected stall reason %#v", snapshot[0]["stall_reason"])
+	}
+	if !client.HasUnhealthyConsumers() {
+		t.Fatal("expected unhealthy consumer detection")
 	}
 }
 

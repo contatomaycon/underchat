@@ -20,6 +20,8 @@ jest.mock('@core/plugins/telemetry/logger', () => ({
 class FakeKafkaConsumer extends EventEmitter {
   private subscribedTopics: string[] = [];
   private assignedTopics: string[] = [];
+  committedOffset = 0;
+  highOffset = 0;
 
   constructor(private readonly autoAssign = true) {
     super();
@@ -60,6 +62,37 @@ class FakeKafkaConsumer extends EventEmitter {
   resume = jest.fn();
   assignments = jest.fn(() =>
     this.assignedTopics.map((topic) => ({ topic, partition: 0 }))
+  );
+  committed = jest.fn(
+    (
+      assignments: Array<{ topic: string; partition: number }>,
+      _timeout: number,
+      cb?: (
+        err: Error | null,
+        offsets: Array<{ topic: string; partition: number; offset: number }>
+      ) => void
+    ) => {
+      cb?.(
+        null,
+        assignments.map((assignment) => ({
+          ...assignment,
+          offset: this.committedOffset,
+        }))
+      );
+    }
+  );
+  queryWatermarkOffsets = jest.fn(
+    (
+      _topic: string,
+      _partition: number,
+      _timeout: number,
+      cb?: (
+        err: Error | null,
+        offsets: { lowOffset: number; highOffset: number }
+      ) => void
+    ) => {
+      cb?.(null, { lowOffset: 0, highOffset: this.highOffset });
+    }
   );
 }
 

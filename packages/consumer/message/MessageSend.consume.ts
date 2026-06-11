@@ -56,8 +56,10 @@ interface IPartitionCommitState {
 }
 
 interface IQueuedEnvelope {
+  sourceTopic: string;
   partition: number;
   offset: number;
+  kafkaKey: string | null;
   payload: unknown;
   queueKey: string;
   chatId: string | null;
@@ -70,12 +72,24 @@ type ForwardFailReason =
   | 'native_forward_exception'
   | 'fallback_handler_unavailable';
 
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(raw);
+}
+
 @singleton()
 export class MessageSendConsume {
   private readonly PROVIDER = 'baileys';
   private consumer: KafkaConsumer | null = null;
   private isRunning = false;
-  private readonly CHAT_QUEUE_TIMEOUT_MS = 10 * 60 * 1000;
+  private readonly CHAT_QUEUE_TIMEOUT_MS = readPositiveIntegerEnv(
+    'WORKER_SEND_QUEUE_TIMEOUT_MS',
+    readPositiveIntegerEnv('KAFKA_CONSUMER_STALL_MS', 5 * 60 * 1000)
+  );
   private readonly MAX_PROCESS_ATTEMPTS = 5;
   private readonly RETRY_BASE_MS = 500;
   private readonly RETRY_MAX_MS = 8000;
@@ -91,6 +105,7 @@ export class MessageSendConsume {
   >();
   private readonly partitionCommitChains = new Map<number, Promise<void>>();
   private topic: string | null = null;
+  private generation = 0;
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -366,9 +381,11 @@ export class MessageSendConsume {
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
+    const generation = ++this.generation;
     const topic = this.kafkaBaileysQueueService.workerSendMessage(
       baileysEnvironment.baileysWorkerId
     );
+    const groupId = `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`;
 
     await ensureKafkaTopic(
       this.kafka,
@@ -379,13 +396,10 @@ export class MessageSendConsume {
 
     this.topic = topic;
 
-    this.consumer = createConsumer(
-      this.kafka,
-      `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`
-    );
+    this.consumer = createConsumer(this.kafka, groupId);
 
     this.consumer.on('data', (message) => {
-      const task = this.handleMessageEvent(topic, message)
+      const task = this.handleMessageEvent(topic, message, generation)
         .catch((error) => {
           this.logPipelineEvent(
             'dispatch_error',
@@ -439,6 +453,7 @@ export class MessageSendConsume {
     }
 
     try {
+      this.generation += 1;
       this.isRunning = false;
       const consumer = this.consumer;
       const topic = this.topic;
@@ -469,11 +484,38 @@ export class MessageSendConsume {
     }
   }
 
+  public async restart(): Promise<void> {
+    const consumer = this.consumer;
+    this.generation += 1;
+    this.isRunning = false;
+    this.consumer = null;
+    this.topic = null;
+    this.inFlightTasks.clear();
+    this.partitionCommitStates.clear();
+    this.partitionCommitChains.clear();
+    this.lastMessageTypeByChatId.clear();
+
+    if (consumer) {
+      try {
+        consumer.unsubscribe();
+      } catch {}
+      try {
+        consumer.disconnect(() => {});
+      } catch {}
+    }
+
+    await this.execute();
+  }
+
   private async commitNext(
     topic: string,
     partition: number,
-    offset: number
+    offset: number,
+    generation = this.generation
   ): Promise<void> {
+    if (generation !== this.generation) {
+      return;
+    }
     await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
@@ -502,13 +544,29 @@ export class MessageSendConsume {
     }
   }
 
+  private kafkaKeyToString(
+    key: Buffer | string | null | undefined
+  ): string | null {
+    if (typeof key === 'string') {
+      return key;
+    }
+
+    if (Buffer.isBuffer(key)) {
+      return key.toString('utf8');
+    }
+
+    return null;
+  }
+
   private async handleMessageEvent(
     topic: string,
     message: {
       value: Buffer | null;
+      key?: Buffer | string | null;
       partition: number;
       offset: number;
-    }
+    },
+    generation: number
   ): Promise<void> {
     const rawPayload = this.extractRawMessage(message.value);
     const payload = this.parseRawMessage(rawPayload);
@@ -527,14 +585,21 @@ export class MessageSendConsume {
         offset: message.offset,
         result: 'payload_invalid_skipped',
       });
-      await this.completeOffset(topic, message.partition, message.offset);
+      await this.completeOffset(
+        topic,
+        message.partition,
+        message.offset,
+        generation
+      );
       return;
     }
 
     const { queueKey, chatId } = this.resolveQueueContext(payload);
     const envelope: IQueuedEnvelope = {
+      sourceTopic: topic,
       partition: message.partition,
       offset: message.offset,
+      kafkaKey: this.kafkaKeyToString(message.key),
       payload,
       queueKey,
       chatId,
@@ -597,8 +662,13 @@ export class MessageSendConsume {
       );
       shouldCompleteOffset = true;
     } finally {
-      if (shouldCompleteOffset) {
-        await this.completeOffset(topic, message.partition, message.offset);
+      if (shouldCompleteOffset && generation === this.generation) {
+        await this.completeOffset(
+          topic,
+          message.partition,
+          message.offset,
+          generation
+        );
       }
     }
   }
@@ -896,16 +966,23 @@ export class MessageSendConsume {
   private async completeOffset(
     topic: string,
     partition: number,
-    offset: number
+    offset: number,
+    generation = this.generation
   ): Promise<void> {
+    if (generation !== this.generation) {
+      return;
+    }
     await this.enqueuePartitionCommitOperation(partition, async () => {
+      if (generation !== this.generation) {
+        return;
+      }
       const state = this.partitionCommitStates.get(partition);
       if (!state || !state.pendingOffsets.has(offset)) {
         return;
       }
 
       state.completedOffsets.add(offset);
-      await this.flushContiguousOffsets(topic, partition, state);
+      await this.flushContiguousOffsets(topic, partition, state, generation);
     });
   }
 
@@ -956,8 +1033,13 @@ export class MessageSendConsume {
   private async flushContiguousOffsets(
     topic: string,
     partition: number,
-    state: IPartitionCommitState
+    state: IPartitionCommitState,
+    generation = this.generation
   ): Promise<void> {
+    if (generation !== this.generation) {
+      return;
+    }
+
     if (state.nextContiguousOffset === null) {
       return;
     }
@@ -974,7 +1056,7 @@ export class MessageSendConsume {
       return;
     }
 
-    await this.commitNext(topic, partition, commitUpTo);
+    await this.commitNext(topic, partition, commitUpTo, generation);
 
     for (
       let currentOffset = startOffset;
@@ -1064,6 +1146,11 @@ export class MessageSendConsume {
         1,
         this.baseMetricAttributes(envelope, 'missing_message_id', attempt)
       );
+      await this.publishTerminalDlq(
+        envelope,
+        error,
+        `${failureEvent}_missing_message_id`
+      );
       return;
     }
 
@@ -1111,6 +1198,69 @@ export class MessageSendConsume {
       attempt,
       error
     );
+    await this.publishTerminalDlq(envelope, error, terminalReason);
+  }
+
+  private async publishTerminalDlq(
+    envelope: IQueuedEnvelope,
+    error: unknown,
+    reason: string
+  ): Promise<void> {
+    const topic = this.kafkaBaileysQueueService.workerSendMessageDlq(
+      baileysEnvironment.baileysWorkerId
+    );
+
+    try {
+      await ensureKafkaTopic(
+        this.kafka,
+        topic,
+        this.kafkaBaileysQueueService.getNumPartitions(),
+        this.kafkaBaileysQueueService.getReplicationFactor()
+      );
+      await this.streamProducerService.send(
+        topic,
+        {
+          provider: this.PROVIDER,
+          worker_id: baileysEnvironment.baileysWorkerId,
+          account_id: baileysEnvironment.baileysAccountId,
+          source_topic: envelope.sourceTopic,
+          group_id: `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          kafka_key: envelope.kafkaKey,
+          error: this.errorMessage(error),
+          reason,
+          failed_at: new Date().toISOString(),
+          original_payload: envelope.payload,
+        },
+        this.extractMessageId(envelope.payload) ??
+          envelope.kafkaKey ??
+          undefined
+      );
+    } catch (dlqError) {
+      this.logPipelineEvent(
+        'terminal_dlq_publish_error',
+        {
+          chat_id: envelope.chatId,
+          queue_key: envelope.queueKey,
+          partition: envelope.partition,
+          offset: envelope.offset,
+          result: 'terminal_dlq_publish_error',
+          reason,
+          error: this.errorMessage(dlqError),
+        },
+        'error'
+      );
+      recordException(dlqError, {
+        messageSendPipeline: {
+          provider: this.PROVIDER,
+          event: 'terminal_dlq_publish_error',
+          partition: envelope.partition,
+          offset: envelope.offset,
+          reason,
+        },
+      });
+    }
   }
 
   private errorMessage(error: unknown): string {

@@ -27,6 +27,8 @@ export class KafkaBaileysQueueService {
     const validatePhone = this.workerValidatePhone(workerId);
     const notificationMessage = this.workerNotificationMessage(workerId);
     const webhookIntegration = this.workerWebhookIntegration(workerId);
+    const sendMessageDlq = this.workerSendMessageDlq(workerId);
+    const consumerDlq = this.workerConsumerDlq(workerId);
 
     return [
       sendMessage,
@@ -34,6 +36,8 @@ export class KafkaBaileysQueueService {
       validatePhone,
       notificationMessage,
       webhookIntegration,
+      sendMessageDlq,
+      consumerDlq,
     ];
   };
 
@@ -79,6 +83,14 @@ export class KafkaBaileysQueueService {
 
   workerSendMessage = (workerId: string) => {
     return `worker.${workerId}.send.message`;
+  };
+
+  workerSendMessageDlq = (workerId: string) => {
+    return `worker.${workerId}.send.message.dlq`;
+  };
+
+  workerConsumerDlq = (workerId: string) => {
+    return `worker.${workerId}.consumer.dlq`;
   };
 
   workerScheduleSendMessage = (workerId: string) => {
