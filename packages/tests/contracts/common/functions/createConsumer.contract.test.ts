@@ -102,6 +102,19 @@ async function flushPromises(times = 6): Promise<void> {
   }
 }
 
+async function advanceTimersInSteps(
+  totalMs: number,
+  stepMs = 30 * 1000
+): Promise<void> {
+  let elapsedMs = 0;
+  while (elapsedMs < totalMs) {
+    const nextMs = Math.min(stepMs, totalMs - elapsedMs);
+    jest.advanceTimersByTime(nextMs);
+    await flushPromises();
+    elapsedMs += nextMs;
+  }
+}
+
 describe('createConsumer managed kafka consumer', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -261,6 +274,110 @@ describe('createConsumer managed kafka consumer', () => {
 
     expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
     expect(firstConsumer.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('does not restart non worker-scoped consumers on pending offset stall', async () => {
+    const firstConsumer = new FakeKafkaConsumer();
+    const kafka = {
+      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+
+    consumer.subscribe(['upsert.message']);
+    consumer.consume();
+    consumer.connect({}, jest.fn());
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+    firstConsumer.emit('data', {
+      topic: 'upsert.message',
+      partition: 0,
+      offset: 10,
+      value: Buffer.from('one'),
+    });
+
+    await advanceTimersInSteps(5 * 60 * 1000 + 30 * 1000);
+    jest.advanceTimersByTime(1000);
+    await flushPromises();
+
+    expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
+    expect(firstConsumer.disconnect).not.toHaveBeenCalled();
+    expect(consumer.__health()).toEqual(
+      expect.objectContaining({
+        stall_reason: 'pending_offset_stall',
+        stall_restart_enabled: false,
+      })
+    );
+  });
+
+  it('does not restart global worker service topics on pending offset stall', async () => {
+    const firstConsumer = new FakeKafkaConsumer();
+    const kafka = {
+      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+
+    consumer.subscribe(['worker.warm.replenish.request']);
+    consumer.consume();
+    consumer.connect({}, jest.fn());
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+    firstConsumer.emit('data', {
+      topic: 'worker.warm.replenish.request',
+      partition: 0,
+      offset: 10,
+      value: Buffer.from('one'),
+    });
+
+    await advanceTimersInSteps(5 * 60 * 1000 + 30 * 1000);
+    jest.advanceTimersByTime(1000);
+    await flushPromises();
+
+    expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
+    expect(firstConsumer.disconnect).not.toHaveBeenCalled();
+    expect(consumer.__health()).toEqual(
+      expect.objectContaining({
+        stall_reason: 'pending_offset_stall',
+        stall_restart_enabled: false,
+      })
+    );
+  });
+
+  it('restarts worker-scoped consumers on pending offset stall', async () => {
+    const firstConsumer = new FakeKafkaConsumer();
+    const secondConsumer = new FakeKafkaConsumer();
+    const kafka = {
+      createConsumer: jest
+        .fn()
+        .mockReturnValueOnce(firstConsumer)
+        .mockReturnValueOnce(secondConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+
+    consumer.subscribe(['worker.w1.send.message']);
+    consumer.consume();
+    consumer.connect({}, jest.fn());
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+    firstConsumer.emit('data', {
+      topic: 'worker.w1.send.message',
+      partition: 0,
+      offset: 10,
+      value: Buffer.from('one'),
+    });
+
+    await advanceTimersInSteps(5 * 60 * 1000 + 30 * 1000);
+    jest.advanceTimersByTime(1000);
+    await flushPromises();
+
+    expect(firstConsumer.disconnect).toHaveBeenCalled();
+    expect(kafka.createConsumer).toHaveBeenCalledTimes(2);
+    expect(secondConsumer.connect).toHaveBeenCalledTimes(1);
   });
 
   it('starts consuming when ready without waiting for legacy QR topic assignment', async () => {

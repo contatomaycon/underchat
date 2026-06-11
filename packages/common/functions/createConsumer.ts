@@ -60,6 +60,9 @@ const RESTART_MAX_MS = 30000;
 const SEND_IDLE_RESTART_MS = Number(
   process.env.KAFKA_CONSUMER_SEND_IDLE_RESTART_MS ?? 0
 );
+const STALL_RESTART_SCOPE = (
+  process.env.KAFKA_CONSUMER_STALL_RESTART_SCOPE ?? 'worker_scoped'
+).toLowerCase();
 const STALL_MS = readPositiveIntegerEnv('KAFKA_CONSUMER_STALL_MS', 300000);
 const STALL_CHECK_MS = readPositiveIntegerEnv(
   'KAFKA_CONSUMER_STALL_CHECK_MS',
@@ -73,6 +76,7 @@ const WATERMARK_TIMEOUT_MS = readPositiveIntegerEnv(
   'KAFKA_CONSUMER_WATERMARK_TIMEOUT_MS',
   2000
 );
+const GLOBAL_WORKER_TOPIC_SEGMENTS = new Set(['config', 'warm', 'lifecycle']);
 
 function isWorkerSendTopic(topic: string): boolean {
   const parts = topic.split('.');
@@ -83,6 +87,33 @@ function isWorkerSendTopic(topic: string): boolean {
     parts[2] === 'send' &&
     parts[3] === 'message'
   );
+}
+
+function isWorkerScopedTopic(topic: string): boolean {
+  const parts = topic.split('.');
+  return (
+    parts.length >= 4 &&
+    parts[0] === 'worker' &&
+    parts[1].length > 0 &&
+    !GLOBAL_WORKER_TOPIC_SEGMENTS.has(parts[1])
+  );
+}
+
+function shouldRestartStalledConsumerForTopics(topics: string[]): boolean {
+  if (STALL_RESTART_SCOPE === 'all') {
+    return true;
+  }
+
+  if (
+    STALL_RESTART_SCOPE === 'none' ||
+    STALL_RESTART_SCOPE === 'off' ||
+    STALL_RESTART_SCOPE === 'disabled' ||
+    STALL_RESTART_SCOPE === 'false'
+  ) {
+    return false;
+  }
+
+  return topics.some(isWorkerScopedTopic);
 }
 
 function kafkaErrorCode(error: unknown): number | undefined {
@@ -175,6 +206,8 @@ class ManagedKafkaConsumer extends EventEmitter {
       oldest_pending_age_ms: pending.oldestPendingAgeMs,
       restart_count: this.restartCount,
       consecutive_stall_restart_count: this.consecutiveStallRestarts,
+      stall_restart_scope: STALL_RESTART_SCOPE,
+      stall_restart_enabled: this.isStallRestartEnabled(),
       last_message_at: this.lastMessageAt,
       last_commit_at: this.lastCommitAt,
       last_progress_at: this.lastProgressAt,
@@ -263,7 +296,16 @@ class ManagedKafkaConsumer extends EventEmitter {
     const consumer = this.current;
     if (!consumer || !this.connected) {
       const error = new Error('Kafka consumer is not connected');
-      this.scheduleRestart('commit_without_connection', error);
+      this.lastError = error.message;
+      logger.debug(
+        {
+          type: 'kafka.commit_without_connection',
+          group_id: this.groupId,
+          topics: this.topics,
+          error: error.message,
+        },
+        'Kafka consumer commit skipped because consumer is not connected'
+      );
       throw error;
     }
 
@@ -351,6 +393,7 @@ class ManagedKafkaConsumer extends EventEmitter {
   disconnect(callback?: () => void): this {
     this.closed = true;
     this.clearTimers();
+    this.clearOffsetTracking();
     const consumer = this.current;
     this.current = null;
     this.connected = false;
@@ -738,6 +781,7 @@ class ManagedKafkaConsumer extends EventEmitter {
     this.clearWatchdog();
     this.connected = false;
     this.connecting = false;
+    this.clearOffsetTracking();
 
     const consumer = this.current;
     this.current = null;
@@ -780,9 +824,12 @@ class ManagedKafkaConsumer extends EventEmitter {
     await this.refreshLagSnapshot(this.current, assignments);
 
     const pending = this.getPendingHealth();
+    const canRestartOnStall = this.isStallRestartEnabled();
     if (pending.oldestPendingAgeMs >= STALL_MS) {
       this.stallReason = 'pending_offset_stall';
-      this.scheduleRestart('pending_offset_stall_watchdog');
+      if (canRestartOnStall) {
+        this.scheduleRestart('pending_offset_stall_watchdog');
+      }
       return;
     }
 
@@ -793,7 +840,9 @@ class ManagedKafkaConsumer extends EventEmitter {
     const noCommitProgressMs = Date.now() - this.lastProgressAt;
     if (lag > 0 && noCommitProgressMs >= STALL_MS) {
       this.stallReason = 'lag_no_commit_progress';
-      this.scheduleRestart('lag_no_commit_progress_watchdog');
+      if (canRestartOnStall) {
+        this.scheduleRestart('lag_no_commit_progress_watchdog');
+      }
       return;
     }
 
@@ -810,6 +859,10 @@ class ManagedKafkaConsumer extends EventEmitter {
         this.scheduleRestart('send_idle_watchdog');
       }
     }
+  }
+
+  private isStallRestartEnabled(): boolean {
+    return shouldRestartStalledConsumerForTopics(this.topics);
   }
 
   private recordMessage(message: {
@@ -1013,6 +1066,11 @@ class ManagedKafkaConsumer extends EventEmitter {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
     }
+  }
+
+  private clearOffsetTracking(): void {
+    this.pendingOffsets.clear();
+    this.partitionLag.clear();
   }
 
   private clearConnectTimeout(): void {

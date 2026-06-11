@@ -21,6 +21,8 @@ export interface IKafkaConsumerHealthSnapshot {
   oldest_pending_age_ms?: number;
   restart_count: number;
   consecutive_stall_restart_count?: number;
+  stall_restart_scope?: string;
+  stall_restart_enabled?: boolean;
   last_message_at: number;
   last_commit_at: number;
   last_progress_at?: number;
