@@ -15,6 +15,9 @@ type RedisStreamClient = Redis & {
   xdel(...args: RedisStreamValue[]): Promise<number>;
   xpending(...args: RedisStreamValue[]): Promise<unknown>;
 };
+type RedisDeleteClient = Redis & {
+  unlink?: (...keys: string[]) => Promise<number>;
+};
 
 export interface WorkerConnectionQrCodeRedisStateInvalidationOptions {
   accountId?: string;
@@ -30,6 +33,10 @@ export interface WorkerConnectionQrCodeRedisStateInvalidationResult {
   deleted_keys: number;
   scanned_processed_keys: number;
   keys: string[];
+  duration_ms?: number;
+  group_destroy_count?: number;
+  group_destroy_timeout_count?: number;
+  scan_timeout_count?: number;
 }
 
 export interface WorkerConnectionQrCodeRedisStreamMessage {
@@ -59,6 +66,30 @@ export class WorkerConnectionQrCodeRedisQueueService {
   static readonly CLAIM_MIN_IDLE_MS = 3000;
   static readonly READ_COUNT = 10;
   static readonly PROCESSED_TTL_SECONDS = 300;
+  static readonly INVALIDATE_SCAN_COUNT = Math.max(
+    100,
+    Math.min(
+      5_000,
+      Number(process.env.CONNECTION_QRCODE_REDIS_INVALIDATE_SCAN_COUNT) || 1000
+    )
+  );
+  static readonly INVALIDATE_SCAN_TIMEOUT_MS = Math.max(
+    500,
+    Math.min(
+      10_000,
+      Number(process.env.CONNECTION_QRCODE_REDIS_INVALIDATE_SCAN_TIMEOUT_MS) ||
+        2_000
+    )
+  );
+  static readonly INVALIDATE_COMMAND_TIMEOUT_MS = Math.max(
+    500,
+    Math.min(
+      10_000,
+      Number(
+        process.env.CONNECTION_QRCODE_REDIS_INVALIDATE_COMMAND_TIMEOUT_MS
+      ) || 2_000
+    )
+  );
   static readonly SUPPORTED_WORKER_TYPES = [
     EWorkerType.baileys,
     EWorkerType.wwebjs,
@@ -117,6 +148,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
     workerId: string,
     options: WorkerConnectionQrCodeRedisStateInvalidationOptions
   ): Promise<WorkerConnectionQrCodeRedisStateInvalidationResult> {
+    const startedAt = Date.now();
     const workerTypes = this.workerTypesForInvalidation(options);
     const keys = new Set<string>([
       this.legacyStreamKey(workerId),
@@ -130,29 +162,100 @@ export class WorkerConnectionQrCodeRedisQueueService {
       keys.add(this.streamKey(workerId, workerTypeId));
     }
 
-    const typedProcessedKeys = await this.scanKeys(
-      `connection:qrcode:*:${workerId}:processed:*`
-    );
-    const legacyProcessedKeys = await this.scanKeys(
-      `connection:qrcode:${workerId}:processed:*`
-    );
+    recordConnectionLifecycle({
+      stage: 'connection.qrcode.redis_state.invalidate_start',
+      decision: 'invalidate_qrcode_redis_state',
+      outcome: 'started',
+      worker_id: workerId,
+      account_id: options.accountId,
+      worker_type: options.workerTypeId,
+      worker_type_id: options.workerTypeId,
+      previous_worker_type_id: options.previousWorkerTypeId,
+      reason: options.reason,
+      recreate_reason: options.recreateReason,
+      source: options.source,
+      runtime_generation: options.runtimeGeneration,
+      known_key_count: keys.size,
+      worker_type_count: workerTypes.length,
+    });
+
+    const groupDestroyStartedAt = Date.now();
+    const groupDestroyResults = await Promise.all([
+      this.destroyGroupByKeyWithTimeout(
+        workerId,
+        this.legacyStreamKey(workerId),
+        this.legacyConsumerGroup(workerId),
+        options
+      ),
+      ...workerTypes.map((workerTypeId) =>
+        this.destroyGroupIfPresent(workerId, workerTypeId, options)
+      ),
+    ]);
+    const groupDestroyTimeoutCount = groupDestroyResults.filter(
+      (result) => result.timedOut
+    ).length;
+
+    recordConnectionLifecycle({
+      stage: 'connection.qrcode.redis_state.groups_invalidated',
+      decision: 'destroy_qrcode_redis_stream_group',
+      outcome: groupDestroyTimeoutCount > 0 ? 'partial_timeout' : 'completed',
+      level: groupDestroyTimeoutCount > 0 ? 'warn' : 'info',
+      worker_id: workerId,
+      account_id: options.accountId,
+      worker_type: options.workerTypeId,
+      worker_type_id: options.workerTypeId,
+      previous_worker_type_id: options.previousWorkerTypeId,
+      reason: options.reason,
+      source: options.source,
+      group_destroy_count: groupDestroyResults.length,
+      group_destroy_timeout_count: groupDestroyTimeoutCount,
+      duration_ms: Date.now() - groupDestroyStartedAt,
+    });
+
+    const scanStartedAt = Date.now();
+    const [typedScan, legacyScan] = await Promise.all([
+      this.scanKeysWithTimeout(
+        workerId,
+        `connection:qrcode:*:${workerId}:processed:*`,
+        options
+      ),
+      this.scanKeysWithTimeout(
+        workerId,
+        `connection:qrcode:${workerId}:processed:*`,
+        options
+      ),
+    ]);
+    const typedProcessedKeys = typedScan.keys;
+    const legacyProcessedKeys = legacyScan.keys;
     const processedKeys = [...typedProcessedKeys, ...legacyProcessedKeys];
     for (const key of processedKeys) {
       keys.add(key);
     }
+    const scanTimeoutCount =
+      Number(typedScan.timedOut) + Number(legacyScan.timedOut);
 
-    await this.destroyGroupByKey(
-      workerId,
-      this.legacyStreamKey(workerId),
-      this.legacyConsumerGroup(workerId),
-      options
-    );
-    for (const workerTypeId of workerTypes) {
-      await this.destroyGroupIfPresent(workerId, workerTypeId, options);
-    }
+    recordConnectionLifecycle({
+      stage: 'connection.qrcode.redis_state.processed_keys_scanned',
+      decision: 'scan_qrcode_processed_keys',
+      outcome: scanTimeoutCount > 0 ? 'partial_timeout' : 'completed',
+      level: scanTimeoutCount > 0 ? 'warn' : 'info',
+      worker_id: workerId,
+      account_id: options.accountId,
+      worker_type: options.workerTypeId,
+      worker_type_id: options.workerTypeId,
+      previous_worker_type_id: options.previousWorkerTypeId,
+      reason: options.reason,
+      source: options.source,
+      scanned_processed_keys: processedKeys.length,
+      scan_timeout_count: scanTimeoutCount,
+      duration_ms: Date.now() - scanStartedAt,
+    });
 
     const keyList = [...keys];
-    const deletedKeys = keyList.length ? await this.redis.del(...keyList) : 0;
+    const deleteStartedAt = Date.now();
+    const deletedKeys = keyList.length
+      ? await this.deleteKeysWithTimeout(workerId, keyList, options)
+      : 0;
 
     recordConnectionLifecycle({
       stage: 'connection.qrcode.redis_state.invalidated',
@@ -171,12 +274,21 @@ export class WorkerConnectionQrCodeRedisQueueService {
       scanned_processed_keys: processedKeys.length,
       key_count: keyList.length,
       worker_type_count: workerTypes.length,
+      group_destroy_count: groupDestroyResults.length,
+      group_destroy_timeout_count: groupDestroyTimeoutCount,
+      scan_timeout_count: scanTimeoutCount,
+      delete_duration_ms: Date.now() - deleteStartedAt,
+      duration_ms: Date.now() - startedAt,
     });
 
     return {
       deleted_keys: deletedKeys,
       scanned_processed_keys: processedKeys.length,
       keys: keyList,
+      duration_ms: Date.now() - startedAt,
+      group_destroy_count: groupDestroyResults.length,
+      group_destroy_timeout_count: groupDestroyTimeoutCount,
+      scan_timeout_count: scanTimeoutCount,
     };
   }
 
@@ -647,17 +759,60 @@ export class WorkerConnectionQrCodeRedisQueueService {
     workerId: string,
     workerTypeId: string,
     options: WorkerConnectionQrCodeRedisStateInvalidationOptions
-  ): Promise<void> {
+  ): Promise<{ timedOut: boolean }> {
     const streamKey = this.streamKey(workerId, workerTypeId);
     const consumerGroup = this.consumerGroup(workerId, workerTypeId);
 
-    await this.destroyGroupByKey(
+    return this.destroyGroupByKeyWithTimeout(
       workerId,
       streamKey,
       consumerGroup,
       options,
       workerTypeId
     );
+  }
+
+  private async destroyGroupByKeyWithTimeout(
+    workerId: string,
+    streamKey: string,
+    consumerGroup: string,
+    options: WorkerConnectionQrCodeRedisStateInvalidationOptions,
+    workerTypeId?: string
+  ): Promise<{ timedOut: boolean }> {
+    try {
+      await this.withTimeout(
+        () =>
+          this.destroyGroupByKey(
+            workerId,
+            streamKey,
+            consumerGroup,
+            options,
+            workerTypeId
+          ),
+        WorkerConnectionQrCodeRedisQueueService.INVALIDATE_COMMAND_TIMEOUT_MS
+      );
+      return { timedOut: false };
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.qrcode.redis_state.group_destroy_timeout',
+        decision: 'destroy_qrcode_redis_stream_group',
+        outcome: 'timeout',
+        reason: 'group_destroy_timeout',
+        level: 'warn',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type: workerTypeId,
+        worker_type_id: workerTypeId,
+        previous_worker_type_id: options.previousWorkerTypeId,
+        stream_key: streamKey,
+        consumer_group: consumerGroup,
+        source: options.source,
+        timeout_ms:
+          WorkerConnectionQrCodeRedisQueueService.INVALIDATE_COMMAND_TIMEOUT_MS,
+        error: getErrorMessage(error),
+      });
+      return { timedOut: true };
+    }
   }
 
   private async destroyGroupByKey(
@@ -689,6 +844,39 @@ export class WorkerConnectionQrCodeRedisQueueService {
     }
   }
 
+  private async scanKeysWithTimeout(
+    workerId: string,
+    match: string,
+    options: WorkerConnectionQrCodeRedisStateInvalidationOptions
+  ): Promise<{ keys: string[]; timedOut: boolean }> {
+    try {
+      const keys = await this.withTimeout(
+        () => this.scanKeys(match),
+        WorkerConnectionQrCodeRedisQueueService.INVALIDATE_SCAN_TIMEOUT_MS
+      );
+      return { keys, timedOut: false };
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.qrcode.redis_state.scan_timeout',
+        decision: 'scan_qrcode_processed_keys',
+        outcome: 'timeout',
+        reason: 'scan_timeout',
+        level: 'warn',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type: options.workerTypeId,
+        worker_type_id: options.workerTypeId,
+        previous_worker_type_id: options.previousWorkerTypeId,
+        match,
+        source: options.source,
+        timeout_ms:
+          WorkerConnectionQrCodeRedisQueueService.INVALIDATE_SCAN_TIMEOUT_MS,
+        error: getErrorMessage(error),
+      });
+      return { keys: [], timedOut: true };
+    }
+  }
+
   private async scanKeys(match: string): Promise<string[]> {
     const keys: string[] = [];
     let cursor = '0';
@@ -699,7 +887,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
         'MATCH',
         match,
         'COUNT',
-        100
+        WorkerConnectionQrCodeRedisQueueService.INVALIDATE_SCAN_COUNT
       );
       cursor = String(response[0]);
       const batch = Array.isArray(response[1]) ? response[1] : [];
@@ -709,6 +897,80 @@ export class WorkerConnectionQrCodeRedisQueueService {
     } while (cursor !== '0');
 
     return keys;
+  }
+
+  private async deleteKeysWithTimeout(
+    workerId: string,
+    keys: string[],
+    options: WorkerConnectionQrCodeRedisStateInvalidationOptions
+  ): Promise<number> {
+    try {
+      return await this.withTimeout(
+        () => this.deleteKeys(keys),
+        WorkerConnectionQrCodeRedisQueueService.INVALIDATE_COMMAND_TIMEOUT_MS
+      );
+    } catch (error) {
+      recordConnectionLifecycle({
+        stage: 'connection.qrcode.redis_state.delete_timeout',
+        decision: 'delete_qrcode_redis_state_keys',
+        outcome: 'timeout',
+        reason: 'delete_timeout',
+        level: 'warn',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type: options.workerTypeId,
+        worker_type_id: options.workerTypeId,
+        previous_worker_type_id: options.previousWorkerTypeId,
+        source: options.source,
+        key_count: keys.length,
+        timeout_ms:
+          WorkerConnectionQrCodeRedisQueueService.INVALIDATE_COMMAND_TIMEOUT_MS,
+        error: getErrorMessage(error),
+      });
+      return 0;
+    }
+  }
+
+  private async deleteKeys(keys: string[]): Promise<number> {
+    const redis = this.redis as RedisDeleteClient;
+    if (typeof redis.unlink === 'function') {
+      return redis.unlink(...keys);
+    }
+
+    return this.redis.del(...keys);
+  }
+
+  private withTimeout<T>(
+    action: () => Promise<T>,
+    timeoutMs: number
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Redis operation timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+
+      const finish = (callback: () => void): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        callback();
+      };
+
+      try {
+        action().then(
+          (value) => finish(() => resolve(value)),
+          (error) => finish(() => reject(error))
+        );
+      } catch (error) {
+        finish(() => reject(error));
+      }
+    });
   }
 
   private optionalNumber(value: string | undefined): number | undefined {

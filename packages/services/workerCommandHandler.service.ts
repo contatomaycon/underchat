@@ -79,6 +79,7 @@ import {
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
 import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
 import { WorkerConnectionQrCodeRedisQueueService } from '@core/services/workerConnectionQrCodeRedisQueue.service';
+import { IWorkerRuntimeHealthResponseProto } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -1356,6 +1357,28 @@ export class WorkerCommandHandlerService {
       workerStatusId
     );
     const shouldPublishAsQrAttempt = this.isNotifyQrAttemptState(payload);
+    const qrWorkerData = shouldPublishAsQrAttempt
+      ? await this.resolveWorkerDataForContainer(workerId, accountId).catch(
+          (err) => {
+            recordConnectionQrSummary({
+              event: 'balancer_qrcode_notify_identity_lookup_error',
+              ...summarizeConnectionQrState(payload),
+              reason: 'worker_data_lookup_failed',
+              error: getErrorMessage(err),
+              publish_source: 'notify_worker_status',
+              level: 'warn',
+            });
+            return null;
+          }
+        )
+      : null;
+    if (qrWorkerData) {
+      payload.worker_type_id ??= qrWorkerData.workerTypeId;
+      payload.worker_status_id ??= qrWorkerData.workerStatusId;
+      payload.runtime_generation ??= qrWorkerData.runtimeGeneration;
+      payload.warm_pool_id ??= qrWorkerData.warmPoolId ?? undefined;
+      payload.container_id ??= qrWorkerData.containerId ?? undefined;
+    }
     const isDisponibleWithDisconnectedUser =
       workerStatusId === EWorkerStatus.disponible &&
       input.disconnected_user === true;
@@ -2684,6 +2707,23 @@ export class WorkerCommandHandlerService {
           ignored: true,
           reason: 'active_attempt_mismatch',
         };
+      }
+
+      if (!state.qrcode) {
+        const cached = await this.getCachedQrAttemptState(
+          state.worker_id,
+          state.worker_type_id
+        );
+        if (
+          this.isActiveQrAttemptState(cached) &&
+          cached.connection_attempt_id === incomingAttempt &&
+          Boolean(cached.qrcode)
+        ) {
+          return {
+            ignored: true,
+            reason: 'cached_qr_wins_over_without_qr',
+          };
+        }
       }
 
       return { ignored: false };
@@ -4554,10 +4594,7 @@ export class WorkerCommandHandlerService {
   private shouldReconcileRecreatedWorkerConnection(
     data: IWorkerPayload
   ): boolean {
-    return (
-      data.remove_session !== true &&
-      data.previous_worker_status_id === EWorkerStatus.online
-    );
+    return data.remove_session !== true;
   }
 
   private isConnectedConnectionState(
@@ -4568,6 +4605,103 @@ export class WorkerCommandHandlerService {
       state?.status === EBaileysConnectionStatus.connected ||
       state?.code === ECodeMessage.connectionEstablished
     );
+  }
+
+  private isConnectedRuntimeHealth(
+    health: IWorkerRuntimeHealthResponseProto | undefined,
+    workerType: EWorkerType
+  ): boolean {
+    return (
+      health?.ready === true &&
+      health?.activated === true &&
+      health?.standby !== true &&
+      health?.has_session === true &&
+      (!health.worker_type_id || health.worker_type_id === workerType) &&
+      !health.error
+    );
+  }
+
+  private async probeRecreatedWorkerRuntimeHealth(
+    data: IWorkerPayload,
+    workerType: EWorkerType
+  ): Promise<RecreateConnectionReconciliation | null> {
+    try {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_runtime_health_start',
+        decision: 'probe_recreated_worker_runtime_health',
+        outcome: 'started',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        previous_worker_status_id: data.previous_worker_status_id,
+      });
+
+      const health = await this.workerBaileysGrpcClientService.runtimeHealth(
+        data.worker_id,
+        { worker_id: data.worker_id },
+        workerType
+      );
+      const connected = this.isConnectedRuntimeHealth(health, workerType);
+      const typeMismatch =
+        Boolean(health?.worker_type_id) && health.worker_type_id !== workerType;
+
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_runtime_health_success',
+        decision: 'probe_recreated_worker_runtime_health',
+        outcome: connected ? 'connected' : 'not_connected',
+        reason: typeMismatch ? 'runtime_type_mismatch' : undefined,
+        level: typeMismatch ? 'warn' : 'info',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        runtime_worker_type_id: health?.worker_type_id,
+        runtime_generation: health?.runtime_generation,
+        runtime_state: health?.runtime_state,
+        runtime_ready: health?.ready,
+        runtime_activated: health?.activated,
+        runtime_standby: health?.standby,
+        runtime_has_session: health?.has_session,
+        runtime_has_qr: health?.has_qr,
+        qr_stream_ready: health?.qr_stream_ready,
+        runtime_error: health?.error,
+        previous_worker_status_id: data.previous_worker_status_id,
+      });
+
+      if (!connected) {
+        return null;
+      }
+
+      return {
+        workerStatusId: EWorkerStatus.online,
+        connectionState: {
+          code: ECodeMessage.connectionEstablished,
+          status: EBaileysConnectionStatus.connected,
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_status_id: EWorkerStatus.online,
+        },
+      };
+    } catch (err) {
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_runtime_health_error',
+        decision: 'probe_recreated_worker_runtime_health',
+        outcome: 'error',
+        reason: 'runtime_health_failed',
+        level: 'warn',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
+        previous_worker_status_id: data.previous_worker_status_id,
+        error: getErrorMessage(err),
+      });
+      return null;
+    }
   }
 
   private async reconcileRecreatedWorkerConnection(
@@ -4586,6 +4720,32 @@ export class WorkerCommandHandlerService {
             : 'previous_status_not_online',
         worker_id: data.worker_id,
         account_id: data.account_id,
+        previous_worker_status_id: data.previous_worker_status_id,
+      });
+
+      return { workerStatusId: EWorkerStatus.disponible };
+    }
+
+    if (data.previous_worker_status_id !== EWorkerStatus.online) {
+      const healthReconciliation = await this.probeRecreatedWorkerRuntimeHealth(
+        data,
+        workerType
+      );
+
+      if (healthReconciliation) {
+        return healthReconciliation;
+      }
+
+      recordConnectionLifecycle({
+        stage:
+          'connection.balancer.command_handler.recreate_connection_reconcile_skipped',
+        decision: 'reconcile_recreated_worker_connection',
+        outcome: 'skipped',
+        reason: 'runtime_health_not_connected',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type: workerType,
+        worker_type_id: workerType,
         previous_worker_status_id: data.previous_worker_status_id,
       });
 
@@ -4696,12 +4856,11 @@ export class WorkerCommandHandlerService {
       return inputUpdate;
     }
 
-    if (
-      reconciliation.workerStatusId === EWorkerStatus.online &&
-      reconciliation.connectionState?.phone
-    ) {
-      inputUpdate.number = reconciliation.connectionState.phone;
+    if (reconciliation.workerStatusId === EWorkerStatus.online) {
       inputUpdate.connection_date = currentTime();
+      if (reconciliation.connectionState?.phone) {
+        inputUpdate.number = reconciliation.connectionState.phone;
+      }
     }
 
     return inputUpdate;

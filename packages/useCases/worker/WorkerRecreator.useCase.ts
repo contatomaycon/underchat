@@ -23,6 +23,15 @@ import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLif
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerRecreateCooldownError } from '@core/common/exceptions/WorkerRecreateCooldownError';
 import { getWorkerRecreateAvailableAt } from '@core/common/functions/workerRecreateCooldown';
+import { getErrorMessage } from '@core/common/functions/toError';
+
+const RECREATE_STATUS_PUBLISH_TIMEOUT_MS = Math.max(
+  500,
+  Math.min(
+    10_000,
+    Number(process.env.CONNECTION_RECREATE_STATUS_PUBLISH_TIMEOUT_MS) || 2_500
+  )
+);
 
 @injectable()
 export class WorkerRecreatorUseCase {
@@ -157,6 +166,116 @@ export class WorkerRecreatorUseCase {
       await this.publishWorkerRecreateEnqueueError(payload, error);
       throw error;
     }
+  }
+
+  private async publishRecreatingStatus(
+    payload: IWorkerPayload,
+    connectionLifecycleId: string,
+    lifecycleOperationId: string
+  ): Promise<void> {
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.centrifugo_publish_start',
+      decision: 'publish_worker_recreating_state',
+      outcome: 'started',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      server_id: payload.server_id,
+      worker_type: payload.worker_type_id,
+      worker_type_id: payload.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+      centrifugo_channel: workerCentrifugoQueue(payload.account_id),
+    });
+
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(payload.account_id),
+      payload
+    );
+
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.centrifugo_publish_success',
+      decision: 'publish_worker_recreating_state',
+      outcome: 'success',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      server_id: payload.server_id,
+      worker_type: payload.worker_type_id,
+      worker_type_id: payload.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+    });
+  }
+
+  private publishRecreatingStatusBestEffort(
+    payload: IWorkerPayload,
+    connectionLifecycleId: string,
+    lifecycleOperationId: string
+  ): void {
+    recordConnectionLifecycle({
+      stage: 'connection.manager.worker_recreator.centrifugo_publish_scheduled',
+      decision: 'publish_worker_recreating_state',
+      outcome: 'scheduled',
+      connection_lifecycle_id: connectionLifecycleId,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      server_id: payload.server_id,
+      worker_type: payload.worker_type_id,
+      worker_type_id: payload.worker_type_id,
+      lifecycle_operation_id: lifecycleOperationId,
+      worker_status_id: EWorkerStatus.recreating,
+      timeout_ms: RECREATE_STATUS_PUBLISH_TIMEOUT_MS,
+    });
+
+    void this.withTimeout(
+      this.publishRecreatingStatus(
+        payload,
+        connectionLifecycleId,
+        lifecycleOperationId
+      ),
+      RECREATE_STATUS_PUBLISH_TIMEOUT_MS
+    ).catch((error) => {
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.centrifugo_publish_error',
+        decision: 'publish_worker_recreating_state',
+        outcome: 'error',
+        reason: getErrorMessage(error).includes('timeout')
+          ? 'publish_timeout'
+          : 'publish_failed',
+        level: 'warn',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        server_id: payload.server_id,
+        worker_type: payload.worker_type_id,
+        worker_type_id: payload.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+        worker_status_id: EWorkerStatus.recreating,
+        timeout_ms: RECREATE_STATUS_PUBLISH_TIMEOUT_MS,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error(`operation timeout after ${timeoutMs}ms`)),
+        timeoutMs
+      );
+
+      promise.then(
+        (value) => {
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      );
+    });
   }
 
   async execute(
@@ -391,38 +510,6 @@ export class WorkerRecreatorUseCase {
       recreate_available_at: recreateAvailableAt,
     });
 
-    recordConnectionLifecycle({
-      stage: 'connection.manager.worker_recreator.centrifugo_publish_start',
-      decision: 'publish_worker_recreating_state',
-      outcome: 'started',
-      connection_lifecycle_id: connectionLifecycleId,
-      worker_id: workerId,
-      account_id: accountId,
-      server_id: viewWorkerBalancer.server_id,
-      worker_type: inputRecreate.worker_type_id,
-      worker_type_id: inputRecreate.worker_type_id,
-      lifecycle_operation_id: lifecycleOperationId,
-      worker_status_id: EWorkerStatus.recreating,
-      centrifugo_channel: workerCentrifugoQueue(inputRecreate.account_id),
-    });
-    await this.centrifugoService.publishSub(
-      workerCentrifugoQueue(inputRecreate.account_id),
-      inputRecreate
-    );
-    recordConnectionLifecycle({
-      stage: 'connection.manager.worker_recreator.centrifugo_publish_success',
-      decision: 'publish_worker_recreating_state',
-      outcome: 'success',
-      connection_lifecycle_id: connectionLifecycleId,
-      worker_id: workerId,
-      account_id: accountId,
-      server_id: viewWorkerBalancer.server_id,
-      worker_type: inputRecreate.worker_type_id,
-      worker_type_id: inputRecreate.worker_type_id,
-      lifecycle_operation_id: lifecycleOperationId,
-      worker_status_id: EWorkerStatus.recreating,
-    });
-
     await this.enqueueLifecycleOrMarkError(
       inputRecreate,
       this.buildLifecycleMessage({
@@ -430,6 +517,11 @@ export class WorkerRecreatorUseCase {
         connectionLifecycleId,
         operationId: lifecycleOperationId,
       })
+    );
+    this.publishRecreatingStatusBestEffort(
+      inputRecreate,
+      connectionLifecycleId,
+      lifecycleOperationId
     );
 
     const ack: IWorkerLifecycleAck = {

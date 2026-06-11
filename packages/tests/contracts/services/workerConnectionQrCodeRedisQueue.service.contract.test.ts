@@ -65,14 +65,14 @@ describe('WorkerConnectionQrCodeRedisQueueService', () => {
       'MATCH',
       'connection:qrcode:*:worker-1:processed:*',
       'COUNT',
-      100
+      WorkerConnectionQrCodeRedisQueueService.INVALIDATE_SCAN_COUNT
     );
     expect(redis.scan).toHaveBeenCalledWith(
       '0',
       'MATCH',
       'connection:qrcode:worker-1:processed:*',
       'COUNT',
-      100
+      WorkerConnectionQrCodeRedisQueueService.INVALIDATE_SCAN_COUNT
     );
     expect(redis.xgroup).toHaveBeenCalledWith(
       'DESTROY',
@@ -106,6 +106,35 @@ describe('WorkerConnectionQrCodeRedisQueueService', () => {
       deleted_keys: 14,
       scanned_processed_keys: 2,
     });
+  });
+
+  it('uses Redis UNLINK for QR state invalidation when available', async () => {
+    const redis = {
+      scan: jest.fn(async (..._args: unknown[]) => ['0', [] as string[]]),
+      xgroup: jest.fn(async (..._args: unknown[]) => 1),
+      unlink: jest.fn(async (..._args: unknown[]) => 12),
+      del: jest.fn(async (..._args: unknown[]) => 12),
+    };
+    const service = new WorkerConnectionQrCodeRedisQueueService(redis as never);
+
+    await expect(
+      service.invalidateWorkerState('worker-1', {
+        accountId: 'account-1',
+        workerTypeId: EWorkerType.wwebjs,
+        reason: 'recreate_requested',
+      })
+    ).resolves.toMatchObject({
+      deleted_keys: 12,
+      scanned_processed_keys: 0,
+    });
+
+    expect(redis.unlink.mock.calls[0]).toEqual(
+      expect.arrayContaining([
+        'connection:qrcode:worker-1:requests',
+        `connection:qrcode:${EWorkerType.wwebjs}:worker-1:requests`,
+      ])
+    );
+    expect(redis.del).not.toHaveBeenCalled();
   });
 
   it('reads QR stream messages through a dedicated Redis duplicate', async () => {

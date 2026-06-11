@@ -142,6 +142,7 @@ function buildHandler(
       deleteAssignedByWorkerId: jest.Mock;
     };
     workerInspection?: WorkerContainerInspection;
+    runtimeHealthResponse?: Record<string, unknown>;
   } = {}
 ) {
   const workerService = {
@@ -224,6 +225,18 @@ function buildHandler(
     requestConnection: jest.fn(async () => buildConnectedState()),
     waitForReady: jest.fn(async () => 'worker-1:50053'),
     activateRuntime: jest.fn(async () => ({ activated: true })),
+    runtimeHealth: jest.fn(async () => ({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      activated: true,
+      ready: true,
+      standby: false,
+      has_session: false,
+      runtime_state: 'active',
+      qr_stream_ready: true,
+      ...overrides.runtimeHealthResponse,
+    })),
   };
   const serverSshViewerRepository = {
     viewServerSshById: jest.fn(async () => null),
@@ -1844,6 +1857,52 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_status_id: EWorkerStatus.online,
         container_id: 'container-1',
         number: '+556192037138',
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      expect.stringContaining('account-1'),
+      expect.objectContaining({
+        status: EBaileysConnectionStatus.connected,
+        code: ECodeMessage.connectionEstablished,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_status_id: EWorkerStatus.online,
+      })
+    );
+  });
+
+  it('marks a recreated worker online when runtime health reports an authenticated session', async () => {
+    const deps = buildHandler({
+      runtimeHealthResponse: {
+        worker_type_id: EWorkerType.wwebjs,
+        has_session: true,
+      },
+    });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      previous_worker_status_id: EWorkerStatus.disponible,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      { worker_id: 'worker-1' },
+      EWorkerType.wwebjs
+    );
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).not.toHaveBeenCalled();
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        container_id: 'container-1',
       })
     );
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(

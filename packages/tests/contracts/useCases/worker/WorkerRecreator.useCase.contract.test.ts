@@ -48,6 +48,7 @@ function makeSut() {
   };
   const centrifugoService = {
     publishSub: jest.fn(async () => undefined),
+    publish: jest.fn(async () => undefined),
   };
   const workerGrpcClientService = {
     recreateWorker: jest.fn(async () => undefined),
@@ -72,8 +73,12 @@ function makeSut() {
   };
 }
 
+const flushPromises = async (): Promise<void> => {
+  await new Promise((resolve) => setImmediate(resolve));
+};
+
 describe('WorkerRecreatorUseCase', () => {
-  it('returns ack after publishing recreating status and enqueueing lifecycle', async () => {
+  it('returns ack after enqueueing lifecycle and schedules recreating status', async () => {
     const { sut, centrifugoService, workerLifecycleQueueService } = makeSut();
 
     await expect(
@@ -104,6 +109,42 @@ describe('WorkerRecreatorUseCase', () => {
         previous_worker_status_id: EWorkerStatus.online,
       })
     );
+    expect(
+      workerLifecycleQueueService.publish.mock.invocationCallOrder[0]
+    ).toBeLessThan(centrifugoService.publishSub.mock.invocationCallOrder[0]);
+  });
+
+  it('does not wait for a slow recreating status publish before returning ack', async () => {
+    const { sut, centrifugoService, workerLifecycleQueueService } = makeSut();
+    let resolvePublish!: () => void;
+    centrifugoService.publishSub.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          resolvePublish = () => resolve(undefined);
+        })
+    );
+
+    await expect(
+      sut.execute(t, 'account-1', 'worker-1', {
+        previous_worker_status_id: EWorkerStatus.online,
+      })
+    ).resolves.toMatchObject({
+      code: 202,
+      queued: true,
+      worker_id: 'worker-1',
+    });
+
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalled();
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      workerCentrifugoQueue('account-1'),
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.recreating,
+      })
+    );
+
+    resolvePublish();
+    await flushPromises();
   });
 
   it('publishes logout before recreating when session cleanup is requested', async () => {
