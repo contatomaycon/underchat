@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { inject, singleton } from 'tsyringe';
-import type { KafkaConsumer, MessageHeader } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
@@ -17,13 +17,6 @@ import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { currentTime } from '@core/common/functions/currentTime';
 import { v7 as uuidv7 } from 'uuid';
-import { runWithKafkaTraceContext } from '@core/plugins/telemetry/messageLifecycleDebug';
-import {
-  buildConnectionLifecycleContext,
-  isConnectionLifecycleDebugEnabled,
-  recordConnectionLifecycle,
-  runWithConnectionLifecycleContext,
-} from '@core/plugins/telemetry/connectionLifecycleDebug';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 
 @singleton()
@@ -74,108 +67,29 @@ export class WorkerLifecycleConsume {
     this.consumer.on('data', async (message) => {
       const payload = this.parsePayload(message.value);
       if (!payload) {
-        recordConnectionLifecycle({
-          stage: 'connection.service.lifecycle_consumer.invalid_payload',
-          decision: 'consume_worker_lifecycle',
-          outcome: 'ignored',
-          reason: 'invalid_payload',
-          level: 'warn',
-          queue_topic: topic,
-          partition: message.partition,
-          offset: message.offset,
-          raw_payload: message.value?.toString('utf8'),
-        });
         await this.commit(topic, message.partition, message.offset);
-        recordConnectionLifecycle({
-          stage:
-            'connection.service.lifecycle_consumer.invalid_payload_committed',
-          decision: 'commit_worker_lifecycle_offset',
-          outcome: 'committed',
-          reason: 'invalid_payload',
-          queue_topic: topic,
-          partition: message.partition,
-          offset: message.offset,
-        });
         return;
       }
 
       try {
-        await runWithKafkaTraceContext(message.headers, () =>
-          this.runWithLifecycleContext(payload, () =>
-            this.processPayload(payload, message.headers)
-          )
-        );
-        recordConnectionLifecycle({
-          stage: 'connection.service.lifecycle_consumer.process_success',
-          decision: 'consume_worker_lifecycle',
-          outcome: 'success',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          worker_status_id: payload.worker_status_id,
-          lifecycle_operation_id: payload.operation_id,
-          lifecycle_action: payload.action,
-          queue_topic: topic,
-          partition: message.partition,
-          offset: message.offset,
-        });
+        await this.processPayload(payload);
         await this.commit(topic, message.partition, message.offset);
-        recordConnectionLifecycle({
-          stage: 'connection.service.lifecycle_consumer.commit_success',
-          decision: 'commit_worker_lifecycle_offset',
-          outcome: 'committed',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          lifecycle_operation_id: payload.operation_id,
-          lifecycle_action: payload.action,
-          queue_topic: topic,
-          partition: message.partition,
-          offset: message.offset,
-        });
       } catch (error) {
-        recordConnectionLifecycle({
-          stage: 'connection.service.lifecycle_consumer.process_error',
-          decision: 'consume_worker_lifecycle',
-          outcome: 'error',
-          reason: 'processing_failed',
-          level: 'error',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          lifecycle_operation_id: payload.operation_id,
-          lifecycle_action: payload.action,
-          queue_topic: topic,
-          partition: message.partition,
-          offset: message.offset,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (isConnectionLifecycleDebugEnabled()) {
-          server.log.error(
-            {
-              err: error,
-              workerId: payload.worker_id,
-              action: payload.action,
-              operationId: payload.operation_id,
-            },
-            'Worker lifecycle consume failed'
-          );
-        }
+        server.log.error(
+          {
+            err: error,
+            workerId: payload.worker_id,
+            action: payload.action,
+            operationId: payload.operation_id,
+          },
+          'Worker lifecycle consume failed'
+        );
       }
     });
 
     const consumer = this.consumer;
     connectConsumer(consumer, topic, () => {
       this.isRunning = true;
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.ready',
-        decision: 'consume_worker_lifecycle',
-        outcome: 'ready',
-        queue_topic: topic,
-      });
     });
   }
 
@@ -199,83 +113,13 @@ export class WorkerLifecycleConsume {
     await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
-  private runWithLifecycleContext<T>(
-    payload: IWorkerLifecycleQueueMessage,
-    callback: () => T | Promise<T>
-  ): T | Promise<T> {
-    const contextData = buildConnectionLifecycleContext({
-      connection_lifecycle_id: payload.connection_lifecycle_id,
-      account_id: payload.account_id,
-      worker_id: payload.worker_id,
-      channel_id: payload.worker_id,
-      worker_type: payload.worker_type_id,
-      source_provider: 'service',
-      connection_action: payload.action,
-    });
-
-    return runWithConnectionLifecycleContext(contextData, callback);
-  }
-
   private async processPayload(
-    payload: IWorkerLifecycleQueueMessage,
-    headers?: MessageHeader[]
+    payload: IWorkerLifecycleQueueMessage
   ): Promise<void> {
-    recordConnectionLifecycle({
-      stage: 'connection.service.lifecycle_consumer.received',
-      decision: 'consume_worker_lifecycle',
-      outcome: 'received',
-      worker_id: payload.worker_id,
-      account_id: payload.account_id,
-      server_id: payload.server_id,
-      worker_type: payload.worker_type_id,
-      worker_status_id: payload.worker_status_id,
-      lifecycle_operation_id: payload.operation_id,
-      lifecycle_action: payload.action,
-      raw_payload: payload,
-      has_kafka_headers: Boolean(headers?.length),
-    });
-
-    recordConnectionLifecycle({
-      stage: 'connection.service.lifecycle_consumer.stale_check_start',
-      decision: 'validate_worker_lifecycle_fence',
-      outcome: 'started',
-      worker_id: payload.worker_id,
-      account_id: payload.account_id,
-      server_id: payload.server_id,
-      worker_type: payload.worker_type_id,
-      worker_status_id: payload.worker_status_id,
-      lifecycle_operation_id: payload.operation_id,
-      lifecycle_action: payload.action,
-    });
     const stale = await this.resolveStaleReason(payload);
     if (stale) {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.stale',
-        decision: 'consume_worker_lifecycle',
-        outcome: 'stale',
-        reason: stale,
-        level: 'warn',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        lifecycle_operation_id: payload.operation_id,
-        lifecycle_action: payload.action,
-      });
       return;
     }
-    recordConnectionLifecycle({
-      stage: 'connection.service.lifecycle_consumer.stale_check_success',
-      decision: 'validate_worker_lifecycle_fence',
-      outcome: 'valid',
-      worker_id: payload.worker_id,
-      account_id: payload.account_id,
-      server_id: payload.server_id,
-      worker_type: payload.worker_type_id,
-      worker_status_id: payload.worker_status_id,
-      lifecycle_operation_id: payload.operation_id,
-      lifecycle_action: payload.action,
-    });
 
     if (payload.action === 'activate_warm') {
       await this.activateWarmOrFallback(payload);
@@ -296,99 +140,18 @@ export class WorkerLifecycleConsume {
     };
 
     if (payload.action === 'create') {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.dispatch_create_start',
-        decision: 'dispatch_worker_lifecycle_grpc',
-        outcome: 'started',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        lifecycle_operation_id: payload.operation_id,
-        lifecycle_action: payload.action,
-      });
       await this.workerGrpcClientService.createWorker(workerPayload);
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.dispatch_create_success',
-        decision: 'dispatch_worker_lifecycle_grpc',
-        outcome: 'success',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        lifecycle_operation_id: payload.operation_id,
-        lifecycle_action: payload.action,
-      });
       return;
     }
 
     if (payload.action === 'recreate') {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.dispatch_recreate_start',
-        decision: 'dispatch_worker_lifecycle_grpc',
-        outcome: 'started',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        lifecycle_operation_id: payload.operation_id,
-        lifecycle_action: payload.action,
-        remove_session: payload.remove_session,
-        remove_volume: payload.remove_volume,
-      });
       await this.workerGrpcClientService.recreateWorker(workerPayload);
-      recordConnectionLifecycle({
-        stage:
-          'connection.service.lifecycle_consumer.dispatch_recreate_success',
-        decision: 'dispatch_worker_lifecycle_grpc',
-        outcome: 'success',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        lifecycle_operation_id: payload.operation_id,
-        lifecycle_action: payload.action,
-        remove_session: payload.remove_session,
-        remove_volume: payload.remove_volume,
-      });
       return;
     }
 
-    recordConnectionLifecycle({
-      stage: 'connection.service.lifecycle_consumer.dispatch_cleanup_start',
-      decision: 'dispatch_worker_lifecycle_grpc',
-      outcome: 'started',
-      worker_id: payload.worker_id,
-      account_id: payload.account_id,
-      server_id: payload.server_id,
-      worker_type: payload.worker_type_id,
-      worker_status_id: payload.worker_status_id,
-      lifecycle_operation_id: payload.operation_id,
-      lifecycle_action: payload.action,
-      remove_session: payload.remove_session,
-      remove_volume: payload.remove_volume,
-    });
     await this.workerGrpcClientService.cleanupWorker({
       ...workerPayload,
       action: EWorkerAction.cleanup,
-    });
-    recordConnectionLifecycle({
-      stage: 'connection.service.lifecycle_consumer.dispatch_cleanup_success',
-      decision: 'dispatch_worker_lifecycle_grpc',
-      outcome: 'success',
-      worker_id: payload.worker_id,
-      account_id: payload.account_id,
-      server_id: payload.server_id,
-      worker_type: payload.worker_type_id,
-      worker_status_id: payload.worker_status_id,
-      lifecycle_operation_id: payload.operation_id,
-      lifecycle_action: payload.action,
-      remove_session: payload.remove_session,
-      remove_volume: payload.remove_volume,
     });
   }
 
@@ -400,21 +163,6 @@ export class WorkerLifecycleConsume {
     }
 
     try {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_activate_start',
-        decision: 'activate_warm_worker',
-        outcome: 'started',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        warm_pool_id: payload.warm_pool_id,
-        previous_worker_type_id: payload.previous_worker_type_id,
-        lifecycle_operation_id: payload.operation_id,
-        remove_session: payload.remove_session,
-        remove_volume: payload.remove_volume,
-      });
       await this.workerGrpcClientService.activateWarmWorker(
         payload.server_id,
         {
@@ -431,51 +179,9 @@ export class WorkerLifecycleConsume {
         },
         120_000
       );
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_activate_success',
-        decision: 'activate_warm_worker',
-        outcome: 'success',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        warm_pool_id: payload.warm_pool_id,
-        previous_worker_type_id: payload.previous_worker_type_id,
-        lifecycle_operation_id: payload.operation_id,
-        remove_session: payload.remove_session,
-        remove_volume: payload.remove_volume,
-      });
       return;
     } catch (error) {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_activate_error',
-        decision: 'activate_warm_worker',
-        outcome: 'error',
-        reason: 'warm_activation_failed',
-        level: 'warn',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        warm_pool_id: payload.warm_pool_id,
-        lifecycle_operation_id: payload.operation_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
       await this.reconcileFailedWarm(payload);
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_fallback_start',
-        decision: 'fallback_create_worker_after_warm_failure',
-        outcome: 'started',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        warm_pool_id: payload.warm_pool_id,
-        lifecycle_operation_id: payload.operation_id,
-      });
       await this.workerGrpcClientService.createWorker({
         action: EWorkerAction.create,
         worker_id: payload.worker_id,
@@ -485,17 +191,14 @@ export class WorkerLifecycleConsume {
         worker_status_id: payload.worker_status_id,
         lifecycle_operation_id: payload.operation_id,
       });
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_fallback_success',
-        decision: 'fallback_create_worker_after_warm_failure',
-        outcome: 'success',
+
+      console.error('Failed to activate warm worker, fallback to create', {
         worker_id: payload.worker_id,
         account_id: payload.account_id,
         server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        worker_status_id: payload.worker_status_id,
-        warm_pool_id: payload.warm_pool_id,
+        worker_type_id: payload.worker_type_id,
         lifecycle_operation_id: payload.operation_id,
+        error,
       });
     }
   }
@@ -504,17 +207,6 @@ export class WorkerLifecycleConsume {
     payload: IWorkerLifecycleQueueMessage
   ): Promise<void> {
     try {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_delete_start',
-        decision: 'delete_failed_warm_worker',
-        outcome: 'started',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        warm_pool_id: payload.warm_pool_id,
-        lifecycle_operation_id: payload.operation_id,
-      });
       await this.workerGrpcClientService.deleteWarmWorker(
         payload.server_id,
         {
@@ -528,52 +220,20 @@ export class WorkerLifecycleConsume {
         },
         60_000
       );
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_delete_success',
-        decision: 'delete_failed_warm_worker',
-        outcome: 'success',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        warm_pool_id: payload.warm_pool_id,
-        lifecycle_operation_id: payload.operation_id,
-      });
     } catch (deleteError) {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_delete_error',
-        decision: 'delete_failed_warm_worker',
-        outcome: 'error',
-        reason: 'warm_delete_failed',
-        level: 'warn',
+      console.error('Failed to delete warm worker during reconcile', {
         worker_id: payload.worker_id,
         account_id: payload.account_id,
         server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        warm_pool_id: payload.warm_pool_id,
+        worker_type_id: payload.worker_type_id,
         lifecycle_operation_id: payload.operation_id,
-        error:
-          deleteError instanceof Error
-            ? deleteError.message
-            : String(deleteError),
+        error: deleteError,
       });
     }
 
     try {
       const settings = await this.workerWarmPoolSettingsService.view();
       if (settings.warmup_enabled && payload.worker_type_id) {
-        recordConnectionLifecycle({
-          stage: 'connection.service.lifecycle_consumer.warm_replenish_start',
-          decision: 'enqueue_warm_replenish',
-          outcome: 'started',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          warm_pool_id: payload.warm_pool_id,
-          lifecycle_operation_id: payload.operation_id,
-          reason: 'pool_miss',
-        });
         await this.workerWarmPoolQueueService.publishReplenish({
           request_id: uuidv7(),
           server_id: payload.server_id,
@@ -581,51 +241,16 @@ export class WorkerLifecycleConsume {
           reason: 'pool_miss',
           requested_at: currentTime(),
         });
-        recordConnectionLifecycle({
-          stage: 'connection.service.lifecycle_consumer.warm_replenish_success',
-          decision: 'enqueue_warm_replenish',
-          outcome: 'success',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          warm_pool_id: payload.warm_pool_id,
-          lifecycle_operation_id: payload.operation_id,
-          reason: 'pool_miss',
-        });
       } else {
-        recordConnectionLifecycle({
-          stage: 'connection.service.lifecycle_consumer.warm_replenish_skipped',
-          decision: 'enqueue_warm_replenish',
-          outcome: 'skipped',
-          reason: settings.warmup_enabled
-            ? 'worker_type_missing'
-            : 'warmup_disabled',
-          worker_id: payload.worker_id,
-          account_id: payload.account_id,
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          warm_pool_id: payload.warm_pool_id,
-          lifecycle_operation_id: payload.operation_id,
-        });
       }
     } catch (replenishError) {
-      recordConnectionLifecycle({
-        stage: 'connection.service.lifecycle_consumer.warm_replenish_error',
-        decision: 'enqueue_warm_replenish',
-        outcome: 'error',
-        reason: 'warm_replenish_enqueue_failed',
-        level: 'warn',
+      console.error('Failed to publish replenish during reconcile', {
         worker_id: payload.worker_id,
         account_id: payload.account_id,
         server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        warm_pool_id: payload.warm_pool_id,
+        worker_type_id: payload.worker_type_id,
         lifecycle_operation_id: payload.operation_id,
-        error:
-          replenishError instanceof Error
-            ? replenishError.message
-            : String(replenishError),
+        error: replenishError,
       });
     }
   }
@@ -680,7 +305,6 @@ export class WorkerLifecycleConsume {
       ) as Partial<IWorkerLifecycleQueueMessage>;
       if (
         !parsed.request_id ||
-        !parsed.connection_lifecycle_id ||
         !parsed.operation_id ||
         !parsed.action ||
         !parsed.worker_id ||

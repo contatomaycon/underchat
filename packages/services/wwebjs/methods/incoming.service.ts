@@ -31,12 +31,6 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { WwebjsDeliveryConfirmationService } from './deliveryConfirmation.service';
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
-import {
-  buildMessageLifecycleContext,
-  isMessageLifecycleDebugEnabled,
-  recordMessageLifecycle,
-  type MessageLifecycleEvent,
-} from '@core/plugins/telemetry/messageLifecycleDebug';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 
 const ACK_ERROR = -1;
@@ -784,109 +778,24 @@ export class WwebjsIncomingMessageService {
   ) {}
 
   private logEvent(eventName: string, payload: Record<string, unknown>): void {
-    if (!isMessageLifecycleDebugEnabled()) {
-      return;
-    }
-
-    const { raw_payload: rawPayload, ...payloadFields } = payload;
-    const messageId =
-      getNonEmptyString(payloadFields.messageKeyId) ??
-      getNonEmptyString(payloadFields.messageId) ??
-      getNonEmptyString(payloadFields.id) ??
-      getNonEmptyString(payloadFields.afterId) ??
-      getNonEmptyString(payloadFields.beforeId);
-    const from = getNonEmptyString(payloadFields.from);
-    const to = getNonEmptyString(payloadFields.to);
-    const fromMe = payloadFields.fromMe === true;
-    const remoteJid =
-      getNonEmptyString(payloadFields.remoteJid) ??
-      (fromMe ? to : from) ??
-      to ??
-      from;
-    const remoteJidAlt = getNonEmptyString(payloadFields.remoteJidAlt);
-
-    const contextData = buildMessageLifecycleContext(
-      {
-        worker_id: wwebjsEnvironment.wwebjsWorkerId,
-        account_id: wwebjsEnvironment.wwebjsAccountId,
-        source_provider: 'wwebjs',
-        type: EMessageType.text,
-        message: {
-          key: {
-            id: messageId,
-            remoteJid,
-            remoteJidAlt,
-            fromMe,
-          },
-        },
-      },
-      'wwebjs'
-    );
-
-    recordMessageLifecycle({
-      ...contextData,
-      ...payloadFields,
-      stage: `wwebjs.event.${eventName}`,
-      decision: 'provider_event',
-      outcome: 'received',
-      raw_payload: rawPayload ?? payloadFields,
-    });
+    void eventName;
+    void payload;
   }
 
   private logLifecycleForMessage(
     msg: Message | null | undefined,
-    event: MessageLifecycleEvent
+    event: Record<string, unknown>
   ): void {
-    if (!isMessageLifecycleDebugEnabled()) {
-      return;
-    }
-
-    const remoteJid =
-      getMessageRemoteFromId(msg as Message) ??
-      getNonEmptyString(msg?.from) ??
-      getNonEmptyString(msg?.to);
-    const contextData = buildMessageLifecycleContext(
-      {
-        worker_id: wwebjsEnvironment.wwebjsWorkerId,
-        account_id: wwebjsEnvironment.wwebjsAccountId,
-        source_provider: 'wwebjs',
-        type: EMessageType.text,
-        message: {
-          key: {
-            id: getMessageIdSerialized(msg ?? {}),
-            remoteJid,
-            fromMe: msg?.fromMe,
-          },
-        },
-      },
-      'wwebjs'
-    );
-
-    recordMessageLifecycle({
-      ...contextData,
-      ...event,
-      provider_message_type: msg?.type,
-      message_text: msg?.body,
-    });
+    void msg;
+    void event;
   }
 
   private logLifecycleForUpsert(
     upsert: IUpsertMessage | null | undefined,
-    event: MessageLifecycleEvent
+    event: Record<string, unknown>
   ): void {
-    if (!isMessageLifecycleDebugEnabled()) {
-      return;
-    }
-
-    const contextData = buildMessageLifecycleContext(
-      upsert ?? undefined,
-      'wwebjs'
-    );
-    recordMessageLifecycle({
-      ...contextData,
-      ...event,
-      source_provider: 'wwebjs',
-    });
+    void upsert;
+    void event;
   }
 
   private async waitMs(ms: number): Promise<void> {
@@ -2289,47 +2198,6 @@ export class WwebjsIncomingMessageService {
     };
 
     this.logEvent('message_reaction_skip', basePayload);
-
-    if (!isMessageLifecycleDebugEnabled()) {
-      return;
-    }
-
-    const remoteJid =
-      (parentMsgId
-        ? getRemoteFromSerializedMessageId(parentMsgId)
-        : undefined) ??
-      (reactionId ? getRemoteFromSerializedMessageId(reactionId) : undefined);
-    const contextData = buildMessageLifecycleContext(
-      {
-        worker_id: wwebjsEnvironment.wwebjsWorkerId,
-        account_id: wwebjsEnvironment.wwebjsAccountId,
-        source_provider: 'wwebjs',
-        type: EMessageType.react,
-        message: {
-          key: {
-            id: reactionId,
-            remoteJid,
-            fromMe: false,
-          },
-          message: {
-            reactionMessage: {
-              key: parentMsgId ? { id: parentMsgId } : undefined,
-              text: getReactionEmoji(reaction),
-            },
-          },
-        },
-        has_quoted: false,
-      },
-      'wwebjs'
-    );
-
-    recordMessageLifecycle({
-      ...contextData,
-      ...basePayload,
-      stage: 'wwebjs.incoming.skip',
-      decision: 'reaction_live_guard',
-      outcome: 'skipped',
-    });
   }
 
   private validateLiveReaction(

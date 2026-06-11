@@ -1,4 +1,3 @@
-import { FastifyInstance } from 'fastify';
 import { inject, singleton } from 'tsyringe';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
@@ -9,7 +8,6 @@ import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
-import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 @singleton()
 export class WorkerWarmDeleteConsume {
@@ -31,7 +29,7 @@ export class WorkerWarmDeleteConsume {
     return this.consumer;
   }
 
-  async execute(_server: FastifyInstance): Promise<void> {
+  async execute(): Promise<void> {
     if (this.consumer && this.isRunning) {
       return;
     }
@@ -62,7 +60,6 @@ export class WorkerWarmDeleteConsume {
         return;
       }
 
-      const startedAt = Date.now();
       try {
         await this.workerGrpcClientService.deleteWarmWorker(payload.server_id, {
           ...payload,
@@ -72,37 +69,13 @@ export class WorkerWarmDeleteConsume {
           worker_type_id: payload.worker_type_id ?? undefined,
           warm_pool_id: payload.warm_pool_id ?? undefined,
         });
-
-        recordConnectionLifecycle({
-          stage: 'connection.service.warm_pool.delete_completed',
-          decision: 'delete_warm_worker',
-          outcome: 'success',
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          worker_type_id: payload.worker_type_id,
-          worker_id: payload.worker_id,
-          warm_pool_id: payload.warm_pool_id,
-          container_id: payload.container_id,
-          container_name: payload.container_name,
-          session_volume_name: payload.session_volume_name,
-          remove_volume: payload.remove_volume,
-          reason: payload.reason,
-          duration_ms: Date.now() - startedAt,
-        });
       } catch (error) {
-        recordConnectionLifecycle({
-          stage: 'connection.service.warm_pool.delete_error',
-          decision: 'delete_warm_worker',
-          outcome: 'error',
-          reason: 'warm_worker_delete_failed',
-          level: 'error',
-          server_id: payload.server_id,
-          worker_type: payload.worker_type_id,
-          worker_type_id: payload.worker_type_id,
+        console.error('Failed to delete warm worker', {
           worker_id: payload.worker_id,
+          server_id: payload.server_id,
+          worker_type_id: payload.worker_type_id,
           warm_pool_id: payload.warm_pool_id,
-          error: error instanceof Error ? error.message : String(error),
-          duration_ms: Date.now() - startedAt,
+          error,
         });
       } finally {
         await commitOffset(

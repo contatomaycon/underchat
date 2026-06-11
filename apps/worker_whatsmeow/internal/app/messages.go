@@ -199,7 +199,7 @@ func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, t
 	if !messageDebugEnabledForAccount(m.cfg, accountID) {
 		return
 	}
-	contentJSON, contentTruncated, contentErr := debugJSONPayload(data.Content, m.cfg.MessageLifecycleDebugRawLimit)
+	contentJSON, contentTruncated, contentErr := debugJSONPayload(data.Content, messageDebugRawLimit)
 	errorText := ""
 	if err != nil {
 		errorText = err.Error()
@@ -217,7 +217,7 @@ func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, t
 		externalID,
 		elapsed.Milliseconds(),
 		m.cfg.SendTimeout.Milliseconds(),
-		truncateLogValue(outgoingMessageTextPreview(data), m.cfg.MessageLifecycleDebugBodyLimit),
+		truncateLogValue(outgoingMessageTextPreview(data), messageDebugBodyLimit),
 		contentJSON,
 		contentTruncated,
 		contentErr,
@@ -225,13 +225,16 @@ func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, t
 	)
 }
 
-const suppressedMessageDebugAccountID = "019a930d-c6f4-75ad-88ff-8d2fcd5839e1"
+const (
+	messageDebugBodyLimit           = 500
+	messageDebugRawLimit            = 4000
+	suppressedMessageDebugAccountID = "019a930d-c6f4-75ad-88ff-8d2fcd5839e1"
+)
 
 func messageDebugEnabledForAccount(cfg Config, accountID string) bool {
-	if !cfg.MessageLifecycleDebugEnabled {
-		return false
-	}
-	return !messageDebugAccountSuppressed(cfg.AccountID) && !messageDebugAccountSuppressed(accountID)
+	_ = cfg
+	_ = accountID
+	return false
 }
 
 func messageDebugAccountSuppressed(accountID string) bool {

@@ -12,5 +12,4 @@ export interface IBaileysConnection {
   preserve_session?: boolean;
   remove_session?: boolean;
   connection_attempt_id?: string;
-  connection_lifecycle_id?: string;
 }

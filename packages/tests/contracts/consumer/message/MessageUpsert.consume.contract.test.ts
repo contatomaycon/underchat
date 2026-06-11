@@ -118,19 +118,6 @@ jest.mock('@core/config/environments', () => ({
   },
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-}));
-
-jest.mock('@core/plugins/telemetry/observability', () => ({
-  incrementCounter: jest.fn(),
-  recordException: jest.fn(),
-}));
-
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'uuid-v7'),
 }));
@@ -689,7 +676,12 @@ describe('MessageUpsertConsume edit fallback', () => {
   it('keeps normal edit behavior when the target message exists', async () => {
     const existingMessage = makeExistingMessage();
     const { consumer, chat, chatService, elasticDatabaseService } =
-      makeConsumer(elasticHit(existingMessage));
+      makeConsumer();
+    elasticDatabaseService.select.mockImplementation(async (_index, query) =>
+      queryHasTerm(query, 'worker.id', 'worker-1')
+        ? elasticHit(existingMessage)
+        : emptyElasticResult
+    );
 
     const result = await (consumer as any).createChatMessage(
       chat,
@@ -699,7 +691,14 @@ describe('MessageUpsertConsume edit fallback', () => {
     expect(result.handled).toBe(true);
     expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
     expect(chatService.updateMessageChat).toHaveBeenCalledTimes(1);
-    const lookupQuery = elasticDatabaseService.select.mock.calls[0][1];
+    const lookupQuery = elasticDatabaseService.select.mock.calls
+      .map((call) => call[1])
+      .find(
+        (query) =>
+          !queryHasNestedPath(query, 'worker') &&
+          queryHasTerm(query, 'worker.id', 'worker-1')
+      );
+    expect(lookupQuery).toBeDefined();
     expect(queryHasNestedPath(lookupQuery, 'worker')).toBe(false);
     expect(queryHasTerm(lookupQuery, 'worker.id', 'worker-1')).toBe(true);
 

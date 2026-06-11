@@ -15,8 +15,6 @@ import (
 	"github.com/segmentio/kafka-go/sasl"
 	"github.com/segmentio/kafka-go/sasl/plain"
 	"github.com/segmentio/kafka-go/sasl/scram"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 )
 
 type KafkaClient struct {
@@ -159,23 +157,10 @@ func (k *KafkaClient) SendJSON(ctx context.Context, topic string, key string, va
 	if err != nil {
 		return err
 	}
-	carrier := propagation.MapCarrier{}
-	otel.GetTextMapPropagator().Inject(ctx, carrier)
-	headers := make([]kafka.Header, 0, len(carrier))
-	for headerKey, headerValue := range carrier {
-		if headerValue == "" {
-			continue
-		}
-		headers = append(headers, kafka.Header{
-			Key:   headerKey,
-			Value: []byte(headerValue),
-		})
-	}
 	msg := kafka.Message{
-		Topic:   topic,
-		Value:   payload,
-		Time:    time.Now(),
-		Headers: headers,
+		Topic: topic,
+		Value: payload,
+		Time:  time.Now(),
 	}
 	if key != "" {
 		msg.Key = []byte(key)
@@ -449,18 +434,6 @@ func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("kafka consumer panic topic=%s group=%s: %v", topic, groupID, recovered)
 			log.Printf("%v", err)
-			recordMessageLifecycle(ctx, k.cfg, map[string]any{
-				"stage":      "whatsmeow.outgoing.kafka.consumer.panic",
-				"decision":   "recover_consumer",
-				"outcome":    "retrying",
-				"reason":     "panic",
-				"level":      "error",
-				"topic":      topic,
-				"group_id":   groupID,
-				"error":      fmt.Sprint(recovered),
-				"worker_id":  k.cfg.WorkerID,
-				"account_id": k.cfg.AccountID,
-			})
 		}
 	}()
 
@@ -511,19 +484,6 @@ func (k *KafkaClient) runConsumerOnce(ctx context.Context, topic, groupID string
 func (k *KafkaClient) ensureConsumerTopic(ctx context.Context, topic string, topicConfig KafkaTopicConfig) error {
 	if err := k.EnsureTopic(ctx, topic, topicConfig.Partitions, topicConfig.ReplicationFactor); err != nil {
 		log.Printf("kafka consumer topic ensure failed topic=%s partitions=%d replication_factor=%d: %v", topic, topicConfig.Partitions, topicConfig.ReplicationFactor, err)
-		recordMessageLifecycle(ctx, k.cfg, map[string]any{
-			"stage":              "whatsmeow.outgoing.kafka.topic.ensure.error",
-			"decision":           "ensure_topic",
-			"outcome":            "error",
-			"reason":             "topic_ensure_failed",
-			"level":              "error",
-			"topic":              topic,
-			"partitions":         topicConfig.Partitions,
-			"replication_factor": topicConfig.ReplicationFactor,
-			"error":              err.Error(),
-			"worker_id":          k.cfg.WorkerID,
-			"account_id":         k.cfg.AccountID,
-		})
 		return err
 	}
 	return nil
@@ -606,20 +566,6 @@ func (k *KafkaClient) consumerWatchdogStalled(reader *kafka.Reader, topic, group
 	}
 
 	log.Printf("kafka consumer watchdog stalled topic=%s group=%s reason=%s lag=%d timeout=%s", topic, groupID, reason, stats.Lag, timeout)
-	recordMessageLifecycle(context.Background(), k.cfg, map[string]any{
-		"stage":       "whatsmeow.kafka.consumer.watchdog.stalled",
-		"decision":    "restart_consumer",
-		"outcome":     "retrying",
-		"reason":      reason,
-		"level":       "warn",
-		"topic":       topic,
-		"group_id":    groupID,
-		"lag":         stats.Lag,
-		"timeout_ms":  timeout.Milliseconds(),
-		"worker_id":   k.cfg.WorkerID,
-		"account_id":  k.cfg.AccountID,
-		"worker_type": "whatsmeow",
-	})
 	return true
 }
 
@@ -639,19 +585,6 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 				return ctx.Err()
 			}
 			if errors.Is(err, errKafkaConsumerIdleRecreate) {
-				recordMessageLifecycle(ctx, k.cfg, map[string]any{
-					"stage":       "whatsmeow.outgoing.kafka.consumer.recreate",
-					"decision":    "recreate_consumer",
-					"outcome":     "retrying",
-					"reason":      "fetch_idle_timeout",
-					"level":       "warn",
-					"topic":       topic,
-					"group_id":    groupID,
-					"idle_ms":     idleRecreateInterval.Milliseconds(),
-					"worker_id":   k.cfg.WorkerID,
-					"account_id":  k.cfg.AccountID,
-					"worker_type": "whatsmeow",
-				})
 				return err
 			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -663,34 +596,16 @@ func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, t
 		}
 		k.markConsumerPendingStart(state, msg)
 
-		carrier := propagation.MapCarrier{}
-		for _, header := range msg.Headers {
-			carrier.Set(header.Key, string(header.Value))
-		}
-		messageCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
-
-		if err := handler(messageCtx, msg); err != nil {
+		if err := handler(ctx, msg); err != nil {
 			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
 				state.LastError = err.Error()
 			})
 			log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
-			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-				"stage":     "whatsmeow.kafka.consumer.handler.error",
-				"decision":  "route_to_dlq",
-				"outcome":   "error",
-				"reason":    "handler_failed",
-				"level":     "error",
-				"topic":     topic,
-				"group_id":  groupID,
-				"partition": msg.Partition,
-				"offset":    msg.Offset,
-				"error":     err.Error(),
-			})
-			if dlqErr := k.publishConsumerDLQ(messageCtx, msg, groupID, "handler_failed", err); dlqErr != nil {
+			if dlqErr := k.publishConsumerDLQ(ctx, msg, groupID, "handler_failed", err); dlqErr != nil {
 				k.markConsumerPendingDone(state, msg, dlqErr, false)
 				return fmt.Errorf("kafka consumer dlq publish failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, dlqErr)
 			}
-			if commitErr := reader.CommitMessages(messageCtx, msg); commitErr != nil {
+			if commitErr := reader.CommitMessages(ctx, msg); commitErr != nil {
 				k.markConsumerPendingDone(state, msg, commitErr, false)
 				return fmt.Errorf("kafka commit failed after dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr)
 			}
@@ -771,19 +686,6 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 				return waitAndReturn(first)
 			}
 			if errors.Is(err, errKafkaConsumerIdleRecreate) {
-				recordMessageLifecycle(ctx, k.cfg, map[string]any{
-					"stage":       "whatsmeow.outgoing.kafka.consumer.recreate",
-					"decision":    "recreate_consumer",
-					"outcome":     "retrying",
-					"reason":      "fetch_idle_timeout",
-					"level":       "warn",
-					"topic":       topic,
-					"group_id":    groupID,
-					"idle_ms":     idleRecreateInterval.Milliseconds(),
-					"worker_id":   k.cfg.WorkerID,
-					"account_id":  k.cfg.AccountID,
-					"worker_type": "whatsmeow",
-				})
 				return waitAndReturn(err)
 			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -796,31 +698,15 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 
 		k.markConsumerPendingStart(state, msg)
 
-		carrier := propagation.MapCarrier{}
-		for _, header := range msg.Headers {
-			carrier.Set(header.Key, string(header.Value))
-		}
-		messageCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
 		queueKey := workerSendQueueKey(msg.Value)
 		commits.register(msg)
 
-		recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-			"stage":     "whatsmeow.outgoing.kafka.queue.enqueued",
-			"decision":  "enqueue_send_message",
-			"outcome":   "enqueued",
-			"topic":     topic,
-			"partition": msg.Partition,
-			"offset":    msg.Offset,
-			"queue_key": queueKey,
-			"kafka_key": string(msg.Key),
-		})
-
-		done := sequencer.enqueue(consumeCtx, messageCtx, queueKey, k.cfg.SendQueueTimeout, func(taskCtx context.Context) error {
+		done := sequencer.enqueue(consumeCtx, consumeCtx, queueKey, k.cfg.SendQueueTimeout, func(taskCtx context.Context) error {
 			return handler(taskCtx, msg)
 		})
 
 		wg.Add(1)
-		go func(msg kafka.Message, messageCtx context.Context, queueKey string, done <-chan error) {
+		go func(msg kafka.Message, queueKey string, done <-chan error) {
 			defer wg.Done()
 			defer func() {
 				<-inFlight
@@ -833,108 +719,40 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 				log.Printf("kafka async handler error topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, err)
 				if errors.Is(err, context.DeadlineExceeded) {
 					terminalErr := fmt.Errorf("send queue timeout after %s: %w", k.cfg.SendQueueTimeout, err)
-					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-						"stage":     "whatsmeow.outgoing.kafka.dlq.timeout",
-						"decision":  "route_to_dlq",
-						"outcome":   "terminal",
-						"reason":    "handler_timeout",
-						"level":     "warn",
-						"topic":     topic,
-						"group_id":  groupID,
-						"partition": msg.Partition,
-						"offset":    msg.Offset,
-						"queue_key": queueKey,
-						"error":     terminalErr.Error(),
-					})
-					if dlqErr := k.publishSendMessageDLQ(messageCtx, msg, groupID, "handler_timeout", terminalErr); dlqErr != nil {
+					if dlqErr := k.publishSendMessageDLQ(consumeCtx, msg, groupID, "handler_timeout", terminalErr); dlqErr != nil {
 						k.markConsumerPendingDone(state, msg, dlqErr, false)
 						setFirstErr(fmt.Errorf("kafka send dlq publish failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, dlqErr))
 						return
 					}
 
-					committed, commitErr := commits.complete(messageCtx, msg)
+					committed, commitErr := commits.complete(consumeCtx, msg)
 					if commitErr != nil {
 						k.markConsumerPendingDone(state, msg, commitErr, false)
 						setFirstErr(fmt.Errorf("kafka commit failed after send dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr))
 						return
 					}
 					k.markConsumerPendingDone(state, msg, nil, committed)
-					recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-						"stage":     "whatsmeow.outgoing.kafka.dlq.committed",
-						"decision":  "commit_message",
-						"outcome":   "success",
-						"reason":    "handler_timeout",
-						"topic":     topic,
-						"group_id":  groupID,
-						"partition": msg.Partition,
-						"offset":    msg.Offset,
-						"queue_key": queueKey,
-						"committed": committed,
-					})
 					return
 				}
-				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-					"stage":     "whatsmeow.outgoing.kafka.commit.skipped",
-					"decision":  "commit_message",
-					"outcome":   "error",
-					"reason":    "handler_failed",
-					"level":     "error",
-					"topic":     topic,
-					"partition": msg.Partition,
-					"offset":    msg.Offset,
-					"queue_key": queueKey,
-					"error":     err.Error(),
-				})
 				k.markConsumerPendingDone(state, msg, err, false)
 				setFirstErr(fmt.Errorf("kafka handler failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err))
 				return
 			}
 
-			committed, err := commits.complete(messageCtx, msg)
+			committed, err := commits.complete(consumeCtx, msg)
 			if err != nil {
 				k.markConsumerPendingDone(state, msg, err, false)
 				log.Printf("kafka commit error topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, err)
-				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-					"stage":     "whatsmeow.outgoing.kafka.commit.error",
-					"decision":  "commit_message",
-					"outcome":   "error",
-					"reason":    "commit_failed",
-					"level":     "error",
-					"topic":     topic,
-					"partition": msg.Partition,
-					"offset":    msg.Offset,
-					"queue_key": queueKey,
-					"error":     err.Error(),
-				})
 				setFirstErr(fmt.Errorf("kafka commit failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err))
 				return
 			}
 			if !committed {
 				k.markConsumerPendingDone(state, msg, nil, false)
-				recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-					"stage":     "whatsmeow.outgoing.kafka.commit.deferred",
-					"decision":  "commit_message",
-					"outcome":   "deferred",
-					"reason":    "waiting_for_contiguous_offset",
-					"topic":     topic,
-					"partition": msg.Partition,
-					"offset":    msg.Offset,
-					"queue_key": queueKey,
-				})
 				return
 			}
 
 			k.markConsumerPendingDone(state, msg, nil, true)
-			recordMessageLifecycle(messageCtx, k.cfg, map[string]any{
-				"stage":     "whatsmeow.outgoing.kafka.commit.success",
-				"decision":  "commit_message",
-				"outcome":   "success",
-				"topic":     topic,
-				"partition": msg.Partition,
-				"offset":    msg.Offset,
-				"queue_key": queueKey,
-			})
-		}(msg, messageCtx, queueKey, done)
+		}(msg, queueKey, done)
 	}
 }
 

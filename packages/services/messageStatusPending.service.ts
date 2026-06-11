@@ -2,8 +2,6 @@ import { injectable, inject } from 'tsyringe';
 import Redis from 'ioredis';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import type { MessageSummaryPatch } from './messageStatus.service';
-import { logger } from '@core/plugins/telemetry/logger';
-import { incrementCounter } from '@core/plugins/telemetry/observability';
 
 interface AppliedStatusLedgerEntry {
   account_id: string;
@@ -239,16 +237,8 @@ export class MessageStatusPendingService {
       JSON.stringify(retryPayload)
     );
 
-    const logPayload = {
-      account_id: data.account_id,
-      message_id: data.message_id,
-      retry_count: retryPayload.retry_count,
-      batch_size: context.batchSize,
-      duration: context.duration,
-    };
-
     if ((retryPayload.retry_count ?? 0) > this.pendingRetryDelaysMs.length) {
-      await this.parkPendingStatus(retryPayload, context);
+      await this.parkPendingStatus(retryPayload);
       return;
     }
 
@@ -264,26 +254,6 @@ export class MessageStatusPendingService {
         member
       );
     }
-
-    const shouldLogDeferral =
-      !retryPayload.parked_at &&
-      ((retryPayload.retry_count ?? 0) <= 1 ||
-        (retryPayload.retry_count ?? 0) === this.pendingRetryDelaysMs.length);
-
-    if (shouldLogDeferral) {
-      logger.info(
-        {
-          ...logPayload,
-          type: 'message_status_update_deferred_missing_message',
-        },
-        'Message status update deferred because target message was not indexed yet'
-      );
-    }
-
-    incrementCounter('message_status_update_deferred_missing_message', 1, {
-      account_id: data.account_id,
-      retry_count: String(retryPayload.retry_count ?? 0),
-    });
   }
 
   async deferMissingStatusUpdate(
@@ -306,15 +276,11 @@ export class MessageStatusPendingService {
     });
   }
 
-  async parkPendingStatus(
-    data: IMessageStatusUpdate,
-    context: { batchSize: number; duration: number }
-  ): Promise<void> {
+  async parkPendingStatus(data: IMessageStatusUpdate): Promise<void> {
     const member = this.getStatusKafkaKey(data);
     const existingPayload = this.parsePayload(
       await this.redis.hget(this.pendingPayloadHashKey, member)
     );
-    const alreadyParked = Boolean(existingPayload?.parked_at);
     const parkingPayload: IMessageStatusUpdate = {
       ...data,
       parked_at: existingPayload?.parked_at ?? data.parked_at ?? Date.now(),
@@ -330,23 +296,6 @@ export class MessageStatusPendingService {
       this.redis.zrem(this.pendingProcessingSetKey, member),
       this.redis.zadd(this.pendingParkingSetKey, Date.now(), member),
     ]);
-
-    if (!alreadyParked) {
-      logger.error(
-        {
-          account_id: data.account_id,
-          message_id: data.message_id,
-          retry_count: data.retry_count ?? 0,
-          batch_size: context.batchSize,
-          duration: context.duration,
-          type: 'message_status_pending_parking_lot',
-        },
-        'Message status update remains pending after all normal retry delays'
-      );
-      incrementCounter('message_status_update_pending_parking_lot', 1, {
-        account_id: data.account_id,
-      });
-    }
   }
 
   async claimDuePendingStatuses(): Promise<IMessageStatusUpdate[]> {
@@ -389,7 +338,6 @@ export class MessageStatusPendingService {
     }
 
     if (claimed.length) {
-      incrementCounter('message_status_pending_claimed', claimed.length);
     }
 
     return claimed;
@@ -469,19 +417,6 @@ export class MessageStatusPendingService {
       this.redis.zadd(this.pendingSetKey, Date.now(), member),
     ]);
 
-    logger.info(
-      {
-        account_id: accountId,
-        message_id: whatsAppMessageId,
-        retry_count: wakePayload.retry_count ?? 0,
-        type: 'message_status_pending_woken',
-      },
-      'Pending message status update scheduled for immediate reconciliation'
-    );
-    incrementCounter('message_status_pending_woken', 1, {
-      account_id: accountId,
-    });
-
     return true;
   }
 
@@ -541,10 +476,6 @@ export class MessageStatusPendingService {
       ),
       this.clearPendingStatus(data.account_id, data.message_id),
     ]);
-
-    incrementCounter('message_status_update_applied_ledger', 1, {
-      account_id: data.account_id,
-    });
   }
 
   async isApplied(data: IMessageStatusUpdate): Promise<boolean> {

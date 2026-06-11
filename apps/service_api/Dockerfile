@@ -2,6 +2,8 @@ FROM node:24.12.0-bookworm-slim AS base
 
 FROM base AS turbo
 
+ENV TURBO_TELEMETRY_DISABLED=1
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       bash \

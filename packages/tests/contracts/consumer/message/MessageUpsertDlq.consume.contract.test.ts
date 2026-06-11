@@ -39,15 +39,8 @@ jest.mock('@core/services/kafkaServiceQueue.service', () => ({
   KafkaServiceQueueService: class KafkaServiceQueueService {},
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    warn: jest.fn(),
-  },
-}));
-
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { createConsumer } from '@core/common/functions/createConsumer';
-import { logger } from '@core/plugins/telemetry/logger';
 
 const { MessageUpsertDlqConsume } =
   require('@core/consumer/message/MessageUpsertDlq.consume') as typeof import('@core/consumer/message/MessageUpsertDlq.consume');
@@ -68,9 +61,10 @@ async function flushPromises(times = 6): Promise<void> {
 describe('MessageUpsertDlqConsume', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCreateOrUpdateChat.mockReset();
   });
 
-  it('commits terminal DLQ payloads without logging them as processing errors', async () => {
+  it('commits terminal DLQ payloads without reprocessing them', async () => {
     const kafkaConsumer = new FakeConsumer();
     (createConsumer as jest.Mock).mockReturnValue(kafkaConsumer);
     const consoleSpy = jest
@@ -116,16 +110,6 @@ describe('MessageUpsertDlqConsume', () => {
 
       expect(mockCreateOrUpdateChat).not.toHaveBeenCalled();
       expect(consoleSpy).not.toHaveBeenCalled();
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'message_upsert_dlq_terminal_discarded',
-          error: 'Received message without valid phone',
-          account_id: 'acc-1',
-          worker_id: 'worker-1',
-          message_id: 'call-1',
-        }),
-        expect.any(String)
-      );
       expect(commitOffset).toHaveBeenCalledWith(
         kafkaConsumer,
         'upsert.message.dlq',

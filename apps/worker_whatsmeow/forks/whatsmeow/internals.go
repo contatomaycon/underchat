@@ -175,14 +175,6 @@ func (int *DangerousInternalClient) DispatchEvent(evt any) (handlerFailed bool) 
 	return int.c.dispatchEvent(evt)
 }
 
-func (int *DangerousInternalClient) GetUnifiedSessionID() string {
-	return int.c.getUnifiedSessionID()
-}
-
-func (int *DangerousInternalClient) SendUnifiedSession() {
-	int.c.sendUnifiedSession()
-}
-
 func (int *DangerousInternalClient) HandleStreamError(ctx context.Context, node *waBinary.Node) {
 	int.c.handleStreamError(ctx, node)
 }

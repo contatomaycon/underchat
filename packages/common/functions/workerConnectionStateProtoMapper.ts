@@ -46,9 +46,6 @@ export function protoToConnectionState(
   if (proto.connection_attempt_id) {
     state.connection_attempt_id = proto.connection_attempt_id;
   }
-  if (proto.connection_lifecycle_id) {
-    state.connection_lifecycle_id = proto.connection_lifecycle_id;
-  }
   if (proto.qr_pending === true) {
     state.qr_pending = true;
   }
@@ -133,7 +130,6 @@ export function connectionStateToProto(
     qr_pending: state.qr_pending ?? false,
     qr_generated_at: state.qr_generated_at ?? '',
     expires_at: state.expires_at ?? '',
-    connection_lifecycle_id: state.connection_lifecycle_id ?? '',
     reason: state.reason ?? '',
     error: state.error ?? '',
     time_to_first_qr_ms: state.time_to_first_qr_ms ?? 0,

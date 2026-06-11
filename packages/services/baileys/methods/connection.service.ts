@@ -38,12 +38,6 @@ import { BaileysHealthCheckService } from './healthCheck.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
-import { logger } from '@core/plugins/telemetry/logger';
-import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
-import {
-  getConnectionQrFirstQrTimeoutMs,
-  recordConnectionAttemptTelemetry,
-} from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
 function readBoundedIntEnv(
   key: string,
@@ -96,6 +90,12 @@ const QR_DATA_URL_GENERATION_TIMEOUT_MS = readBoundedIntEnv(
   1_500,
   250,
   10_000
+);
+const CONNECTION_QR_FIRST_QR_TIMEOUT_MS = readBoundedIntEnv(
+  'CONNECTION_QR_FIRST_QR_TIMEOUT_MS',
+  25_000,
+  1_000,
+  300_000
 );
 const QR_SVG_MARGIN_MODULES = 4;
 const SHOULD_PRINT_QR_IN_TERMINAL =
@@ -341,19 +341,6 @@ async function getCachedWaWebVersion(): Promise<WaVersion> {
     ttlMs: WA_VERSION_FALLBACK_TTL_MS,
     source: fallbackSource,
   };
-  logger.warn(
-    {
-      type: 'connection.baileys.wa_version.fallback',
-      worker_id: getWorker(),
-      account_id: getAccount(),
-      source: fallbackSource,
-      version: fallbackVersion.join('.'),
-      fetch_timeout_ms: WA_VERSION_FETCH_TIMEOUT_MS,
-      retry_after_ms: WA_VERSION_FALLBACK_TTL_MS,
-      errors,
-    },
-    'Baileys WA version fetch failed; using fallback version'
-  );
   return fallbackVersion;
 }
 
@@ -390,7 +377,6 @@ export class BaileysConnectionService {
     EBaileysConnectionType.qrcode;
   private phoneConnection?: string = undefined;
   private connectionAttemptId?: string = undefined;
-  private connectionLifecycleId?: string = undefined;
   private connectionAttemptStartedAtMs = 0;
 
   private connecting = false;
@@ -404,7 +390,7 @@ export class BaileysConnectionService {
   private userRequestedDisconnect = false;
   private activeProxyUrl: string | null = null;
   private activeProxyAgent?: HttpsAgent;
-  private reconnectRetryTimer: NodeJS.Timeout | undefined;
+  private reconnectRetryTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     @inject(CentrifugoService)
@@ -510,13 +496,6 @@ export class BaileysConnectionService {
     this.clearReconnectRetryTimer();
     this.reconnectRetryTimer = setTimeout(() => {
       this.reconnectRetryTimer = undefined;
-      this.logConnectionEvent('reconnect_triggered', {
-        delay_ms: delayMs,
-        attempt: this.retryCount,
-        max_attempts: this.maxRetries,
-        connection_type: this.typeConnection,
-        from_disconnect_restart: true,
-      });
       this.connect({
         initial_connection: this.initialConnection,
         from_disconnect_restart: true,
@@ -524,16 +503,6 @@ export class BaileysConnectionService {
         type: this.typeConnection,
         phone_connection: this.phoneConnection,
       }).catch(() => {
-        this.logConnectionEvent(
-          'connection_connect_error',
-          {
-            reason: `Reconnect failed after ${delayMs}ms retry`,
-            delay_ms: delayMs,
-            attempt: this.retryCount,
-            max_attempts: this.maxRetries,
-          },
-          'error'
-        );
         this.saveLogWppConnection({
           worker_id: getWorker(),
           status: this.status ?? Status.disconnected,
@@ -641,15 +610,6 @@ export class BaileysConnectionService {
     const delayMs = nextAttempt === 1 ? 0 : this.retryDelay;
 
     this.retryCount = nextAttempt;
-    this.logConnectionEvent('reconnect_scheduled', {
-      attempt: nextAttempt,
-      max_attempts: this.maxRetries,
-      delay_ms: delayMs,
-      connection_type: this.typeConnection,
-      has_phone_connection: Boolean(this.phoneConnection),
-      requested_by_user: false,
-      from_disconnect_restart: true,
-    });
     this.publishReconnectAttempt(nextAttempt, delayMs);
     this.scheduleReconnect(delayMs);
   }
@@ -721,26 +681,9 @@ export class BaileysConnectionService {
       requested_by_user: requestedByUser = false,
       from_disconnect_restart: fromDisconnectRestart = false,
       connection_attempt_id: connectionAttemptId,
-      connection_lifecycle_id: connectionLifecycleId,
     } = input;
 
-    this.logConnectionEvent('connect_requested', {
-      requested_by_user: requestedByUser,
-      from_disconnect_restart: fromDisconnectRestart,
-      force_new: forceNew,
-      allow_restore: allowRestore,
-      connection_type: typeConnection,
-      has_phone_connection: Boolean(phoneConnection),
-      has_session: this.hasSession(),
-      has_active_socket: Boolean(this.socket),
-      connection_attempt_id: connectionAttemptId,
-      connection_lifecycle_id: connectionLifecycleId,
-    });
-
     if (typeConnection === EBaileysConnectionType.phone) {
-      this.logConnectionEvent('connect_rejected', {
-        reason: 'phone_connection_disabled',
-      });
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
 
@@ -749,11 +692,6 @@ export class BaileysConnectionService {
     }
 
     if (this.userRequestedDisconnect && !fromDisconnectRestart) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'user_requested_disconnect_guard',
-        requested_by_user: requestedByUser,
-        from_disconnect_restart: fromDisconnectRestart,
-      });
       return this.state();
     }
 
@@ -761,13 +699,9 @@ export class BaileysConnectionService {
     this.typeConnection = typeConnection;
     this.phoneConnection = phoneConnection;
     this.connectionAttemptId = connectionAttemptId;
-    this.connectionLifecycleId = connectionLifecycleId;
     this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (this.connected) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'already_connected',
-      });
       return this.reportConnected();
     }
 
@@ -775,17 +709,10 @@ export class BaileysConnectionService {
       forceNew && this.connecting && (requestedByUser || fromDisconnectRestart);
 
     if (forcedRestartActiveConnection) {
-      this.logConnectionEvent('connection_force_new_active_attempt', {
-        requested_by_user: requestedByUser,
-        from_disconnect_restart: fromDisconnectRestart,
-      });
       this.cancelAttempt(false);
     }
 
     if (this.connecting && this.currentPromise) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'already_connecting',
-      });
       return this.currentPromise;
     }
 
@@ -800,37 +727,22 @@ export class BaileysConnectionService {
     if (this.canRestoreSession(allowRestore)) {
       const restoreState = this.handleRestoreSession();
       if (restoreState) {
-        this.logConnectionEvent('connect_short_circuit', {
-          reason: 'restore_session',
-          allow_restore: allowRestore,
-        });
         return restoreState;
       }
     }
 
     const existingState = this.handleExistingConnection();
     if (existingState) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'existing_connection_state',
-      });
       return existingState;
     }
 
     const disconnectedState = this.handleDisconnectedWithRestore(allowRestore);
     if (disconnectedState) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'disconnected_with_restore',
-        allow_restore: allowRestore,
-      });
       return disconnectedState;
     }
 
     const connectingState = this.handleConnectingWithRestore(allowRestore);
     if (connectingState) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'connecting_with_restore',
-        allow_restore: allowRestore,
-      });
       return connectingState;
     }
 
@@ -845,11 +757,6 @@ export class BaileysConnectionService {
       (this.qrReadSessionLocked ||
         (!this.qrReadSessionActive && !this.hasSession()))
     ) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'qr_session_locked_or_inactive',
-        connection_type: this.typeConnection,
-        requested_by_user: requestedByUser,
-      });
       return this.state();
     }
 
@@ -876,10 +783,6 @@ export class BaileysConnectionService {
     let socket: WASocket;
     try {
       ({ socket } = await this.createSocket());
-      this.logConnectionEvent('socket_create_ready', {
-        socket_id: this.socketId,
-        connection_type: this.typeConnection,
-      });
     } catch (error) {
       return this.handleSocketCreateFailure(error);
     }
@@ -890,10 +793,6 @@ export class BaileysConnectionService {
     this.currentPromise = this.wait(socket, this.socketId).finally(() => {
       this.connecting = false;
       this.currentPromise = undefined;
-    });
-    this.logConnectionEvent('connection_wait_registered', {
-      socket_id: this.socketId,
-      connection_type: this.typeConnection,
     });
 
     return this.currentPromise;
@@ -907,14 +806,6 @@ export class BaileysConnectionService {
       remove_session: removeSession = false,
     } = input;
     const shouldRemoveSession = removeSession || !preserveSession;
-
-    this.logConnectionEvent('disconnect_requested', {
-      requested_by_user: disconnectedUser,
-      preserve_session: preserveSession,
-      remove_session: removeSession,
-      should_remove_session: shouldRemoveSession,
-      initial_connection: initialConnection,
-    });
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
@@ -1000,10 +891,6 @@ export class BaileysConnectionService {
   }
 
   async shutdown(): Promise<void> {
-    this.logConnectionEvent('shutdown', {
-      has_active_socket: Boolean(this.socket),
-      has_session: this.hasSession(),
-    });
     this.resetQrReadSession();
     this.qrReadSessionLocked = false;
     this.pendingResolve?.(this.state());
@@ -1063,11 +950,7 @@ export class BaileysConnectionService {
                 fetchAgent: proxyAgent,
               }
             : {}),
-        }),
-      {
-        proxy_status: proxyConfig ? 'configured' : 'disabled',
-        wa_version: version.join('.'),
-      }
+        })
     );
 
     socket.ev.on('creds.update', (creds) => {
@@ -1084,52 +967,10 @@ export class BaileysConnectionService {
     phase: string,
     timeoutMs: number,
     timeoutReason: string,
-    task: () => Promise<T>,
-    details: Record<string, unknown> = {}
+    task: () => Promise<T>
   ): Promise<T> {
-    const startedAt = Date.now();
-    this.logConnectionEvent(`${phase}_start`, {
-      deadline_ms: timeoutMs,
-      ...details,
-    });
-    recordConnectionAttemptTelemetry({
-      event: `worker_baileys_${phase}_start`,
-      stage: `connection.baileys.service.${phase}_start`,
-      worker_id: getWorker(),
-      account_id: getAccount(),
-      worker_type: 'baileys',
-      library: 'baileys',
-      connection_attempt_id: this.connectionAttemptId,
-      status: this.status,
-      code: this.code,
-      outcome: 'started',
-      deadline_ms: timeoutMs,
-      ...details,
-    });
-
     try {
-      const result = await this.withDeadline(task(), timeoutMs, timeoutReason);
-      this.logConnectionEvent(`${phase}_success`, {
-        duration_ms: Date.now() - startedAt,
-        deadline_ms: timeoutMs,
-        ...details,
-      });
-      recordConnectionAttemptTelemetry({
-        event: `worker_baileys_${phase}_success`,
-        stage: `connection.baileys.service.${phase}_success`,
-        worker_id: getWorker(),
-        account_id: getAccount(),
-        worker_type: 'baileys',
-        library: 'baileys',
-        connection_attempt_id: this.connectionAttemptId,
-        status: this.status,
-        code: this.code,
-        outcome: 'success',
-        duration_ms: Date.now() - startedAt,
-        deadline_ms: timeoutMs,
-        ...details,
-      });
-      return result;
+      return await this.withDeadline(task(), timeoutMs, timeoutReason);
     } catch (error) {
       const phaseError =
         error instanceof BaileysConnectionPhaseError
@@ -1139,35 +980,6 @@ export class BaileysConnectionService {
               this.errorMessage(error),
               error
             );
-      this.logConnectionEvent(
-        `${phase}_error`,
-        {
-          reason: phaseError.reason,
-          error: phaseError.message,
-          duration_ms: Date.now() - startedAt,
-          deadline_ms: timeoutMs,
-          ...details,
-        },
-        'warn'
-      );
-      recordConnectionAttemptTelemetry({
-        event: `worker_baileys_${phase}_error`,
-        stage: `connection.baileys.service.${phase}_error`,
-        level: 'warn',
-        worker_id: getWorker(),
-        account_id: getAccount(),
-        worker_type: 'baileys',
-        library: 'baileys',
-        connection_attempt_id: this.connectionAttemptId,
-        status: this.status,
-        code: this.code,
-        outcome: phaseError.reason.includes('timeout') ? 'timeout' : 'error',
-        reason: phaseError.reason,
-        error: phaseError.message,
-        duration_ms: Date.now() - startedAt,
-        deadline_ms: timeoutMs,
-        ...details,
-      });
       throw phaseError;
     }
   }
@@ -1214,34 +1026,6 @@ export class BaileysConnectionService {
     this.baileysIncomingMessageService.unbind();
     this.socket = undefined;
 
-    this.logConnectionEvent(
-      'socket_create_failed_pending',
-      {
-        reason,
-        error: this.errorMessage(error),
-        time_to_first_qr_ms: elapsedMs,
-        connection_type: this.typeConnection,
-        has_session: this.hasSession(),
-      },
-      'warn'
-    );
-    recordConnectionAttemptTelemetry({
-      event: 'worker_baileys_socket_create_failed_pending',
-      stage: 'connection.baileys.service.socket_create_failed_pending',
-      metric_event: 'qr_outcome',
-      level: 'warn',
-      worker_id: getWorker(),
-      account_id: getAccount(),
-      worker_type: 'baileys',
-      library: 'baileys',
-      connection_attempt_id: this.connectionAttemptId,
-      status: this.status,
-      code: this.code,
-      outcome: reason.includes('timeout') ? 'timeout' : 'pending',
-      reason,
-      time_to_first_qr_ms: elapsedMs,
-    });
-
     const payload = this.state(undefined, undefined, {
       qr_pending: true,
       reason,
@@ -1273,15 +1057,10 @@ export class BaileysConnectionService {
   private wait(socket: WASocket, id: number): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
       const startedAtMs = this.connectionAttemptStartedAtMs || Date.now();
-      const firstQrTimeoutMs = getConnectionQrFirstQrTimeoutMs();
+      const firstQrTimeoutMs = CONNECTION_QR_FIRST_QR_TIMEOUT_MS;
       let settled = false;
       let opened = false;
-      let firstQrTimeout: NodeJS.Timeout | undefined;
-      this.logConnectionEvent('wait_connection_update_start', {
-        socket_id: id,
-        deadline_ms: firstQrTimeoutMs,
-        connection_type: this.typeConnection,
-      });
+      let firstQrTimeout: ReturnType<typeof setTimeout> | undefined;
       const settle = (state: IBaileysConnectionState): void => {
         if (settled) {
           return;
@@ -1306,35 +1085,6 @@ export class BaileysConnectionService {
 
         const elapsedMs = Date.now() - startedAtMs;
         this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
-        this.logConnectionEvent(
-          'first_qr_timeout',
-          {
-            reason: 'first_qr_timeout',
-            deadline_ms: firstQrTimeoutMs,
-            time_to_first_qr_ms: elapsedMs,
-            connection_type: this.typeConnection,
-            has_session: this.hasSession(),
-            has_active_socket: Boolean(this.socket),
-          },
-          'warn'
-        );
-        recordConnectionAttemptTelemetry({
-          event: 'worker_baileys_first_qr_timeout',
-          stage: 'connection.baileys.service.first_qr_timeout',
-          metric_event: 'qr_outcome',
-          level: 'warn',
-          worker_id: getWorker(),
-          account_id: getAccount(),
-          worker_type: 'baileys',
-          library: 'baileys',
-          connection_attempt_id: this.connectionAttemptId,
-          status: this.status,
-          code: this.code,
-          outcome: 'timeout',
-          reason: 'first_qr_timeout',
-          deadline_ms: firstQrTimeoutMs,
-          time_to_first_qr_ms: elapsedMs,
-        });
 
         const payload = this.state(undefined, undefined, {
           qr_pending: true,
@@ -1366,25 +1116,6 @@ export class BaileysConnectionService {
         }
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
-        const lastDisconnectError =
-          lastDisconnect &&
-          typeof lastDisconnect === 'object' &&
-          'error' in lastDisconnect
-            ? (lastDisconnect as { error?: unknown }).error
-            : undefined;
-        this.logConnectionEvent('connection_update_received', {
-          socket_id: id,
-          connection_state: connection,
-          has_qr: Boolean(qr),
-          is_new_login: Boolean(isNewLogin),
-          last_disconnect_code: this.extractStatusCode(lastDisconnectError),
-          last_disconnect_message:
-            this.extractStatusMessage(lastDisconnectError) ??
-            (lastDisconnectError
-              ? this.errorMessage(lastDisconnectError)
-              : undefined),
-          time_since_attempt_start_ms: Date.now() - startedAtMs,
-        });
 
         if (
           qr &&
@@ -1425,40 +1156,14 @@ export class BaileysConnectionService {
     id: number
   ): Promise<void> {
     if (id !== this.socketId) {
-      this.logConnectionEvent(
-        'qr_ignored',
-        {
-          reason: 'stale_socket',
-          socket_id: id,
-          active_socket_id: this.socketId,
-          connection_type: this.typeConnection,
-        },
-        'warn'
-      );
       return;
     }
 
     if (qr.slice(-20) === this.qrHash) {
-      this.logConnectionEvent('qr_ignored', {
-        reason: 'duplicate_qr_hash',
-        socket_id: id,
-        attempt: this.qrGenerationCount,
-        connection_type: this.typeConnection,
-      });
       return;
     }
 
     if (this.qrGenerationCount >= this.maxQrGenerations) {
-      this.logConnectionEvent(
-        'qr_generation_limit_reached',
-        {
-          socket_id: id,
-          attempt: this.qrGenerationCount + 1,
-          max_attempts: this.maxQrGenerations,
-          connection_type: this.typeConnection,
-        },
-        'warn'
-      );
       await this.handleQrGenerationLimitReached();
       return;
     }
@@ -1471,116 +1176,20 @@ export class BaileysConnectionService {
       this.connectionAttemptStartedAtMs > 0
         ? Date.now() - this.connectionAttemptStartedAtMs
         : undefined;
-    this.logConnectionEvent('qr_generated', {
-      attempt: this.qrGenerationCount,
-      max_attempts: this.maxQrGenerations,
-      connection_type: this.typeConnection,
-      time_to_first_qr_ms: timeToFirstQrMs,
-    });
-    recordConnectionAttemptTelemetry({
-      event: 'worker_baileys_qr_generated',
-      stage: 'connection.baileys.service.qr_generated',
-      metric_event: 'qr_outcome',
-      worker_id: getWorker(),
-      account_id: getAccount(),
-      worker_type: 'baileys',
-      library: 'baileys',
-      connection_attempt_id: this.connectionAttemptId,
-      status: this.status,
-      code: this.code,
-      outcome: 'qr_generated',
-      attempt: this.qrGenerationCount,
-      max_attempts: this.maxQrGenerations,
-      time_to_first_qr_ms: timeToFirstQrMs,
-      has_qr: true,
-    });
 
     await this.printQrInConsole(qr);
-    const qrDataUrlStartedAt = Date.now();
-    this.logConnectionEvent('qr_dataurl_generate_start', {
-      attempt: this.qrGenerationCount,
-      max_attempts: this.maxQrGenerations,
-      time_to_first_qr_ms: timeToFirstQrMs,
-    });
     let img: string;
-    let qrImageRenderer = 'png';
-    let qrImageFallback = false;
     try {
       img = await this.withDeadline(
         QRCode.toDataURL(qr),
         QR_DATA_URL_GENERATION_TIMEOUT_MS,
         'qr_dataurl_generation_timeout'
       );
-      this.logConnectionEvent('qr_dataurl_generate_success', {
-        attempt: this.qrGenerationCount,
-        max_attempts: this.maxQrGenerations,
-        duration_ms: Date.now() - qrDataUrlStartedAt,
-        time_to_first_qr_ms: timeToFirstQrMs,
-        renderer: qrImageRenderer,
-        fallback_used: qrImageFallback,
-      });
     } catch (error) {
       const errorMessage = this.errorMessage(error);
-      this.logConnectionEvent(
-        'qr_dataurl_generate_primary_error',
-        {
-          reason: 'qr_png_dataurl_generation_failed',
-          error: errorMessage,
-          duration_ms: Date.now() - qrDataUrlStartedAt,
-          timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
-          time_to_first_qr_ms: timeToFirstQrMs,
-        },
-        'warn'
-      );
-      const fallbackStartedAt = Date.now();
       try {
         img = renderQrSvgDataUrl(qr);
-        qrImageRenderer = 'svg';
-        qrImageFallback = true;
-        this.logConnectionEvent('qr_dataurl_generate_success', {
-          reason: 'qr_svg_fallback_used',
-          attempt: this.qrGenerationCount,
-          max_attempts: this.maxQrGenerations,
-          duration_ms: Date.now() - qrDataUrlStartedAt,
-          fallback_duration_ms: Date.now() - fallbackStartedAt,
-          timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
-          time_to_first_qr_ms: timeToFirstQrMs,
-          renderer: qrImageRenderer,
-          fallback_used: qrImageFallback,
-        });
-      } catch (fallbackError) {
-        const fallbackErrorMessage = this.errorMessage(fallbackError);
-        this.logConnectionEvent(
-          'qr_dataurl_generate_error',
-          {
-            reason: 'qr_dataurl_generation_failed',
-            error: errorMessage,
-            fallback_error: fallbackErrorMessage,
-            duration_ms: Date.now() - qrDataUrlStartedAt,
-            fallback_duration_ms: Date.now() - fallbackStartedAt,
-            timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
-            time_to_first_qr_ms: timeToFirstQrMs,
-          },
-          'error'
-        );
-        recordConnectionAttemptTelemetry({
-          event: 'worker_baileys_qr_dataurl_generation_error',
-          stage: 'connection.baileys.service.qr_dataurl_generate_error',
-          metric_event: 'qr_outcome',
-          level: 'error',
-          worker_id: getWorker(),
-          account_id: getAccount(),
-          worker_type: 'baileys',
-          library: 'baileys',
-          connection_attempt_id: this.connectionAttemptId,
-          status: this.status,
-          code: this.code,
-          outcome: 'error',
-          reason: 'qr_dataurl_generation_failed',
-          error: errorMessage,
-          fallback_error: fallbackErrorMessage,
-          time_to_first_qr_ms: timeToFirstQrMs,
-        });
+      } catch {
         const payload = this.state(undefined, undefined, {
           qr_pending: true,
           reason: 'qr_dataurl_generation_failed',
@@ -1599,17 +1208,6 @@ export class BaileysConnectionService {
       }
     }
     if (id !== this.socketId) {
-      this.logConnectionEvent(
-        'qr_dataurl_ignored',
-        {
-          reason: 'stale_socket_after_dataurl',
-          socket_id: id,
-          active_socket_id: this.socketId,
-          attempt: this.qrGenerationCount,
-          max_attempts: this.maxQrGenerations,
-        },
-        'warn'
-      );
       return;
     }
 
@@ -1623,19 +1221,9 @@ export class BaileysConnectionService {
       max_attempts: this.maxQrGenerations,
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
       qr_generated_at: qrGeneratedAt,
       time_to_first_qr_ms: timeToFirstQrMs,
     };
-    this.logConnectionEvent('qr_payload_ready', {
-      attempt: this.qrGenerationCount,
-      max_attempts: this.maxQrGenerations,
-      worker_status_id: payload.worker_status_id,
-      has_qr: true,
-      time_to_first_qr_ms: timeToFirstQrMs,
-      renderer: qrImageRenderer,
-      fallback_used: qrImageFallback,
-    });
     this.publishSub(payload, true);
     void this.notifyWorkerStatusSafely(payload, 'qr');
 
@@ -1653,12 +1241,6 @@ export class BaileysConnectionService {
       time_to_first_qr_ms: timeToFirstQrMs,
     });
     resolve(state);
-    this.logConnectionEvent('qr_resolved_to_requester', {
-      attempt: this.qrGenerationCount,
-      max_attempts: this.maxQrGenerations,
-      has_qr: true,
-      time_to_first_qr_ms: timeToFirstQrMs,
-    });
 
     this.pendingResolve = undefined;
   }
@@ -1710,10 +1292,6 @@ export class BaileysConnectionService {
     this.lastStatusPayload = JSON.stringify(payload);
     void this.notifyWorkerStatusSafely(payload, 'open');
     void this.logConnectionIpInLocal();
-    this.logConnectionEvent('connected_ready', {
-      worker_status_id: payload.worker_status_id,
-      has_phone: Boolean(payload.phone),
-    });
 
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
 
@@ -1858,11 +1436,6 @@ export class BaileysConnectionService {
       statusCode ?? this.code ?? ECodeMessage.connectionLost;
 
     this.setStatus(Status.disconnected, disconnectionCode);
-    this.logConnectionEvent('disconnected', {
-      reason: statusMessage ?? 'Connection closed',
-      mapped_code: disconnectionCode,
-      from_disconnect_restart: false,
-    });
 
     const isMismatchedStatus =
       statusCode === ECodeMessage.loggedOut ||
@@ -1931,9 +1504,6 @@ export class BaileysConnectionService {
       !this.userRequestedDisconnect
     ) {
       this.retryCount = 0;
-      this.logConnectionEvent('session_invalidated_scheduling_qr', {
-        connection_type: this.typeConnection,
-      });
       this.scheduleReconnect(this.retryDelay);
     } else {
       this.scheduleNextReconnectAttempt();
@@ -2104,193 +1674,45 @@ export class BaileysConnectionService {
   }
 
   private publishSub(payload: IBaileysConnectionState, force = false): void {
-    const payloadWithLifecycle = this.withConnectionLifecycle(payload);
+    const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     if (!this.initialConnection && !force) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.centrifugo.publish_skipped',
-        decision: 'publish_sub_initial_connection_gate',
-        outcome: 'skipped',
-        reason: 'initial_connection_false',
-        source_provider: 'baileys',
-        worker_type: 'baileys',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      });
       return;
     }
 
-    const data = JSON.stringify(payloadWithLifecycle);
+    const data = JSON.stringify(payloadWithConnectionMetadata);
     if (data === this.lastPayload && !force) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.centrifugo.publish_skipped',
-        decision: 'publish_sub_dedupe',
-        outcome: 'skipped',
-        reason: 'payload_duplicated',
-        source_provider: 'baileys',
-        worker_type: 'baileys',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      });
       return;
     }
 
     this.lastPayload = data;
-    const startedAt = Date.now();
     const hasConnectionCredential = Boolean(
-      payloadWithLifecycle.qrcode || payloadWithLifecycle.pairing_code
+      payloadWithConnectionMetadata.qrcode ||
+      payloadWithConnectionMetadata.pairing_code
     );
-    const publishMode = hasConnectionCredential ? 'immediate' : 'standard';
-    recordConnectionLifecycle({
-      stage: 'connection.baileys.centrifugo.publish_start',
-      decision: 'publish_sub',
-      outcome: 'started',
-      source_provider: 'baileys',
-      worker_type: 'baileys',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      status: payloadWithLifecycle.status,
-      code: payloadWithLifecycle.code,
-      worker_status_id: payloadWithLifecycle.worker_status_id,
-      connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-      connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      has_qr: Boolean(payloadWithLifecycle.qrcode),
-      has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-      publish_mode: publishMode,
-      force,
-    });
     const publishPromise = hasConnectionCredential
-      ? this.centrifugo.publishSubImmediate(getChannel(), payloadWithLifecycle)
-      : this.centrifugo.publishSub(getChannel(), payloadWithLifecycle);
+      ? this.centrifugo.publishSubImmediate(
+          getChannel(),
+          payloadWithConnectionMetadata
+        )
+      : this.centrifugo.publishSub(getChannel(), payloadWithConnectionMetadata);
 
-    void publishPromise
-      .then(() => {
-        recordConnectionLifecycle({
-          stage: 'connection.baileys.centrifugo.publish_success',
-          decision: 'publish_sub',
-          outcome: 'success',
-          source_provider: 'baileys',
-          worker_type: 'baileys',
-          worker_id: getWorker(),
-          channel_id: getWorker(),
-          account_id: getAccount(),
-          status: payloadWithLifecycle.status,
-          code: payloadWithLifecycle.code,
-          worker_status_id: payloadWithLifecycle.worker_status_id,
-          connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-          connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-          has_qr: Boolean(payloadWithLifecycle.qrcode),
-          has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-          publish_mode: publishMode,
-          duration_ms: Date.now() - startedAt,
-        });
-      })
-      .catch((error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        recordConnectionLifecycle({
-          stage: 'connection.baileys.centrifugo.publish_error',
-          decision: 'publish_sub',
-          outcome: 'error',
-          reason: 'centrifugo_publish_failed',
-          level: 'error',
-          source_provider: 'baileys',
-          worker_type: 'baileys',
-          worker_id: getWorker(),
-          channel_id: getWorker(),
-          account_id: getAccount(),
-          status: payloadWithLifecycle.status,
-          code: payloadWithLifecycle.code,
-          worker_status_id: payloadWithLifecycle.worker_status_id,
-          connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-          connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-          has_qr: Boolean(payloadWithLifecycle.qrcode),
-          has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-          publish_mode: publishMode,
-          duration_ms: Date.now() - startedAt,
-          error: errorMessage,
-        });
-        console.error('[BaileysConnection] publishSub - Failed', error);
-      });
+    void publishPromise.catch((error) => {
+      console.error('[BaileysConnection] publishSub - Failed', error);
+    });
   }
 
   private async notifyWorkerStatusSafely(
     payload: IBaileysConnectionState,
     context: string
   ): Promise<void> {
-    const payloadWithLifecycle = this.withConnectionLifecycle(payload);
-    const startedAt = Date.now();
-    recordConnectionLifecycle({
-      stage: 'connection.baileys.balance.notify_start',
-      decision: 'notify_worker_status',
-      outcome: 'started',
-      source_provider: 'baileys',
-      worker_type: 'baileys',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      status: payloadWithLifecycle.status,
-      code: payloadWithLifecycle.code,
-      worker_status_id: payloadWithLifecycle.worker_status_id,
-      reason: context,
-      connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-      connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      has_qr: Boolean(payloadWithLifecycle.qrcode),
-      has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-    });
+    const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     try {
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
-        payloadWithLifecycle
+        payloadWithConnectionMetadata
       );
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.balance.notify_success',
-        decision: 'notify_worker_status',
-        outcome: 'success',
-        source_provider: 'baileys',
-        worker_type: 'baileys',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        worker_status_id: payloadWithLifecycle.worker_status_id,
-        reason: context,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-        duration_ms: Date.now() - startedAt,
-      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.balance.notify_error',
-        decision: 'notify_worker_status',
-        outcome: 'error',
-        reason: context,
-        level: 'error',
-        source_provider: 'baileys',
-        worker_type: 'baileys',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        worker_status_id: payloadWithLifecycle.worker_status_id,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-        duration_ms: Date.now() - startedAt,
-        error: errorMessage,
-      });
       console.error('[BaileysConnection] NotifyWorkerStatus failed', {
         context,
         worker_id: payload.worker_id,
@@ -2464,23 +1886,10 @@ export class BaileysConnectionService {
   }
 
   private setStatus(s: Status, c?: ECodeMessage) {
-    const previousStatus = this.status;
-    const previousCode = this.code;
-    const nextCode = c ?? this.code;
-
     this.status = s;
 
     if (c) {
       this.code = c;
-    }
-
-    if (previousStatus !== s || previousCode !== nextCode) {
-      this.logConnectionEvent('connection_status_transition', {
-        previous_status: previousStatus,
-        previous_code: previousCode,
-        status: this.status,
-        code: this.code,
-      });
     }
   }
 
@@ -2497,7 +1906,6 @@ export class BaileysConnectionService {
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
       ...extras,
     };
     if (qr && qrGeneratedAt) {
@@ -2510,17 +1918,13 @@ export class BaileysConnectionService {
     return result;
   }
 
-  private withConnectionLifecycle(
+  private withConnectionMetadata(
     payload: IBaileysConnectionState
   ): IBaileysConnectionState {
     const connectionAttemptId =
       payload.connection_attempt_id ?? this.connectionAttemptId;
-    const connectionLifecycleId =
-      payload.connection_lifecycle_id ?? this.connectionLifecycleId;
-
     if (
       payload.connection_attempt_id === connectionAttemptId &&
-      payload.connection_lifecycle_id === connectionLifecycleId &&
       payload.worker_type_id === EWorkerType.baileys
     ) {
       return payload;
@@ -2530,7 +1934,6 @@ export class BaileysConnectionService {
       ...payload,
       worker_type_id: EWorkerType.baileys,
       connection_attempt_id: connectionAttemptId,
-      connection_lifecycle_id: connectionLifecycleId,
     };
   }
 
@@ -2627,74 +2030,9 @@ export class BaileysConnectionService {
     return String(error);
   }
 
-  private logConnectionEvent(
-    event: string,
-    details: Record<string, unknown> = {},
-    level: 'info' | 'warn' | 'error' = 'info'
-  ): void {
-    const payload = {
-      module: 'worker_baileys',
-      component: 'baileys_connection_service',
-      type: 'connection_status',
-      event,
-      worker_id: getWorker(),
-      account_id: getAccount(),
-      connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
-      connection_type: this.typeConnection,
-      status: this.status,
-      code: this.code,
-      ...details,
-    };
-
-    recordConnectionLifecycle({
-      stage: `connection.baileys.service.${event}`,
-      decision: event,
-      outcome: level === 'error' ? 'error' : 'logged',
-      level,
-      source_provider: 'baileys',
-      worker_type: 'baileys',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
-      connection_type: this.typeConnection,
-      status: this.status,
-      code: this.code,
-      ...details,
-    });
-
-    if (level === 'error') {
-      logger.error(payload, 'Baileys connection event');
-      return;
-    }
-
-    if (level === 'warn') {
-      logger.warn(payload, 'Baileys connection event');
-      return;
-    }
-
-    logger.info(payload, 'Baileys connection event');
-  }
-
   private readonly saveLogWppConnection = async (
     wppLog: EWppConnection
   ): Promise<boolean> => {
-    const startedAt = Date.now();
-    recordConnectionLifecycle({
-      stage: 'connection.baileys.elastic.wpp_connection_start',
-      decision: 'save_wpp_connection',
-      outcome: 'started',
-      source_provider: 'baileys',
-      worker_type: 'baileys',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      status: wppLog?.status,
-      code: wppLog?.code,
-      elastic_index: EElasticIndex.wpp_connection,
-    });
     const mappings = wppConnectionMappings();
 
     const result = await this.elasticDatabaseService.indices(
@@ -2703,20 +2041,6 @@ export class BaileysConnectionService {
     );
 
     if (!result || !wppLog) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.elastic.wpp_connection_skipped',
-        decision: 'save_wpp_connection',
-        outcome: 'skipped',
-        reason: !wppLog ? 'missing_wpp_log' : 'index_creation_failed',
-        level: 'warn',
-        source_provider: 'baileys',
-        worker_type: 'baileys',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        elastic_index: EElasticIndex.wpp_connection,
-        duration_ms: Date.now() - startedAt,
-      });
       return false;
     }
 
@@ -2725,65 +2049,20 @@ export class BaileysConnectionService {
       wppLog.worker_id
     );
 
-    try {
-      const updateResult = await this.elasticDatabaseService.updateWithOCC(
-        EElasticIndex.wpp_connection,
-        documentId,
-        wppLog as unknown as Record<string, unknown>,
-        {
-          upsert: true,
-          maxRetries: 5,
-        }
-      );
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
+      EElasticIndex.wpp_connection,
+      documentId,
+      wppLog as unknown as Record<string, unknown>,
+      {
+        upsert: true,
+        maxRetries: 5,
+      }
+    );
 
-      const success =
-        updateResult === 'updated' ||
-        updateResult === 'created' ||
-        updateResult === 'noop';
-
-      recordConnectionLifecycle({
-        stage: success
-          ? 'connection.baileys.elastic.wpp_connection_success'
-          : 'connection.baileys.elastic.wpp_connection_unexpected_result',
-        decision: 'save_wpp_connection',
-        outcome: success ? 'success' : 'error',
-        level: success ? 'info' : 'warn',
-        reason: updateResult,
-        source_provider: 'baileys',
-        worker_type: 'baileys',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: wppLog.status,
-        code: wppLog.code,
-        elastic_index: EElasticIndex.wpp_connection,
-        document_id: documentId,
-        duration_ms: Date.now() - startedAt,
-      });
-
-      return success;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.elastic.wpp_connection_error',
-        decision: 'save_wpp_connection',
-        outcome: 'error',
-        reason: 'elastic_update_failed',
-        level: 'error',
-        source_provider: 'baileys',
-        worker_type: 'baileys',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: wppLog.status,
-        code: wppLog.code,
-        elastic_index: EElasticIndex.wpp_connection,
-        document_id: documentId,
-        duration_ms: Date.now() - startedAt,
-        error: errorMessage,
-      });
-      throw error;
-    }
+    return (
+      updateResult === 'updated' ||
+      updateResult === 'created' ||
+      updateResult === 'noop'
+    );
   };
 }

@@ -28,6 +28,27 @@ function createListUsersTotalSelectMock(result: unknown[]) {
   }));
 }
 
+function createListUsersSectorsSelectMock(result: unknown[]) {
+  const chain: {
+    innerJoin: jest.Mock;
+    where: jest.Mock;
+    orderBy: jest.Mock;
+    execute: jest.Mock;
+  } = {
+    innerJoin: jest.fn(),
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    execute: jest.fn(async () => result),
+  };
+  chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
+
+  return jest.fn(() => ({
+    from: jest.fn(() => chain),
+  }));
+}
+
 describe('UserListerRepository', () => {
   it('setFiltersUser returns empty array when search is not provided', () => {
     const repository = new UserListerRepository(
@@ -61,7 +82,7 @@ describe('UserListerRepository', () => {
   it('listUsers returns empty array when findMany returns null', async () => {
     const repository = new UserListerRepository(
       {
-        select: createSubquerySelectMock(),
+        select: createListUsersSectorsSelectMock([]),
         query: {
           user: {
             findMany: jest.fn(async () => null),
@@ -79,7 +100,7 @@ describe('UserListerRepository', () => {
   it('listUsers maps payload and falls back to offline status', async () => {
     const repository = new UserListerRepository(
       {
-        select: createSubquerySelectMock(),
+        select: createListUsersSectorsSelectMock([]),
         query: {
           user: {
             findMany: jest.fn(async () => [

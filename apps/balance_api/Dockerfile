@@ -2,6 +2,8 @@ FROM node:24.12.0-bookworm-slim AS base
 
 FROM base AS turbo
 
+ENV TURBO_TELEMETRY_DISABLED=1
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       bash \
@@ -84,4 +86,4 @@ EXPOSE 3003 50051
 
 WORKDIR /app/apps/balance_api
 
-CMD ["node", "--import", "../../packages/plugins/telemetry/instrumentation.js", "src/index.js"]
+CMD ["node", "src/index.js"]

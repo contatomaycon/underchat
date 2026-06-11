@@ -76,7 +76,6 @@ import { RandomMessageService } from './randomMessage.service';
 import { ERandomMessageStatus } from '@core/common/enums/ERandomMessageStatus';
 import { PromptDocumentExtractorService } from './promptDocumentExtractor.service';
 import { EAiAgentStatus } from '@core/common/enums/EAiAgentStatus';
-import { incrementCounter } from '@core/plugins/telemetry/observability';
 import {
   CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE,
   normalizeChatbotWorkingHoursTimezone,
@@ -5432,11 +5431,6 @@ Retorne APENAS JSON válido (sem markdown):
         return null;
       }
 
-      incrementCounter('ai_agent_context_conversational_reply', 1, {
-        ai_agent_type_id: aiAgent.ai_agent_type_id,
-        intent: parsed.intent,
-      });
-
       return parsed.response;
     } catch (error) {
       if (
@@ -8036,21 +8030,10 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       contextAllowed?: boolean;
     }
   ): void {
-    incrementCounter('ai_agent_context_decision', 1, {
-      path: decisionPath,
-      ai_agent_type_id: metadata.aiAgentTypeId,
-    });
-
     if (decisionPath === 'runtime_fallback') {
-      incrementCounter('ai_agent_context_runtime_fallback', 1, {
-        ai_agent_type_id: metadata.aiAgentTypeId,
-      });
     }
 
     if (decisionPath === 'out_of_context') {
-      incrementCounter('ai_agent_context_no_evidence', 1, {
-        ai_agent_type_id: metadata.aiAgentTypeId,
-      });
     }
 
     console.log('[AI Agent] contexto decisão', {

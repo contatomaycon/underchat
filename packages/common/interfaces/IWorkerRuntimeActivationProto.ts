@@ -6,7 +6,6 @@ export interface IWorkerRuntimeActivationRequestProto {
   session_volume_name?: string;
   balancer_grpc_host?: string;
   balancer_grpc_port?: number | string;
-  connection_lifecycle_id?: string;
   runtime_generation?: number | string;
 }
 

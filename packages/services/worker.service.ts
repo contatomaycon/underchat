@@ -52,7 +52,6 @@ import { WorkerUpdatedAtUpdaterRepository } from '@core/repositories/worker/Work
 import { WorkerLastConnectionCheckUpdaterRepository } from '@core/repositories/worker/WorkerLastConnectionCheckUpdater.repository';
 import Redis from 'ioredis';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
-import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 export interface WorkerContainerInspection {
   exists: boolean;
@@ -147,23 +146,7 @@ export class WorkerService {
     'WORKER_GRPC_PORT',
     'BALANCER_GRPC_HOST',
     'BALANCER_GRPC_PORT',
-    'OTEL_ENABLE',
-    'OTEL_LOG_LEVEL',
-    'OTEL_TRACE_SAMPLE_RATE',
-    'OTEL_ENVIRONMENT',
-    'OTEL_SERVICE_NAME',
-    'OTEL_RESOURCE_ATTRIBUTES',
-    'OTEL_EXPORTER_OTLP_PROTOCOL',
-    'OTEL_EXPORTER_OTLP_ENDPOINT',
-    'OTEL_EXPORTER_OTLP_CONTAINER_ENDPOINT',
-    'MESSAGE_LIFECYCLE_DEBUG_ENABLED',
-    'MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT',
-    'MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT',
-    'CONNECTION_LIFECYCLE_DEBUG_ENABLED',
-    'CONNECTION_LIFECYCLE_DEBUG_VALUE_LIMIT',
-    'CONNECTION_LIFECYCLE_DEBUG_RAW_LIMIT',
     'CONNECTION_QR_FIRST_QR_TIMEOUT_MS',
-    'CONNECTION_QR_RECREATE_COOLDOWN_MS',
     'CONNECTION_QRCODE_WWEBJS_LOCAL_REQUEST_TIMEOUT_MS',
     'WWEBJS_USER_AGENT',
     'WWEBJS_CLIENT_DESTROY_TIMEOUT_MS',
@@ -283,15 +266,6 @@ export class WorkerService {
     return [...envMap.entries()].map(([key, value]) => `${key}=${value}`);
   }
 
-  private applyContainerOtelEndpoint(overrides: string[]): void {
-    const endpoint = process.env.OTEL_EXPORTER_OTLP_CONTAINER_ENDPOINT?.trim();
-    if (!endpoint) {
-      return;
-    }
-
-    overrides.push(`OTEL_EXPORTER_OTLP_ENDPOINT=${endpoint}`);
-  }
-
   private buildContainerLabels(input: {
     imageName: EWorkerImage;
     workerId: string;
@@ -383,13 +357,6 @@ export class WorkerService {
   public async inspectContainerWorkerById(
     workerId: string
   ): Promise<WorkerContainerInspection> {
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_inspect_start',
-      decision: 'inspect_container_worker_by_id',
-      outcome: 'started',
-      container_name: workerId,
-    });
-
     try {
       const container = this.docker.getContainer(workerId);
       const info = await container.inspect();
@@ -439,18 +406,6 @@ export class WorkerService {
         running: state?.Running === true,
       };
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.container_inspect_success',
-        decision: 'inspect_container_worker_by_id',
-        outcome: 'success',
-        ...inspection,
-        raw_payload: {
-          container_labels: inspection.container_labels,
-          container_env: inspection.container_env,
-          container_health_log: inspection.container_health_log,
-        },
-      });
-
       return inspection;
     } catch (error) {
       const inspection: WorkerContainerInspection = {
@@ -459,120 +414,22 @@ export class WorkerService {
         error: dockerErrorMessage(error),
       };
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.container_inspect_missing',
-        decision: 'inspect_container_worker_by_id',
-        outcome: 'missing',
-        container_name: workerId,
-        docker_error: inspection.error,
-      });
-
       return inspection;
     }
   }
 
   public async removeContainerWorkerById(workerId: string): Promise<boolean> {
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_remove_start',
-      decision: 'remove_container_worker_by_id',
-      outcome: 'started',
-      container_name: workerId,
-    });
-
     try {
       const container = this.docker.getContainer(workerId);
       await container.remove({ force: true });
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.container_remove_success',
-        decision: 'remove_container_worker_by_id',
-        outcome: 'success',
-        container_name: workerId,
-      });
-
       return true;
     } catch (error) {
       if (isIdempotentDockerRemoveError(error)) {
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.docker.container_remove_idempotent',
-          decision: 'remove_container_worker_by_id',
-          outcome: 'success',
-          reason: 'container_missing_or_removal_in_progress',
-          level: 'warn',
-          container_name: workerId,
-          docker_status_code: dockerErrorStatusCode(error),
-          docker_error: dockerErrorMessage(error),
-        });
         return true;
       }
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.container_remove_error',
-        decision: 'remove_container_worker_by_id',
-        outcome: 'error',
-        reason: 'docker_remove_failed',
-        level: 'error',
-        container_name: workerId,
-        error: dockerErrorMessage(error),
-      });
       throw new Error('The worker removal failed');
-    }
-  }
-
-  public async recordContainerDiagnostics(
-    workerId: string,
-    reason?: string
-  ): Promise<void> {
-    const inspection = await this.inspectContainerWorkerById(workerId);
-    const logTail = inspection.exists
-      ? await this.getContainerLogTail(workerId)
-      : undefined;
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_diagnostics',
-      decision: 'record_container_diagnostics',
-      outcome: inspection.exists ? 'recorded' : 'missing',
-      reason,
-      container_id: inspection.container_id,
-      container_name: inspection.container_name,
-      container_image: inspection.container_image,
-      container_image_id: inspection.container_image_id,
-      container_state: inspection.container_state,
-      container_status: inspection.container_status,
-      container_started_at: inspection.container_started_at,
-      container_finished_at: inspection.container_finished_at,
-      container_restart_count: inspection.container_restart_count,
-      container_exit_code: inspection.container_exit_code,
-      container_health_status: inspection.container_health_status,
-      container_health_failing_streak:
-        inspection.container_health_failing_streak,
-      container_running: inspection.running,
-      raw_payload: {
-        container_labels: inspection.container_labels,
-        container_env: inspection.container_env,
-        container_health_log: inspection.container_health_log,
-        container_log_tail: logTail,
-      },
-    });
-  }
-
-  private async getContainerLogTail(
-    workerId: string
-  ): Promise<string | undefined> {
-    try {
-      const container = this.docker.getContainer(workerId);
-      const logs = await container.logs({
-        stdout: true,
-        stderr: true,
-        timestamps: true,
-        tail: 80,
-      });
-
-      return this.sanitizeDiagnosticText(
-        Buffer.isBuffer(logs) ? logs.toString('utf8') : String(logs)
-      );
-    } catch (error) {
-      return this.sanitizeDiagnosticText(dockerErrorMessage(error));
     }
   }
 
@@ -581,35 +438,16 @@ export class WorkerService {
   }
 
   public async removeVolumeByName(volumeName: string): Promise<boolean> {
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.volume_remove_start',
-      decision: 'remove_volume_by_name',
-      outcome: 'started',
-      volume_name: volumeName,
-    });
-
     try {
       const volume = this.docker.getVolume(volumeName);
       await volume.remove();
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.volume_remove_success',
-        decision: 'remove_volume_by_name',
-        outcome: 'success',
-        volume_name: volumeName,
-      });
-
       return true;
     } catch (error) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.volume_remove_error',
-        decision: 'remove_volume_by_name',
-        outcome: 'error',
-        reason: 'docker_volume_remove_failed',
-        level: 'error',
-        volume_name: volumeName,
-        error: dockerErrorMessage(error),
-      });
+      if (isIdempotentDockerRemoveError(error)) {
+        return true;
+      }
+
       throw new Error('The worker volume removal failed');
     }
   }
@@ -619,34 +457,16 @@ export class WorkerService {
   }
 
   public async existsVolumeByName(volumeName: string): Promise<boolean> {
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.volume_inspect_start',
-      decision: 'inspect_volume_by_name',
-      outcome: 'started',
-      volume_name: volumeName,
-    });
-
     try {
       const volume = this.docker.getVolume(volumeName);
       await volume.inspect();
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.volume_inspect_success',
-        decision: 'inspect_volume_by_name',
-        outcome: 'exists',
-        volume_name: volumeName,
-      });
-
       return true;
     } catch (error) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.volume_inspect_missing',
-        decision: 'inspect_volume_by_name',
-        outcome: 'missing',
-        level: 'warn',
-        volume_name: volumeName,
-        docker_error: dockerErrorMessage(error),
+      console.warn(`Volume ${volumeName} does not exist or is inaccessible:`, {
+        error: dockerErrorMessage(error),
       });
+
       return false;
     }
   }
@@ -665,51 +485,14 @@ export class WorkerService {
     const getVolume = await this.existsVolumeByName(volumeName);
 
     if (!getVolume || isCreateVolume) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.volume_create_start',
-        decision: 'ensure_volume_by_name',
-        outcome: 'started',
-        reason: getVolume ? 'force_create_requested' : 'volume_missing',
-        volume_name: volumeName,
-        volume_exists: getVolume,
-        force_create: isCreateVolume,
-      });
       try {
         await this.docker.createVolume({
           Name: volumeName,
         });
       } catch (error) {
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.docker.volume_create_error',
-          decision: 'ensure_volume_by_name',
-          outcome: 'error',
-          reason: 'docker_volume_create_failed',
-          level: 'error',
-          volume_name: volumeName,
-          volume_exists: getVolume,
-          force_create: isCreateVolume,
-          error: dockerErrorMessage(error),
-        });
         throw error;
       }
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.volume_create_success',
-        decision: 'ensure_volume_by_name',
-        outcome: 'success',
-        volume_name: volumeName,
-        volume_exists: getVolume,
-        force_create: isCreateVolume,
-      });
     } else {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.volume_create_skipped',
-        decision: 'ensure_volume_by_name',
-        outcome: 'skipped',
-        reason: 'volume_already_exists',
-        volume_name: volumeName,
-        volume_exists: getVolume,
-        force_create: isCreateVolume,
-      });
     }
   }
 
@@ -718,15 +501,6 @@ export class WorkerService {
     volumeName?: string | null,
     isRemoveVolume: boolean = true
   ): Promise<boolean> {
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_volume_cleanup_start',
-      decision: 'remove_container_by_name_and_volume',
-      outcome: 'started',
-      container_name: containerName,
-      volume_name: volumeName ?? undefined,
-      remove_volume: isRemoveVolume,
-    });
-
     const existsContainerById =
       await this.existsContainerWorkerById(containerName);
 
@@ -751,16 +525,6 @@ export class WorkerService {
       }
     }
 
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_volume_cleanup_success',
-      decision: 'remove_container_by_name_and_volume',
-      outcome: 'success',
-      container_name: containerName,
-      volume_name: volumeName ?? undefined,
-      remove_volume: isRemoveVolume,
-      container_existed: existsContainerById,
-    });
-
     return true;
   }
 
@@ -769,38 +533,14 @@ export class WorkerService {
     nextName: string
   ): Promise<boolean> {
     if (currentName === nextName) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.container_rename_skipped',
-        decision: 'rename_container',
-        outcome: 'skipped',
-        reason: 'same_name',
-        container_name: currentName,
-        next_container_name: nextName,
-      });
       return true;
     }
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_rename_start',
-      decision: 'rename_container',
-      outcome: 'started',
-      container_name: currentName,
-      next_container_name: nextName,
-    });
 
     const container = this.docker.getContainer(currentName);
     await (
       container as unknown as { rename(input: { name: string }): Promise<void> }
     ).rename({
       name: nextName,
-    });
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_rename_success',
-      decision: 'rename_container',
-      outcome: 'success',
-      container_name: currentName,
-      next_container_name: nextName,
     });
 
     return true;
@@ -826,10 +566,6 @@ export class WorkerService {
   ): Promise<string> {
     const existsContainerById = await this.existsContainerWorkerById(workerId);
     if (existsContainerById) {
-      await this.recordContainerDiagnostics(
-        workerId,
-        'replace_existing_container_before_create'
-      );
       await this.removeContainerWorkerById(workerId);
     }
 
@@ -841,89 +577,20 @@ export class WorkerService {
     }
 
     if (!existingVolume || isCreateVolume) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.worker_volume_create_start',
-        decision: 'create_container_worker',
-        outcome: 'started',
-        reason: existingVolume ? 'force_create_requested' : 'volume_missing',
-        container_name: workerId,
-        worker_type: imageName,
-        worker_type_id: metadata?.workerTypeId,
-        session_volume_name: volumeName,
-        volume_exists: existingVolume,
-        force_create: isCreateVolume,
-      });
       try {
         await this.docker.createVolume({
           Name: volumeName,
         });
       } catch (error) {
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.docker.worker_volume_create_error',
-          decision: 'create_container_worker',
-          outcome: 'error',
-          reason: 'docker_volume_create_failed',
-          level: 'error',
-          container_name: workerId,
-          worker_type: imageName,
-          worker_type_id: metadata?.workerTypeId,
-          session_volume_name: volumeName,
-          volume_exists: existingVolume,
-          force_create: isCreateVolume,
-          error: dockerErrorMessage(error),
-        });
         throw error;
       }
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.worker_volume_create_success',
-        decision: 'create_container_worker',
-        outcome: 'success',
-        container_name: workerId,
-        worker_type: imageName,
-        worker_type_id: metadata?.workerTypeId,
-        session_volume_name: volumeName,
-        volume_exists: existingVolume,
-        force_create: isCreateVolume,
-      });
     } else {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.worker_volume_create_skipped',
-        decision: 'create_container_worker',
-        outcome: 'skipped',
-        reason: 'volume_already_exists',
-        container_name: workerId,
-        worker_type: imageName,
-        worker_type_id: metadata?.workerTypeId,
-        session_volume_name: volumeName,
-        volume_exists: existingVolume,
-        force_create: isCreateVolume,
-      });
     }
 
     const getVolume = await this.existsVolumeByName(volumeName);
     if (!getVolume) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.worker_volume_verify_error',
-        decision: 'create_container_worker',
-        outcome: 'error',
-        reason: 'volume_creation_failed',
-        level: 'error',
-        container_name: workerId,
-        worker_type: imageName,
-        worker_type_id: metadata?.workerTypeId,
-        session_volume_name: volumeName,
-      });
       throw new Error('Volume creation failed');
     }
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.worker_volume_verify_success',
-      decision: 'create_container_worker',
-      outcome: 'success',
-      container_name: workerId,
-      worker_type: imageName,
-      worker_type_id: metadata?.workerTypeId,
-      session_volume_name: volumeName,
-    });
 
     const envOverrides = [`WORKER_ID=${workerId}`, `ACCOUNT_ID=${accountId}`];
     envOverrides.push(`WORKER_IMAGE=${imageName}`);
@@ -936,20 +603,6 @@ export class WorkerService {
     if (metadata?.workerGrpcPort !== undefined) {
       envOverrides.push(`WORKER_GRPC_PORT=${metadata.workerGrpcPort}`);
     }
-
-    if (imageName === EWorkerImage.baileys) {
-      envOverrides.push('OTEL_SERVICE_NAME=baileys');
-    }
-
-    if (imageName === EWorkerImage.wwebjs) {
-      envOverrides.push('OTEL_SERVICE_NAME=wwebjs');
-    }
-
-    if (imageName === EWorkerImage.whatsmeow) {
-      envOverrides.push('OTEL_SERVICE_NAME=whatsmeow');
-    }
-
-    this.applyContainerOtelEndpoint(envOverrides);
 
     if (grpcHost !== undefined && grpcPort !== undefined) {
       envOverrides.push(
@@ -978,28 +631,6 @@ export class WorkerService {
       sessionVolumeName: volumeName,
     });
 
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.container_create_start',
-      decision: 'create_container_worker',
-      outcome: 'started',
-      container_name: workerId,
-      worker_type: imageName,
-      worker_type_id: metadata?.workerTypeId,
-      worker_grpc_port: metadata?.workerGrpcPort,
-      session_volume_name: volumeName,
-      proxy_status: proxy ? 'configured' : 'disabled',
-      proxy_fallback:
-        metadata?.proxyMode === 'direct_fallback' ? 'direct' : undefined,
-      grpc_address:
-        grpcHost !== undefined && grpcPort !== undefined
-          ? `${grpcHost}:${grpcPort}`
-          : undefined,
-      raw_payload: {
-        container_labels: labels,
-        container_env: this.getAllowedEnv(envOverrides),
-      },
-    });
-
     try {
       const container = await this.docker.createContainer({
         Image: imageName,
@@ -1020,30 +651,8 @@ export class WorkerService {
 
       await container.start();
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.container_create_success',
-        decision: 'create_container_worker',
-        outcome: 'created',
-        container_id: container.id,
-        container_name: workerId,
-        worker_type: imageName,
-        worker_type_id: metadata?.workerTypeId,
-        worker_grpc_port: metadata?.workerGrpcPort,
-        session_volume_name: volumeName,
-      });
-
       return container.id;
     } catch (error) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.container_create_error',
-        decision: 'create_container_worker',
-        outcome: 'error',
-        reason: 'docker_create_failed',
-        level: 'error',
-        container_name: workerId,
-        worker_type: imageName,
-        error: dockerErrorMessage(error),
-      });
       throw error;
     }
   }
@@ -1073,10 +682,6 @@ export class WorkerService {
     const existsContainerById =
       await this.existsContainerWorkerById(containerName);
     if (existsContainerById) {
-      await this.recordContainerDiagnostics(
-        containerName,
-        'replace_existing_warm_container_before_create'
-      );
       await this.removeContainerWorkerById(containerName);
     }
 
@@ -1093,20 +698,6 @@ export class WorkerService {
     if (input.workerGrpcPort !== undefined) {
       envOverrides.push(`WORKER_GRPC_PORT=${input.workerGrpcPort}`);
     }
-
-    if (input.imageName === EWorkerImage.baileys) {
-      envOverrides.push('OTEL_SERVICE_NAME=baileys');
-    }
-
-    if (input.imageName === EWorkerImage.wwebjs) {
-      envOverrides.push('OTEL_SERVICE_NAME=wwebjs');
-    }
-
-    if (input.imageName === EWorkerImage.whatsmeow) {
-      envOverrides.push('OTEL_SERVICE_NAME=whatsmeow');
-    }
-
-    this.applyContainerOtelEndpoint(envOverrides);
 
     if (input.grpcHost !== undefined && input.grpcPort !== undefined) {
       envOverrides.push(
@@ -1142,22 +733,6 @@ export class WorkerService {
       ...(input.proxy ? { 'underchat.proxy_mode': 'proxy' } : {}),
     };
 
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.docker.warm_container_create_start',
-      decision: 'create_warm_container_worker',
-      outcome: 'started',
-      container_name: containerName,
-      worker_type: input.imageName,
-      worker_type_id: input.workerTypeId,
-      warm_pool_id: input.warmPoolId,
-      server_id: input.serverId,
-      session_volume_name: sessionVolumeName,
-      raw_payload: {
-        container_labels: labels,
-        container_env: this.getAllowedEnv(envOverrides),
-      },
-    });
-
     try {
       const container = await this.docker.createContainer({
         Image: input.imageName,
@@ -1178,37 +753,12 @@ export class WorkerService {
 
       await container.start();
 
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.warm_container_create_success',
-        decision: 'create_warm_container_worker',
-        outcome: 'created',
-        container_id: container.id,
-        container_name: containerName,
-        worker_type: input.imageName,
-        worker_type_id: input.workerTypeId,
-        warm_pool_id: input.warmPoolId,
-        session_volume_name: sessionVolumeName,
-      });
-
       return {
         container_id: container.id,
         container_name: containerName,
         session_volume_name: sessionVolumeName,
       };
     } catch (error) {
-      recordConnectionLifecycle({
-        stage: 'connection.balancer.docker.warm_container_create_error',
-        decision: 'create_warm_container_worker',
-        outcome: 'error',
-        reason: 'docker_create_failed',
-        level: 'error',
-        container_name: containerName,
-        worker_type: input.imageName,
-        worker_type_id: input.workerTypeId,
-        warm_pool_id: input.warmPoolId,
-        session_volume_name: sessionVolumeName,
-        error: dockerErrorMessage(error),
-      });
       throw error;
     }
   }

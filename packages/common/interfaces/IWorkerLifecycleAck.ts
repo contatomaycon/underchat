@@ -11,7 +11,6 @@ export interface IWorkerLifecycleAck {
   server_id?: string;
   worker_type_id?: string;
   worker_status_id: EWorkerStatus;
-  connection_lifecycle_id: string;
   operation_id: string;
   reason: string;
   recreate_available_at?: string | null;

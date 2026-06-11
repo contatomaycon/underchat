@@ -41,12 +41,6 @@ import { MessageKeyLookupService } from '@core/services/messageKeyLookup.service
 import { isMessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { MessageSendIdempotencyService } from '@core/services/messageSendIdempotency.service';
-import { logger } from '@core/plugins/telemetry/logger';
-import {
-  recordException,
-  incrementCounter,
-  recordHistogram,
-} from '@core/plugins/telemetry/observability';
 import { resolveMessageSendIdentity } from '@core/common/functions/messageIdentity';
 
 interface IPartitionCommitState {
@@ -141,58 +135,6 @@ export class MessageSendConsume {
     private readonly messageSendIdempotencyService: MessageSendIdempotencyService
   ) {}
 
-  private logPipelineEvent(
-    event: string,
-    details: Record<string, unknown> = {},
-    level: 'info' | 'warn' | 'error' = 'info'
-  ): void {
-    const payload = {
-      module: 'worker_baileys',
-      component: 'message_send_consume',
-      type: 'message_send_pipeline',
-      provider: this.PROVIDER,
-      event,
-      worker_id: baileysEnvironment.baileysWorkerId,
-      account_id: baileysEnvironment.baileysAccountId,
-      ...details,
-    };
-
-    if (level === 'error') {
-      logger.error(payload, 'Baileys message send pipeline event');
-      return;
-    }
-
-    if (level === 'warn') {
-      logger.warn(payload, 'Baileys message send pipeline event');
-      return;
-    }
-
-    logger.info(payload, 'Baileys message send pipeline event');
-  }
-
-  private queueTypeFromKey(queueKey: string): string {
-    return queueKey.startsWith('chat:') ? 'chat' : 'system';
-  }
-
-  private attemptBucket(attempt: number): string {
-    if (attempt <= 1) return '1';
-    if (attempt <= 3) return '2-3';
-    return '4+';
-  }
-
-  private baseMetricAttributes(
-    envelope: IQueuedEnvelope,
-    result: string,
-    attempt: number
-  ): Record<string, string | number> {
-    return {
-      provider: this.PROVIDER,
-      result,
-      queue_type: this.queueTypeFromKey(envelope.queueKey),
-      attempt_bucket: this.attemptBucket(attempt),
-    };
-  }
-
   private extractMessageId(payload: unknown): string | null {
     if (!payload || typeof payload !== 'object') {
       return null;
@@ -212,22 +154,7 @@ export class MessageSendConsume {
       return await this.messageStatusService.isMessageAlreadySentByMessageId(
         messageId
       );
-    } catch (error) {
-      this.logPipelineEvent(
-        'already_sent_check_error',
-        {
-          message_id: messageId,
-          error: this.errorMessage(error),
-        },
-        'error'
-      );
-      recordException(error, {
-        messageSendPipeline: {
-          provider: this.PROVIDER,
-          event: 'already_sent_check_error',
-          message_id: messageId,
-        },
-      });
+    } catch {
       return false;
     }
   }
@@ -238,18 +165,6 @@ export class MessageSendConsume {
   ): Promise<'acquired' | 'duplicate' | 'error' | 'missing_identity'> {
     const identity = resolveMessageSendIdentity(payload);
     if (!identity) {
-      this.logPipelineEvent(
-        'idempotency_identity_missing',
-        {
-          chat_id: envelope.chatId,
-          queue_key: envelope.queueKey,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          message_id: this.extractMessageId(payload),
-          result: 'idempotency_identity_missing',
-        },
-        'error'
-      );
       return 'missing_identity';
     }
 
@@ -268,106 +183,23 @@ export class MessageSendConsume {
     );
 
     if (claimStatus === 'duplicate') {
-      this.logPipelineEvent('idempotency_duplicate_skipped', {
-        chat_id: envelope.chatId,
-        queue_key: envelope.queueKey,
-        partition: envelope.partition,
-        offset: envelope.offset,
-        message_id: identity.messageId,
-        message_hash: identity.hash,
-        result: 'idempotency_duplicate_skipped',
-      });
-      incrementCounter(
-        'message_send_idempotency_duplicate_skipped',
-        1,
-        this.baseMetricAttributes(envelope, 'idempotency_duplicate_skipped', 1)
-      );
       return 'duplicate';
     }
 
     if (claimStatus === 'error') {
-      this.logPipelineEvent(
-        'idempotency_claim_error',
-        {
-          chat_id: envelope.chatId,
-          queue_key: envelope.queueKey,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          message_id: identity.messageId,
-          message_hash: identity.hash,
-          result: 'idempotency_claim_error',
-        },
-        'error'
-      );
       return 'error';
     }
-
-    this.logPipelineEvent('idempotency_claim_acquired', {
-      chat_id: envelope.chatId,
-      queue_key: envelope.queueKey,
-      partition: envelope.partition,
-      offset: envelope.offset,
-      message_id: identity.messageId,
-      message_hash: identity.hash,
-      result: 'idempotency_claim_acquired',
-    });
 
     return 'acquired';
   }
 
-  private async markMessageAsFailedToSend(
-    envelope: IQueuedEnvelope,
-    messageId: string,
-    reason: string,
-    attempt: number,
-    rootError?: unknown
-  ): Promise<void> {
+  private async markMessageAsFailedToSend(messageId: string): Promise<void> {
     try {
       await this.messageStatusService.markMessageAsNotSent(
         baileysEnvironment.baileysAccountId,
         messageId
       );
-      this.logPipelineEvent('final_failed_marked', {
-        chat_id: envelope.chatId,
-        queue_key: envelope.queueKey,
-        partition: envelope.partition,
-        offset: envelope.offset,
-        message_id: messageId,
-        attempt,
-        result: 'failed_marked',
-        reason,
-      });
-      incrementCounter(
-        'message_send_final_failed',
-        1,
-        this.baseMetricAttributes(envelope, 'final_failed_marked', attempt)
-      );
-    } catch (error) {
-      this.logPipelineEvent(
-        'final_failed_mark_error',
-        {
-          chat_id: envelope.chatId,
-          queue_key: envelope.queueKey,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          message_id: messageId,
-          attempt,
-          result: 'failed_mark_error',
-          reason,
-          error: this.errorMessage(error),
-        },
-        'error'
-      );
-      recordException(error, {
-        messageSendPipeline: {
-          provider: this.PROVIDER,
-          event: 'final_failed_mark_error',
-          reason,
-          message_id: messageId,
-          root_error: this.errorMessage(rootError),
-        },
-      });
-    }
+    } catch {}
   }
 
   private get consumerOrThrow(): KafkaConsumer {
@@ -400,32 +232,7 @@ export class MessageSendConsume {
 
     this.consumer.on('data', (message) => {
       const task = this.handleMessageEvent(topic, message, generation)
-        .catch((error) => {
-          this.logPipelineEvent(
-            'dispatch_error',
-            {
-              partition: message.partition,
-              offset: message.offset,
-              result: 'dispatch_error',
-              error: this.errorMessage(error),
-            },
-            'error'
-          );
-          incrementCounter('message_send_error', 1, {
-            provider: this.PROVIDER,
-            result: 'dispatch_error',
-            queue_type: 'unknown',
-            attempt_bucket: '1',
-          });
-          recordException(error, {
-            messageSendPipeline: {
-              provider: this.PROVIDER,
-              event: 'dispatch_error',
-              partition: message.partition,
-              offset: message.offset,
-            },
-          });
-        })
+        .catch(() => {})
         .finally(() => {
           this.inFlightTasks.delete(task);
         });
@@ -570,21 +377,10 @@ export class MessageSendConsume {
   ): Promise<void> {
     const rawPayload = this.extractRawMessage(message.value);
     const payload = this.parseRawMessage(rawPayload);
-    const messageId = this.extractMessageId(payload);
 
     this.registerPendingOffset(message.partition, message.offset);
-    this.logPipelineEvent('consume_received', {
-      partition: message.partition,
-      offset: message.offset,
-      message_id: messageId,
-    });
 
     if (!payload) {
-      this.logPipelineEvent('payload_invalid_skipped', {
-        partition: message.partition,
-        offset: message.offset,
-        result: 'payload_invalid_skipped',
-      });
       await this.completeOffset(
         topic,
         message.partition,
@@ -611,55 +407,9 @@ export class MessageSendConsume {
       await this.enqueueByQueueKey(queueKey, async () => {
         await this.processEnvelopeWithRetry(envelope);
       });
-      this.logPipelineEvent('queue_enqueued', {
-        chat_id: chatId,
-        queue_key: queueKey,
-        partition: message.partition,
-        offset: message.offset,
-        message_id: messageId,
-      });
       shouldCompleteOffset = true;
     } catch (error) {
-      this.logPipelineEvent(
-        'enqueue_error',
-        {
-          chat_id: chatId,
-          queue_key: queueKey,
-          partition: message.partition,
-          offset: message.offset,
-          message_id: messageId,
-          result: 'enqueue_error',
-          error: this.errorMessage(error),
-        },
-        'error'
-      );
-      incrementCounter(
-        'message_send_error',
-        1,
-        this.baseMetricAttributes(
-          envelope,
-          'enqueue_error',
-          this.MAX_PROCESS_ATTEMPTS
-        )
-      );
-      recordException(error, {
-        messageSendPipeline: {
-          provider: this.PROVIDER,
-          event: 'enqueue_error',
-          chat_id: chatId,
-          queue_key: queueKey,
-          partition: message.partition,
-          offset: message.offset,
-          message_id: messageId,
-        },
-      });
-
-      await this.routeFailedMessage(
-        envelope,
-        error,
-        this.MAX_PROCESS_ATTEMPTS,
-        'enqueue_error'
-      );
+      await this.routeFailedMessage(envelope, error, 'enqueue_error');
       shouldCompleteOffset = true;
     } finally {
       if (shouldCompleteOffset && generation === this.generation) {
@@ -760,135 +510,38 @@ export class MessageSendConsume {
     envelope: IQueuedEnvelope
   ): Promise<void> {
     let lastError: unknown = null;
-    const messageId = this.extractMessageId(envelope.payload);
     const isSendPayload = this.isSendMessage(envelope.payload);
     const maxAttempts = isSendPayload ? 1 : this.MAX_PROCESS_ATTEMPTS;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const startedAt = Date.now();
       try {
         await this.processPayload(envelope.payload, envelope);
-        const durationMs = Date.now() - startedAt;
-        this.logPipelineEvent('processed_success', {
-          chat_id: envelope.chatId,
-          queue_key: envelope.queueKey,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          message_id: messageId,
-          attempt,
-          result: 'success',
-          duration_ms: durationMs,
-        });
-        incrementCounter(
-          'message_send_success',
-          1,
-          this.baseMetricAttributes(envelope, 'success', attempt)
-        );
-        recordHistogram(
-          'message_send_duration_ms',
-          durationMs,
-          this.baseMetricAttributes(envelope, 'success', attempt)
-        );
         return;
       } catch (error) {
         lastError = error;
         if (isMessageDeliveryConfirmationFailedError(error)) {
-          this.logPipelineEvent(
-            'delivery_unconfirmed',
-            {
-              chat_id: envelope.chatId,
-              queue_key: envelope.queueKey,
-              partition: envelope.partition,
-              offset: envelope.offset,
-              message_id: messageId,
-              attempt,
-              result: 'delivery_unconfirmed',
-              error: this.errorMessage(error),
-            },
-            'warn'
-          );
-          incrementCounter(
-            'message_send_delivery_unconfirmed',
-            1,
-            this.baseMetricAttributes(envelope, 'delivery_unconfirmed', attempt)
-          );
-
           await this.routeFailedMessage(
             envelope,
             error,
-            attempt,
             'delivery_unconfirmed'
           );
           return;
         }
 
         if (isSendPayload) {
-          this.logPipelineEvent(
-            'at_most_once_terminal_failed',
-            {
-              chat_id: envelope.chatId,
-              queue_key: envelope.queueKey,
-              partition: envelope.partition,
-              offset: envelope.offset,
-              message_id: messageId,
-              attempt,
-              result: 'at_most_once_terminal_failed',
-              error: this.errorMessage(error),
-            },
-            'warn'
-          );
-          incrementCounter(
-            'message_send_error',
-            1,
-            this.baseMetricAttributes(
-              envelope,
-              'at_most_once_terminal_failed',
-              attempt
-            )
-          );
-          await this.routeFailedMessage(
-            envelope,
-            error,
-            attempt,
-            'processing_failed'
-          );
+          await this.routeFailedMessage(envelope, error, 'processing_failed');
           return;
         }
 
         const isLastAttempt = attempt === maxAttempts;
 
-        this.logPipelineEvent(
-          isLastAttempt ? 'processing_failed' : 'retry_scheduled',
-          {
-            chat_id: envelope.chatId,
-            queue_key: envelope.queueKey,
-            partition: envelope.partition,
-            offset: envelope.offset,
-            message_id: messageId,
-            attempt,
-            result: isLastAttempt ? 'failed' : 'retrying',
-            error: this.errorMessage(error),
-          },
-          isLastAttempt ? 'warn' : 'info'
-        );
-
         if (!isLastAttempt) {
-          incrementCounter(
-            'message_send_retry',
-            1,
-            this.baseMetricAttributes(envelope, 'retrying', attempt)
-          );
           await this.delay(this.calculateRetryDelayMs(attempt));
         }
       }
     }
 
-    await this.routeFailedMessage(
-      envelope,
-      lastError,
-      maxAttempts,
-      'processing_failed'
-    );
+    await this.routeFailedMessage(envelope, lastError, 'processing_failed');
   }
 
   private async processPayload(
@@ -996,30 +649,7 @@ export class MessageSendConsume {
     const nextChain = previousChain
       .catch(() => {})
       .then(operation)
-      .catch((error) => {
-        this.logPipelineEvent(
-          'commit_coordination_error',
-          {
-            partition,
-            result: 'commit_coordination_error',
-            error: this.errorMessage(error),
-          },
-          'error'
-        );
-        incrementCounter('message_send_error', 1, {
-          provider: this.PROVIDER,
-          result: 'commit_coordination_error',
-          queue_type: 'unknown',
-          attempt_bucket: '1',
-        });
-        recordException(error, {
-          messageSendPipeline: {
-            provider: this.PROVIDER,
-            event: 'commit_coordination_error',
-            partition,
-          },
-        });
-      });
+      .catch(() => {});
 
     this.partitionCommitChains.set(partition, nextChain);
 
@@ -1112,40 +742,11 @@ export class MessageSendConsume {
   private async routeFailedMessage(
     envelope: IQueuedEnvelope,
     error: unknown,
-    attempt: number,
     failureEvent: 'delivery_unconfirmed' | 'processing_failed' | 'enqueue_error'
   ): Promise<void> {
-    const isSendPayload = this.isSendMessage(envelope.payload);
     const messageId = this.extractMessageId(envelope.payload);
 
-    if (failureEvent === 'processing_failed') {
-      incrementCounter(
-        'message_send_error',
-        1,
-        this.baseMetricAttributes(envelope, 'processing_failed', attempt)
-      );
-    }
-
     if (!messageId) {
-      this.logPipelineEvent(
-        'missing_message_id_skipped',
-        {
-          chat_id: envelope.chatId,
-          queue_key: envelope.queueKey,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          attempt,
-          result: 'missing_message_id',
-          failure_event: failureEvent,
-          error: this.errorMessage(error),
-        },
-        'warn'
-      );
-      incrementCounter(
-        'message_send_error',
-        1,
-        this.baseMetricAttributes(envelope, 'missing_message_id', attempt)
-      );
       await this.publishTerminalDlq(
         envelope,
         error,
@@ -1156,48 +757,11 @@ export class MessageSendConsume {
 
     const alreadySent = await this.isAlreadySent(messageId);
     if (alreadySent) {
-      this.logPipelineEvent('already_sent_skipped', {
-        chat_id: envelope.chatId,
-        queue_key: envelope.queueKey,
-        partition: envelope.partition,
-        offset: envelope.offset,
-        message_id: messageId,
-        attempt,
-        result: 'already_sent_skipped',
-      });
-      incrementCounter(
-        'message_send_already_sent_skipped',
-        1,
-        this.baseMetricAttributes(envelope, 'already_sent_skipped', attempt)
-      );
       return;
     }
 
     const terminalReason = `${failureEvent}_terminal`;
-    this.logPipelineEvent(
-      isSendPayload ? 'at_most_once_terminal_mark' : 'terminal_failed_mark',
-      {
-        chat_id: envelope.chatId,
-        queue_key: envelope.queueKey,
-        partition: envelope.partition,
-        offset: envelope.offset,
-        message_id: messageId,
-        attempt,
-        result: isSendPayload
-          ? 'at_most_once_terminal_mark'
-          : 'terminal_failed_mark',
-        reason: terminalReason,
-        error: this.errorMessage(error),
-      },
-      'warn'
-    );
-    await this.markMessageAsFailedToSend(
-      envelope,
-      messageId,
-      terminalReason,
-      attempt,
-      error
-    );
+    await this.markMessageAsFailedToSend(messageId);
     await this.publishTerminalDlq(envelope, error, terminalReason);
   }
 
@@ -1237,30 +801,7 @@ export class MessageSendConsume {
           envelope.kafkaKey ??
           undefined
       );
-    } catch (dlqError) {
-      this.logPipelineEvent(
-        'terminal_dlq_publish_error',
-        {
-          chat_id: envelope.chatId,
-          queue_key: envelope.queueKey,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          result: 'terminal_dlq_publish_error',
-          reason,
-          error: this.errorMessage(dlqError),
-        },
-        'error'
-      );
-      recordException(dlqError, {
-        messageSendPipeline: {
-          provider: this.PROVIDER,
-          event: 'terminal_dlq_publish_error',
-          partition: envelope.partition,
-          offset: envelope.offset,
-          reason,
-        },
-      });
-    }
+    } catch {}
   }
 
   private errorMessage(error: unknown): string {
@@ -2334,36 +1875,10 @@ export class MessageSendConsume {
           messageKey
         );
       } catch (error) {
-        this.logPipelineEvent(
-          'edit_send_failed',
-          {
-            chat_id: data.chat_id,
-            message_id: data.message_id,
-            edit_key_id: messageKey.id,
-            edit_remote_jid: messageKey.remoteJid,
-            edit_addressing_mode: messageKey.addressingMode,
-            error: this.errorMessage(error),
-          },
-          'warn'
-        );
-
         throw error;
       }
 
       if (!result) {
-        this.logPipelineEvent(
-          'edit_send_failed',
-          {
-            chat_id: data.chat_id,
-            message_id: data.message_id,
-            edit_key_id: messageKey.id,
-            edit_remote_jid: messageKey.remoteJid,
-            edit_addressing_mode: messageKey.addressingMode,
-            error: 'empty_result',
-          },
-          'warn'
-        );
-
         throw new Error('Failed to edit message');
       }
 

@@ -25,10 +25,6 @@ import type { ElasticDatabaseService } from '@core/services/elasticDatabase.serv
 import type { ChatService } from '@core/services/chat.service';
 import type { ChatClosureCommentListerRepository } from '@core/repositories/chat/ChatClosureCommentLister.repository';
 import { ChatMessageListerUseCase } from '@core/useCases/chat/ChatMessageLister.useCase';
-import {
-  createRequestLatencyContext,
-  runWithRequestLatencyContext,
-} from '@core/plugins/telemetry/requestLatency';
 
 function buildAction(actionName: EPermissionsRoles): IJwtGroupHierarchy {
   return {
@@ -40,8 +36,8 @@ function buildAction(actionName: EPermissionsRoles): IJwtGroupHierarchy {
   };
 }
 
-describe('ChatMessageListerUseCase request breakdown', () => {
-  it('records route stages without changing the API response shape', async () => {
+describe('ChatMessageListerUseCase', () => {
+  it('lists route messages without changing the API response shape', async () => {
     const message = {
       message_id: 'message-1',
       chat_id: 'chat-1',
@@ -77,31 +73,19 @@ describe('ChatMessageListerUseCase request breakdown', () => {
       chatService,
       closureRepository
     );
-    const context = createRequestLatencyContext();
-
-    const response = await runWithRequestLatencyContext(context, () =>
-      useCase.execute(
-        ((key: string) => key) as never,
-        'account-1',
-        { current_page: 1, per_page: 10 },
-        { chat_id: 'chat-1' },
-        'user-1',
-        [buildAction(EGeneralPermissions.full_access)],
-        [],
-        []
-      )
+    const response = await useCase.execute(
+      ((key: string) => key) as never,
+      'account-1',
+      { current_page: 1, per_page: 10 },
+      { chat_id: 'chat-1' },
+      'user-1',
+      [buildAction(EGeneralPermissions.full_access)],
+      [],
+      []
     );
 
     expect(response.results).toEqual([message]);
     expect(response.pagings.total).toBe(1);
-    expect(context.stages.map((stage) => stage.name)).toEqual(
-      expect.arrayContaining([
-        'chat.messages.find_chat',
-        'chat.messages.permission_policy',
-        'chat.messages.list_messages',
-        'chat.messages.closure_comments',
-      ])
-    );
   });
 
   it('drops Elasticsearch hits that do not belong to the requested chat', async () => {

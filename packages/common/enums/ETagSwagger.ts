@@ -3,7 +3,6 @@ export enum ETagSwagger {
   server = 'Servidor',
   auth = 'Autenticação',
   register = 'Registro',
-  metrics = 'Métricas',
   centrifugo = 'Centrifugo',
   role = 'Funções',
   worker = 'Canais',

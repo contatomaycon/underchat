@@ -1,6 +1,4 @@
 import { injectable } from 'tsyringe';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -23,22 +21,9 @@ import {
   IWorkerRuntimeHealthRequestProto,
   IWorkerRuntimeHealthResponseProto,
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
-import {
-  buildConnectionLifecycleContext,
-  injectGrpcConnectionMetadata,
-  recordConnectionLifecycle,
-  runWithConnectionLifecycleContext,
-} from '@core/plugins/telemetry/connectionLifecycleDebug';
-import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
+import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const protoPath = path.join(
-  __dirname,
-  '..',
-  'proto',
-  'worker_connection.proto'
-);
+const protoPath = resolveProtoPath('worker_connection.proto');
 const packageDefinition = loadSync(protoPath, {
   keepCase: true,
   longs: String,
@@ -66,7 +51,6 @@ export class WorkerBaileysGrpcClientService {
     phone_connection?: string;
     remove_session?: boolean;
     connection_attempt_id?: string;
-    connection_lifecycle_id?: string;
     runtime_generation?: number;
     warm_pool_id?: string;
   } {
@@ -86,11 +70,6 @@ export class WorkerBaileysGrpcClientService {
       (
         protoPayload as { connection_attempt_id?: string }
       ).connection_attempt_id = payload.connection_attempt_id;
-    }
-    if (payload.connection_lifecycle_id) {
-      (
-        protoPayload as { connection_lifecycle_id?: string }
-      ).connection_lifecycle_id = payload.connection_lifecycle_id;
     }
     if (payload.runtime_generation) {
       (protoPayload as { runtime_generation?: number }).runtime_generation =
@@ -156,45 +135,16 @@ export class WorkerBaileysGrpcClientService {
       phone_connection?: string;
       remove_session?: boolean;
       connection_attempt_id?: string;
-      connection_lifecycle_id?: string;
       runtime_generation?: number;
       warm_pool_id?: string;
     }
   ): Promise<IBaileysConnectionState> {
-    const startedAt = Date.now();
     const client = new WorkerConnectionClient(
       address,
       credentials.createInsecure()
     );
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-    const metadata = injectGrpcConnectionMetadata(new Metadata());
-
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.worker_connection_grpc.request_start',
-      decision: 'grpc_request_connection',
-      outcome: 'started',
-      grpc_method: 'RequestConnection',
-      grpc_address: address,
-      deadline_ms: GRPC_DEADLINE_MS,
-      status: protoPayload.status,
-      connection_type: protoPayload.type,
-      remove_session: protoPayload.remove_session === true,
-      connection_attempt_id: protoPayload.connection_attempt_id,
-      runtime_generation: protoPayload.runtime_generation,
-      warm_pool_id: protoPayload.warm_pool_id,
-    });
-    recordConnectionAttemptTelemetry({
-      event: 'balancer_worker_grpc_request_connection_start',
-      stage: 'connection.balancer.worker_connection_grpc.request_start',
-      metric_event: 'grpc_request',
-      worker_id: protoPayload.worker_id,
-      worker_type: undefined,
-      grpc_method: 'RequestConnection',
-      grpc_address: address,
-      status: protoPayload.status,
-      outcome: 'started',
-      deadline_ms: GRPC_DEADLINE_MS,
-    });
+    const metadata = new Metadata();
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
       (client as any).RequestConnection(
@@ -207,46 +157,10 @@ export class WorkerBaileysGrpcClientService {
         ): void => {
           client.close();
           if (err) {
-            recordConnectionLifecycle({
-              stage: 'connection.balancer.worker_connection_grpc.request_error',
-              decision: 'grpc_request_connection',
-              outcome: 'error',
-              reason: 'grpc_error',
-              level: 'error',
-              grpc_method: 'RequestConnection',
-              grpc_address: address,
-              deadline_ms: GRPC_DEADLINE_MS,
-              connection_attempt_id: protoPayload.connection_attempt_id,
-              runtime_generation: protoPayload.runtime_generation,
-              warm_pool_id: protoPayload.warm_pool_id,
-              duration_ms: Date.now() - startedAt,
-              error: err.message,
-            });
             reject(err);
             return;
           }
           const state = protoToConnectionState(response ?? {});
-          recordConnectionLifecycle({
-            stage: 'connection.balancer.worker_connection_grpc.request_success',
-            decision: 'grpc_request_connection',
-            outcome: 'success',
-            grpc_method: 'RequestConnection',
-            grpc_address: address,
-            deadline_ms: GRPC_DEADLINE_MS,
-            status: state.status,
-            code: state.code,
-            has_qr: Boolean(state.qrcode),
-            qrcode_len: state.qrcode?.length ?? 0,
-            has_pairing_code: Boolean(state.pairing_code),
-            pairing_code_len: state.pairing_code?.length ?? 0,
-            connection_attempt_id:
-              state.connection_attempt_id ?? protoPayload.connection_attempt_id,
-            runtime_generation:
-              state.runtime_generation ?? protoPayload.runtime_generation,
-            warm_pool_id: state.warm_pool_id ?? protoPayload.warm_pool_id,
-            container_id: state.container_id,
-            duration_ms: Date.now() - startedAt,
-          });
           resolve(state);
         }
       );
@@ -301,45 +215,14 @@ export class WorkerBaileysGrpcClientService {
     );
     const deadline = new Date(Date.now() + timeoutMs);
 
-    recordConnectionLifecycle({
-      stage: 'connection.balancer.worker_connection_grpc.readiness_start',
-      decision: 'grpc_wait_for_ready',
-      outcome: 'started',
-      grpc_address: address,
-      grpc_probe_address: address,
-      deadline_ms: timeoutMs,
-      grpc_ready: false,
-    });
-
     return new Promise<string>((resolve, reject) => {
       client.waitForReady(deadline, (err?: Error) => {
         client.close();
         if (err) {
-          recordConnectionLifecycle({
-            stage: 'connection.balancer.worker_connection_grpc.readiness_error',
-            decision: 'grpc_wait_for_ready',
-            outcome: 'not_ready',
-            reason: 'grpc_wait_for_ready_failed',
-            level: 'warn',
-            grpc_address: address,
-            grpc_probe_address: address,
-            grpc_probe_error: err.message,
-            deadline_ms: timeoutMs,
-            grpc_ready: false,
-          });
           reject(err);
           return;
         }
 
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.worker_connection_grpc.readiness_success',
-          decision: 'grpc_wait_for_ready',
-          outcome: 'ready',
-          grpc_address: address,
-          grpc_probe_address: address,
-          deadline_ms: timeoutMs,
-          grpc_ready: true,
-        });
         resolve(address);
       });
     });
@@ -354,19 +237,7 @@ export class WorkerBaileysGrpcClientService {
       credentials.createInsecure()
     );
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-    const metadata = injectGrpcConnectionMetadata(new Metadata());
-
-    recordConnectionLifecycle({
-      stage:
-        'connection.balancer.worker_connection_grpc.activate_runtime_start',
-      decision: 'grpc_activate_runtime',
-      outcome: 'started',
-      grpc_method: 'ActivateRuntime',
-      grpc_address: address,
-      deadline_ms: GRPC_DEADLINE_MS,
-      worker_type: payload.worker_type_id,
-      warm_pool_id: payload.warm_pool_id,
-    });
+    const metadata = new Metadata();
 
     return new Promise<IWorkerRuntimeActivationResponseProto>(
       (resolve, reject) => {
@@ -380,37 +251,10 @@ export class WorkerBaileysGrpcClientService {
           ): void => {
             client.close();
             if (err) {
-              recordConnectionLifecycle({
-                stage:
-                  'connection.balancer.worker_connection_grpc.activate_runtime_error',
-                decision: 'grpc_activate_runtime',
-                outcome: 'error',
-                reason: 'grpc_error',
-                level: 'error',
-                grpc_method: 'ActivateRuntime',
-                grpc_address: address,
-                deadline_ms: GRPC_DEADLINE_MS,
-                worker_type: payload.worker_type_id,
-                warm_pool_id: payload.warm_pool_id,
-                error: err.message,
-              });
               reject(err);
               return;
             }
 
-            recordConnectionLifecycle({
-              stage:
-                'connection.balancer.worker_connection_grpc.activate_runtime_success',
-              decision: 'grpc_activate_runtime',
-              outcome: response?.activated ? 'success' : 'error',
-              reason: response?.error,
-              grpc_method: 'ActivateRuntime',
-              grpc_address: address,
-              deadline_ms: GRPC_DEADLINE_MS,
-              worker_type: payload.worker_type_id,
-              warm_pool_id: payload.warm_pool_id,
-              already_active: response?.already_active === true,
-            });
             resolve(
               response ?? {
                 worker_id: payload.worker_id,
@@ -476,45 +320,12 @@ export class WorkerBaileysGrpcClientService {
       const address = `${workerId}:${port}`;
 
       try {
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.worker_connection_grpc.fallback_attempt',
-          decision: 'grpc_port_fallback',
-          outcome: 'started',
-          grpc_address: address,
-          attempt: index + 1,
-          max_attempts: ports.length,
-          worker_type: workerType,
-        });
         return await callByAddress(address);
       } catch (error) {
         lastError = error;
         if (isLastPort || !this.isRetryableConnectionError(error)) {
-          recordConnectionLifecycle({
-            stage: 'connection.balancer.worker_connection_grpc.fallback_error',
-            decision: 'grpc_port_fallback',
-            outcome: 'error',
-            reason: isLastPort ? 'last_port_failed' : 'non_retryable_error',
-            level: 'error',
-            grpc_address: address,
-            attempt: index + 1,
-            max_attempts: ports.length,
-            worker_type: workerType,
-            error: error instanceof Error ? error.message : String(error),
-          });
           throw error;
         }
-        recordConnectionLifecycle({
-          stage: 'connection.balancer.worker_connection_grpc.fallback_retry',
-          decision: 'grpc_port_fallback',
-          outcome: 'retrying',
-          reason: 'retryable_error',
-          level: 'warn',
-          grpc_address: address,
-          attempt: index + 1,
-          max_attempts: ports.length,
-          worker_type: workerType,
-          error: error instanceof Error ? error.message : String(error),
-        });
       }
     }
 
@@ -532,21 +343,9 @@ export class WorkerBaileysGrpcClientService {
   ): Promise<IBaileysConnectionState> {
     const protoPayload = this.buildConnectionProtoPayload(payload);
 
-    const contextData = buildConnectionLifecycleContext({
-      connection_lifecycle_id: payload.connection_lifecycle_id,
-      worker_id: workerId,
-      channel_id: workerId,
-      worker_type: workerType,
-      source_provider: 'balancer',
-      connection_type: payload.type,
-      connection_action: 'request_connection',
-    });
-
-    return runWithConnectionLifecycleContext(contextData, async () => {
-      return this.callWithFallback(workerId, workerType, (address) =>
-        this.requestConnectionByAddress(address, protoPayload)
-      );
-    });
+    return this.callWithFallback(workerId, workerType, (address) =>
+      this.requestConnectionByAddress(address, protoPayload)
+    );
   }
 
   async waitForReady(
@@ -554,18 +353,8 @@ export class WorkerBaileysGrpcClientService {
     workerType?: EWorkerType,
     timeoutMs: number = GRPC_READY_DEADLINE_MS
   ): Promise<string> {
-    const contextData = buildConnectionLifecycleContext({
-      worker_id: workerId,
-      channel_id: workerId,
-      worker_type: workerType,
-      source_provider: 'balancer',
-      connection_action: 'grpc_readiness',
-    });
-
-    return runWithConnectionLifecycleContext(contextData, () =>
-      this.callWithFallback(workerId, workerType, (address) =>
-        this.waitForReadyByAddress(address, timeoutMs)
-      )
+    return this.callWithFallback(workerId, workerType, (address) =>
+      this.waitForReadyByAddress(address, timeoutMs)
     );
   }
 

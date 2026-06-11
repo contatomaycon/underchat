@@ -14,7 +14,6 @@ import { TFunction } from 'i18next';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageUpsertConsume } from '@core/consumer/message/MessageUpsert.consume';
-import { logger } from '@core/plugins/telemetry/logger';
 
 @singleton()
 export class MessageUpsertDlqConsume {
@@ -118,18 +117,6 @@ export class MessageUpsertDlqConsume {
           );
         } catch (error) {
           if (MessageUpsertDlqConsume.isTerminalPayloadError(error)) {
-            logger.warn(
-              {
-                type: 'message_upsert_dlq_terminal_discarded',
-                error: error instanceof Error ? error.message : String(error),
-                account_id: data.account_id,
-                worker_id: data.worker_id,
-                message_id: data.message?.key?.id,
-                dlq_error: (data as any).dlq_error,
-                dlq_timestamp: (data as any).dlq_timestamp,
-              },
-              'Message upsert DLQ payload discarded because it cannot be reprocessed'
-            );
             return;
           }
 

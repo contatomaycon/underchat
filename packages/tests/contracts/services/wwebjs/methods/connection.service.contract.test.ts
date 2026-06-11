@@ -24,14 +24,6 @@ jest.mock('@core/common/functions/normalizeJid', () => ({
   normalizeJid: (jid?: string | null) => jid ?? undefined,
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-}));
-
 jest.mock('@core/services/centrifugo.service', () => ({
   CentrifugoService: class {},
 }));
@@ -64,7 +56,6 @@ type WwebjsConnectionServicePrivate = {
   connecting: boolean;
   currentPromise?: Promise<IBaileysConnectionState>;
   connectionEstablished: boolean;
-  logConnectionEvent: (...args: unknown[]) => void;
   markConnected: (...args: unknown[]) => void;
   startConnectionStateProbe: (...args: unknown[]) => void;
   handleHealthCheckMismatch: (detectedStatus: Status) => void;
@@ -108,10 +99,6 @@ describe('WwebjsConnectionService', () => {
     );
 
     const servicePrivate = service as unknown as WwebjsConnectionServicePrivate;
-
-    jest
-      .spyOn(servicePrivate, 'logConnectionEvent')
-      .mockImplementation(() => undefined);
 
     return {
       service,
@@ -230,13 +217,6 @@ describe('WwebjsConnectionService', () => {
       type: EBaileysConnectionType.qrcode,
     });
 
-    expect(servicePrivate.logConnectionEvent).toHaveBeenCalledWith(
-      'connect_restore_bypassed',
-      expect.objectContaining({
-        reason: 'manual_qrcode_request',
-        requested_by_user: true,
-      })
-    );
     expect(startConnectionSpy).toHaveBeenCalled();
   });
 

@@ -1,7 +1,5 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -35,22 +33,9 @@ import {
   IWorkerRuntimeHealthRequestProto,
   IWorkerRuntimeHealthResponseProto,
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
-import {
-  buildConnectionLifecycleContext,
-  recordConnectionLifecycle,
-  runWithGrpcConnectionContext,
-} from '@core/plugins/telemetry/connectionLifecycleDebug';
-import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
+import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const protoPath = path.join(
-  __dirname,
-  '..',
-  '..',
-  'proto',
-  'worker_connection.proto'
-);
+const protoPath = resolveProtoPath('worker_connection.proto');
 
 const packageDefinition = loadSync(protoPath, {
   keepCase: true,
@@ -76,7 +61,6 @@ interface IStatusConnectionRequestProto {
   phone_connection?: string;
   remove_session?: boolean;
   connection_attempt_id?: string;
-  connection_lifecycle_id?: string;
   runtime_generation?: number;
   warm_pool_id?: string;
 }
@@ -105,8 +89,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     module === ERouteModule.worker_wwebjs
       ? wwebjsEnvironment.grpcPort
       : baileysEnvironment.grpcPort;
-  const sourceProvider =
-    module === ERouteModule.worker_wwebjs ? 'wwebjs' : 'baileys';
   const fallbackWorkerTypeId =
     module === ERouteModule.worker_wwebjs
       ? EWorkerType.wwebjs
@@ -193,9 +175,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     if (req.connection_attempt_id) {
       payload.connection_attempt_id = req.connection_attempt_id;
     }
-    if (req.connection_lifecycle_id) {
-      payload.connection_lifecycle_id = req.connection_lifecycle_id;
-    }
     if (req.runtime_generation) {
       payload.runtime_generation = req.runtime_generation;
     }
@@ -203,19 +182,6 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       payload.warm_pool_id = req.warm_pool_id;
     }
     const accountId = getAccountId();
-    const contextData = buildConnectionLifecycleContext({
-      connection_lifecycle_id: payload.connection_lifecycle_id,
-      account_id: accountId,
-      worker_id: payload.worker_id,
-      channel_id: payload.worker_id,
-      worker_type: sourceProvider,
-      source_provider: sourceProvider,
-      connection_type: payload.type,
-      connection_action:
-        payload.status === EWorkerStatus.online
-          ? 'request_connection'
-          : 'change_status',
-    });
 
     fastify.log.info(
       {
@@ -229,205 +195,72 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         connection_type: payload.type,
         remove_session: payload.remove_session === true,
         connection_attempt_id: payload.connection_attempt_id,
-        connection_lifecycle_id: payload.connection_lifecycle_id,
         runtime_generation: payload.runtime_generation,
         warm_pool_id: payload.warm_pool_id,
       },
       'Worker connection request received'
     );
 
-    runWithGrpcConnectionContext(call.metadata, contextData, () => {
-      const startedAt = Date.now();
-      recordConnectionLifecycle({
-        stage: 'connection.worker.grpc.request_received',
-        decision: 'worker_connection_request',
-        outcome: 'received',
-        grpc_method: 'RequestConnection',
-        status: payload.status,
-        connection_type: payload.type,
-        remove_session: payload.remove_session === true,
-        connection_attempt_id: payload.connection_attempt_id,
-        connection_lifecycle_id: payload.connection_lifecycle_id,
-        runtime_generation: payload.runtime_generation,
-        warm_pool_id: payload.warm_pool_id,
-      });
-      recordConnectionAttemptTelemetry({
-        event: 'worker_grpc_request_received',
-        stage: 'connection.worker.grpc.request_received',
-        worker_id: payload.worker_id,
-        account_id: accountId,
-        worker_type: sourceProvider,
-        library: sourceProvider,
-        connection_attempt_id: payload.connection_attempt_id,
-        status: payload.status,
-        outcome: 'received',
-        grpc_method: 'RequestConnection',
-        runtime_generation: payload.runtime_generation,
-        warm_pool_id: payload.warm_pool_id,
-      });
-
-      connectionConsume
-        .requestConnection(payload)
-        .then((response) => {
-          const responseState = {
-            ...response,
-            worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
-            runtime_generation:
-              response.runtime_generation ?? payload.runtime_generation,
-            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
-            connection_attempt_id:
-              response.connection_attempt_id ?? payload.connection_attempt_id,
-            connection_lifecycle_id:
-              response.connection_lifecycle_id ??
-              payload.connection_lifecycle_id,
-          };
-          const responseWithAttempt: IWorkerConnectionStateProto =
-            connectionStateToProto(responseState);
-          recordConnectionLifecycle({
-            stage: 'connection.worker.grpc.request_success',
-            decision: 'worker_connection_request',
-            outcome: 'success',
-            grpc_method: 'RequestConnection',
-            status: response.status,
-            code: response.code,
-            qrcode: response.qrcode,
-            pairing_code: response.pairing_code,
-            has_qr: Boolean(response.qrcode),
-            has_pairing_code: Boolean(response.pairing_code),
-            connection_attempt_id:
-              response.connection_attempt_id ?? payload.connection_attempt_id,
-            connection_lifecycle_id:
-              response.connection_lifecycle_id ??
-              payload.connection_lifecycle_id,
-            runtime_generation: responseState.runtime_generation,
-            warm_pool_id: responseState.warm_pool_id,
-            worker_type_id: responseState.worker_type_id,
-            container_id: response.container_id,
-            reason: response.reason,
-            qr_pending: response.qr_pending === true,
-            time_to_first_qr_ms: response.time_to_first_qr_ms,
-            duration_ms: Date.now() - startedAt,
-          });
-          recordConnectionAttemptTelemetry({
-            event: response.qrcode
-              ? 'worker_grpc_request_qr_generated'
-              : 'worker_grpc_request_completed',
-            stage: 'connection.worker.grpc.request_success',
+    connectionConsume
+      .requestConnection(payload)
+      .then((response) => {
+        const responseState = {
+          ...response,
+          worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
+          runtime_generation:
+            response.runtime_generation ?? payload.runtime_generation,
+          warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+          connection_attempt_id:
+            response.connection_attempt_id ?? payload.connection_attempt_id,
+        };
+        const responseWithAttempt: IWorkerConnectionStateProto =
+          connectionStateToProto(responseState);
+        fastify.log.info(
+          {
+            module,
+            component: 'worker_connection_grpc_server',
+            type: 'connection_status',
+            event: 'worker_connection_request_dispatched',
             worker_id: payload.worker_id,
             account_id: accountId,
-            worker_type: sourceProvider,
-            library: sourceProvider,
-            connection_attempt_id:
-              response.connection_attempt_id ?? payload.connection_attempt_id,
-            connection_lifecycle_id:
-              response.connection_lifecycle_id ??
-              payload.connection_lifecycle_id,
-            status: response.status,
-            code: response.code,
-            outcome: response.qrcode
-              ? 'qr_generated'
-              : response.qr_pending
-                ? 'pending'
-                : 'completed',
-            reason: response.qrcode
-              ? 'qr_generated'
-              : (response.reason ?? 'worker_response_without_qr'),
-            qrcode: response.qrcode,
-            has_qr: Boolean(response.qrcode),
-            grpc_method: 'RequestConnection',
-            duration_ms: Date.now() - startedAt,
-            time_to_first_qr_ms: response.time_to_first_qr_ms,
-            runtime_generation:
-              response.runtime_generation ?? payload.runtime_generation,
-            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
-            container_id: response.container_id,
-          });
-          fastify.log.info(
-            {
-              module,
-              component: 'worker_connection_grpc_server',
-              type: 'connection_status',
-              event: 'worker_connection_request_dispatched',
-              worker_id: payload.worker_id,
-              account_id: accountId,
-              status: payload.status,
-              connection_type: payload.type,
-              remove_session: payload.remove_session === true,
-              has_qr: Boolean(response.qrcode),
-              connection_attempt_id:
-                response.connection_attempt_id ?? payload.connection_attempt_id,
-              connection_lifecycle_id:
-                response.connection_lifecycle_id ??
-                payload.connection_lifecycle_id,
-              runtime_generation:
-                response.runtime_generation ?? payload.runtime_generation,
-              warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
-              reason: response.reason,
-              qr_pending: response.qr_pending === true,
-            },
-            'Worker connection request dispatched'
-          );
-          callback(null, responseWithAttempt);
-        })
-        .catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          recordConnectionLifecycle({
-            stage: 'connection.worker.grpc.request_error',
-            decision: 'worker_connection_request',
-            outcome: 'error',
-            reason: 'handler_error',
-            level: 'error',
-            grpc_method: 'RequestConnection',
             status: payload.status,
             connection_type: payload.type,
-            error: msg,
-            connection_attempt_id: payload.connection_attempt_id,
-            connection_lifecycle_id: payload.connection_lifecycle_id,
-            runtime_generation: payload.runtime_generation,
-            warm_pool_id: payload.warm_pool_id,
-            duration_ms: Date.now() - startedAt,
-          });
-          recordConnectionAttemptTelemetry({
-            event: 'worker_grpc_request_error',
-            stage: 'connection.worker.grpc.request_error',
-            level: 'error',
+            remove_session: payload.remove_session === true,
+            has_qr: Boolean(response.qrcode),
+            connection_attempt_id:
+              response.connection_attempt_id ?? payload.connection_attempt_id,
+            runtime_generation:
+              response.runtime_generation ?? payload.runtime_generation,
+            warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
+            reason: response.reason,
+            qr_pending: response.qr_pending === true,
+          },
+          'Worker connection request dispatched'
+        );
+        callback(null, responseWithAttempt);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          {
+            err,
+            module,
+            component: 'worker_connection_grpc_server',
+            type: 'connection_status',
+            event: 'worker_connection_request_error',
             worker_id: payload.worker_id,
             account_id: accountId,
-            worker_type: sourceProvider,
-            library: sourceProvider,
-            connection_attempt_id: payload.connection_attempt_id,
-            connection_lifecycle_id: payload.connection_lifecycle_id,
             status: payload.status,
-            outcome: 'error',
-            reason: 'handler_error',
-            error: msg,
-            grpc_method: 'RequestConnection',
-            duration_ms: Date.now() - startedAt,
+            connection_type: payload.type,
+            remove_session: payload.remove_session === true,
+            connection_attempt_id: payload.connection_attempt_id,
             runtime_generation: payload.runtime_generation,
             warm_pool_id: payload.warm_pool_id,
-          });
-          fastify.log.error(
-            {
-              err,
-              module,
-              component: 'worker_connection_grpc_server',
-              type: 'connection_status',
-              event: 'worker_connection_request_error',
-              worker_id: payload.worker_id,
-              account_id: accountId,
-              status: payload.status,
-              connection_type: payload.type,
-              remove_session: payload.remove_session === true,
-              connection_attempt_id: payload.connection_attempt_id,
-              connection_lifecycle_id: payload.connection_lifecycle_id,
-              runtime_generation: payload.runtime_generation,
-              warm_pool_id: payload.warm_pool_id,
-            },
-            'WorkerConnection gRPC handler error'
-          );
-          callback({ code: status.INTERNAL, message: msg, details: msg }, null);
-        });
-    });
+          },
+          'WorkerConnection gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
   };
 
   const handleValidatePhone = (

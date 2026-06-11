@@ -67,7 +67,6 @@ type ConnectionState struct {
 	Attempt                 int    `json:"attempt,omitempty"`
 	MaxAttempts             int    `json:"max_attempts,omitempty"`
 	ConnectionAttemptID     string `json:"connection_attempt_id,omitempty"`
-	ConnectionLifecycleID   string `json:"connection_lifecycle_id,omitempty"`
 	QRPending               bool   `json:"qr_pending,omitempty"`
 	QRGeneratedAt           string `json:"qr_generated_at,omitempty"`
 	ExpiresAt               string `json:"expires_at,omitempty"`
@@ -84,28 +83,26 @@ type ConnectionState struct {
 }
 
 type StatusConnectionRequest struct {
-	WorkerID              string `json:"worker_id"`
-	Status                string `json:"status"`
-	Type                  string `json:"type"`
-	PhoneConnection       string `json:"phone_connection"`
-	RemoveSession         bool   `json:"remove_session"`
-	ConnectionAttemptID   string `json:"connection_attempt_id"`
-	ConnectionLifecycleID string `json:"connection_lifecycle_id"`
-	RuntimeGeneration     int    `json:"runtime_generation"`
-	WarmPoolID            string `json:"warm_pool_id"`
+	WorkerID            string `json:"worker_id"`
+	Status              string `json:"status"`
+	Type                string `json:"type"`
+	PhoneConnection     string `json:"phone_connection"`
+	RemoveSession       bool   `json:"remove_session"`
+	ConnectionAttemptID string `json:"connection_attempt_id"`
+	RuntimeGeneration   int    `json:"runtime_generation"`
+	WarmPoolID          string `json:"warm_pool_id"`
 }
 
 type WorkerConnectionQRCodeQueueMessage struct {
-	RequestID             string `json:"request_id"`
-	ConnectionAttemptID   string `json:"connection_attempt_id"`
-	ConnectionLifecycleID string `json:"connection_lifecycle_id"`
-	WorkerID              string `json:"worker_id"`
-	AccountID             string `json:"account_id"`
-	WorkerTypeID          string `json:"worker_type_id"`
-	RuntimeGeneration     int    `json:"runtime_generation,omitempty"`
-	Source                string `json:"source"`
-	RequestedAt           string `json:"requested_at"`
-	ExpiresAt             string `json:"expires_at,omitempty"`
+	RequestID           string `json:"request_id"`
+	ConnectionAttemptID string `json:"connection_attempt_id"`
+	WorkerID            string `json:"worker_id"`
+	AccountID           string `json:"account_id"`
+	WorkerTypeID        string `json:"worker_type_id"`
+	RuntimeGeneration   int    `json:"runtime_generation,omitempty"`
+	Source              string `json:"source"`
+	RequestedAt         string `json:"requested_at"`
+	ExpiresAt           string `json:"expires_at,omitempty"`
 }
 
 type PhoneValidationRequest struct {
@@ -127,15 +124,14 @@ type PhoneValidationResponse struct {
 }
 
 type WorkerRuntimeActivationRequest struct {
-	WorkerID              string `json:"worker_id"`
-	AccountID             string `json:"account_id"`
-	WorkerTypeID          string `json:"worker_type_id"`
-	WarmPoolID            string `json:"warm_pool_id"`
-	SessionVolumeName     string `json:"session_volume_name"`
-	BalancerGRPCHost      string `json:"balancer_grpc_host"`
-	BalancerGRPCPort      int    `json:"balancer_grpc_port"`
-	ConnectionLifecycleID string `json:"connection_lifecycle_id,omitempty"`
-	RuntimeGeneration     int    `json:"runtime_generation,omitempty"`
+	WorkerID          string `json:"worker_id"`
+	AccountID         string `json:"account_id"`
+	WorkerTypeID      string `json:"worker_type_id"`
+	WarmPoolID        string `json:"warm_pool_id"`
+	SessionVolumeName string `json:"session_volume_name"`
+	BalancerGRPCHost  string `json:"balancer_grpc_host"`
+	BalancerGRPCPort  int    `json:"balancer_grpc_port"`
+	RuntimeGeneration int    `json:"runtime_generation,omitempty"`
 }
 
 type WorkerRuntimeActivationResponse struct {

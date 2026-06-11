@@ -1,7 +1,5 @@
 import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
 import { getErrorMessage } from './toError';
-import { logger } from '@core/plugins/telemetry/logger';
-import { recordException } from '@core/plugins/telemetry/observability';
 
 const TIMEOUT_ERROR_CODE = -185;
 const FALLBACK_DELAY_MS = 1000;
@@ -43,10 +41,8 @@ function createCleanup(
 }
 
 function createTimeoutHandler(
-  topic: string,
   cleanup: () => void,
-  isResolved: { value: boolean },
-  startTs: number
+  isResolved: { value: boolean }
 ): NodeJS.Timeout {
   return setTimeout(() => {
     if (isResolved.value) {
@@ -55,14 +51,6 @@ function createTimeoutHandler(
 
     isResolved.value = true;
     cleanup();
-    logger.warn(
-      {
-        topic,
-        type: 'kafka_connection_timeout',
-        ms: Date.now() - startTs,
-      },
-      `Kafka consumer connection timeout for topic ${topic}, continuing without connection`
-    );
   }, 30000);
 }
 
@@ -84,24 +72,6 @@ function handleTimeoutError(
   );
 }
 
-function handleNonTimeoutError(topic: string, error: unknown): void {
-  logger.error(
-    {
-      err: error,
-      topic,
-      type: 'kafka_consumer_error',
-    },
-    `Kafka consumer error for topic ${topic}`
-  );
-
-  recordException(error, {
-    kafka: {
-      type: 'consumer_connection_error',
-      topic,
-    },
-  });
-}
-
 function createErrorHandler(
   topic: string,
   cleanup: () => void,
@@ -115,10 +85,7 @@ function createErrorHandler(
 
     if (isTimeoutError(err)) {
       handleTimeoutError(topic, cleanup, timeout, isResolved);
-      return;
     }
-
-    handleNonTimeoutError(topic, err);
   };
 }
 
@@ -129,7 +96,6 @@ function createReadyHandler(
   timeout: NodeJS.Timeout,
   isResolved: { value: boolean },
   consumer: KafkaConsumer,
-  startTs: number,
   subscribeOnReady = true
 ) {
   return (): void => {
@@ -142,32 +108,8 @@ function createReadyHandler(
         consumer.subscribe([topic]);
         consumer.consume();
       }
-      logger.info(
-        {
-          topic,
-          type: 'kafka_consumer_connected',
-          ms: Date.now() - startTs,
-        },
-        `Kafka consumer connected to topic: ${topic}`
-      );
       onConnected();
-    } catch (error) {
-      logger.error(
-        {
-          err: error,
-          topic,
-          type: 'kafka_subscribe_error',
-        },
-        `Error subscribing to topic ${topic}`
-      );
-
-      recordException(error, {
-        kafka: {
-          type: 'subscribe_error',
-          topic,
-        },
-      });
-    }
+    } catch {}
 
     if (isResolved.value) {
       return;
@@ -199,8 +141,6 @@ function handleConnectCallbackError(
     handleTimeoutError(topic, cleanup, timeout, isResolved);
     return;
   }
-
-  handleNonTimeoutError(topic, err);
 }
 
 function createConnectCallback(
@@ -222,12 +162,10 @@ function createConnectCallback(
 }
 
 function handleConnectException(
-  topic: string,
   cleanup: () => void,
   timeout: NodeJS.Timeout,
   isResolved: { value: boolean },
-  connectCallbackCalled: { value: boolean },
-  connectError: unknown
+  connectCallbackCalled: { value: boolean }
 ): void {
   connectCallbackCalled.value = true;
 
@@ -238,33 +176,6 @@ function handleConnectException(
   isResolved.value = true;
   clearTimeout(timeout);
   cleanup();
-
-  if (isTimeoutError(connectError)) {
-    logger.warn(
-      {
-        topic,
-        type: 'kafka_connect_timeout',
-      },
-      `Kafka consumer connect() threw timeout error for topic ${topic}, continuing without connection`
-    );
-    return;
-  }
-
-  logger.error(
-    {
-      err: connectError,
-      topic,
-      type: 'kafka_connect_error',
-    },
-    `Kafka consumer connect() error for topic ${topic}`
-  );
-
-  recordException(connectError, {
-    kafka: {
-      type: 'connect_error',
-      topic,
-    },
-  });
 }
 
 function attemptConnect(
@@ -285,32 +196,17 @@ function attemptConnect(
 
   try {
     consumer.connect({}, connectCallback);
-  } catch (connectError) {
-    handleConnectException(
-      topic,
-      cleanup,
-      timeout,
-      isResolved,
-      connectCallbackCalled,
-      connectError
-    );
+  } catch {
+    handleConnectException(cleanup, timeout, isResolved, connectCallbackCalled);
   }
 }
 
 function handleSubscribeSuccess(
-  topic: string,
   onConnected: () => void,
   cleanup: () => void,
   timeout: NodeJS.Timeout,
   isResolved: { value: boolean }
 ): void {
-  logger.info(
-    {
-      topic,
-      type: 'kafka_consumer_connected',
-    },
-    `Kafka consumer connected to topic: ${topic}`
-  );
   onConnected();
 
   if (isResolved.value) {
@@ -323,7 +219,6 @@ function handleSubscribeSuccess(
 }
 
 function handleSubscribeError(
-  topic: string,
   cleanup: () => void,
   timeout: NodeJS.Timeout,
   isResolved: { value: boolean },
@@ -340,13 +235,6 @@ function handleSubscribeError(
   isResolved.value = true;
   clearTimeout(timeout);
   cleanup();
-  logger.warn(
-    {
-      topic,
-      type: 'kafka_subscribe_timeout',
-    },
-    `Kafka consumer subscribe timeout for topic ${topic}, continuing without subscription`
-  );
 }
 
 function attemptSubscribeFallback(
@@ -370,9 +258,9 @@ function attemptSubscribeFallback(
     try {
       consumer.subscribe([topic]);
       consumer.consume();
-      handleSubscribeSuccess(topic, onConnected, cleanup, timeout, isResolved);
+      handleSubscribeSuccess(onConnected, cleanup, timeout, isResolved);
     } catch (subscribeError) {
-      handleSubscribeError(topic, cleanup, timeout, isResolved, subscribeError);
+      handleSubscribeError(cleanup, timeout, isResolved, subscribeError);
     }
   }, FALLBACK_DELAY_MS);
 }
@@ -382,11 +270,6 @@ function connectInBackground(
   topic: string,
   onConnected: () => void
 ): void {
-  const startTs = Date.now();
-  logger.info(
-    { topic, type: 'kafka_consumer_connect_start', ts: startTs },
-    `Kafka consumer connect start for topic ${topic}`
-  );
   const isManagedConsumer = Boolean(
     (consumer as unknown as { __managedKafkaConsumer?: boolean })
       .__managedKafkaConsumer
@@ -395,7 +278,7 @@ function connectInBackground(
   const connectCallbackCalled = { value: false };
   const cleanupRef = { current: () => {} };
   const cleanup = () => cleanupRef.current();
-  const timeout = createTimeoutHandler(topic, cleanup, isResolved, startTs);
+  const timeout = createTimeoutHandler(cleanup, isResolved);
   const errorHandler = createErrorHandler(topic, cleanup, timeout, isResolved);
   const readyHandler = createReadyHandler(
     topic,
@@ -404,7 +287,6 @@ function connectInBackground(
     timeout,
     isResolved,
     consumer,
-    startTs,
     !isManagedConsumer
   );
   cleanupRef.current = createCleanup(consumer, readyHandler, errorHandler);
@@ -415,23 +297,7 @@ function connectInBackground(
     try {
       consumer.subscribe([topic]);
       consumer.consume();
-    } catch (error) {
-      logger.error(
-        {
-          err: error,
-          topic,
-          type: 'kafka_subscribe_error',
-        },
-        `Error preparing managed Kafka consumer for topic ${topic}`
-      );
-
-      recordException(error, {
-        kafka: {
-          type: 'managed_subscribe_error',
-          topic,
-        },
-      });
-    }
+    } catch {}
   }
 
   attemptConnect(

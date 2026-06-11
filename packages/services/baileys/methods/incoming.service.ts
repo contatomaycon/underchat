@@ -1,17 +1,6 @@
 import { inject, singleton } from 'tsyringe';
 import Redis from 'ioredis';
 import { Buffer } from 'node:buffer';
-import { logger } from '@core/plugins/telemetry/logger';
-import {
-  incrementCounter,
-  recordException,
-} from '@core/plugins/telemetry/observability';
-import {
-  buildMessageLifecycleContext,
-  isMessageLifecycleDebugEnabled,
-  recordMessageLifecycle,
-  type MessageLifecycleEvent,
-} from '@core/plugins/telemetry/messageLifecycleDebug';
 import {
   AnyMessageContent,
   Contact,
@@ -191,41 +180,10 @@ export class BaileysIncomingMessageService {
 
   private logLifecycle(
     m: WAMessage | null | undefined,
-    event: MessageLifecycleEvent
+    event: Record<string, unknown>
   ): void {
-    if (!isMessageLifecycleDebugEnabled()) {
-      return;
-    }
-
-    const contextData = buildMessageLifecycleContext(
-      {
-        worker_id: baileysEnvironment.baileysWorkerId,
-        account_id: baileysEnvironment.baileysAccountId,
-        source_provider: 'baileys',
-        type: mapIncomingToType(m ?? ({} as WAMessage)) ?? EMessageType.text,
-        message: {
-          key: {
-            id: m?.key?.id ?? undefined,
-            remoteJid: remoteJid(m?.key) ?? undefined,
-            remoteJidAlt: remoteJidAlt(m?.key) ?? undefined,
-            fromMe: m?.key?.fromMe ?? undefined,
-            participant: m?.key?.participant ?? undefined,
-            participantAlt: m?.key?.participantAlt ?? undefined,
-          },
-        },
-        has_quoted: m ? messageHasQuoted(m) : false,
-      },
-      'baileys'
-    );
-
-    recordMessageLifecycle({
-      ...contextData,
-      ...event,
-      provider_message_type: mapIncomingToType(m ?? ({} as WAMessage)),
-      provider_upsert_type: (event.provider_upsert_type ?? undefined) as
-        | string
-        | undefined,
-    });
+    void m;
+    void event;
   }
 
   private isPhoneLikeName(value: string): boolean {
@@ -766,23 +724,6 @@ export class BaileysIncomingMessageService {
     this.currentSocket = socket;
 
     socket.ev.on('messages.upsert', (e) => {
-      recordMessageLifecycle({
-        ...buildMessageLifecycleContext(
-          {
-            worker_id: baileysEnvironment.baileysWorkerId,
-            account_id: baileysEnvironment.baileysAccountId,
-            source_provider: 'baileys',
-            type: EMessageType.text,
-          },
-          'baileys'
-        ),
-        stage: 'baileys.event.messages_upsert.received_raw',
-        decision: 'receive_provider_event',
-        outcome: 'received',
-        provider_upsert_type: e?.type,
-        messages_count: Array.isArray(e?.messages) ? e.messages.length : 0,
-        raw_payload: e,
-      });
       if (!e?.messages?.length) return;
 
       const isHistoryUpsert = e.type && e.type !== EMessageUpsertType.notify;
@@ -809,58 +750,10 @@ export class BaileysIncomingMessageService {
     });
 
     socket.ev.on('messaging-history.set', (event) => {
-      recordMessageLifecycle({
-        ...buildMessageLifecycleContext(
-          {
-            worker_id: baileysEnvironment.baileysWorkerId,
-            account_id: baileysEnvironment.baileysAccountId,
-            source_provider: 'baileys',
-            type: EMessageType.text,
-          },
-          'baileys'
-        ),
-        stage: 'baileys.event.messaging_history.received_raw',
-        decision: 'receive_history_event',
-        outcome: 'received',
-        messages_count: Array.isArray(event?.messages)
-          ? event.messages.length
-          : 0,
-        raw_payload: event,
-      });
       if (!HISTORY_RECONCILIATION_ENABLED) {
-        recordMessageLifecycle({
-          ...buildMessageLifecycleContext(
-            {
-              worker_id: baileysEnvironment.baileysWorkerId,
-              account_id: baileysEnvironment.baileysAccountId,
-              source_provider: 'baileys',
-              type: EMessageType.text,
-            },
-            'baileys'
-          ),
-          stage: 'baileys.history.skip',
-          decision: 'history_reconciliation_enabled',
-          outcome: 'skipped',
-          reason: 'disabled',
-        });
         return;
       }
       if (!Array.isArray(event?.messages) || event.messages.length === 0) {
-        recordMessageLifecycle({
-          ...buildMessageLifecycleContext(
-            {
-              worker_id: baileysEnvironment.baileysWorkerId,
-              account_id: baileysEnvironment.baileysAccountId,
-              source_provider: 'baileys',
-              type: EMessageType.text,
-            },
-            'baileys'
-          ),
-          stage: 'baileys.history.skip',
-          decision: 'history_messages_present',
-          outcome: 'skipped',
-          reason: 'empty_history_messages',
-        });
         return;
       }
 
@@ -1520,28 +1413,7 @@ export class BaileysIncomingMessageService {
       );
 
       return acquired === 'OK';
-    } catch (error) {
-      logger.error(
-        {
-          err: error,
-          type: 'baileys_call_auto_reply_dedupe_error',
-          dedupe_key: dedupeKey,
-          account_id: baileysEnvironment.baileysAccountId,
-          worker_id: baileysEnvironment.baileysWorkerId,
-        },
-        'Failed to acquire call auto-reply dedupe key'
-      );
-      recordException(error, {
-        level: 'error',
-        baileys: {
-          type: 'call_auto_reply_dedupe_error',
-          account_id: baileysEnvironment.baileysAccountId,
-          worker_id: baileysEnvironment.baileysWorkerId,
-        },
-      });
-      incrementCounter('baileys_call_auto_reply_dedupe_error', 1, {
-        account_id: baileysEnvironment.baileysAccountId,
-      });
+    } catch {
       return false;
     }
   }
@@ -1844,40 +1716,16 @@ export class BaileysIncomingMessageService {
       );
       const topic = this.kafkaServiceQueueService.updateMessageStatus();
 
-      let lastError: unknown = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           await this.streamProducerService.send(topic, statusUpdate, kafkaKey);
           return;
-        } catch (error) {
-          lastError = error;
+        } catch {
           if (attempt < 3) {
             await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
           }
         }
       }
-
-      logger.error(
-        {
-          err: lastError,
-          account_id: statusUpdate.account_id,
-          message_id: statusUpdate.message_id,
-          patch: statusUpdate.patch,
-          type: 'baileys_status_enqueue_error',
-        },
-        'Failed to enqueue message status update to Kafka after 3 attempts'
-      );
-      incrementCounter('baileys_status_enqueue_error', 1, {
-        account_id: statusUpdate.account_id,
-      });
-      recordException(lastError, {
-        level: 'error',
-        baileys: {
-          type: 'status_enqueue_error',
-          account_id: statusUpdate.account_id,
-          message_id: statusUpdate.message_id,
-        },
-      });
     } catch {}
   }
 

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { injectable, inject } from 'tsyringe';
 import { TFunction } from 'i18next';
 import { IChat } from '@core/common/interfaces/IChat';
@@ -52,13 +51,6 @@ import {
 } from '@core/common/functions/securityKeyConfig';
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
-import { logger } from '@core/plugins/telemetry/logger';
-import { incrementCounter } from '@core/plugins/telemetry/observability';
-import {
-  recordMessageLifecycle,
-  runWithMessageLifecycleContext,
-  type MessageLifecycleContext,
-} from '@core/plugins/telemetry/messageLifecycleDebug';
 
 @injectable()
 export class ChatMessageService {
@@ -331,28 +323,6 @@ export class ChatMessageService {
         dataPublish.account?.id
       )
     ) {
-      logger.error(
-        {
-          type: 'chat_message_service_invalid_centrifugo_message_payload',
-          chat_id: dataPublish.chat_id,
-          message_id: dataPublish.message_id,
-          account_id: dataPublish.account?.id,
-        },
-        'Blocked Centrifugo publish for outbound message without matching chat/account ownership'
-      );
-      incrementCounter(
-        'chat_message_service_invalid_centrifugo_message_payload'
-      );
-      recordMessageLifecycle({
-        stage: 'service.outgoing.centrifugo.publish_blocked',
-        decision: 'publish_message',
-        outcome: 'blocked',
-        reason: 'invalid_message_ownership',
-        level: 'error',
-        message_id: dataPublish.message_id,
-        chat_id: dataPublish.chat_id,
-        account_id: dataPublish.account?.id,
-      });
       return Promise.resolve(null);
     }
 
@@ -462,233 +432,98 @@ export class ChatMessageService {
     return quoted;
   }
 
-  private outgoingMessageLifecycleContext(
-    message: IChatMessage
-  ): MessageLifecycleContext {
-    const remoteJid = (
-      message.message_key?.remote_jid ?? message.chat_id
-    ).toLowerCase();
-    const remoteJidAlt = message.message_key?.remote_jid_alt?.toLowerCase();
-    const messageKeyId = message.message_key?.id ?? message.message_id;
-    const lifecycleSource = [
-      message.account.id,
-      message.worker.id,
-      remoteJid,
-      remoteJidAlt ?? '',
-      '1',
-      messageKeyId,
-    ].join(':');
-
-    return {
-      message_lifecycle_id: createHash('sha1')
-        .update(lifecycleSource)
-        .digest('hex'),
-      account_id: message.account.id,
-      worker_id: message.worker.id,
-      channel_id: message.worker.id,
-      source_provider: 'outbound',
-      message_key_id: messageKeyId,
-      phone: message.phone,
-      remote_jid: remoteJid,
-      remote_jid_alt: remoteJidAlt ?? undefined,
-    };
-  }
-
   private async publishMessage(message: IChatMessage): Promise<boolean> {
     ensureMessageSendHash(message);
-    return runWithMessageLifecycleContext(
-      this.outgoingMessageLifecycleContext(message),
-      async () => {
-        const messageType = message.content?.type;
-        const isAnnotation = messageType === EMessageType.annotation;
+    const messageType = message.content?.type;
+    const isAnnotation = messageType === EMessageType.annotation;
 
-        recordMessageLifecycle({
-          stage: 'service.outgoing.message.persist.start',
-          decision: 'publish_message',
-          outcome: 'started',
-          message_id: message.message_id,
-          chat_id: message.chat_id,
-          message_type: messageType,
-          worker_id: message.worker.id,
-          account_id: message.account.id,
-          hash: message.hash ?? undefined,
-        });
-        const elasticSaved = await this.chatService.saveMessageChat(message);
-        if (!elasticSaved) {
-          recordMessageLifecycle({
-            stage: 'service.outgoing.message.persist.error',
-            decision: 'publish_message',
-            outcome: 'error',
-            reason: 'elastic_save_returned_false',
-            level: 'error',
-            message_id: message.message_id,
-            chat_id: message.chat_id,
-            message_type: messageType,
-            worker_id: message.worker.id,
-            account_id: message.account.id,
-          });
-          return false;
-        }
-        recordMessageLifecycle({
-          stage: 'service.outgoing.message.persist.success',
-          decision: 'publish_message',
-          outcome: 'success',
-          message_id: message.message_id,
-          chat_id: message.chat_id,
-          message_type: messageType,
-          worker_id: message.worker.id,
-          account_id: message.account.id,
-        });
+    const elasticSaved = await this.chatService.saveMessageChat(message);
+    if (!elasticSaved) {
+      return false;
+    }
 
-        const postPersistPromises: Promise<any>[] = [
-          this.centrifugoChatPublish(message),
-        ];
+    const postPersistPromises: Promise<any>[] = [
+      this.centrifugoChatPublish(message),
+    ];
 
-        if (!isAnnotation) {
-          if (!message.worker.id) {
-            throw new Error('Worker ID is required to send message');
-          }
-          const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
-            message.worker.id
-          );
-          recordMessageLifecycle({
-            stage: 'service.outgoing.kafka.publish.start',
-            decision: 'publish_worker_send_message',
-            outcome: 'started',
-            topic: kafkaTopic,
-            kafka_key: message.chat_id,
-            message_id: message.message_id,
-            chat_id: message.chat_id,
-            message_type: messageType,
-            worker_id: message.worker.id,
-            account_id: message.account.id,
-          });
-          postPersistPromises.push(
-            this.streamProducerService.send(
-              kafkaTopic,
-              message,
-              message.chat_id
-            )
-          );
-        }
-
-        const results = await Promise.allSettled(postPersistPromises);
-        const kafkaResult = results[1];
-
-        if (results[0].status === 'rejected') {
-          const error = results[0].reason;
-          recordMessageLifecycle({
-            stage: 'service.outgoing.centrifugo.publish.error',
-            decision: 'publish_realtime_message',
-            outcome: 'error',
-            reason: 'centrifugo_publish_failed',
-            level: 'warn',
-            message_id: message.message_id,
-            chat_id: message.chat_id,
-            message_type: messageType,
-            worker_id: message.worker.id,
-            account_id: message.account.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          if (error instanceof Error) {
-            console.error('Erro ao publicar no Centrifugo:', error.message);
-          }
-        } else {
-          recordMessageLifecycle({
-            stage: 'service.outgoing.centrifugo.publish.success',
-            decision: 'publish_realtime_message',
-            outcome: 'success',
-            message_id: message.message_id,
-            chat_id: message.chat_id,
-            message_type: messageType,
-            worker_id: message.worker.id,
-            account_id: message.account.id,
-          });
-        }
-
-        if (kafkaResult && kafkaResult.status === 'rejected') {
-          const error = kafkaResult.reason;
-          recordMessageLifecycle({
-            stage: 'service.outgoing.kafka.publish.error',
-            decision: 'publish_worker_send_message',
-            outcome: 'error',
-            reason: 'producer_send_failed',
-            level: 'error',
-            message_id: message.message_id,
-            chat_id: message.chat_id,
-            message_type: messageType,
-            worker_id: message.worker.id,
-            account_id: message.account.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw kafkaResult.reason;
-        } else if (kafkaResult) {
-          recordMessageLifecycle({
-            stage: 'service.outgoing.kafka.publish.success',
-            decision: 'publish_worker_send_message',
-            outcome: 'success',
-            message_id: message.message_id,
-            chat_id: message.chat_id,
-            message_type: messageType,
-            worker_id: message.worker.id,
-            account_id: message.account.id,
-          });
-        }
-
-        if (!message.content) {
-          return true;
-        }
-
-        const messageText = extractMessageTextFromContent(message.content);
-        const lastDateEpochMillis = new Date(message.date).getTime();
-        const incrementUnreadCount = false;
-        const chatBeforeSummary = await this.chatService.findChatByChatId(
-          message.account.id,
-          message.chat_id
-        );
-        const updateOperatorReplyPending =
-          chatBeforeSummary?.status === EChatStatus.in_chat &&
-          message.type_user === ETypeUserChat.operator &&
-          message.content.type !== EMessageType.react &&
-          message.content.type !== EMessageType.annotation;
-
-        await this.chatService.updateChatSummaryAtomically(
-          message.chat_id,
-          messageText,
-          message.date,
-          lastDateEpochMillis,
-          message.message_id,
-          message.message_id,
-          incrementUnreadCount,
-          message.type_user,
-          updateOperatorReplyPending
-        );
-
-        const updatedChat = await this.chatService.findChatByChatId(
-          message.account.id,
-          message.chat_id
-        );
-
-        if (!updatedChat) {
-          return false;
-        }
-
-        const channelAccountId = updatedChat.account.id;
-
-        await Promise.all([
-          this.centrifugoService.publishSub(
-            chatAccountCentrifugo(channelAccountId),
-            updatedChat
-          ),
-          this.centrifugoService.publishSub(
-            chatQueueAccountCentrifugo(channelAccountId),
-            updatedChat
-          ),
-        ]);
-
-        return true;
+    if (!isAnnotation) {
+      if (!message.worker.id) {
+        throw new Error('Worker ID is required to send message');
       }
-    ) as Promise<boolean>;
+      const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
+        message.worker.id
+      );
+      postPersistPromises.push(
+        this.streamProducerService.send(kafkaTopic, message, message.chat_id)
+      );
+    }
+
+    const results = await Promise.allSettled(postPersistPromises);
+    const kafkaResult = results[1];
+
+    if (results[0].status === 'rejected') {
+      const error = results[0].reason;
+      if (error instanceof Error) {
+        console.error('Erro ao publicar no Centrifugo:', error.message);
+      }
+    }
+
+    if (kafkaResult && kafkaResult.status === 'rejected') {
+      throw kafkaResult.reason;
+    }
+
+    if (!message.content) {
+      return true;
+    }
+
+    const messageText = extractMessageTextFromContent(message.content);
+    const lastDateEpochMillis = new Date(message.date).getTime();
+    const incrementUnreadCount = false;
+    const chatBeforeSummary = await this.chatService.findChatByChatId(
+      message.account.id,
+      message.chat_id
+    );
+    const updateOperatorReplyPending =
+      chatBeforeSummary?.status === EChatStatus.in_chat &&
+      message.type_user === ETypeUserChat.operator &&
+      message.content.type !== EMessageType.react &&
+      message.content.type !== EMessageType.annotation;
+
+    await this.chatService.updateChatSummaryAtomically(
+      message.chat_id,
+      messageText,
+      message.date,
+      lastDateEpochMillis,
+      message.message_id,
+      message.message_id,
+      incrementUnreadCount,
+      message.type_user,
+      updateOperatorReplyPending
+    );
+
+    const updatedChat = await this.chatService.findChatByChatId(
+      message.account.id,
+      message.chat_id
+    );
+
+    if (!updatedChat) {
+      return false;
+    }
+
+    const channelAccountId = updatedChat.account.id;
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        chatAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+      this.centrifugoService.publishSub(
+        chatQueueAccountCentrifugo(channelAccountId),
+        updatedChat
+      ),
+    ]);
+
+    return true;
   }
 
   async publishPreparedMessage(message: IChatMessage): Promise<boolean> {

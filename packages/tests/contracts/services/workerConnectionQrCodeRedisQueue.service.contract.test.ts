@@ -13,7 +13,6 @@ describe('WorkerConnectionQrCodeRedisQueueService', () => {
       service.enqueue({
         request_id: 'request-1',
         connection_attempt_id: 'attempt-1',
-        connection_lifecycle_id: 'lifecycle-1',
         worker_id: 'worker-1',
         account_id: 'account-1',
         worker_type_id: EWorkerType.baileys,

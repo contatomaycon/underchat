@@ -17,12 +17,6 @@ import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy'
 import { ChatClosureCommentListerRepository } from '@core/repositories/chat/ChatClosureCommentLister.repository';
 import { enrichMessagesWithClosureAnnotationSubtype } from '@core/common/functions/enrichMessagesWithClosureAnnotationSubtype';
 import { filterMessagesForChat } from '@core/common/functions/chatMessageOwnership';
-import {
-  measureRequestLatencyStage,
-  recordRequestLatencyStage,
-} from '@core/plugins/telemetry/requestLatency';
-import { logger } from '@core/plugins/telemetry/logger';
-import { incrementCounter } from '@core/plugins/telemetry/observability';
 
 @injectable()
 export class ChatMessageListerUseCase {
@@ -89,22 +83,6 @@ export class ChatMessageListerUseCase {
     const droppedMessages = messages.length - filteredMessages.length;
 
     if (droppedMessages > 0) {
-      logger.warn(
-        {
-          type: 'chat_message_lister_cross_chat_hits_dropped',
-          account_id: accountId,
-          chat_id: params.chat_id,
-          dropped_messages: droppedMessages,
-        },
-        'Dropped Elasticsearch message hits that do not belong to requested chat'
-      );
-      incrementCounter(
-        'chat.messages.cross_chat_hits_dropped',
-        droppedMessages,
-        {
-          account_id: accountId,
-        }
-      );
     }
 
     return [filteredMessages, total.value];
@@ -123,19 +101,15 @@ export class ChatMessageListerUseCase {
     const currentPage = query.current_page ?? 1;
     const perPage = query.per_page ?? 10;
 
-    const chat = await measureRequestLatencyStage(
-      'chat.messages.find_chat',
-      () => this.chatService.findChatByChatId(accountId, params.chat_id),
-      {
-        source: 'elastic',
-      }
+    const chat = await this.chatService.findChatByChatId(
+      accountId,
+      params.chat_id
     );
 
     if (!chat) {
       throw new Error(t('chat_not_found'));
     }
 
-    const permissionStart = Date.now();
     const canReadChat = canReadChatByPolicy({
       chat,
       userId,
@@ -143,26 +117,15 @@ export class ChatMessageListerUseCase {
       userSectors,
       userChannels,
     });
-    recordRequestLatencyStage(
-      'chat.messages.permission_policy',
-      Date.now() - permissionStart,
-      {
-        allowed: canReadChat,
-      }
-    );
 
     if (!canReadChat) {
       throw new Error(t('chat_access_denied'));
     }
 
-    const [chatMessages, total] = await measureRequestLatencyStage(
-      'chat.messages.list_messages',
-      () => this.getChatMessage(accountId, query, params),
-      {
-        source: 'elastic',
-        current_page: currentPage,
-        per_page: perPage,
-      }
+    const [chatMessages, total] = await this.getChatMessage(
+      accountId,
+      query,
+      params
     );
 
     if (!chatMessages) {
@@ -174,17 +137,11 @@ export class ChatMessageListerUseCase {
       };
     }
 
-    const closureRows = await measureRequestLatencyStage(
-      'chat.messages.closure_comments',
-      () =>
-        this.chatClosureCommentListerRepository.listByChatId(
-          accountId,
-          params.chat_id
-        ),
-      {
-        source: 'postgres',
-      }
-    );
+    const closureRows =
+      await this.chatClosureCommentListerRepository.listByChatId(
+        accountId,
+        params.chat_id
+      );
     const enrichedMessages = enrichMessagesWithClosureAnnotationSubtype(
       chatMessages,
       closureRows

@@ -12,10 +12,6 @@ import { releaseLock } from '@core/common/functions/releaseLock';
 import { PushExpoProviderService } from './pushExpoProvider.service';
 import { PushFcmProviderService } from './pushFcmProvider.service';
 import { PushApnsProviderService } from './pushApnsProvider.service';
-import {
-  incrementCounter,
-  recordGauge,
-} from '@core/plugins/telemetry/observability';
 
 const MOBILE_PROVIDERS: MobilePushSubscriptionProvider[] = [
   'expo',
@@ -120,9 +116,6 @@ export class PushDeliveryQueueService {
 
     await this.persistJob(job);
     await this.redis.zadd(this.pendingKey(input.provider), Date.now(), id);
-    incrementCounter('push_delivery_enqueued', 1, {
-      provider: input.provider,
-    });
     return id;
   };
 
@@ -173,7 +166,6 @@ export class PushDeliveryQueueService {
       }
 
       await this.reserveCapacity(provider, jobs.length);
-      recordGauge('push_delivery_claimed', jobs.length, { provider });
 
       const results = await this.deliverJobs(provider, jobs);
       await Promise.all(
@@ -248,7 +240,6 @@ export class PushDeliveryQueueService {
   ): Promise<void> {
     if (result.status === 'success') {
       await this.redis.del(this.jobKey(job.id));
-      incrementCounter('push_delivery_success', 1, { provider: job.provider });
       return;
     }
 
@@ -258,10 +249,6 @@ export class PushDeliveryQueueService {
         job.provider
       );
       await this.redis.del(this.jobKey(job.id));
-      incrementCounter('push_delivery_permanent_failure', 1, {
-        provider: job.provider,
-        reason: result.reason,
-      });
 
       if (job.provider !== 'expo' && job.fallbackExpoEndpoint) {
         await this.enqueue({
@@ -287,20 +274,12 @@ export class PushDeliveryQueueService {
         Date.now(),
         job.id
       );
-      incrementCounter('push_delivery_deadletter', 1, {
-        provider: job.provider,
-        reason: result.reason,
-      });
       return;
     }
 
     const retryAt = Date.now() + this.getBackoffMs(nextAttempt);
     await this.persistJob(nextJob);
     await this.redis.zadd(this.pendingKey(job.provider), retryAt, job.id);
-    incrementCounter('push_delivery_retry_scheduled', 1, {
-      provider: job.provider,
-      reason: result.reason,
-    });
   }
 
   private async getAvailableCapacity(

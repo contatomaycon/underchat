@@ -14,15 +14,6 @@ jest.mock('@core/config/environments', () => ({
   },
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    debug: jest.fn(),
-    error: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-  },
-}));
-
 jest.mock('@core/common/functions/normalizeJid', () => ({
   normalizeJid: (jid?: string | null) =>
     jid ? jid.replace(/@c\.us$/, '@s.whatsapp.net') : undefined,

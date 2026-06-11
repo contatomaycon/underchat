@@ -11,7 +11,6 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
-import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 @singleton()
 export class WorkerConnectionStatusWwebjsConsume {
@@ -34,16 +33,6 @@ export class WorkerConnectionStatusWwebjsConsume {
   async requestConnection(
     payload: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
-    this.logConnectionEvent('connection_request_received', {
-      status: payload.status,
-      connection_type: payload.type,
-      remove_session: payload.remove_session === true,
-      has_phone_connection: Boolean(payload.phone_connection),
-      connection_attempt_id: payload.connection_attempt_id,
-      connection_lifecycle_id: payload.connection_lifecycle_id,
-      qr_pending: payload.qr_pending === true,
-    });
-
     if (payload.type === EBaileysConnectionType.phone) {
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
@@ -55,16 +44,9 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.stopConnectionRetry();
   }
 
-  cancelConnectionAttempt(reason = 'connection_attempt_cancelled'): void {
-    this.logConnectionEvent('connection_attempt_cancel_requested', {
-      reason,
-      active_connection_attempt_id:
-        this.activeConnectionRequest?.connection_attempt_id,
-      active_connection_lifecycle_id:
-        this.activeConnectionRequest?.connection_lifecycle_id,
-    });
+  cancelConnectionAttempt(): void {
     this.stopConnectionRetry();
-    this.wwebjsService.cancelConnectionAttempt(reason);
+    this.wwebjsService.cancelConnectionAttempt();
   }
 
   private async handleConnectionStatus(
@@ -88,21 +70,9 @@ export class WorkerConnectionStatusWwebjsConsume {
   private async handleOnline(
     data: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
-    this.logConnectionEvent('handle_online_start', {
-      status: data.status,
-      connection_type: data.type,
-      connection_attempt_id: data.connection_attempt_id,
-      connection_lifecycle_id: data.connection_lifecycle_id,
-      qr_pending: data.qr_pending === true,
-    });
     this.stopConnectionRetry();
 
     if (this.wwebjsService.isConnected()) {
-      this.logConnectionEvent('handle_online_short_circuit', {
-        reason: 'already_connected',
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-      });
       return this.publishConnectedStatus();
     }
 
@@ -113,39 +83,14 @@ export class WorkerConnectionStatusWwebjsConsume {
     let shouldResetStaleSessionForQr = false;
 
     if (this.wwebjsService.hasSession() && !isSessionInvalid) {
-      this.logConnectionEvent('handle_online_restore_wait_start', {
-        reason: 'existing_session_found',
-        wait_ms: 3000,
-        interval_ms: 500,
-        code: currentCode,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-      });
       await this.waitForReconnection(3000, 500);
       if (this.wwebjsService.isConnected()) {
-        this.logConnectionEvent('handle_online_restore_wait_success', {
-          reason: 'connected_after_existing_session_wait',
-          connection_attempt_id: data.connection_attempt_id,
-          connection_lifecycle_id: data.connection_lifecycle_id,
-        });
         return this.publishConnectedStatus();
       }
-      this.logConnectionEvent('handle_online_restore_wait_timeout', {
-        reason: 'existing_session_not_connected_after_wait',
-        code: currentCode,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-      });
 
       shouldResetStaleSessionForQr =
         data.type === EBaileysConnectionType.qrcode && data.qr_pending === true;
       if (shouldResetStaleSessionForQr) {
-        this.logConnectionEvent('connection_stale_session_clearing_for_qr', {
-          reason: 'existing_session_not_connected_after_wait',
-          code: currentCode,
-          connection_attempt_id: data.connection_attempt_id,
-          connection_lifecycle_id: data.connection_lifecycle_id,
-        });
         await this.wwebjsService.disconnect({
           initial_connection: true,
           disconnected_user: false,
@@ -156,16 +101,6 @@ export class WorkerConnectionStatusWwebjsConsume {
     }
 
     if (this.activeConnectionRequest) {
-      this.logConnectionEvent('handle_online_short_circuit', {
-        reason: 'active_connection_request_exists',
-        code: currentCode,
-        active_connection_attempt_id:
-          this.activeConnectionRequest.connection_attempt_id,
-        active_connection_lifecycle_id:
-          this.activeConnectionRequest.connection_lifecycle_id,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-      });
       return this.currentState(currentCode);
     }
 
@@ -182,14 +117,6 @@ export class WorkerConnectionStatusWwebjsConsume {
       hasActiveSocket &&
       pairingInProgress
     ) {
-      this.logConnectionEvent('handle_online_short_circuit', {
-        reason: 'pairing_in_progress_republish',
-        status: currentStatus,
-        code: currentCode,
-        has_active_socket: hasActiveSocket,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-      });
       this.wwebjsService.republishLastState();
       return this.currentState(currentCode);
     }
@@ -219,11 +146,6 @@ export class WorkerConnectionStatusWwebjsConsume {
     }
 
     if (isSessionInvalid) {
-      this.logConnectionEvent('connection_session_invalid_clearing', {
-        code: currentCode,
-        connection_type: data.type,
-      });
-
       await this.wwebjsService.disconnect({
         initial_connection: true,
         disconnected_user: false,
@@ -298,72 +220,19 @@ export class WorkerConnectionStatusWwebjsConsume {
     const allowRestore = options.allowRestore ?? true;
     const forceNew = options.forceNew ?? options.fromDisconnectRestart;
 
-    this.logConnectionEvent('connection_connect_invoked', {
-      from_disconnect_restart: options.fromDisconnectRestart,
-      requested_by_user: options.requestedByUser,
-      force_new: forceNew,
-      connection_type: data.type,
-      has_phone_connection: Boolean(data.phone_connection),
+    return this.wwebjsService.connect({
+      initial_connection: true,
       allow_restore: allowRestore,
-      delegated_retry_owner: 'connection_service',
+      force_new: forceNew,
+      requested_by_user: options.requestedByUser,
+      from_disconnect_restart: options.fromDisconnectRestart,
+      type: data.type as EBaileysConnectionType,
+      phone_connection: data.phone_connection,
       connection_attempt_id: data.connection_attempt_id,
-      connection_lifecycle_id: data.connection_lifecycle_id,
-      qr_pending: data.qr_pending === true,
     });
-
-    try {
-      const state = await this.wwebjsService.connect({
-        initial_connection: true,
-        allow_restore: allowRestore,
-        force_new: forceNew,
-        requested_by_user: options.requestedByUser,
-        from_disconnect_restart: options.fromDisconnectRestart,
-        type: data.type as EBaileysConnectionType,
-        phone_connection: data.phone_connection,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-      });
-
-      this.logConnectionEvent('connection_connect_result', {
-        status: state?.status,
-        code: state?.code,
-        has_qr: Boolean(state?.qrcode),
-        delegated_retry_owner: 'connection_service',
-        connection_attempt_id:
-          state?.connection_attempt_id ?? data.connection_attempt_id,
-        connection_lifecycle_id:
-          state?.connection_lifecycle_id ?? data.connection_lifecycle_id,
-        has_pairing_code: Boolean(state?.pairing_code),
-        qr_pending: state?.qr_pending === true,
-        reason: state?.reason,
-        time_to_first_qr_ms: state?.time_to_first_qr_ms,
-      });
-
-      return state;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-
-      this.logConnectionEvent(
-        'connection_connect_error',
-        {
-          reason: errorMessage,
-          delegated_retry_owner: 'connection_service',
-          connection_attempt_id: data.connection_attempt_id,
-          connection_lifecycle_id: data.connection_lifecycle_id,
-        },
-        'error'
-      );
-      throw error;
-    }
   }
 
   private stopConnectionRetry(): void {
-    const hadActiveRetry =
-      Boolean(this.connectionRetryTimer) ||
-      Boolean(this.activeConnectionRequest) ||
-      this.connectionRetryAttempt > 0;
-
     if (this.connectionRetryTimer) {
       clearTimeout(this.connectionRetryTimer);
       this.connectionRetryTimer = null;
@@ -371,20 +240,10 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.activeConnectionRequest = null;
     this.connectionRetryAttempt = 0;
     this.restartAfterDisconnect = false;
-
-    if (hadActiveRetry) {
-      this.logConnectionEvent('connection_retry_stopped');
-    }
   }
 
   private scheduleNextAttempt(): void {
     if (!this.activeConnectionRequest) return;
-
-    this.logConnectionEvent('connection_retry_scheduled', {
-      attempt: this.connectionRetryAttempt,
-      max_attempts: this.connectionRetryMinAttempts,
-      delay_ms: this.connectionRetryIntervalMs,
-    });
 
     this.connectionRetryTimer = setTimeout(() => {
       this.runConnectionAttempt();
@@ -392,10 +251,6 @@ export class WorkerConnectionStatusWwebjsConsume {
   }
 
   private handoffToServiceReconnect(): void {
-    this.logConnectionEvent('connection_retry_handoff', {
-      attempt: this.connectionRetryAttempt,
-      max_attempts: this.connectionRetryMinAttempts,
-    });
     this.stopConnectionRetry();
     this.wwebjsService.clearUserRequestedDisconnect();
     this.wwebjsService.reconnect({ initial_connection: true });
@@ -411,8 +266,6 @@ export class WorkerConnectionStatusWwebjsConsume {
       max_attempts: this.connectionRetryMinAttempts,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
-      connection_lifecycle_id:
-        this.activeConnectionRequest?.connection_lifecycle_id,
     };
 
     void this.centrifugoService
@@ -442,32 +295,11 @@ export class WorkerConnectionStatusWwebjsConsume {
       worker_status_id: EWorkerStatus.online,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
-      connection_lifecycle_id:
-        this.activeConnectionRequest?.connection_lifecycle_id,
     };
 
     await this.centrifugoService
       .publishSub(workerCentrifugoQueue(accountId), payload)
-      .catch((error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        this.logConnectionEvent(
-          'connection_connect_error',
-          {
-            reason: errorMessage,
-            status: payload.status,
-            code: payload.code,
-          },
-          'error'
-        );
-      });
-
-    this.logConnectionEvent('connection_connect_result', {
-      status: payload.status,
-      code: payload.code,
-      has_phone: Boolean(payload.phone),
-      worker_status_id: payload.worker_status_id,
-    });
+      .catch(() => {});
 
     return payload;
   }
@@ -480,8 +312,6 @@ export class WorkerConnectionStatusWwebjsConsume {
       account_id: wwebjsEnvironment.wwebjsAccountId,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
-      connection_lifecycle_id:
-        this.activeConnectionRequest?.connection_lifecycle_id,
     };
   }
 
@@ -520,21 +350,12 @@ export class WorkerConnectionStatusWwebjsConsume {
       this.isAwaitingUserAction(code) &&
       !fromDisconnectRestart
     ) {
-      this.logConnectionEvent('connection_retry_paused_user_action', {
-        status,
-        code,
-        has_active_socket: hasActiveSocket,
-      });
       this.wwebjsService.republishLastState();
       this.stopConnectionRetry();
       return;
     }
 
     this.connectionRetryAttempt += 1;
-    this.logConnectionEvent('connection_retry_attempt', {
-      attempt: this.connectionRetryAttempt,
-      max_attempts: this.connectionRetryMinAttempts,
-    });
 
     if (this.connectionRetryAttempt > this.connectionRetryMinAttempts) {
       this.handoffToServiceReconnect();
@@ -550,17 +371,6 @@ export class WorkerConnectionStatusWwebjsConsume {
     if (fromDisconnectRestart) {
       this.wwebjsService.clearUserRequestedDisconnect();
     }
-
-    this.logConnectionEvent('connection_connect_invoked', {
-      attempt: this.connectionRetryAttempt,
-      max_attempts: this.connectionRetryMinAttempts,
-      status,
-      has_active_socket: hasActiveSocket,
-      from_disconnect_restart: fromDisconnectRestart,
-      requested_by_user: !fromDisconnectRestart,
-      connection_type: request.type,
-      has_phone_connection: Boolean(request.phone_connection),
-    });
 
     if (
       status === EBaileysConnectionStatus.connecting &&
@@ -586,16 +396,8 @@ export class WorkerConnectionStatusWwebjsConsume {
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
         connection_attempt_id: request.connection_attempt_id,
-        connection_lifecycle_id: request.connection_lifecycle_id,
       })
       .then((state) => {
-        this.logConnectionEvent('connection_connect_result', {
-          attempt: this.connectionRetryAttempt,
-          max_attempts: this.connectionRetryMinAttempts,
-          status: state?.status,
-          code: state?.code,
-          has_qr: Boolean(state?.qrcode),
-        });
         if (
           state?.qrcode ||
           state?.status === EBaileysConnectionStatus.connected
@@ -603,19 +405,7 @@ export class WorkerConnectionStatusWwebjsConsume {
           this.stopConnectionRetry();
         }
       })
-      .catch((error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        this.logConnectionEvent(
-          'connection_connect_error',
-          {
-            attempt: this.connectionRetryAttempt,
-            max_attempts: this.connectionRetryMinAttempts,
-            reason: errorMessage,
-          },
-          'error'
-        );
-      });
+      .catch(() => {});
 
     void connectPromise;
 
@@ -628,28 +418,5 @@ export class WorkerConnectionStatusWwebjsConsume {
         }
       }, this.connectionRetryIntervalMs);
     }
-  }
-
-  private logConnectionEvent(
-    event: string,
-    details: Record<string, unknown> = {},
-    level: 'info' | 'warn' | 'error' = 'info'
-  ): void {
-    recordConnectionLifecycle({
-      stage: `connection.worker_wwebjs.status_consume.${event}`,
-      decision: event,
-      outcome: level === 'error' ? 'error' : 'logged',
-      level,
-      source_provider: 'wwebjs',
-      worker_type: 'wwebjs',
-      worker_id: wwebjsEnvironment.wwebjsWorkerId,
-      channel_id: wwebjsEnvironment.wwebjsWorkerId,
-      account_id: wwebjsEnvironment.wwebjsAccountId,
-      connection_attempt_id:
-        this.activeConnectionRequest?.connection_attempt_id,
-      connection_lifecycle_id:
-        this.activeConnectionRequest?.connection_lifecycle_id,
-      ...details,
-    });
   }
 }

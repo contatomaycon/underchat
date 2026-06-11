@@ -1,5 +1,3 @@
-import { jidNormalizedUser } from '@whiskeysockets/baileys';
-
 export function normalizePhoneToJid(
   phone: string | null | undefined,
   phoneDdi: string | null | undefined = '55'
@@ -13,11 +11,5 @@ export function normalizePhoneToJid(
   if (!phoneNumber) return undefined;
 
   const fullNumber = `${ddi}${phoneNumber}`;
-  const jid = `${fullNumber}@s.whatsapp.net`;
-
-  try {
-    return jidNormalizedUser(jid);
-  } catch {
-    return jid;
-  }
+  return `${fullNumber}@s.whatsapp.net`;
 }

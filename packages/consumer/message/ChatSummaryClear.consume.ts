@@ -12,7 +12,6 @@ import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IClearChatSummaryMessage } from '@core/common/interfaces/IClearChatSummaryMessage';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
-import { logger } from '@core/plugins/telemetry/logger';
 
 @singleton()
 export class ChatSummaryClearConsume {
@@ -124,19 +123,7 @@ export class ChatSummaryClearConsume {
       });
 
       this.partitionChains.set(partition, currentChain);
-      void currentChain.catch((error) => {
-        logger.error(
-          {
-            type: 'chat_summary_clear_partition_error',
-            partition,
-            offset,
-            account_id: data.account_id,
-            chat_id: data.chat_id,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          'Error processing chat summary clear message'
-        );
-      });
+      void currentChain.catch(() => {});
     });
 
     this.consumer.on('event.error', (err) => {

@@ -18,7 +18,6 @@ export interface IWorkerConnectionStateProto {
   qr_pending?: boolean;
   qr_generated_at?: string;
   expires_at?: string;
-  connection_lifecycle_id?: string;
   reason?: string;
   error?: string;
   time_to_first_qr_ms?: number | string;

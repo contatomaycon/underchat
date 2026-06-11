@@ -34,7 +34,7 @@ message WorkerPayload {
 }
 
 message ChangeConnectionStatusRequest {
-  reserved 14;
+  reserved 13, 14;
 
   string worker_id = 1;
   string account_id = 2;
@@ -48,12 +48,13 @@ message ChangeConnectionStatusRequest {
   string proxy_error_code = 10;
   string proxy_fallback = 11;
   bool proxy_bypassed = 12;
-  string connection_lifecycle_id = 13;
   int32 runtime_generation = 15;
   string warm_pool_id = 16;
 }
 
 message NotifyWorkerStatusRequest {
+  reserved 22;
+
   string worker_id = 1;
   string account_id = 2;
   string worker_status_id = 3;
@@ -75,7 +76,6 @@ message NotifyWorkerStatusRequest {
   string proxy_fallback = 19;
   bool proxy_bypassed = 20;
   string qr_generated_at = 21;
-  string connection_lifecycle_id = 22;
   string reason = 23;
   string error = 24;
   int32 time_to_first_qr_ms = 25;

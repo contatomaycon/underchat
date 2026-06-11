@@ -24,9 +24,8 @@ replace go.mau.fi/whatsmeow => ./forks/whatsmeow
 - gRPC `worker_connection.WorkerConnection`: `:50054`
 - Storage local da sessao: `/app/data/whatsmeow/${WORKER_ID}/store.db`
 - Imagem default: `under-worker-whatsmeow:latest`
-- `OTEL_SERVICE_NAME`: `whatsmeow`
 
-O container recebe as mesmas variaveis globais dos workers existentes via `WorkerService`, incluindo Kafka, Redis, S3, Centrifugo, OpenTelemetry, balance gRPC e proxy.
+O container recebe as mesmas variaveis globais dos workers existentes via `WorkerService`, incluindo Kafka, Redis, S3, Centrifugo, balance gRPC e proxy.
 
 ## Kafka
 

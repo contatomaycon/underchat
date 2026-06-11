@@ -197,16 +197,6 @@ func (w *Worker) startActivatedRuntimeLocked(ctx context.Context) error {
 	go func() {
 		if err := w.startConsumers(ctx); err != nil {
 			log.Printf("whatsmeow kafka consumers async start failed worker_id=%s error=%v", w.cfg.WorkerID, err)
-			recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-				"stage":      "connection.whatsmeow.runtime.kafka_consumers_async_error",
-				"decision":   "start_non_qr_consumers_async",
-				"outcome":    "error",
-				"reason":     "kafka_consumers_start_failed",
-				"level":      "error",
-				"worker_id":  w.cfg.WorkerID,
-				"account_id": w.cfg.AccountID,
-				"error":      err.Error(),
-			})
 		}
 	}()
 	return nil
@@ -445,33 +435,8 @@ func (w *Worker) startConnectionQRCodeRedisStream(ctx context.Context) error {
 
 	err := w.redis.XGroupCreateMkStream(ctx, streamKey, groupID, "0").Err()
 	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":          "connection.whatsmeow.qrcode_redis_stream.group_error",
-			"decision":       "ensure_qrcode_redis_stream_group",
-			"outcome":        "error",
-			"reason":         "redis_xgroup_create_failed",
-			"level":          "error",
-			"stream_key":     streamKey,
-			"consumer_group": groupID,
-			"consumer_name":  consumerName,
-			"worker_id":      w.cfg.WorkerID,
-			"account_id":     w.cfg.AccountID,
-			"error":          err.Error(),
-		})
 		return err
 	}
-
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":          "connection.whatsmeow.qrcode_redis_stream.listener_start",
-		"decision":       "start_qrcode_redis_stream_listener",
-		"outcome":        "started",
-		"stream_key":     streamKey,
-		"consumer_group": groupID,
-		"consumer_name":  consumerName,
-		"worker_id":      w.cfg.WorkerID,
-		"account_id":     w.cfg.AccountID,
-		"worker_type_id": WorkerTypeWhatsmeow,
-	})
 
 	go w.consumeConnectionQRCodeRedisStream(ctx, streamKey, groupID, consumerName)
 	return nil
@@ -528,18 +493,6 @@ func (w *Worker) processConnectionQRCodeRedisMessages(ctx context.Context, strea
 	for _, message := range messages {
 		ack, err := w.handleConnectionQRCodeRedisMessage(ctx, streamKey, groupID, consumerName, message, reclaimed)
 		if err != nil {
-			recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-				"stage":          "connection.whatsmeow.qrcode_redis_stream.process_error",
-				"decision":       "request_local_connection_qrcode",
-				"outcome":        "error",
-				"reason":         "local_connection_request_failed",
-				"level":          "error",
-				"stream_key":     streamKey,
-				"stream_id":      message.ID,
-				"consumer_group": groupID,
-				"consumer_name":  consumerName,
-				"error":          err.Error(),
-			})
 			continue
 		}
 		if ack {
@@ -551,191 +504,41 @@ func (w *Worker) processConnectionQRCodeRedisMessages(ctx context.Context, strea
 func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamKey, groupID, consumerName string, message redis.XMessage, reclaimed bool) (ack bool, err error) {
 	data, err := workerConnectionQRCodeQueueMessageFromRedis(message)
 	if err != nil {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":          "connection.whatsmeow.qrcode_redis_stream.decode_error",
-			"decision":       "consume_connection_qrcode_request",
-			"outcome":        "ignored",
-			"reason":         "invalid_payload",
-			"level":          "warn",
-			"stream_key":     streamKey,
-			"stream_id":      message.ID,
-			"consumer_group": groupID,
-			"consumer_name":  consumerName,
-			"error":          err.Error(),
-		})
 		return true, nil
 	}
 
 	req := StatusConnectionRequest{
-		WorkerID:              data.WorkerID,
-		Status:                WorkerStatusOnline,
-		Type:                  "qrcode",
-		ConnectionAttemptID:   data.ConnectionAttemptID,
-		ConnectionLifecycleID: data.ConnectionLifecycleID,
-		RuntimeGeneration:     data.RuntimeGeneration,
+		WorkerID:            data.WorkerID,
+		Status:              WorkerStatusOnline,
+		Type:                "qrcode",
+		ConnectionAttemptID: data.ConnectionAttemptID,
+		RuntimeGeneration:   data.RuntimeGeneration,
 	}
-	lifecycle := connectionLifecycleFromRequest(w.cfg, req, "consume_qrcode_request")
-	if data.ConnectionLifecycleID != "" {
-		lifecycle.ConnectionLifecycleID = data.ConnectionLifecycleID
-	}
-	lifecycle.AccountID = data.AccountID
-	lifecycle.WorkerID = data.WorkerID
-	lifecycle.ChannelID = data.WorkerID
-	ctx, finishLifecycleSpan := startConnectionLifecycleSpan(ctx, w.cfg, lifecycle)
-	defer func() {
-		finishLifecycleSpan(err)
-	}()
-
-	deliveryCount := w.connectionQRCodeRedisDeliveryCount(ctx, streamKey, groupID, message.ID)
-	queueLatencyMS := connectionQRCodeQueueLatencyMS(data.RequestedAt)
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":                   "connection.whatsmeow.qrcode_redis_stream.received",
-		"decision":                "consume_connection_qrcode_request",
-		"outcome":                 "received",
-		"stream_key":              streamKey,
-		"stream_id":               message.ID,
-		"consumer_group":          groupID,
-		"consumer_name":           consumerName,
-		"delivery_count":          deliveryCount,
-		"reclaimed":               reclaimed,
-		"request_id":              data.RequestID,
-		"connection_attempt_id":   data.ConnectionAttemptID,
-		"connection_lifecycle_id": data.ConnectionLifecycleID,
-		"source":                  data.Source,
-		"requested_at":            data.RequestedAt,
-		"runtime_generation":      data.RuntimeGeneration,
-		"queue_latency_ms":        queueLatencyMS,
-	})
 
 	if data.WorkerID != w.cfg.WorkerID || data.AccountID != w.cfg.AccountID || data.WorkerTypeID != WorkerTypeWhatsmeow {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                  "connection.whatsmeow.qrcode_redis_stream.ignored_foreign",
-			"decision":               "validate_connection_qrcode_request_scope",
-			"outcome":                "ignored",
-			"reason":                 "worker_or_account_or_type_mismatch",
-			"level":                  "warn",
-			"stream_key":             streamKey,
-			"stream_id":              message.ID,
-			"consumer_group":         groupID,
-			"consumer_name":          consumerName,
-			"delivery_count":         deliveryCount,
-			"request_worker_id":      data.WorkerID,
-			"request_account_id":     data.AccountID,
-			"request_worker_type_id": data.WorkerTypeID,
-			"worker_id":              w.cfg.WorkerID,
-			"account_id":             w.cfg.AccountID,
-			"worker_type_id":         WorkerTypeWhatsmeow,
-		})
 		return true, nil
 	}
 
 	active, activeErr := w.isActiveConnectionQRCodeAttempt(ctx, data)
 	if activeErr != nil {
 		err = activeErr
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                 "connection.whatsmeow.qrcode_redis_stream.active_attempt_error",
-			"decision":              "validate_active_connection_attempt",
-			"outcome":               "error",
-			"reason":                "redis_read_failed",
-			"level":                 "error",
-			"stream_key":            streamKey,
-			"stream_id":             message.ID,
-			"consumer_group":        groupID,
-			"consumer_name":         consumerName,
-			"delivery_count":        deliveryCount,
-			"connection_attempt_id": data.ConnectionAttemptID,
-			"error":                 activeErr.Error(),
-		})
 		return false, activeErr
 	}
 	if !active {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                 "connection.whatsmeow.qrcode_redis_stream.ignored_stale",
-			"decision":              "validate_active_connection_attempt",
-			"outcome":               "ignored",
-			"reason":                "stale_or_duplicate_connection_attempt",
-			"level":                 "warn",
-			"stream_key":            streamKey,
-			"stream_id":             message.ID,
-			"consumer_group":        groupID,
-			"consumer_name":         consumerName,
-			"delivery_count":        deliveryCount,
-			"connection_attempt_id": data.ConnectionAttemptID,
-		})
 		return true, nil
 	}
 
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":                 "connection.whatsmeow.qrcode_redis_stream.local_request_start",
-		"decision":              "request_local_connection_qrcode",
-		"outcome":               "started",
-		"stream_key":            streamKey,
-		"stream_id":             message.ID,
-		"consumer_group":        groupID,
-		"consumer_name":         consumerName,
-		"delivery_count":        deliveryCount,
-		"connection_attempt_id": data.ConnectionAttemptID,
-		"queue_latency_ms":      queueLatencyMS,
-	})
 	state, err := w.RequestConnection(ctx, req)
 	if err != nil {
 		return false, err
 	}
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":                 "connection.whatsmeow.qrcode_redis_stream.local_request_success",
-		"decision":              "request_local_connection_qrcode",
-		"outcome":               "success",
-		"stream_key":            streamKey,
-		"stream_id":             message.ID,
-		"consumer_group":        groupID,
-		"consumer_name":         consumerName,
-		"delivery_count":        deliveryCount,
-		"connection_attempt_id": firstNonEmpty(state.ConnectionAttemptID, data.ConnectionAttemptID),
-		"status":                state.Status,
-		"code":                  state.Code,
-		"has_qr":                state.QRCode != "",
-		"qr_pending":            state.QRPending,
-		"reason":                state.Reason,
-		"time_to_first_qr_ms":   state.TimeToFirstQRMS,
-	})
 	w.cacheConnectionQRCodeAttemptState(ctx, state, data)
 	if !connectionQRCodeRequestComplete(state) {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                 "connection.whatsmeow.qrcode_redis_stream.local_request_pending_retry",
-			"decision":              "request_local_connection_qrcode",
-			"outcome":               "pending",
-			"reason":                firstNonEmpty(state.Reason, "qrcode_not_available_yet"),
-			"level":                 "warn",
-			"stream_key":            streamKey,
-			"stream_id":             message.ID,
-			"consumer_group":        groupID,
-			"consumer_name":         consumerName,
-			"delivery_count":        deliveryCount,
-			"connection_attempt_id": firstNonEmpty(state.ConnectionAttemptID, data.ConnectionAttemptID),
-			"status":                state.Status,
-			"code":                  state.Code,
-			"has_qr":                false,
-			"has_pairing_code":      false,
-			"qr_pending":            state.QRPending,
-			"reason_detail":         state.Reason,
-			"time_to_first_qr_ms":   state.TimeToFirstQRMS,
-			"retry_after_idle_ms":   3000,
-		})
 		return false, nil
 	}
 	if err = w.markConnectionQRCodeAttemptProcessed(ctx, data); err != nil {
 		return false, err
 	}
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":                 "connection.whatsmeow.qrcode_redis_stream.mark_processed_success",
-		"decision":              "mark_qrcode_attempt_processed",
-		"outcome":               "success",
-		"stream_key":            streamKey,
-		"stream_id":             message.ID,
-		"consumer_group":        groupID,
-		"consumer_name":         consumerName,
-		"connection_attempt_id": data.ConnectionAttemptID,
-	})
 	return true, nil
 }
 
@@ -751,18 +554,17 @@ func connectionQRCodeRequestComplete(state ConnectionState) bool {
 
 func workerConnectionQRCodeQueueMessageFromRedis(message redis.XMessage) (WorkerConnectionQRCodeQueueMessage, error) {
 	data := WorkerConnectionQRCodeQueueMessage{
-		RequestID:             redisStreamString(message.Values, "request_id"),
-		ConnectionAttemptID:   redisStreamString(message.Values, "connection_attempt_id"),
-		ConnectionLifecycleID: redisStreamString(message.Values, "connection_lifecycle_id"),
-		WorkerID:              redisStreamString(message.Values, "worker_id"),
-		AccountID:             redisStreamString(message.Values, "account_id"),
-		WorkerTypeID:          redisStreamString(message.Values, "worker_type_id"),
-		RuntimeGeneration:     redisStreamInt(message.Values, "runtime_generation"),
-		Source:                redisStreamString(message.Values, "source"),
-		RequestedAt:           redisStreamString(message.Values, "requested_at"),
-		ExpiresAt:             redisStreamString(message.Values, "expires_at"),
+		RequestID:           redisStreamString(message.Values, "request_id"),
+		ConnectionAttemptID: redisStreamString(message.Values, "connection_attempt_id"),
+		WorkerID:            redisStreamString(message.Values, "worker_id"),
+		AccountID:           redisStreamString(message.Values, "account_id"),
+		WorkerTypeID:        redisStreamString(message.Values, "worker_type_id"),
+		RuntimeGeneration:   redisStreamInt(message.Values, "runtime_generation"),
+		Source:              redisStreamString(message.Values, "source"),
+		RequestedAt:         redisStreamString(message.Values, "requested_at"),
+		ExpiresAt:           redisStreamString(message.Values, "expires_at"),
 	}
-	if data.RequestID == "" || data.ConnectionAttemptID == "" || data.ConnectionLifecycleID == "" || data.WorkerID == "" || data.AccountID == "" || data.WorkerTypeID == "" || data.RequestedAt == "" {
+	if data.RequestID == "" || data.ConnectionAttemptID == "" || data.WorkerID == "" || data.AccountID == "" || data.WorkerTypeID == "" || data.RequestedAt == "" {
 		return data, fmt.Errorf("missing required redis stream fields")
 	}
 	return data, nil
@@ -818,60 +620,14 @@ func (w *Worker) connectionQRCodeRedisDeliveryCount(ctx context.Context, streamK
 }
 
 func (w *Worker) ackDeleteConnectionQRCodeRedisMessage(ctx context.Context, streamKey, groupID, consumerName, streamID string) {
-	acked, ackErr := w.redis.XAck(ctx, streamKey, groupID, streamID).Result()
-	deleted, deleteErr := w.redis.XDel(ctx, streamKey, streamID).Result()
+	_, ackErr := w.redis.XAck(ctx, streamKey, groupID, streamID).Result()
+	_, deleteErr := w.redis.XDel(ctx, streamKey, streamID).Result()
 	if ackErr != nil || deleteErr != nil {
-		errMsg := ""
-		if ackErr != nil {
-			errMsg = ackErr.Error()
-		}
-		if deleteErr != nil {
-			errMsg = strings.TrimSpace(errMsg + " " + deleteErr.Error())
-		}
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":              "connection.whatsmeow.qrcode_redis_stream.ack_delete_error",
-			"decision":           "ack_delete_qrcode_redis_stream_message",
-			"outcome":            "error",
-			"reason":             "redis_ack_delete_failed",
-			"level":              "warn",
-			"stream_key":         streamKey,
-			"stream_id":          streamID,
-			"consumer_group":     groupID,
-			"consumer_name":      consumerName,
-			"redis_ack_count":    acked,
-			"redis_delete_count": deleted,
-			"error":              errMsg,
-		})
 		return
 	}
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":              "connection.whatsmeow.qrcode_redis_stream.ack_delete_success",
-		"decision":           "ack_delete_qrcode_redis_stream_message",
-		"outcome":            "success",
-		"stream_key":         streamKey,
-		"stream_id":          streamID,
-		"consumer_group":     groupID,
-		"consumer_name":      consumerName,
-		"redis_ack_count":    acked,
-		"redis_delete_count": deleted,
-	})
 }
 
 func (w *Worker) logConnectionQRCodeRedisReadError(ctx context.Context, streamKey, groupID, consumerName string, err error) {
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":          "connection.whatsmeow.qrcode_redis_stream.read_error",
-		"decision":       "read_qrcode_redis_stream",
-		"outcome":        "error",
-		"reason":         "redis_stream_read_failed",
-		"level":          "warn",
-		"stream_key":     streamKey,
-		"consumer_group": groupID,
-		"consumer_name":  consumerName,
-		"worker_id":      w.cfg.WorkerID,
-		"account_id":     w.cfg.AccountID,
-		"worker_type_id": WorkerTypeWhatsmeow,
-		"error":          err.Error(),
-	})
 }
 
 type activeConnectionQRCodeAttemptEnvelope struct {
@@ -959,9 +715,6 @@ func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state Co
 	if normalized.ConnectionAttemptID == "" {
 		normalized.ConnectionAttemptID = data.ConnectionAttemptID
 	}
-	if normalized.ConnectionLifecycleID == "" {
-		normalized.ConnectionLifecycleID = data.ConnectionLifecycleID
-	}
 	if normalized.QRGeneratedAt == "" {
 		normalized.QRGeneratedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	}
@@ -975,65 +728,13 @@ func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state Co
 	ttl := connectionQRCodeCacheTTLForState(normalized)
 	payload, err := json.Marshal(normalized)
 	if err != nil {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                 "connection.whatsmeow.qrcode_redis_stream.qr_cache_write_error",
-			"decision":              "cache_connection_qrcode_attempt",
-			"outcome":               "error",
-			"reason":                "json_encode_failed",
-			"level":                 "warn",
-			"worker_id":             normalized.WorkerID,
-			"account_id":            normalized.AccountID,
-			"worker_type_id":        WorkerTypeWhatsmeow,
-			"connection_attempt_id": normalized.ConnectionAttemptID,
-			"has_qr":                normalized.QRCode != "",
-			"has_pairing_code":      normalized.PairingCode != "",
-			"qrcode_len":            len(normalized.QRCode),
-			"pairing_code_len":      len(normalized.PairingCode),
-			"error":                 err.Error(),
-		})
 		return
 	}
 
-	started := time.Now()
 	if err := w.redis.Set(ctx, w.connectionQRCodeAttemptCacheKey(normalized.WorkerID), string(payload), ttl).Err(); err != nil {
-		recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-			"stage":                   "connection.whatsmeow.qrcode_redis_stream.qr_cache_write_error",
-			"decision":                "cache_connection_qrcode_attempt",
-			"outcome":                 "error",
-			"reason":                  "redis_cache_write_failed",
-			"level":                   "warn",
-			"worker_id":               normalized.WorkerID,
-			"account_id":              normalized.AccountID,
-			"worker_type_id":          WorkerTypeWhatsmeow,
-			"connection_attempt_id":   normalized.ConnectionAttemptID,
-			"connection_lifecycle_id": normalized.ConnectionLifecycleID,
-			"has_qr":                  normalized.QRCode != "",
-			"has_pairing_code":        normalized.PairingCode != "",
-			"qrcode_len":              len(normalized.QRCode),
-			"pairing_code_len":        len(normalized.PairingCode),
-			"qr_cache_ttl_seconds":    int(ttl.Seconds()),
-			"duration_ms":             int(time.Since(started).Milliseconds()),
-			"error":                   err.Error(),
-		})
 		return
 	}
 
-	recordConnectionLifecycle(ctx, w.cfg, map[string]any{
-		"stage":                   "connection.whatsmeow.qrcode_redis_stream.qr_cache_write_success",
-		"decision":                "cache_connection_qrcode_attempt",
-		"outcome":                 "success",
-		"worker_id":               normalized.WorkerID,
-		"account_id":              normalized.AccountID,
-		"worker_type_id":          WorkerTypeWhatsmeow,
-		"connection_attempt_id":   normalized.ConnectionAttemptID,
-		"connection_lifecycle_id": normalized.ConnectionLifecycleID,
-		"has_qr":                  normalized.QRCode != "",
-		"has_pairing_code":        normalized.PairingCode != "",
-		"qrcode_len":              len(normalized.QRCode),
-		"pairing_code_len":        len(normalized.PairingCode),
-		"qr_cache_ttl_seconds":    int(ttl.Seconds()),
-		"duration_ms":             int(time.Since(started).Milliseconds()),
-	})
 }
 
 func connectionQRCodeCacheTTLForState(state ConnectionState) time.Duration {
@@ -1101,25 +802,6 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 	}
 	w.logOutgoingKafkaDecodedDebug(msg, "chat_message", data.MessageID, data.ChatID, chatMessageType(data), firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID))
 
-	lifecycle := messageLifecycleFromChatMessage(w.cfg, data)
-	ctx, finishLifecycleSpan := startMessageLifecycleSpan(ctx, w.cfg, lifecycle)
-	defer func() {
-		finishLifecycleSpan(err)
-	}()
-
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.kafka.received",
-		"decision":     "consume_send_message",
-		"outcome":      "received",
-		"topic":        msg.Topic,
-		"partition":    msg.Partition,
-		"offset":       msg.Offset,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-		"kafka_key":    string(msg.Key),
-	})
-
 	if err := w.waitOutboundReady(ctx, data, msg); err != nil {
 		return err
 	}
@@ -1137,17 +819,6 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 			return w.publishRecoveredOutboundUpdate(ctx, data, claim, msg)
 		}
 		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.claim.duplicate", msg, data, map[string]any{"claim_id": claim.ID, "claim_state": claim.State, "reason": "duplicate_message"}, nil)
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":        "whatsmeow.outgoing.claim.duplicate",
-			"decision":     "claim_message",
-			"outcome":      "skipped",
-			"reason":       "duplicate_message",
-			"claim_id":     claim.ID,
-			"claim_state":  claim.State,
-			"message_id":   data.MessageID,
-			"chat_id":      data.ChatID,
-			"message_type": chatMessageType(data),
-		})
 		return nil
 	}
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.claim.acquired", msg, data, map[string]any{"claim_id": claim.ID, "claim_state": claim.State}, nil)
@@ -1185,15 +856,6 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		"elapsed_ms":          time.Since(startedAt).Milliseconds(),
 		"external_message_id": messageKeyFromSendResult(result),
 	}, nil)
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.update.publish.start",
-		"decision":     "publish_update_message",
-		"outcome":      "started",
-		"topic":        topicUpdateMessage,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.start", msg, data, map[string]any{"topic": topicUpdateMessage}, nil)
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: result, Data: data}); err != nil {
 		log.Printf(
@@ -1210,42 +872,10 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 			err,
 		)
 		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.error", msg, data, map[string]any{"topic": topicUpdateMessage}, err)
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":        "whatsmeow.outgoing.update.publish.error",
-			"decision":     "publish_update_message",
-			"outcome":      "error",
-			"reason":       "producer_send_failed",
-			"level":        "error",
-			"topic":        topicUpdateMessage,
-			"message_id":   data.MessageID,
-			"chat_id":      data.ChatID,
-			"message_type": chatMessageType(data),
-			"error":        err.Error(),
-		})
 		_ = w.publishSendDLQ(ctx, msg, data, "update_publish_failed_after_send_ack", err)
 		return err
 	}
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.success", msg, data, map[string]any{"topic": topicUpdateMessage}, nil)
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.update.publish.success",
-		"decision":     "publish_update_message",
-		"outcome":      "success",
-		"topic":        topicUpdateMessage,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.kafka.commit.ready",
-		"decision":     "commit_send_message",
-		"outcome":      "success",
-		"topic":        msg.Topic,
-		"partition":    msg.Partition,
-		"offset":       msg.Offset,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.kafka.commit.ready", msg, data, nil, nil)
 	return nil
 }
@@ -1254,35 +884,9 @@ func (w *Worker) waitOutboundReady(ctx context.Context, data ChatMessage, msg ka
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.connection.wait.start", msg, data, map[string]any{"timeout_ms": w.cfg.OutboundReadyTimeout.Milliseconds()}, nil)
 	if err := w.whatsapp.WaitUntilReady(ctx, w.cfg.OutboundReadyTimeout); err != nil {
 		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.connection.wait", msg, data, map[string]any{"timeout_ms": w.cfg.OutboundReadyTimeout.Milliseconds(), "reason": "connection_not_ready"}, err)
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":        "whatsmeow.outgoing.connection.wait",
-			"decision":     "wait_connection_ready",
-			"outcome":      "retrying",
-			"reason":       "connection_not_ready",
-			"level":        "warn",
-			"topic":        msg.Topic,
-			"partition":    msg.Partition,
-			"offset":       msg.Offset,
-			"message_id":   data.MessageID,
-			"chat_id":      data.ChatID,
-			"message_type": chatMessageType(data),
-			"timeout_ms":   w.cfg.OutboundReadyTimeout.Milliseconds(),
-			"error":        err.Error(),
-		})
 		return err
 	}
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.connection.ready", msg, data, nil, nil)
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.connection.ready",
-		"decision":     "wait_connection_ready",
-		"outcome":      "success",
-		"topic":        msg.Topic,
-		"partition":    msg.Partition,
-		"offset":       msg.Offset,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	return nil
 }
 
@@ -1569,39 +1173,11 @@ func (w *Worker) handleWebhookIntegration(ctx context.Context, msg kafka.Message
 	upsert.TransferSectorID = stringValue(mapped["transfer_sector_id"])
 	upsert.TransferSectorUserID = stringValue(mapped["transfer_sector_user_id"])
 	upsert.TransferUserID = stringValue(mapped["transfer_user_id"])
-	lifecycleCtx, finishLifecycleSpan := startMessageLifecycleSpan(ctx, w.cfg, messageLifecycleFromUpsert(w.cfg, &upsert))
-	defer func() {
-		finishLifecycleSpan(err)
-	}()
 	kafkaKey := incomingUpsertKafkaKey(w.cfg, &upsert)
-	recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
-		"stage":     "whatsmeow.webhook.kafka.publish.start",
-		"decision":  "publish_webhook_upsert",
-		"outcome":   "started",
-		"topic":     topicUpsertMessage,
-		"kafka_key": kafkaKey,
-	})
-	err = w.kafka.SendJSON(lifecycleCtx, topicUpsertMessage, kafkaKey, upsert)
+	err = w.kafka.SendJSON(ctx, topicUpsertMessage, kafkaKey, upsert)
 	if err != nil {
-		recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
-			"stage":     "whatsmeow.webhook.kafka.publish.error",
-			"decision":  "publish_webhook_upsert",
-			"outcome":   "error",
-			"reason":    "producer_send_failed",
-			"level":     "error",
-			"topic":     topicUpsertMessage,
-			"kafka_key": kafkaKey,
-			"error":     err.Error(),
-		})
 		return err
 	}
-	recordMessageLifecycle(lifecycleCtx, w.cfg, map[string]any{
-		"stage":     "whatsmeow.webhook.kafka.publish.success",
-		"decision":  "publish_webhook_upsert",
-		"outcome":   "published",
-		"topic":     topicUpsertMessage,
-		"kafka_key": kafkaKey,
-	})
 	return nil
 }
 
@@ -1710,33 +1286,9 @@ func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data 
 	acquired, err := w.redis.SetNX(ctx, key, payload, w.cfg.SendIdempotencyInProgressTTL).Result()
 	if err != nil {
 		log.Printf("idempotency claim failed: %v", err)
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":      "whatsmeow.outgoing.claim.error",
-			"decision":   "claim_message",
-			"outcome":    "error",
-			"level":      "warn",
-			"reason":     "redis_setnx_failed",
-			"claim_id":   claimID,
-			"message_id": data.MessageID,
-			"chat_id":    data.ChatID,
-			"error":      err.Error(),
-		})
 		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: 1}, nil
 	}
 	if acquired {
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":        "whatsmeow.outgoing.claim.acquired",
-			"decision":     "claim_message",
-			"outcome":      "success",
-			"claim_id":     claimID,
-			"claim_state":  sendIdempotencyStateInProgress,
-			"message_id":   data.MessageID,
-			"chat_id":      data.ChatID,
-			"message_type": chatMessageType(data),
-			"topic":        msg.Topic,
-			"partition":    msg.Partition,
-			"offset":       msg.Offset,
-		})
 		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: 1}, nil
 	}
 
@@ -1751,7 +1303,7 @@ func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data 
 	}
 
 	existing := parseOutboundSendClaimRecord(raw)
-	if stale, age := shouldReacquireOutboundClaim(existing, time.Now(), w.cfg.SendIdempotencyStaleAfter); stale {
+	if stale, _ := shouldReacquireOutboundClaim(existing, time.Now(), w.cfg.SendIdempotencyStaleAfter); stale {
 		existing.State = sendIdempotencyStateInProgress
 		existing.Attempts++
 		existing.Result = nil
@@ -1761,20 +1313,6 @@ func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data 
 		if err := w.redis.Set(ctx, key, nextPayload, w.cfg.SendIdempotencyInProgressTTL).Err(); err != nil {
 			return outboundSendClaim{}, err
 		}
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":          "whatsmeow.outgoing.claim.reacquired_stale",
-			"decision":       "claim_message",
-			"outcome":        "retrying",
-			"reason":         "stale_in_progress_claim",
-			"claim_id":       claimID,
-			"claim_state":    existing.State,
-			"attempts":       existing.Attempts,
-			"message_id":     data.MessageID,
-			"chat_id":        data.ChatID,
-			"message_type":   chatMessageType(data),
-			"claim_age_ms":   age.Milliseconds(),
-			"stale_after_ms": w.cfg.SendIdempotencyStaleAfter.Milliseconds(),
-		})
 		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: existing.Attempts}, nil
 	}
 	if existing.State == sendIdempotencyStateFailed {
@@ -1787,17 +1325,6 @@ func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data 
 		if err := w.redis.Set(ctx, key, nextPayload, w.cfg.SendIdempotencyInProgressTTL).Err(); err != nil {
 			return outboundSendClaim{}, err
 		}
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":        "whatsmeow.outgoing.claim.reacquired",
-			"decision":     "claim_message",
-			"outcome":      "retrying",
-			"claim_id":     claimID,
-			"claim_state":  existing.State,
-			"attempts":     existing.Attempts,
-			"message_id":   data.MessageID,
-			"chat_id":      data.ChatID,
-			"message_type": chatMessageType(data),
-		})
 		return outboundSendClaim{ID: claimID, Key: key, Acquired: true, State: sendIdempotencyStateInProgress, Attempts: existing.Attempts}, nil
 	}
 
@@ -1809,18 +1336,6 @@ func (w *Worker) claimOutboundMessage(ctx context.Context, claimID string, data 
 		Attempts: existing.Attempts,
 		Result:   existing.Result,
 	}
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.claim.duplicate",
-		"decision":     "claim_message",
-		"outcome":      "skipped",
-		"reason":       "claim_exists",
-		"claim_id":     claimID,
-		"claim_state":  existing.State,
-		"attempts":     existing.Attempts,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	if existing.State == sendIdempotencyStateSucceeded {
 		return claim, nil
 	}
@@ -1873,25 +1388,8 @@ func (w *Worker) completeOutboundClaim(ctx context.Context, claim outboundSendCl
 	}
 	payload, _ := json.Marshal(record)
 	if err := w.redis.Set(ctx, claim.Key, payload, ttl).Err(); err != nil {
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":       "whatsmeow.outgoing.claim.update.error",
-			"decision":    "complete_claim",
-			"outcome":     "error",
-			"level":       "warn",
-			"claim_id":    claim.ID,
-			"claim_state": state,
-			"error":       err.Error(),
-		})
 		return
 	}
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":       "whatsmeow.outgoing.claim.update.success",
-		"decision":    "complete_claim",
-		"outcome":     "success",
-		"claim_id":    claim.ID,
-		"claim_state": state,
-		"ttl_ms":      ttl.Milliseconds(),
-	})
 }
 
 func (w *Worker) releaseOutboundClaim(ctx context.Context, claim outboundSendClaim, reason string, cause error) {
@@ -1899,16 +1397,6 @@ func (w *Worker) releaseOutboundClaim(ctx context.Context, claim outboundSendCla
 		return
 	}
 	if err := w.redis.Del(ctx, claim.Key).Err(); err != nil {
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":       "whatsmeow.outgoing.claim.release.error",
-			"decision":    "release_claim",
-			"outcome":     "error",
-			"level":       "warn",
-			"claim_id":    claim.ID,
-			"claim_state": claim.State,
-			"reason":      reason,
-			"error":       err.Error(),
-		})
 		return
 	}
 	payload := map[string]any{
@@ -1922,55 +1410,12 @@ func (w *Worker) releaseOutboundClaim(ctx context.Context, claim outboundSendCla
 	if cause != nil {
 		payload["error"] = cause.Error()
 	}
-	recordMessageLifecycle(ctx, w.cfg, payload)
 }
 
 func (w *Worker) publishRecoveredOutboundUpdate(ctx context.Context, data ChatMessage, claim outboundSendClaim, msg kafka.Message) error {
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.update.recover.start",
-		"decision":     "publish_update_message",
-		"outcome":      "started",
-		"reason":       "idempotent_success_replay",
-		"claim_id":     claim.ID,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: claim.Result, Data: data}); err != nil {
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":        "whatsmeow.outgoing.update.recover.error",
-			"decision":     "publish_update_message",
-			"outcome":      "error",
-			"reason":       "producer_send_failed",
-			"level":        "error",
-			"claim_id":     claim.ID,
-			"message_id":   data.MessageID,
-			"chat_id":      data.ChatID,
-			"message_type": chatMessageType(data),
-			"error":        err.Error(),
-		})
 		return err
 	}
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.update.recover.success",
-		"decision":     "publish_update_message",
-		"outcome":      "success",
-		"claim_id":     claim.ID,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.kafka.commit.ready",
-		"decision":     "commit_send_message",
-		"outcome":      "success",
-		"topic":        msg.Topic,
-		"partition":    msg.Partition,
-		"offset":       msg.Offset,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	return nil
 }
 
@@ -2000,49 +1445,17 @@ func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data Cha
 		"topic":  topic,
 		"reason": reason,
 	}, cause)
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.dlq.publish.start",
-		"decision":     "publish_dlq",
-		"outcome":      "started",
-		"topic":        topic,
-		"reason":       reason,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	if err := w.kafka.SendJSON(ctx, topic, data.MessageID, payload); err != nil {
 		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.error", msg, data, map[string]any{
 			"topic":  topic,
 			"reason": reason,
 		}, err)
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":        "whatsmeow.outgoing.dlq.publish.error",
-			"decision":     "publish_dlq",
-			"outcome":      "error",
-			"reason":       "producer_send_failed",
-			"level":        "error",
-			"topic":        topic,
-			"message_id":   data.MessageID,
-			"chat_id":      data.ChatID,
-			"message_type": chatMessageType(data),
-			"error":        err.Error(),
-		})
 		return err
 	}
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.success", msg, data, map[string]any{
 		"topic":  topic,
 		"reason": reason,
 	}, nil)
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":        "whatsmeow.outgoing.dlq.publish.success",
-		"decision":     "publish_dlq",
-		"outcome":      "success",
-		"topic":        topic,
-		"reason":       reason,
-		"message_id":   data.MessageID,
-		"chat_id":      data.ChatID,
-		"message_type": chatMessageType(data),
-	})
 	return nil
 }
 
@@ -2108,40 +1521,10 @@ func (w *Worker) markSendAsNotSent(ctx context.Context, messageID, chatID, accou
 	if strings.TrimSpace(chatID) != "" {
 		update.Key["remoteJid"] = chatID
 	}
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":      "whatsmeow.outgoing.status_failed.publish.start",
-		"decision":   "publish_failed_status",
-		"outcome":    "started",
-		"topic":      topicUpdateMessageStatus,
-		"message_id": messageID,
-		"chat_id":    chatID,
-		"account_id": accountID,
-	})
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessageStatus, accountID+":"+messageID, update); err != nil {
 		log.Printf("whatsmeow send status publish failed worker_id=%s message_id=%s chat_id=%s account_id=%s topic=%s error=%v", w.cfg.WorkerID, messageID, chatID, accountID, topicUpdateMessageStatus, err)
-		recordMessageLifecycle(ctx, w.cfg, map[string]any{
-			"stage":      "whatsmeow.outgoing.status_failed.publish.error",
-			"decision":   "publish_failed_status",
-			"outcome":    "error",
-			"reason":     "producer_send_failed",
-			"level":      "error",
-			"topic":      topicUpdateMessageStatus,
-			"message_id": messageID,
-			"chat_id":    chatID,
-			"account_id": accountID,
-			"error":      err.Error(),
-		})
 		return err
 	}
-	recordMessageLifecycle(ctx, w.cfg, map[string]any{
-		"stage":      "whatsmeow.outgoing.status_failed.publish.success",
-		"decision":   "publish_failed_status",
-		"outcome":    "success",
-		"topic":      topicUpdateMessageStatus,
-		"message_id": messageID,
-		"chat_id":    chatID,
-		"account_id": accountID,
-	})
 	return nil
 }
 
@@ -2153,7 +1536,7 @@ func (w *Worker) logOutgoingKafkaRawDebug(stage string, msg kafka.Message) {
 	if !messageDebugEnabledForAccount(w.cfg, "") {
 		return
 	}
-	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), w.cfg.MessageLifecycleDebugRawLimit)
+	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), messageDebugRawLimit)
 	log.Printf(
 		"message_debug direction=out stage=%s event_type=kafka_message worker_id=%s account_id=%s topic=%s partition=%d offset=%d kafka_key=%q raw_payload=%q raw_truncated=%t",
 		stage,
@@ -2172,7 +1555,7 @@ func (w *Worker) logOutgoingKafkaDecodeErrorDebug(msg kafka.Message, err error) 
 	if !messageDebugEnabledForAccount(w.cfg, "") {
 		return
 	}
-	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), w.cfg.MessageLifecycleDebugRawLimit)
+	rawPayload, rawTruncated := truncateDebugLogValue(string(msg.Value), messageDebugRawLimit)
 	log.Printf(
 		"message_debug direction=out stage=whatsmeow.outgoing.kafka.decode.error event_type=kafka_message worker_id=%s account_id=%s topic=%s partition=%d offset=%d kafka_key=%q raw_payload=%q raw_truncated=%t error=%q",
 		w.cfg.WorkerID,
@@ -2214,7 +1597,7 @@ func (w *Worker) logOutgoingMessageStepDebug(stage string, msg kafka.Message, da
 	if detail == nil {
 		detail = map[string]any{}
 	}
-	detailPayload, detailTruncated, detailErr := debugJSONPayload(detail, w.cfg.MessageLifecycleDebugRawLimit)
+	detailPayload, detailTruncated, detailErr := debugJSONPayload(detail, messageDebugRawLimit)
 	errorText := ""
 	if err != nil {
 		errorText = err.Error()
@@ -2232,7 +1615,7 @@ func (w *Worker) logOutgoingMessageStepDebug(stage string, msg kafka.Message, da
 		data.ChatID,
 		chatMessageType(data),
 		data.Phone,
-		truncateLogValue(outgoingMessageTextPreview(data), w.cfg.MessageLifecycleDebugBodyLimit),
+		truncateLogValue(outgoingMessageTextPreview(data), messageDebugBodyLimit),
 		detailPayload,
 		detailTruncated,
 		detailErr,

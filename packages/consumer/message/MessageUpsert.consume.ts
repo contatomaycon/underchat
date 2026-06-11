@@ -91,21 +91,9 @@ import {
 import { IAttendanceHoursConfig } from '@core/common/interfaces/IAttendanceHours';
 import { getActiveChatbotWorkingHoursRule } from '@core/common/functions/chatbotWorkingHours';
 import { generalEnvironment } from '@core/config/environments';
-import { logger } from '@core/plugins/telemetry/logger';
-import {
-  incrementCounter,
-  recordException,
-} from '@core/plugins/telemetry/observability';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappValidation.service';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
-import {
-  buildMessageLifecycleContext,
-  recordMessageLifecycle,
-  runWithKafkaTraceContext,
-  runWithMessageLifecycleContext,
-  type MessageLifecycleEvent,
-} from '@core/plugins/telemetry/messageLifecycleDebug';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -167,8 +155,6 @@ interface KafkaConsumerMessage {
   offset: number;
   headers?: MessageHeader[];
 }
-
-type MessageLifecycleContext = ReturnType<typeof buildMessageLifecycleContext>;
 
 function isReactionInactivityTypeUser(
   typeUser: ETypeUserChat
@@ -300,13 +286,6 @@ export class MessageUpsertConsume {
         );
 
         if (acquired !== 'OK') {
-          logger.info({
-            type: 'message_upsert_dlq_duplicate_skipped',
-            account_id: data.account_id,
-            worker_id: data.worker_id,
-            message_key_id: data.message?.key?.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
           this.logLifecycle(data, {
             stage: 'message_upsert.dlq.skip',
             decision: 'dlq_dedupe',
@@ -316,16 +295,7 @@ export class MessageUpsertConsume {
           });
           return true;
         }
-      } catch (dedupeError) {
-        logger.warn({
-          type: 'message_upsert_dlq_dedupe_error',
-          account_id: data.account_id,
-          worker_id: data.worker_id,
-          message_key_id: data.message?.key?.id,
-          error:
-            dedupeError instanceof Error ? dedupeError.message : dedupeError,
-        });
-      }
+      } catch {}
     }
 
     for (let attempt = 0; attempt < maxDlqRetries; attempt++) {
@@ -468,16 +438,6 @@ export class MessageUpsertConsume {
         );
 
         if (isReadOnlyAllowDeleteError) {
-          logger.error({
-            type: 'message_upsert_elastic_read_only_allow_delete',
-            message:
-              'Elasticsearch flood-stage read-only block detected while processing upsert. Skipping retry and DLQ.',
-            account_id: data.account_id,
-            worker_id: data.worker_id,
-            message_key_id: data.message?.key?.id,
-            attempt: attempt + 1,
-          });
-          incrementCounter('message_upsert_elastic_read_only_allow_delete');
           this.logLifecycle(data, {
             stage: 'message_upsert.retry.elastic_read_only',
             decision: 'process_with_retry',
@@ -510,17 +470,6 @@ export class MessageUpsertConsume {
         }
       }
     }
-
-    logger.error({
-      type: 'message_upsert_retry_exhausted_no_commit',
-      message:
-        'Message upsert retries exhausted. Offset will not be committed; message remains eligible for retry.',
-      account_id: data.account_id,
-      worker_id: data.worker_id,
-      message_key_id: data.message?.key?.id,
-      retry_count: this.MAX_RETRIES,
-      error: lastError instanceof Error ? lastError.message : lastError,
-    });
     this.logLifecycle(data, {
       stage: 'message_upsert.retry.exhausted',
       decision: 'process_with_retry',
@@ -531,7 +480,6 @@ export class MessageUpsertConsume {
       phone,
       error: lastError instanceof Error ? lastError.message : String(lastError),
     });
-    incrementCounter('message_upsert_retry_exhausted_no_commit');
 
     throw lastError instanceof Error
       ? lastError
@@ -548,65 +496,18 @@ export class MessageUpsertConsume {
         dataPublish.account?.id
       )
     ) {
-      logger.error(
-        {
-          type: 'message_upsert_invalid_centrifugo_message_payload',
-          chat_id: dataPublish.chat_id,
-          message_id: dataPublish.message_id,
-          account_id: dataPublish.account?.id,
-        },
-        'Blocked Centrifugo publish for message without matching chat/account ownership'
-      );
-      incrementCounter('message_upsert_invalid_centrifugo_message_payload');
-      recordMessageLifecycle({
-        stage: 'message_upsert.centrifugo.message_publish_blocked',
-        decision: 'publish_centrifugo',
-        outcome: 'blocked',
-        reason: 'invalid_message_ownership',
-        level: 'error',
-        chat_id: dataPublish.chat_id,
-        chat_message_id: dataPublish.message_id,
-        account_id: dataPublish.account?.id,
-      });
       return Promise.resolve({} as PublishResult);
     }
 
     const channel = chatAccountCentrifugo(dataPublish.account.id);
 
-    recordMessageLifecycle({
-      stage: 'message_upsert.centrifugo.message_publish_start',
-      decision: 'publish_centrifugo',
-      outcome: 'started',
-      channel,
-      chat_id: dataPublish.chat_id,
-      chat_message_id: dataPublish.message_id,
-    });
     const promise = this.centrifugoService.publishSub(channel, dataPublish);
 
     return promise
       .then((result) => {
-        recordMessageLifecycle({
-          stage: 'message_upsert.centrifugo.message_publish_success',
-          decision: 'publish_centrifugo',
-          outcome: 'published',
-          channel,
-          chat_id: dataPublish.chat_id,
-          chat_message_id: dataPublish.message_id,
-        });
         return result;
       })
       .catch((error) => {
-        recordMessageLifecycle({
-          stage: 'message_upsert.centrifugo.message_publish_error',
-          decision: 'publish_centrifugo',
-          outcome: 'error',
-          reason: 'publish_failed',
-          level: 'error',
-          channel,
-          chat_id: dataPublish.chat_id,
-          chat_message_id: dataPublish.message_id,
-          error: error instanceof Error ? error.message : String(error),
-        });
         throw error;
       });
   }
@@ -616,70 +517,18 @@ export class MessageUpsertConsume {
   ): Promise<PublishResult> {
     const accountChannel = chatAccountCentrifugo(dataPublish.account.id);
     const queueChannel = chatQueueAccountCentrifugo(dataPublish.account.id);
-    recordMessageLifecycle({
-      stage: 'message_upsert.centrifugo.queue_publish_start',
-      decision: 'publish_centrifugo_queue',
-      outcome: 'started',
-      chat_id: dataPublish.chat_id,
-      account_channel: accountChannel,
-      queue_channel: queueChannel,
-    });
 
     return Promise.allSettled([
       this.centrifugoService.publishSub(accountChannel, dataPublish),
       this.centrifugoService.publishSub(queueChannel, dataPublish),
     ]).then(([accountResult, queueResult]) => {
       if (accountResult.status === 'rejected') {
-        recordMessageLifecycle({
-          stage: 'message_upsert.centrifugo.queue_publish_error',
-          decision: 'publish_centrifugo_queue',
-          outcome: 'partial_error',
-          reason: 'account_channel_failed',
-          level: 'error',
-          chat_id: dataPublish.chat_id,
-          channel: accountChannel,
-          error:
-            accountResult.reason instanceof Error
-              ? accountResult.reason.message
-              : String(accountResult.reason),
-        });
-        logger.error({
-          type: 'centrifugo_queue_publish_account_channel_failed',
-          message: 'Failed to publish to account channel in queue publish',
-          channel: accountChannel,
-          error:
-            accountResult.reason instanceof Error
-              ? accountResult.reason.message
-              : accountResult.reason,
-        });
-        incrementCounter('centrifugo_account_publish_failed');
       }
 
       if (queueResult.status === 'rejected') {
-        recordMessageLifecycle({
-          stage: 'message_upsert.centrifugo.queue_publish_error',
-          decision: 'publish_centrifugo_queue',
-          outcome: 'error',
-          reason: 'queue_channel_failed',
-          level: 'error',
-          chat_id: dataPublish.chat_id,
-          channel: queueChannel,
-          error:
-            queueResult.reason instanceof Error
-              ? queueResult.reason.message
-              : String(queueResult.reason),
-        });
         throw queueResult.reason;
       }
 
-      recordMessageLifecycle({
-        stage: 'message_upsert.centrifugo.queue_publish_success',
-        decision: 'publish_centrifugo_queue',
-        outcome: 'published',
-        chat_id: dataPublish.chat_id,
-        account_channel: accountChannel,
-        queue_channel: queueChannel,
-      });
       return queueResult.value;
     });
   }
@@ -823,28 +672,10 @@ export class MessageUpsertConsume {
       keys: [key],
     };
 
-    recordMessageLifecycle({
-      stage: 'message_upsert.mark_read.publish_start',
-      decision: 'publish_mark_read',
-      outcome: 'started',
-      topic: this.kafkaServiceQueueService.markMessageRead(),
-      account_id: accountId,
-      worker_id: workerId,
-      message_key_id: key.id,
-    });
     await this.streamProducerService.send(
       this.kafkaServiceQueueService.markMessageRead(),
       markReadData
     );
-    recordMessageLifecycle({
-      stage: 'message_upsert.mark_read.publish_success',
-      decision: 'publish_mark_read',
-      outcome: 'published',
-      topic: this.kafkaServiceQueueService.markMessageRead(),
-      account_id: accountId,
-      worker_id: workerId,
-      message_key_id: key.id,
-    });
   }
 
   private async shouldMarkAsRead(workerId: string): Promise<boolean> {
@@ -936,8 +767,9 @@ export class MessageUpsertConsume {
     );
 
     if (!targetMessage && this.isWwebjsSerializedMessageId(targetMessageId)) {
-      targetMessage = await this.findMessageByKeyIdInAccount(
+      targetMessage = await this.findMessageByKeyIdInAccountWorker(
         data.account_id,
+        data.worker_id,
         targetMessageId,
         data.message?.key
       );
@@ -977,18 +809,8 @@ export class MessageUpsertConsume {
     editPayload: Required<
       Pick<IEditMessagePayload, 'targetMessageId' | 'editedContent'>
     >,
-    newText: string,
-    chatId?: string
+    newText: string
   ): IUpsertMessage {
-    logger.info({
-      type: 'message_edit_missing_target_create_fallback',
-      account_id: data.account_id,
-      chat_id: chatId,
-      worker_id: data.worker_id,
-      target_message_id: editPayload.targetMessageId,
-      event_message_id: data.message.key?.id,
-    });
-
     return {
       ...data,
       type: EMessageType.text,
@@ -1039,8 +861,7 @@ export class MessageUpsertConsume {
         targetMessageId: editPayload.targetMessageId,
         editedContent: editPayload.editedContent,
       },
-      newText,
-      getChat.chat_id
+      newText
     );
   }
 
@@ -1057,8 +878,9 @@ export class MessageUpsertConsume {
     }
 
     if (this.isWwebjsSerializedMessageId(editPayload.targetMessageId)) {
-      const targetMessage = await this.findMessageByKeyIdInAccount(
+      const targetMessage = await this.findMessageByKeyIdInAccountWorker(
         data.account_id,
+        data.worker_id,
         editPayload.targetMessageId,
         data.message.key
       );
@@ -1750,14 +1572,6 @@ export class MessageUpsertConsume {
     );
 
     if (!existingChat) {
-      logger.warn({
-        type: 'message_upsert_existing_message_chat_not_found',
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        chat_id: existingMessage.chat_id,
-        message_id: existingMessage.message_id,
-        message_key_id: data.message?.key?.id,
-      });
       return;
     }
 
@@ -1964,24 +1778,9 @@ export class MessageUpsertConsume {
     const editPayload = this.getEditMessagePayload(data);
     if (!editPayload) return null;
 
-    const { protocolKey, targetMessageId, editedContent } = editPayload;
+    const { targetMessageId, editedContent } = editPayload;
 
     if (!targetMessageId || !editedContent) {
-      logger.warn(
-        {
-          component: 'message_upsert_consume',
-          event: 'edit_message_skipped',
-          reason: !targetMessageId
-            ? 'missing_target_message_id'
-            : 'missing_edited_content',
-          account_id: data.account_id,
-          chat_id: getChat.chat_id,
-          worker_id: data.worker_id,
-          event_message_id: data.message?.key?.id,
-          protocol_key: protocolKey,
-        },
-        'Message edit skipped'
-      );
       return true;
     }
 
@@ -1992,38 +1791,12 @@ export class MessageUpsertConsume {
     );
 
     if (!targetMessage?.content) {
-      logger.warn(
-        {
-          component: 'message_upsert_consume',
-          event: 'edit_message_skipped',
-          reason: 'target_message_not_found',
-          account_id: data.account_id,
-          chat_id: getChat.chat_id,
-          worker_id: data.worker_id,
-          target_message_id: targetMessageId,
-          event_message_id: data.message?.key?.id,
-        },
-        'Message edit skipped'
-      );
       return true;
     }
 
     const newText = this.getEditedMessageText(editedContent);
 
     if (!newText) {
-      logger.warn(
-        {
-          component: 'message_upsert_consume',
-          event: 'edit_message_skipped',
-          reason: 'empty_edited_text',
-          account_id: data.account_id,
-          chat_id: getChat.chat_id,
-          worker_id: data.worker_id,
-          target_message_id: targetMessageId,
-          event_message_id: data.message?.key?.id,
-        },
-        'Message edit skipped'
-      );
       return true;
     }
 
@@ -3564,15 +3337,6 @@ export class MessageUpsertConsume {
               await this.centrifugoChatQueuePublish(updatedChat);
             }
           });
-
-          logger.info({
-            type: 'message_upsert_replaced_existing_by_key',
-            account_id: data.account_id,
-            worker_id: data.worker_id,
-            chat_id: getChat.chat_id,
-            message_key_id: messageId,
-            source_message_id: existingMessageByKey.message_id,
-          });
           this.logLifecycle(data, {
             stage: 'message_upsert.chat_message.existing',
             decision: 'existing_message_by_key',
@@ -3720,7 +3484,7 @@ export class MessageUpsertConsume {
 
           const channelAccountId = updatedChat.account.id;
 
-          const [accountResult, queueResult] = await Promise.allSettled([
+          await Promise.allSettled([
             this.centrifugoService.publishSub(
               chatAccountCentrifugo(channelAccountId),
               updatedChat
@@ -3730,32 +3494,6 @@ export class MessageUpsertConsume {
               updatedChat
             ),
           ]);
-
-          if (accountResult.status === 'rejected') {
-            logger.error({
-              type: 'message_upsert_centrifugo_account_publish_failed',
-              message: 'Failed to publish to account channel',
-              channel: chatAccountCentrifugo(channelAccountId),
-              error:
-                accountResult.reason instanceof Error
-                  ? accountResult.reason.message
-                  : accountResult.reason,
-            });
-            incrementCounter('centrifugo_account_publish_failed');
-          }
-
-          if (queueResult.status === 'rejected') {
-            logger.error({
-              type: 'message_upsert_centrifugo_queue_publish_failed',
-              message: 'Failed to publish to queue channel',
-              channel: chatQueueAccountCentrifugo(channelAccountId),
-              error:
-                queueResult.reason instanceof Error
-                  ? queueResult.reason.message
-                  : queueResult.reason,
-            });
-            incrementCounter('centrifugo_queue_publish_failed');
-          }
 
           if (inputChatMessage.type_user !== ETypeUserChat.operator) {
             const isFromMe = inputChatMessage.message_key?.from_me === true;
@@ -3767,7 +3505,7 @@ export class MessageUpsertConsume {
             }
           }
         },
-        { ttlMs: 30000, retryMs: 50, maxWaitMs: 45000 }
+        { ttlMs: 30_000, retryMs: 50, maxWaitMs: 45_000 }
       );
 
       this.logLifecycle(data, {
@@ -3791,18 +3529,6 @@ export class MessageUpsertConsume {
         chat_id: getChat.chat_id,
         error: error instanceof Error ? error.message : String(error),
       });
-      logger.error({
-        type: 'message_upsert_create_chat_message_error',
-        message: `Error in createChatMessage for chat ${getChat.chat_id}`,
-        error: error instanceof Error ? error.message : error,
-        chat_id: getChat.chat_id,
-        account_id: data.account_id,
-      });
-      recordException(error, {
-        type: 'message_upsert_create_chat_message_error',
-        chat_id: getChat.chat_id,
-      });
-      incrementCounter('message_upsert_create_chat_message_error');
       throw error;
     }
   }
@@ -4478,17 +4204,10 @@ export class MessageUpsertConsume {
 
   private logLifecycle(
     data: IUpsertMessage | null | undefined,
-    event: MessageLifecycleEvent
+    event: Record<string, unknown>
   ): void {
-    const contextData = buildMessageLifecycleContext(
-      data ?? undefined,
-      data?.source_provider
-    );
-
-    recordMessageLifecycle({
-      ...contextData,
-      ...event,
-    });
+    void data;
+    void event;
   }
 
   private async createOrUpdateChatBotFlow(
@@ -5365,12 +5084,6 @@ export class MessageUpsertConsume {
   ): Promise<boolean> {
     const sourceMessageKey = this.getAutomationSourceMessageKey(data);
     if (!sourceMessageKey) {
-      logger.warn({
-        type: 'message_upsert_automation_dedupe_missing_source_key',
-        automation_type: automationType,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-      });
       return false;
     }
 
@@ -5389,19 +5102,7 @@ export class MessageUpsertConsume {
         'NX'
       );
       return acquired === 'OK';
-    } catch (error) {
-      logger.error({
-        type: 'message_upsert_automation_dedupe_error',
-        automation_type: automationType,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        source_message_key: sourceMessageKey,
-        error: error instanceof Error ? error.message : error,
-      });
-      recordException(error, {
-        type: 'message_upsert_automation_dedupe_error',
-        automation_type: automationType,
-      });
+    } catch {
       return false;
     }
   }
@@ -5637,13 +5338,6 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     const discardReason = this.getDiscardUpsertReason(data);
     if (discardReason) {
-      logger.info({
-        type: 'message_upsert_discarded',
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        message_key_id: data.message?.key?.id,
-        reason: discardReason,
-      });
       this.logLifecycle(data, {
         stage: 'message_upsert.route.discard',
         decision: 'discard_filter',
@@ -5752,15 +5446,6 @@ export class MessageUpsertConsume {
         );
 
         if (automationTriggerGuard.discardEvent) {
-          logger.info({
-            type: 'message_upsert_automation_guard_discarded',
-            account_id: data.account_id,
-            worker_id: data.worker_id,
-            message_key_id: data.message?.key?.id,
-            reason: automationTriggerGuard.reason,
-            message_timestamp_ms: automationTriggerGuard.messageTimestampMs,
-            age_ms: automationTriggerGuard.ageMs,
-          });
           return;
         }
 
@@ -6009,7 +5694,7 @@ export class MessageUpsertConsume {
           }
         }
       },
-      { ttlMs: 60000, retryMs: 100, maxWaitMs: 90000 }
+      { ttlMs: 60_000, retryMs: 100, maxWaitMs: 90_000 }
     );
   }
 
@@ -6083,13 +5768,7 @@ export class MessageUpsertConsume {
         t,
         topic,
         message as KafkaConsumerMessage
-      ).catch((error) => {
-        logger.error({
-          type: 'message_upsert_consumer_handler_error',
-          message: 'Unhandled error before partition chain registration',
-          error: error instanceof Error ? error.message : error,
-        });
-      });
+      ).catch(() => {});
     });
 
     this.consumer.on('event.error', (err) => {
@@ -6111,51 +5790,19 @@ export class MessageUpsertConsume {
     topic: string,
     message: KafkaConsumerMessage
   ): Promise<void> {
-    await runWithKafkaTraceContext(message.headers, () =>
-      this.handleKafkaMessageWithTrace(t, topic, message)
-    );
-  }
-
-  private async handleKafkaMessageWithTrace(
-    t: TFunction<'translation', undefined>,
-    topic: string,
-    message: KafkaConsumerMessage
-  ): Promise<void> {
     const { partition, offset } = message;
     const data = this.parseMessage(message.value);
     if (!data) {
-      recordMessageLifecycle({
-        stage: 'message_upsert.consume.parse',
-        decision: 'parse_kafka_payload',
-        outcome: 'skipped',
-        reason: 'invalid_or_empty_payload',
-        level: 'warn',
-        topic,
-        partition,
-        offset,
-      });
       await this.commitNext(topic, partition, offset);
       return;
     }
 
-    const contextData = buildMessageLifecycleContext(
-      data,
-      data.source_provider
-    );
     const previousChain =
       this.partitionChains.get(partition) ?? Promise.resolve();
 
     const currentChain = previousChain
       .then(() =>
-        this.processKafkaMessageInPartition(
-          t,
-          topic,
-          data,
-          partition,
-          offset,
-          contextData,
-          message.headers
-        )
+        this.processKafkaMessageInPartition(t, topic, data, partition, offset)
       )
       .catch((error) => {
         this.handlePartitionChainError(data, partition, offset, error);
@@ -6169,15 +5816,9 @@ export class MessageUpsertConsume {
     topic: string,
     data: IUpsertMessage,
     partition: number,
-    offset: number,
-    contextData: MessageLifecycleContext,
-    kafkaHeaders?: MessageHeader[]
+    offset: number
   ): Promise<void> {
-    await runWithKafkaTraceContext(kafkaHeaders, () =>
-      runWithMessageLifecycleContext(contextData, () =>
-        this.processMessageWithLifecycle(t, topic, data, partition, offset)
-      )
-    );
+    await this.processMessageWithLifecycle(t, topic, data, partition, offset);
   }
 
   private async processMessageWithLifecycle(
@@ -6249,15 +5890,6 @@ export class MessageUpsertConsume {
   ): ReturnType<typeof setTimeout> {
     const timeout = setTimeout(() => {
       markTimeout();
-      logger.error({
-        type: 'message_upsert_timeout',
-        message: `Message processing timeout after ${this.MESSAGE_PROCESSING_TIMEOUT_MS}ms. Offset will not be committed.`,
-        partition,
-        offset,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        message_key_id: data.message?.key?.id,
-      });
       this.logLifecycle(data, {
         stage: 'message_upsert.process.timeout',
         decision: 'process_message',
@@ -6268,7 +5900,6 @@ export class MessageUpsertConsume {
         offset,
         timeout_ms: this.MESSAGE_PROCESSING_TIMEOUT_MS,
       });
-      incrementCounter('message_upsert_timeout');
     }, this.MESSAGE_PROCESSING_TIMEOUT_MS);
     timeout.unref?.();
 
@@ -6283,15 +5914,6 @@ export class MessageUpsertConsume {
   ): Promise<boolean> {
     const discardReason = this.getDiscardUpsertReason(data);
     if (discardReason) {
-      logger.info({
-        type: 'message_upsert_discarded',
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        message_key_id: data.message?.key?.id,
-        partition,
-        offset,
-        reason: discardReason,
-      });
       this.logLifecycle(data, {
         stage: 'message_upsert.consume.discard',
         decision: 'discard_filter',
@@ -6390,16 +6012,6 @@ export class MessageUpsertConsume {
     error: unknown
   ): Promise<boolean> {
     if (this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error)) {
-      logger.error({
-        type: 'message_upsert_elastic_read_only_allow_delete',
-        message:
-          'Elasticsearch flood-stage read-only block detected. Offset not committed; retrying after backoff.',
-        partition,
-        offset,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        message_key_id: data.message?.key?.id,
-      });
       this.logLifecycle(data, {
         stage: 'message_upsert.process.retry',
         decision: 'process_message',
@@ -6409,7 +6021,6 @@ export class MessageUpsertConsume {
         partition,
         offset,
       });
-      incrementCounter('message_upsert_elastic_read_only_allow_delete');
       await delay(3000);
       return false;
     }
@@ -6424,20 +6035,6 @@ export class MessageUpsertConsume {
       const reason = lockTimeout
         ? 'lock_acquisition_timeout'
         : 'consecutive_failures_exhausted';
-      logger.error({
-        type: 'message_upsert_dlq_after_retry_exhausted',
-        message:
-          'Message upsert failed after retries. Publishing to DLQ and committing offset to unblock partition.',
-        error: error instanceof Error ? error.message : error,
-        partition,
-        offset,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        message_key_id: data.message?.key?.id,
-        consecutive_failure_count: consecutiveFailureCount,
-        max_consecutive_failures: this.MAX_CONSECUTIVE_FAILURES,
-        reason,
-      });
       this.logLifecycle(data, {
         stage: 'message_upsert.process.dlq',
         decision: 'process_message',
@@ -6450,7 +6047,6 @@ export class MessageUpsertConsume {
         consecutive_failure_count: consecutiveFailureCount,
         error: error instanceof Error ? error.message : String(error),
       });
-      incrementCounter('message_upsert_dlq_after_retry_exhausted');
 
       const sentToDlq = await this.sendToDlq(
         data,
@@ -6461,20 +6057,6 @@ export class MessageUpsertConsume {
         return true;
       }
     }
-
-    logger.error({
-      type: timeoutLogged
-        ? 'message_upsert_timeout_retry'
-        : 'message_upsert_processing_error',
-      message:
-        'Error processing message. Offset will not be committed; retrying after backoff.',
-      error: error instanceof Error ? error.message : error,
-      partition,
-      offset,
-      account_id: data.account_id,
-      worker_id: data.worker_id,
-      message_key_id: data.message?.key?.id,
-    });
     this.logLifecycle(data, {
       stage: timeoutLogged
         ? 'message_upsert.process.timeout_retry'
@@ -6487,15 +6069,6 @@ export class MessageUpsertConsume {
       offset,
       error: error instanceof Error ? error.message : String(error),
     });
-    recordException(error, {
-      type: 'message_upsert_processing_error',
-      partition: String(partition),
-    });
-    incrementCounter(
-      timeoutLogged
-        ? 'message_upsert_timeout_retry'
-        : 'message_upsert_processing_error'
-    );
 
     await delay(timeoutLogged ? 5000 : 3000);
     return false;
@@ -6507,13 +6080,6 @@ export class MessageUpsertConsume {
     offset: number,
     error: unknown
   ): void {
-    logger.error({
-      type: 'message_upsert_unhandled_error',
-      message: `Unhandled error in partition ${partition}, offset ${offset}`,
-      error: error instanceof Error ? error.message : error,
-      partition,
-      offset,
-    });
     this.logLifecycle(data, {
       stage: 'message_upsert.process.unhandled_error',
       decision: 'partition_chain',
@@ -6524,11 +6090,6 @@ export class MessageUpsertConsume {
       offset,
       error: error instanceof Error ? error.message : String(error),
     });
-    recordException(error, {
-      type: 'message_upsert_unhandled_error',
-      partition: String(partition),
-    });
-    incrementCounter('message_upsert_unhandled_error');
     this.incrementPartitionFailure(partition);
   }
 
@@ -6580,40 +6141,11 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     try {
       await commitOffset(this.consumerOrThrow, topic, partition, offset);
-      recordMessageLifecycle({
-        stage: 'message_upsert.kafka.commit',
-        decision: 'commit_offset',
-        outcome: 'committed',
-        topic,
-        partition,
-        offset,
-      });
     } catch (error: unknown) {
       if (MessageUpsertConsume.isLibrdKafkaError(error) && error.code === 22) {
-        recordMessageLifecycle({
-          stage: 'message_upsert.kafka.commit',
-          decision: 'commit_offset',
-          outcome: 'ignored',
-          reason: 'local_state_error',
-          level: 'warn',
-          topic,
-          partition,
-          offset,
-        });
         return;
       }
 
-      recordMessageLifecycle({
-        stage: 'message_upsert.kafka.commit',
-        decision: 'commit_offset',
-        outcome: 'error',
-        reason: 'commit_failed',
-        level: 'error',
-        topic,
-        partition,
-        offset,
-        error: error instanceof Error ? error.message : String(error),
-      });
       throw error;
     }
   }

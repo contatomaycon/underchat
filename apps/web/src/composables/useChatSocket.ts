@@ -18,7 +18,6 @@ import type { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { ListMessageChatsQuery } from '@core/schema/chat/listMessageChats/request.schema';
 import { useChatNotifications } from '@/composables/useChatNotifications';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
-import { getCentrifugoTelemetry } from '@/@webcore/centrifugoTelemetry';
 
 let isInitialized = false;
 let initializingPromise: Promise<void> | null = null;
@@ -48,8 +47,6 @@ let chatUpdateBatchBuffer: IChat[] = [];
 let chatUpdateBatchTimer: ReturnType<typeof setTimeout> | null = null;
 let kanbanFilteredRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let visibilityHandler: (() => void) | null = null;
-
-const telemetry = getCentrifugoTelemetry();
 
 const createChatSocket = () => {
   const chatStore = useChatStore();
@@ -156,8 +153,7 @@ const createChatSocket = () => {
         fetchHistoryAndProcess(chatAccountCentrifugo(accountId)),
         fetchHistoryAndProcess(chatQueueAccountCentrifugo(accountId)),
       ]);
-    } catch (error) {
-      telemetry.trackError('sync_from_history', error);
+    } catch {
     } finally {
       isSyncInProgress = false;
     }
@@ -181,7 +177,6 @@ const createChatSocket = () => {
   };
 
   const handleRecoveryFailed = (event: CustomEvent<{ channel: string }>) => {
-    telemetry.trackRecovery(event.detail.channel, false, 0);
     if (import.meta.env.DEV) {
       console.warn(
         '[ChatSocket] Recovery failed for channel:',
@@ -208,15 +203,10 @@ const createChatSocket = () => {
         return;
       }
 
-      void chatStore.loadKanbanInitial().catch((error: unknown) => {
-        telemetry.trackError('kanban_filtered_refresh', error);
-      });
+      void chatStore.loadKanbanInitial().catch(() => {});
     }, KANBAN_FILTERED_REFRESH_DEBOUNCE_MS);
   };
 
-  /**
-   * BUG 6 FIX: Evict oldest entries from pending maps to prevent unbounded memory growth.
-   */
   const evictPendingMessages = (chatId: string, messages: IChatMessage[]) => {
     if (messages.length > MAX_PENDING_MESSAGES_PER_CHAT) {
       messages.splice(0, messages.length - MAX_PENDING_MESSAGES_PER_CHAT);
@@ -259,8 +249,6 @@ const createChatSocket = () => {
     const messages = [...messageBatchBuffer];
     messageBatchBuffer = [];
     messageBatchTimer = null;
-
-    telemetry.trackBatchFlush('message', messages.length);
 
     const messagesByChat = new Map<string, IChatMessage[]>();
     for (const msg of messages) {
@@ -322,8 +310,6 @@ const createChatSocket = () => {
     const updates = [...chatUpdateBatchBuffer];
     chatUpdateBatchBuffer = [];
     chatUpdateBatchTimer = null;
-
-    telemetry.trackBatchFlush('chatUpdate', updates.length);
 
     const latestByChatId = new Map<string, IChat>();
     for (const chat of updates) {
@@ -494,7 +480,6 @@ const createChatSocket = () => {
 
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
-        telemetry.trackError('unsubscribe_cleanup', error, sub.channel);
         if (import.meta.env.DEV) {
           console.error('Erro ao fazer unsubscribe:', error);
         }
@@ -615,16 +600,13 @@ const createChatSocket = () => {
         removeVisibilityHandler();
         visibilityHandler = () => {
           if (document.visibilityState === 'visible') {
-            telemetry.trackVisibility('visible');
             lastSyncTime = 0;
             syncFromCentrifugoHistory();
           } else {
-            telemetry.trackVisibility('hidden');
           }
         };
         document.addEventListener('visibilitychange', visibilityHandler);
       } catch (error) {
-        telemetry.trackError('initialize_socket', error);
         if (import.meta.env.DEV) {
           console.error('Erro ao inicializar socket de chat:', error);
         }
@@ -648,7 +630,6 @@ const createChatSocket = () => {
 
     const unsubscribePromises = subscriptions.map((sub) =>
       sub.unsubscribe().catch((error) => {
-        telemetry.trackError('cleanup_unsubscribe', error, sub.channel);
         if (import.meta.env.DEV) {
           console.error('Erro ao fazer unsubscribe:', error);
         }

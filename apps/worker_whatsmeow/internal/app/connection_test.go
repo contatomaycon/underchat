@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/store"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestFreshLoginFallbackIsConsumedOnce(t *testing.T) {
@@ -56,29 +54,6 @@ func TestRequestConnectionRejectsPhonePairing(t *testing.T) {
 	}
 }
 
-func TestConnectionLifecycleConfigEnvParse(t *testing.T) {
-	t.Setenv("WORKER_ID", "worker-1")
-	t.Setenv("ACCOUNT_ID", "account-1")
-	t.Setenv("KAFKA_BROKER", "localhost:9092")
-	t.Setenv("CONNECTION_LIFECYCLE_DEBUG_ENABLED", "true")
-	t.Setenv("CONNECTION_LIFECYCLE_DEBUG_VALUE_LIMIT", "123")
-	t.Setenv("CONNECTION_LIFECYCLE_DEBUG_RAW_LIMIT", "456")
-
-	cfg, err := LoadConfig()
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if !cfg.ConnectionLifecycleDebugEnabled {
-		t.Fatal("expected connection lifecycle debug to be enabled")
-	}
-	if cfg.ConnectionLifecycleDebugValueLimit != 123 {
-		t.Fatalf("unexpected value limit %d", cfg.ConnectionLifecycleDebugValueLimit)
-	}
-	if cfg.ConnectionLifecycleDebugRawLimit != 456 {
-		t.Fatalf("unexpected raw limit %d", cfg.ConnectionLifecycleDebugRawLimit)
-	}
-}
-
 func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	t.Setenv("WORKER_ID", "worker-1")
 	t.Setenv("ACCOUNT_ID", "account-1")
@@ -102,12 +77,6 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	}
 	if cfg.SendIdempotencyStaleAfter.String() != "2m0s" {
 		t.Fatalf("unexpected stale claim threshold %s", cfg.SendIdempotencyStaleAfter)
-	}
-	if !cfg.MessageLifecycleOutboundSuccessEnabled {
-		t.Fatal("expected outbound success lifecycle to be enabled by default")
-	}
-	if cfg.MessageLifecycleIncomingSuccessEnabled {
-		t.Fatal("expected incoming success lifecycle to be disabled by default")
 	}
 	if cfg.OutboundReadyTimeout != time.Minute {
 		t.Fatalf("unexpected outbound ready timeout %s", cfg.OutboundReadyTimeout)
@@ -247,84 +216,6 @@ func TestWaitUntilReadyReturnsTransientNotReady(t *testing.T) {
 	}
 }
 
-func TestLifecycleDebugFiltersOnlyExceptionEvents(t *testing.T) {
-	if shouldRecordLifecycleDebugEvent(map[string]any{
-		"stage":   "test.success",
-		"outcome": "success",
-	}) {
-		t.Fatal("expected success lifecycle event to be dropped")
-	}
-	if shouldRecordLifecycleDebugEvent(map[string]any{
-		"stage":   "test.published",
-		"outcome": "published",
-	}) {
-		t.Fatal("expected published lifecycle event to be dropped")
-	}
-	if !shouldRecordLifecycleDebugEvent(map[string]any{
-		"stage":   "test.skipped",
-		"outcome": "skipped",
-	}) {
-		t.Fatal("expected skipped lifecycle event to be emitted")
-	}
-	if !shouldRecordLifecycleDebugEvent(map[string]any{
-		"stage":   "test.retrying",
-		"outcome": "retrying",
-	}) {
-		t.Fatal("expected retrying lifecycle event to be emitted")
-	}
-	if !shouldRecordLifecycleDebugEvent(map[string]any{
-		"stage":   "test.error",
-		"outcome": "success",
-		"level":   "error",
-		"error":   "forced error",
-	}) {
-		t.Fatal("expected explicit error lifecycle event to be emitted")
-	}
-}
-
-func TestOutboundLifecycleSuccessFilter(t *testing.T) {
-	cfg := Config{MessageLifecycleOutboundSuccessEnabled: true}
-	if !shouldRecordMessageLifecycleEvent(cfg, map[string]any{
-		"stage":   "whatsmeow.outgoing.send.ack.success",
-		"outcome": "success",
-	}) {
-		t.Fatal("expected outbound success event to be emitted")
-	}
-
-	cfg.MessageLifecycleOutboundSuccessEnabled = false
-	if shouldRecordMessageLifecycleEvent(cfg, map[string]any{
-		"stage":   "whatsmeow.outgoing.send.ack.success",
-		"outcome": "success",
-	}) {
-		t.Fatal("expected outbound success event to be dropped when disabled")
-	}
-}
-
-func TestIncomingLifecycleSuccessFilter(t *testing.T) {
-	cfg := Config{}
-	if shouldRecordMessageLifecycleEvent(cfg, map[string]any{
-		"stage":   "whatsmeow.kafka.publish.success",
-		"outcome": "published",
-	}) {
-		t.Fatal("expected incoming success event to be dropped by default")
-	}
-
-	cfg.MessageLifecycleIncomingSuccessEnabled = true
-	if !shouldRecordMessageLifecycleEvent(cfg, map[string]any{
-		"stage":   "whatsmeow.kafka.publish.success",
-		"outcome": "published",
-	}) {
-		t.Fatal("expected incoming success event to be emitted when enabled")
-	}
-
-	if !shouldRecordMessageLifecycleEvent(cfg, map[string]any{
-		"stage":   "whatsmeow.history.kafka.publish.success",
-		"outcome": "published",
-	}) {
-		t.Fatal("expected history success event to be emitted when enabled")
-	}
-}
-
 func TestConnectionHealthReportsDegradedClientMismatch(t *testing.T) {
 	manager := &WhatsAppManager{
 		cfg:       Config{WorkerID: "worker-1", AccountID: "account-1"},
@@ -342,86 +233,6 @@ func TestConnectionHealthReportsDegradedClientMismatch(t *testing.T) {
 	}
 	if health["degraded_reason"] != "client_socket_disconnected" {
 		t.Fatalf("unexpected degraded reason %#v", health["degraded_reason"])
-	}
-}
-
-func TestConnectionLifecyclePayloadRedactsQRCodeAndPairingCode(t *testing.T) {
-	cfg := Config{
-		AccountID:                          "account-1",
-		WorkerID:                           "worker-1",
-		ConnectionLifecycleDebugEnabled:    true,
-		ConnectionLifecycleDebugValueLimit: 10,
-		ConnectionLifecycleDebugRawLimit:   1000,
-	}
-	ctx := contextWithConnectionLifecycle(context.Background(), connectionLifecycleContext{
-		ConnectionLifecycleID: "connection-1",
-		AccountID:             "account-1",
-		WorkerID:              "worker-1",
-		ChannelID:             "worker-1",
-		WorkerType:            "whatsmeow",
-		SourceProvider:        "whatsmeow",
-		ConnectionType:        "qrcode",
-		ConnectionAction:      "request_connection",
-	})
-
-	payload := normalizeConnectionLifecyclePayload(ctx, cfg, map[string]any{
-		"stage":        "test.redaction",
-		"decision":     "redact",
-		"outcome":      "skipped",
-		"qrcode":       "qr-secret-value",
-		"pairing_code": "pair-secret-value",
-		"raw_payload": map[string]any{
-			"qrcode":       "raw-qr-secret",
-			"pairing_code": "raw-pair-secret",
-		},
-	})
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-	serialized := string(raw)
-	for _, secret := range []string{"qr-secret-value", "pair-secret-value", "raw-qr-secret", "raw-pair-secret"} {
-		if strings.Contains(serialized, secret) {
-			t.Fatalf("payload leaked secret %q: %s", secret, serialized)
-		}
-	}
-	if payload["has_qr"] != true {
-		t.Fatalf("expected has_qr true, got %#v", payload["has_qr"])
-	}
-	if payload["has_pairing_code"] != true {
-		t.Fatalf("expected has_pairing_code true, got %#v", payload["has_pairing_code"])
-	}
-}
-
-func TestConnectionLifecycleGrpcMetadataPropagation(t *testing.T) {
-	cfg := Config{AccountID: "account-1", WorkerID: "worker-1"}
-	ctx := metadata.NewIncomingContext(
-		context.Background(),
-		metadata.Pairs(connectionLifecycleIDHeader, "connection-grpc-1"),
-	)
-
-	ctx = extractIncomingConnectionLifecycleContext(ctx, cfg, StatusConnectionRequest{
-		WorkerID: "worker-1",
-		Status:   WorkerStatusOnline,
-		Type:     "qrcode",
-	}, "request_connection")
-
-	lifecycle, ok := connectionLifecycleFromContext(ctx)
-	if !ok {
-		t.Fatal("expected connection lifecycle context")
-	}
-	if lifecycle.ConnectionLifecycleID != "connection-grpc-1" {
-		t.Fatalf("unexpected lifecycle id %q", lifecycle.ConnectionLifecycleID)
-	}
-
-	outgoing := injectOutgoingConnectionLifecycleContext(ctx)
-	md, ok := metadata.FromOutgoingContext(outgoing)
-	if !ok {
-		t.Fatal("expected outgoing metadata")
-	}
-	values := md.Get(connectionLifecycleIDHeader)
-	if len(values) != 1 || values[0] != "connection-grpc-1" {
-		t.Fatalf("unexpected outgoing lifecycle metadata %#v", values)
 	}
 }
 

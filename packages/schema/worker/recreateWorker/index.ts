@@ -37,7 +37,6 @@ export const recreateWorkerSchema = {
           server_id: Type.Optional(Type.String()),
           worker_type_id: Type.Optional(Type.String()),
           worker_status_id: Type.String(),
-          connection_lifecycle_id: Type.String(),
           operation_id: Type.String(),
           reason: Type.String(),
           recreate_available_at: Type.Optional(

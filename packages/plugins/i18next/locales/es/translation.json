@@ -13,8 +13,6 @@
   "server_ssh_creator_error": "Error al crear el servidor SSH",
   "ssh_connection_failed": "¡Error de conexión SSH!",
   "health_check_success": "¡Verificación de salud exitosa!",
-  "metrics_server_success": "¡Servidor de métricas iniciado con éxito!",
-  "metrics_server_error": "Error al iniciar el servidor de métricas",
   "ssh_distro_version_failed": "Error al recuperar la distribución y versión del servidor",
   "ssh_distro_version_not_allowed": "Distribución y versión no permitidas para el servidor",
   "server_deleted_successfully": "¡Servidor eliminado con éxito!",

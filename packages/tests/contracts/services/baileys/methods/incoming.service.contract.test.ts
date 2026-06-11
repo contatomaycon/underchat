@@ -32,14 +32,6 @@ jest.mock('@whiskeysockets/baileys', () => ({
   isPnUser: (jid?: string) => jid?.endsWith('@s.whatsapp.net') ?? false,
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    error: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-  },
-}));
-
 jest.mock('@core/config/environments', () => ({
   baileysEnvironment: {
     baileysAccountId: 'account-1',

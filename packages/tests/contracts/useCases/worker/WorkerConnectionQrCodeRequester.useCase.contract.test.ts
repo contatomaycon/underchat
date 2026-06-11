@@ -119,10 +119,6 @@ function makeUseCase(
 }
 
 describe('WorkerConnectionQrCodeRequesterUseCase', () => {
-  beforeEach(() => {
-    process.env.CONNECTION_LIFECYCLE_DEBUG_ENABLED = 'false';
-  });
-
   it('enqueues a QR request in Redis Streams and publishes pending state', async () => {
     const deps = makeUseCase();
 
@@ -136,7 +132,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: 'uuid-mock',
-      connection_lifecycle_id: expect.any(String),
       qr_pending: true,
       reason: 'queued',
     });
@@ -147,7 +142,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       expect.objectContaining({
         request_id: 'uuid-mock',
         connection_attempt_id: response.connection_attempt_id,
-        connection_lifecycle_id: response.connection_lifecycle_id,
         worker_id: 'worker-1',
         account_id: 'account-1',
         worker_type_id: EWorkerType.baileys,
@@ -238,7 +232,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         worker_type_id: EWorkerType.baileys,
         worker_status_id: EWorkerStatus.disponible,
         connection_attempt_id: 'attempt-1',
-        connection_lifecycle_id: 'lifecycle-1',
         qr_pending: true,
         reason: 'queued',
       },
@@ -281,7 +274,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: 'attempt-cached',
-      connection_lifecycle_id: 'lifecycle-cached',
       qrcode: 'data:image/png;base64,cached',
       qr_generated_at: new Date().toISOString(),
       qr_pending: false,
@@ -300,7 +292,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       worker_id: 'worker-1',
       account_id: 'account-1',
       connection_attempt_id: 'attempt-cached',
-      connection_lifecycle_id: 'lifecycle-cached',
       qrcode: 'data:image/png;base64,cached',
       qr_pending: false,
     });
@@ -324,7 +315,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
       worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: 'attempt-baileys-cache',
-      connection_lifecycle_id: 'lifecycle-baileys-cache',
       qrcode: 'data:image/png;base64,baileys',
       qr_generated_at: new Date().toISOString(),
       qr_pending: false,
@@ -353,7 +343,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         worker_id: 'worker-1',
         account_id: 'account-1',
         connection_attempt_id: 'attempt-processed',
-        connection_lifecycle_id: 'lifecycle-processed',
         qr_pending: true,
         reason: 'queued',
       },
@@ -389,7 +378,6 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
         worker_id: 'worker-1',
         account_id: 'account-1',
         connection_attempt_id: 'attempt-old',
-        connection_lifecycle_id: 'lifecycle-old',
         qr_pending: true,
         reason: 'queued',
       },

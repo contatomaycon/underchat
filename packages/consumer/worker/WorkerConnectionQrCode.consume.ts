@@ -9,11 +9,6 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import {
-  buildConnectionLifecycleContext,
-  recordConnectionLifecycle,
-  runWithConnectionLifecycleContext,
-} from '@core/plugins/telemetry/connectionLifecycleDebug';
-import {
   WorkerConnectionQrCodeRedisQueueService,
   WorkerConnectionQrCodeRedisStreamMessage,
 } from '@core/services/workerConnectionQrCodeRedisQueue.service';
@@ -63,14 +58,6 @@ export class WorkerConnectionQrCodeConsume {
     }
 
     const workerId = baileysEnvironment.baileysWorkerId;
-    const streamKey = this.redisQueueService.streamKey(
-      workerId,
-      EWorkerType.baileys
-    );
-    const consumerGroup = this.redisQueueService.consumerGroup(
-      workerId,
-      EWorkerType.baileys
-    );
     const consumerName = this.redisQueueService.consumerName(
       workerId,
       EWorkerType.baileys
@@ -80,41 +67,9 @@ export class WorkerConnectionQrCodeConsume {
     this.stopped = false;
     this.isRunning = true;
 
-    recordConnectionLifecycle({
-      stage: 'connection.baileys.qrcode_redis_stream.listener_start',
-      decision: 'start_qrcode_redis_stream_listener',
-      outcome: 'started',
-      worker_id: workerId,
-      account_id: baileysEnvironment.baileysAccountId,
-      worker_type: EWorkerType.baileys,
-      worker_type_id: EWorkerType.baileys,
-      stream_key: streamKey,
-      consumer_group: consumerGroup,
-      consumer_name: consumerName,
-      redis_status: this.redisStatus(),
+    this.loopPromise = this.consumeLoop(workerId, consumerName).catch(() => {
+      this.isRunning = false;
     });
-
-    this.loopPromise = this.consumeLoop(workerId, consumerName).catch(
-      (error) => {
-        this.isRunning = false;
-        recordConnectionLifecycle({
-          stage: 'connection.baileys.qrcode_redis_stream.listener_error',
-          decision: 'run_qrcode_redis_stream_listener',
-          outcome: 'error',
-          reason: 'listener_stopped_by_error',
-          level: 'error',
-          worker_id: workerId,
-          account_id: baileysEnvironment.baileysAccountId,
-          worker_type: EWorkerType.baileys,
-          worker_type_id: EWorkerType.baileys,
-          stream_key: streamKey,
-          consumer_group: consumerGroup,
-          consumer_name: consumerName,
-          redis_status: this.redisStatus(),
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    );
   }
 
   private async consumeLoop(
@@ -139,29 +94,7 @@ export class WorkerConnectionQrCodeConsume {
           consumerName
         );
         await this.processMessages(messages);
-      } catch (error) {
-        recordConnectionLifecycle({
-          stage: 'connection.baileys.qrcode_redis_stream.read_error',
-          decision: 'read_qrcode_redis_stream',
-          outcome: 'error',
-          reason: 'redis_stream_read_failed',
-          level: 'warn',
-          worker_id: workerId,
-          account_id: baileysEnvironment.baileysAccountId,
-          worker_type: EWorkerType.baileys,
-          worker_type_id: EWorkerType.baileys,
-          stream_key: this.redisQueueService.streamKey(
-            workerId,
-            EWorkerType.baileys
-          ),
-          consumer_group: this.redisQueueService.consumerGroup(
-            workerId,
-            EWorkerType.baileys
-          ),
-          consumer_name: consumerName,
-          redis_status: this.redisStatus(),
-          error: error instanceof Error ? error.message : String(error),
-        });
+      } catch {
         await this.delay(1000);
       }
     }
@@ -183,20 +116,7 @@ export class WorkerConnectionQrCodeConsume {
   ): Promise<void> {
     const data = message.payload;
     if (!data) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.ignored_invalid',
-        decision: 'consume_connection_qrcode_request',
-        outcome: 'ignored',
-        reason: 'invalid_payload',
-        level: 'warn',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        reclaimed: message.reclaimed,
-        redis_status: this.redisStatus(),
-      });
-      await this.ackAndDelete(message, 'invalid_payload');
+      await this.ackAndDelete(message);
       return;
     }
 
@@ -207,23 +127,10 @@ export class WorkerConnectionQrCodeConsume {
         data.worker_type_id,
         message.stream_id
       ));
-    const contextData = buildConnectionLifecycleContext({
-      connection_lifecycle_id: data.connection_lifecycle_id,
-      account_id: data.account_id,
-      worker_id: data.worker_id,
-      channel_id: data.worker_id,
-      worker_type: EWorkerType.baileys,
-      source_provider: 'baileys',
-      connection_type: EBaileysConnectionType.qrcode,
-      connection_action: 'consume_qrcode_request',
+    await this.processMessage({
+      ...message,
+      delivery_count: deliveryCount,
     });
-
-    await runWithConnectionLifecycleContext(contextData, () =>
-      this.processMessage({
-        ...message,
-        delivery_count: deliveryCount,
-      })
-    );
   }
 
   private async processMessage(
@@ -231,189 +138,41 @@ export class WorkerConnectionQrCodeConsume {
   ): Promise<void> {
     const data = message.payload;
     if (!data) {
-      await this.ackAndDelete(message, 'invalid_payload');
+      await this.ackAndDelete(message);
       return;
     }
-
-    recordConnectionLifecycle({
-      stage: 'connection.baileys.qrcode_redis_stream.received',
-      decision: 'consume_connection_qrcode_request',
-      outcome: 'received',
-      stream_key: message.stream_key,
-      stream_id: message.stream_id,
-      consumer_group: message.consumer_group,
-      consumer_name: message.consumer_name,
-      delivery_count: message.delivery_count,
-      reclaimed: message.reclaimed,
-      connection_attempt_id: data.connection_attempt_id,
-      connection_lifecycle_id: data.connection_lifecycle_id,
-      source: data.source,
-      requested_at: data.requested_at,
-      runtime_generation: data.runtime_generation,
-      queue_latency_ms: message.queue_latency_ms,
-      redis_status: this.redisStatus(),
-    });
 
     if (!this.isMessageForThisWorker(data)) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.ignored_foreign',
-        decision: 'validate_connection_qrcode_request_scope',
-        outcome: 'ignored',
-        reason: 'worker_or_account_or_type_mismatch',
-        level: 'warn',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        delivery_count: message.delivery_count,
-        request_worker_id: data.worker_id,
-        request_account_id: data.account_id,
-        request_worker_type_id: data.worker_type_id,
-        worker_id: baileysEnvironment.baileysWorkerId,
-        account_id: baileysEnvironment.baileysAccountId,
-        worker_type: EWorkerType.baileys,
-        worker_type_id: EWorkerType.baileys,
-      });
-      await this.ackAndDelete(message, 'ignored_foreign');
+      await this.ackAndDelete(message);
       return;
     }
 
-    const active = await this.isActiveAttempt(data, message);
+    const active = await this.isActiveAttempt(data);
     if (!active) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.ignored_stale',
-        decision: 'validate_active_connection_attempt',
-        outcome: 'ignored',
-        reason: 'stale_or_duplicate_connection_attempt',
-        level: 'warn',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        delivery_count: message.delivery_count,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-      });
-      await this.ackAndDelete(message, 'ignored_stale');
+      await this.ackAndDelete(message);
       return;
     }
 
     try {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.local_request_start',
-        decision: 'request_local_connection_qrcode',
-        outcome: 'started',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        delivery_count: message.delivery_count,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-        requested_at: data.requested_at,
-        queue_latency_ms: message.queue_latency_ms,
-      });
       const state = await this.workerConnectionStatusConsume.requestConnection({
         worker_id: data.worker_id,
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
         connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
         runtime_generation: data.runtime_generation,
         qr_pending: true,
       });
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.local_request_success',
-        decision: 'request_local_connection_qrcode',
-        outcome: 'success',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        delivery_count: message.delivery_count,
-        status: state.status,
-        code: state.code,
-        worker_status_id: state.worker_status_id,
-        connection_attempt_id:
-          state.connection_attempt_id ?? data.connection_attempt_id,
-        connection_lifecycle_id:
-          state.connection_lifecycle_id ?? data.connection_lifecycle_id,
-        requested_at: data.requested_at,
-        queue_latency_ms: message.queue_latency_ms,
-        has_qr: Boolean(state.qrcode),
-        has_pairing_code: Boolean(state.pairing_code),
-        qr_pending: state.qr_pending === true,
-        reason: state.reason,
-        time_to_first_qr_ms: state.time_to_first_qr_ms,
-      });
 
-      await this.cacheQrAttemptState(state, data, message);
+      await this.cacheQrAttemptState(state, data);
 
       if (!this.shouldCompleteQrRequest(state)) {
-        recordConnectionLifecycle({
-          stage:
-            'connection.baileys.qrcode_redis_stream.local_request_pending_retry',
-          decision: 'request_local_connection_qrcode',
-          outcome: 'pending',
-          reason: state.reason ?? 'qrcode_not_available_yet',
-          level: 'warn',
-          stream_key: message.stream_key,
-          stream_id: message.stream_id,
-          consumer_group: message.consumer_group,
-          consumer_name: message.consumer_name,
-          delivery_count: message.delivery_count,
-          status: state.status,
-          code: state.code,
-          worker_status_id: state.worker_status_id,
-          connection_attempt_id:
-            state.connection_attempt_id ?? data.connection_attempt_id,
-          connection_lifecycle_id:
-            state.connection_lifecycle_id ?? data.connection_lifecycle_id,
-          requested_at: data.requested_at,
-          queue_latency_ms: message.queue_latency_ms,
-          has_qr: false,
-          has_pairing_code: false,
-          qr_pending: state.qr_pending === true,
-          time_to_first_qr_ms: state.time_to_first_qr_ms,
-          retry_after_idle_ms:
-            WorkerConnectionQrCodeRedisQueueService.CLAIM_MIN_IDLE_MS,
-        });
         return;
       }
 
       await this.redisQueueService.markProcessed(data);
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.mark_processed_success',
-        decision: 'mark_qrcode_attempt_processed',
-        outcome: 'success',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-        worker_type: EWorkerType.baileys,
-        worker_type_id: EWorkerType.baileys,
-      });
 
-      await this.ackAndDelete(message, 'processed');
-    } catch (error) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.process_error',
-        decision: 'request_local_connection_qrcode',
-        outcome: 'error',
-        reason: 'local_connection_request_failed',
-        level: 'error',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        delivery_count: message.delivery_count,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+      await this.ackAndDelete(message);
+    } catch {}
   }
 
   private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
@@ -453,44 +212,9 @@ export class WorkerConnectionQrCodeConsume {
   }
 
   private async isActiveAttempt(
-    data: IWorkerConnectionQrCodeQueueMessage,
-    message: WorkerConnectionQrCodeRedisStreamMessage
+    data: IWorkerConnectionQrCodeQueueMessage
   ): Promise<boolean> {
-    recordConnectionLifecycle({
-      stage:
-        'connection.baileys.qrcode_redis_stream.active_attempt_check_start',
-      decision: 'validate_active_connection_attempt',
-      outcome: 'started',
-      stream_key: message.stream_key,
-      stream_id: message.stream_id,
-      consumer_group: message.consumer_group,
-      consumer_name: message.consumer_name,
-      delivery_count: message.delivery_count,
-      connection_attempt_id: data.connection_attempt_id,
-      connection_lifecycle_id: data.connection_lifecycle_id,
-      worker_type: EWorkerType.baileys,
-      worker_type_id: EWorkerType.baileys,
-    });
-
     if (!this.isRedisReady()) {
-      recordConnectionLifecycle({
-        stage:
-          'connection.baileys.qrcode_redis_stream.active_attempt_check_error',
-        decision: 'validate_active_connection_attempt',
-        outcome: 'error',
-        reason: 'redis_not_ready',
-        level: 'warn',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        delivery_count: message.delivery_count,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-        worker_type: EWorkerType.baileys,
-        worker_type_id: EWorkerType.baileys,
-        redis_status: this.redisStatus(),
-      });
       return true;
     }
 
@@ -504,10 +228,6 @@ export class WorkerConnectionQrCodeConsume {
         'processed_attempt'
       );
       if (processed) {
-        this.logActiveAttemptCheckResult(data, message, {
-          active: false,
-          reason: 'already_processed_attempt',
-        });
         return false;
       }
 
@@ -516,11 +236,6 @@ export class WorkerConnectionQrCodeConsume {
         'active_attempt'
       );
       if (!raw) {
-        this.logActiveAttemptCheckResult(data, message, {
-          active: false,
-          reason: 'active_attempt_missing',
-          queue_latency_ms: this.getQueueLatencyMs(data, message),
-        });
         return false;
       }
 
@@ -539,149 +254,24 @@ export class WorkerConnectionQrCodeConsume {
           ) &&
           (activeRuntimeGeneration === undefined ||
             activeRuntimeGeneration === data.runtime_generation);
-        this.logActiveAttemptCheckResult(data, message, {
-          active,
-          reason: this.activeAttemptMismatchReason({
-            active,
-            activeRuntimeGeneration,
-            activeWorkerTypeId,
-            data,
-          }),
-          active_connection_attempt_id: parsed.ack?.connection_attempt_id,
-          active_runtime_generation: activeRuntimeGeneration,
-        });
         return active;
-      } catch (error) {
-        this.logActiveAttemptCheckResult(data, message, {
-          active: false,
-          reason: 'active_attempt_parse_error',
-          error: error instanceof Error ? error.message : String(error),
-        });
+      } catch {
         return false;
       }
-    } catch (error) {
-      recordConnectionLifecycle({
-        stage:
-          'connection.baileys.qrcode_redis_stream.active_attempt_check_error',
-        decision: 'validate_active_connection_attempt',
-        outcome: 'error',
-        reason: 'active_attempt_validation_unavailable',
-        level: 'warn',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        delivery_count: message.delivery_count,
-        connection_attempt_id: data.connection_attempt_id,
-        connection_lifecycle_id: data.connection_lifecycle_id,
-        worker_type: EWorkerType.baileys,
-        worker_type_id: EWorkerType.baileys,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    } catch {
       return false;
     }
   }
 
-  private activeAttemptMismatchReason(input: {
-    active: boolean;
-    activeRuntimeGeneration?: number;
-    activeWorkerTypeId?: string;
-    data: IWorkerConnectionQrCodeQueueMessage;
-  }): string {
-    if (input.active) {
-      return 'active_attempt_matches';
-    }
-
-    if (
-      input.data.runtime_generation !== undefined &&
-      input.activeRuntimeGeneration === undefined
-    ) {
-      return 'active_attempt_missing_runtime_generation';
-    }
-
-    if (
-      input.activeRuntimeGeneration !== undefined &&
-      input.activeRuntimeGeneration !== input.data.runtime_generation
-    ) {
-      return 'active_attempt_runtime_generation_mismatch';
-    }
-
-    if (
-      input.activeWorkerTypeId &&
-      input.activeWorkerTypeId !== input.data.worker_type_id
-    ) {
-      return 'active_attempt_worker_type_mismatch';
-    }
-
-    return 'active_attempt_mismatch';
-  }
-
-  private logActiveAttemptCheckResult(
-    data: IWorkerConnectionQrCodeQueueMessage,
-    message: WorkerConnectionQrCodeRedisStreamMessage,
-    result: {
-      active: boolean;
-      reason: string;
-      active_connection_attempt_id?: string;
-      active_runtime_generation?: number;
-      queue_latency_ms?: number;
-      error?: string;
-    }
-  ): void {
-    recordConnectionLifecycle({
-      stage:
-        'connection.baileys.qrcode_redis_stream.active_attempt_check_result',
-      decision: 'validate_active_connection_attempt',
-      outcome: result.active ? 'active' : 'ignored',
-      reason: result.reason,
-      level: result.active ? 'info' : 'warn',
-      stream_key: message.stream_key,
-      stream_id: message.stream_id,
-      consumer_group: message.consumer_group,
-      consumer_name: message.consumer_name,
-      delivery_count: message.delivery_count,
-      connection_attempt_id: data.connection_attempt_id,
-      active_connection_attempt_id: result.active_connection_attempt_id,
-      connection_lifecycle_id: data.connection_lifecycle_id,
-      worker_type: EWorkerType.baileys,
-      worker_type_id: EWorkerType.baileys,
-      runtime_generation: data.runtime_generation,
-      active_runtime_generation: result.active_runtime_generation,
-      queue_latency_ms: result.queue_latency_ms,
-      error: result.error,
-    });
-  }
-
   private async cacheQrAttemptState(
     state: IBaileysConnectionState,
-    data: IWorkerConnectionQrCodeQueueMessage,
-    message: WorkerConnectionQrCodeRedisStreamMessage
+    data: IWorkerConnectionQrCodeQueueMessage
   ): Promise<void> {
     if (!state.qrcode && !state.pairing_code) {
       return;
     }
 
     if (state.worker_type_id && state.worker_type_id !== EWorkerType.baileys) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.qr_cache_write_rejected',
-        decision: 'cache_connection_qrcode_attempt',
-        outcome: 'rejected',
-        reason: 'runtime_type_mismatch',
-        level: 'warn',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        connection_attempt_id:
-          state.connection_attempt_id ?? data.connection_attempt_id,
-        connection_lifecycle_id:
-          state.connection_lifecycle_id ?? data.connection_lifecycle_id,
-        request_worker_type_id: data.worker_type_id,
-        response_worker_type_id: state.worker_type_id,
-        worker_type: EWorkerType.baileys,
-        worker_type_id: EWorkerType.baileys,
-        runtime_generation: data.runtime_generation,
-      });
       return;
     }
 
@@ -692,15 +282,12 @@ export class WorkerConnectionQrCodeConsume {
       worker_type_id: EWorkerType.baileys,
       connection_attempt_id:
         state.connection_attempt_id || data.connection_attempt_id,
-      connection_lifecycle_id:
-        state.connection_lifecycle_id || data.connection_lifecycle_id,
       runtime_generation: state.runtime_generation ?? data.runtime_generation,
       qr_pending: false,
       qr_generated_at: state.qr_generated_at || new Date().toISOString(),
     };
     normalized.expires_at ??= this.qrExpiresAt(normalized);
     const ttlSeconds = this.qrCacheTtlForState(normalized);
-    const startedAt = Date.now();
 
     try {
       await this.redis.set(
@@ -709,51 +296,7 @@ export class WorkerConnectionQrCodeConsume {
         'EX',
         ttlSeconds
       );
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.qr_cache_write_success',
-        decision: 'cache_connection_qrcode_attempt',
-        outcome: 'success',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        connection_attempt_id: normalized.connection_attempt_id,
-        connection_lifecycle_id: normalized.connection_lifecycle_id,
-        worker_type: EWorkerType.baileys,
-        worker_type_id: EWorkerType.baileys,
-        has_qr: Boolean(normalized.qrcode),
-        has_pairing_code: Boolean(normalized.pairing_code),
-        qrcode_len: normalized.qrcode?.length,
-        pairing_code_len: normalized.pairing_code?.length,
-        qr_cache_ttl_seconds: ttlSeconds,
-        queue_latency_ms: message.queue_latency_ms,
-        duration_ms: Date.now() - startedAt,
-      });
-    } catch (error) {
-      recordConnectionLifecycle({
-        stage: 'connection.baileys.qrcode_redis_stream.qr_cache_write_error',
-        decision: 'cache_connection_qrcode_attempt',
-        outcome: 'error',
-        reason: 'redis_cache_write_failed',
-        level: 'warn',
-        stream_key: message.stream_key,
-        stream_id: message.stream_id,
-        consumer_group: message.consumer_group,
-        consumer_name: message.consumer_name,
-        connection_attempt_id: normalized.connection_attempt_id,
-        connection_lifecycle_id: normalized.connection_lifecycle_id,
-        worker_type: EWorkerType.baileys,
-        worker_type_id: EWorkerType.baileys,
-        has_qr: Boolean(normalized.qrcode),
-        has_pairing_code: Boolean(normalized.pairing_code),
-        qrcode_len: normalized.qrcode?.length,
-        pairing_code_len: normalized.pairing_code?.length,
-        qr_cache_ttl_seconds: ttlSeconds,
-        queue_latency_ms: message.queue_latency_ms,
-        duration_ms: Date.now() - startedAt,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    } catch {}
   }
 
   private qrCacheTtlForState(state: IBaileysConnectionState): number {
@@ -796,48 +339,14 @@ export class WorkerConnectionQrCodeConsume {
     ).toISOString();
   }
 
-  private getQueueLatencyMs(
-    data: IWorkerConnectionQrCodeQueueMessage,
-    message: WorkerConnectionQrCodeRedisStreamMessage
-  ): number | undefined {
-    if (message.queue_latency_ms !== undefined) {
-      return message.queue_latency_ms;
-    }
-
-    const requestedAtMs = Date.parse(data.requested_at);
-    if (!Number.isFinite(requestedAtMs)) {
-      return undefined;
-    }
-
-    return Math.max(0, Date.now() - requestedAtMs);
-  }
-
   private async ackAndDelete(
-    message: WorkerConnectionQrCodeRedisStreamMessage,
-    reason: string
+    message: WorkerConnectionQrCodeRedisStreamMessage
   ): Promise<void> {
-    const result = await this.redisQueueService.ackAndDelete(
+    await this.redisQueueService.ackAndDelete(
       message.payload?.worker_id ?? baileysEnvironment.baileysWorkerId,
       message.payload?.worker_type_id ?? EWorkerType.baileys,
       message.stream_id
     );
-    recordConnectionLifecycle({
-      stage: 'connection.baileys.qrcode_redis_stream.ack_delete_success',
-      decision: 'ack_delete_qrcode_redis_stream_message',
-      outcome: 'success',
-      reason,
-      stream_key: message.stream_key,
-      stream_id: message.stream_id,
-      consumer_group: message.consumer_group,
-      consumer_name: message.consumer_name,
-      delivery_count: message.delivery_count,
-      connection_attempt_id: message.payload?.connection_attempt_id,
-      connection_lifecycle_id: message.payload?.connection_lifecycle_id,
-      worker_type: EWorkerType.baileys,
-      worker_type_id: EWorkerType.baileys,
-      redis_ack_count: result.acked,
-      redis_delete_count: result.deleted,
-    });
   }
 
   private async redisGetWithTimeout(

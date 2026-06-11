@@ -1,5 +1,8 @@
 import { createRequire } from 'node:module';
+import path from 'node:path';
 
-const require = createRequire(import.meta.url);
+const cjsRequire = createRequire(path.join(process.cwd(), 'package.json'));
 
-export const rdkafka = require('node-rdkafka') as typeof import('node-rdkafka');
+export const rdkafka = cjsRequire(
+  'node-rdkafka'
+) as typeof import('node-rdkafka');

@@ -15,14 +15,6 @@ jest.mock('@core/common/functions/centrifugoQueue', () => ({
   workerCentrifugoQueue: (accountId: string) => `worker-${accountId}`,
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-}));
-
 jest.mock('@core/services/baileys', () => ({
   BaileysService: class {},
 }));
@@ -188,7 +180,6 @@ describe('Worker connection status consumers', () => {
         ...payload,
         qr_pending: true,
         connection_attempt_id: 'attempt-1',
-        connection_lifecycle_id: 'lifecycle-1',
       });
 
       await jest.advanceTimersByTimeAsync(3000);

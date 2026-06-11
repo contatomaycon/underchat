@@ -103,16 +103,6 @@ const redisPlugin = async (fastify: FastifyInstance) => {
       },
       'Redis client error'
     );
-
-    import('@core/plugins/telemetry/observability.js')
-      .then(({ recordException }) => {
-        recordException(error, {
-          redis: {
-            type: 'client_error',
-          },
-        });
-      })
-      .catch(() => {});
   });
 
   client.on('connect', () => {

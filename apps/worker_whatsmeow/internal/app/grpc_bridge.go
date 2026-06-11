@@ -66,35 +66,15 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		return nil, err
 	}
 	req := StatusConnectionRequest{
-		WorkerID:              dynamicString(msg, "worker_id"),
-		Status:                dynamicString(msg, "status"),
-		Type:                  dynamicString(msg, "type"),
-		PhoneConnection:       dynamicString(msg, "phone_connection"),
-		RemoveSession:         dynamicBool(msg, "remove_session"),
-		ConnectionAttemptID:   dynamicString(msg, "connection_attempt_id"),
-		ConnectionLifecycleID: dynamicString(msg, "connection_lifecycle_id"),
-		RuntimeGeneration:     int(dynamicInt32(msg, "runtime_generation")),
-		WarmPoolID:            dynamicString(msg, "warm_pool_id"),
+		WorkerID:            dynamicString(msg, "worker_id"),
+		Status:              dynamicString(msg, "status"),
+		Type:                dynamicString(msg, "type"),
+		PhoneConnection:     dynamicString(msg, "phone_connection"),
+		RemoveSession:       dynamicBool(msg, "remove_session"),
+		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
+		RuntimeGeneration:   int(dynamicInt32(msg, "runtime_generation")),
+		WarmPoolID:          dynamicString(msg, "warm_pool_id"),
 	}
-	ctx = extractIncomingConnectionLifecycleContext(ctx, s.cfg, req, "request_connection")
-	lifecycle, _ := connectionLifecycleFromContext(ctx)
-	ctx, finishLifecycleSpan := startConnectionLifecycleSpan(ctx, s.cfg, lifecycle)
-	var finalErr error
-	defer func() {
-		finishLifecycleSpan(finalErr)
-	}()
-	recordConnectionLifecycle(ctx, s.cfg, map[string]any{
-		"stage":                    "connection.whatsmeow.grpc.request_received",
-		"decision":                 "request_connection",
-		"outcome":                  "received",
-		"grpc_method":              "RequestConnection",
-		"status":                   req.Status,
-		"connection_type":          req.Type,
-		"remove_session":           req.RemoveSession,
-		"has_phone_connection":     req.PhoneConnection != "",
-		"has_connection_metadata":  incomingConnectionLifecycleID(ctx) != "",
-		"connection_metadata_type": "grpc",
-	})
 	log.Printf(
 		"grpc RequestConnection received worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
 		req.WorkerID,
@@ -105,35 +85,12 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 	)
 	resp, err := s.handler.RequestConnection(ctx, req)
 	if err != nil {
-		finalErr = err
-		recordConnectionLifecycle(ctx, s.cfg, map[string]any{
-			"stage":           "connection.whatsmeow.grpc.request_error",
-			"decision":        "request_connection",
-			"outcome":         "error",
-			"reason":          "handler_error",
-			"level":           "error",
-			"grpc_method":     "RequestConnection",
-			"status":          req.Status,
-			"connection_type": req.Type,
-			"error":           err.Error(),
-		})
 		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
 		return nil, err
 	}
 	if resp.ConnectionAttemptID == "" {
 		resp.ConnectionAttemptID = req.ConnectionAttemptID
 	}
-	recordConnectionLifecycle(ctx, s.cfg, map[string]any{
-		"stage":            "connection.whatsmeow.grpc.request_success",
-		"decision":         "request_connection",
-		"outcome":          "success",
-		"grpc_method":      "RequestConnection",
-		"status":           resp.Status,
-		"code":             resp.Code,
-		"worker_status_id": resp.WorkerStatusID,
-		"qrcode":           resp.QRCode,
-		"pairing_code":     resp.PairingCode,
-	})
 	log.Printf("grpc RequestConnection completed worker_id=%s type=%s has_qr=%t", req.WorkerID, req.Type, resp.QRCode != "")
 	out := newDynamicMessage(descs.workerConnectionResponse)
 	setConnectionStateMessage(out, resp)
@@ -160,7 +117,6 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicBool(out, "qr_pending", state.QRPending)
 	setDynamicString(out, "qr_generated_at", state.QRGeneratedAt)
 	setDynamicString(out, "expires_at", state.ExpiresAt)
-	setDynamicString(out, "connection_lifecycle_id", state.ConnectionLifecycleID)
 	setDynamicString(out, "reason", state.Reason)
 	setDynamicString(out, "error", state.Error)
 	setDynamicInt32(out, "time_to_first_qr_ms", int32(state.TimeToFirstQRMS))
@@ -208,15 +164,14 @@ func (s *WorkerConnectionGRPCServer) ActivateRuntime(ctx context.Context, msg *d
 		return nil, err
 	}
 	req := WorkerRuntimeActivationRequest{
-		WorkerID:              dynamicString(msg, "worker_id"),
-		AccountID:             dynamicString(msg, "account_id"),
-		WorkerTypeID:          dynamicString(msg, "worker_type_id"),
-		WarmPoolID:            dynamicString(msg, "warm_pool_id"),
-		SessionVolumeName:     dynamicString(msg, "session_volume_name"),
-		BalancerGRPCHost:      dynamicString(msg, "balancer_grpc_host"),
-		BalancerGRPCPort:      int(dynamicInt32(msg, "balancer_grpc_port")),
-		ConnectionLifecycleID: dynamicString(msg, "connection_lifecycle_id"),
-		RuntimeGeneration:     int(dynamicInt32(msg, "runtime_generation")),
+		WorkerID:          dynamicString(msg, "worker_id"),
+		AccountID:         dynamicString(msg, "account_id"),
+		WorkerTypeID:      dynamicString(msg, "worker_type_id"),
+		WarmPoolID:        dynamicString(msg, "warm_pool_id"),
+		SessionVolumeName: dynamicString(msg, "session_volume_name"),
+		BalancerGRPCHost:  dynamicString(msg, "balancer_grpc_host"),
+		BalancerGRPCPort:  int(dynamicInt32(msg, "balancer_grpc_port")),
+		RuntimeGeneration: int(dynamicInt32(msg, "runtime_generation")),
 	}
 	log.Printf("grpc ActivateRuntime received worker_id=%s warm_pool_id=%s", req.WorkerID, req.WarmPoolID)
 	resp, err := s.handler.ActivateRuntime(ctx, req)
@@ -407,75 +362,10 @@ func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state Connec
 	req := newDynamicMessage(descs.commandNotifyWorkerStatus)
 	setConnectionStateMessage(req, state)
 
-	recordConnectionLifecycle(ctx, c.cfg, map[string]any{
-		"stage":               "connection.whatsmeow.balance.notify_start",
-		"decision":            "notify_worker_status",
-		"outcome":             "started",
-		"grpc_method":         "NotifyWorkerStatus",
-		"grpc_address":        c.cfg.BalanceGRPCAddress(),
-		"account_id":          state.AccountID,
-		"worker_id":           state.WorkerID,
-		"status":              state.Status,
-		"code":                state.Code,
-		"worker_status_id":    state.WorkerStatusID,
-		"has_qr":              state.QRCode != "",
-		"qrcode_len":          len(state.QRCode),
-		"has_pairing_code":    state.PairingCode != "",
-		"pairing_code_len":    len(state.PairingCode),
-		"attempt":             state.Attempt,
-		"max_attempts":        state.MaxAttempts,
-		"qr_pending":          state.QRPending,
-		"qr_generated_at":     state.QRGeneratedAt,
-		"time_to_first_qr_ms": state.TimeToFirstQRMS,
-		"disconnected_user":   state.DisconnectedUser,
-	})
 	err = c.invoke(ctx, "/worker_command.WorkerCommand/NotifyWorkerStatus", req, newDynamicMessage(descs.commandResponse))
 	if err != nil {
-		recordConnectionLifecycle(ctx, c.cfg, map[string]any{
-			"stage":            "connection.whatsmeow.balance.notify_error",
-			"decision":         "notify_worker_status",
-			"outcome":          "error",
-			"reason":           "grpc_error",
-			"level":            "error",
-			"grpc_method":      "NotifyWorkerStatus",
-			"grpc_address":     c.cfg.BalanceGRPCAddress(),
-			"account_id":       state.AccountID,
-			"worker_id":        state.WorkerID,
-			"status":           state.Status,
-			"code":             state.Code,
-			"worker_status_id": state.WorkerStatusID,
-			"has_qr":           state.QRCode != "",
-			"qrcode_len":       len(state.QRCode),
-			"has_pairing_code": state.PairingCode != "",
-			"pairing_code_len": len(state.PairingCode),
-			"attempt":          state.Attempt,
-			"max_attempts":     state.MaxAttempts,
-			"qr_pending":       state.QRPending,
-			"error":            err.Error(),
-		})
 		return err
 	}
-	recordConnectionLifecycle(ctx, c.cfg, map[string]any{
-		"stage":               "connection.whatsmeow.balance.notify_success",
-		"decision":            "notify_worker_status",
-		"outcome":             "success",
-		"grpc_method":         "NotifyWorkerStatus",
-		"grpc_address":        c.cfg.BalanceGRPCAddress(),
-		"account_id":          state.AccountID,
-		"worker_id":           state.WorkerID,
-		"status":              state.Status,
-		"code":                state.Code,
-		"worker_status_id":    state.WorkerStatusID,
-		"has_qr":              state.QRCode != "",
-		"qrcode_len":          len(state.QRCode),
-		"has_pairing_code":    state.PairingCode != "",
-		"pairing_code_len":    len(state.PairingCode),
-		"attempt":             state.Attempt,
-		"max_attempts":        state.MaxAttempts,
-		"qr_pending":          state.QRPending,
-		"qr_generated_at":     state.QRGeneratedAt,
-		"time_to_first_qr_ms": state.TimeToFirstQRMS,
-	})
 	return nil
 }
 
@@ -546,6 +436,5 @@ func (c *BalanceGRPCClient) invoke(ctx context.Context, method string, req *dyna
 		return err
 	}
 	defer conn.Close()
-	callCtx = injectOutgoingConnectionLifecycleContext(callCtx)
 	return conn.Invoke(callCtx, method, req, resp)
 }

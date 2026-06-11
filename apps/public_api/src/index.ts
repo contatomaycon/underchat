@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import fastify from 'fastify';
-import telemetryPlugin from '@core/plugins/telemetry';
 import dbConnector from '@core/config/database';
 import authenticateKeyApi from '@core/middlewares/keyapi.middleware';
 import i18nextPlugin from '@core/plugins/i18next';
@@ -20,7 +19,6 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import { setupGracefulShutdown } from '@core/plugins/telemetry/errorHandlers';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -35,7 +33,6 @@ const server = fastify({
 
 server.decorateRequest('module', ERouteModule.public);
 
-server.register(safePlugin(telemetryPlugin, 'telemetry'));
 server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.public,
 });
@@ -69,7 +66,6 @@ const start = async () => {
     await server.listen({ port: 3001, host: '0.0.0.0' });
 
     console.log('Server running');
-    setupGracefulShutdown(server);
   } catch (err) {
     console.log(err);
 

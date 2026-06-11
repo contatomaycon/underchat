@@ -50,10 +50,6 @@ const swaggerPlugin = async (fastify: FastifyInstance) => {
           description: 'End-points relacionados à saúde do sistema',
         },
         {
-          name: ETagSwagger.metrics,
-          description: 'End-points relacionados a métricas do sistema',
-        },
-        {
           name: ETagSwagger.worker,
           description: 'End-points relacionados à canais',
         },

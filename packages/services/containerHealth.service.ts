@@ -1,12 +1,10 @@
 import { injectable } from 'tsyringe';
 import Docker from 'dockerode';
 import { PassThrough } from 'node:stream';
-import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 
 const SERVICE_HEALTH_URL = 'http://127.0.0.1:3005/v1/health/check';
 const CONNECTION_HEALTH_URL =
   'http://127.0.0.1:3005/v1/connection/health/check';
-const HEALTH_HTTP_DEADLINE_MS = 3000;
 
 export interface ContainerHealthCheckOptions {
   maxAttempts?: number;
@@ -88,8 +86,7 @@ export class ContainerHealthService {
       SERVICE_HEALTH_URL,
       overrides,
       this.maxAttempts,
-      this.delayMs,
-      'service'
+      this.delayMs
     );
   }
 
@@ -102,8 +99,7 @@ export class ContainerHealthService {
       CONNECTION_HEALTH_URL,
       overrides,
       this.connectionHealthMaxAttempts,
-      this.connectionHealthDelayMs,
-      'connection'
+      this.connectionHealthDelayMs
     );
   }
 
@@ -112,8 +108,7 @@ export class ContainerHealthService {
     url: string,
     overrides: ContainerHealthCheckOptions | undefined,
     defaultMaxAttempts: number,
-    defaultDelayMs: number,
-    healthType: 'service' | 'connection'
+    defaultDelayMs: number
   ): Promise<ContainerHealthResult> {
     const maxAttempts = overrides?.maxAttempts ?? defaultMaxAttempts;
     const delayMs = overrides?.delayMs ?? defaultDelayMs;
@@ -135,22 +130,8 @@ export class ContainerHealthService {
     let hasSeenHealthyStatus = false;
     let failuresAfterFirstSuccess = 0;
 
-    recordConnectionLifecycle({
-      stage: `connection.balancer.container_health.${healthType}_start`,
-      decision: 'http_health_check',
-      outcome: 'started',
-      container_id: containerId,
-      health_url: url,
-      health_max_attempts: maxAttempts,
-      health_delay_ms: delayMs,
-      required_consecutive_successes: requiredConsecutiveSuccesses,
-      deadline_ms: HEALTH_HTTP_DEADLINE_MS,
-    });
-
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const probe = this.normalizeHttpStatusProbe(
-        await this.getHttpStatusCode(containerId, url)
-      );
+      const probe = await this.getHttpStatusCode(containerId, url);
       const code = probe.statusCode;
       lastStatusCode = code;
       lastHealthError = probe.error;
@@ -186,54 +167,8 @@ export class ContainerHealthService {
       const shouldFailFast =
         failFastAfterFirstSuccessFailures !== undefined &&
         failuresAfterFirstSuccess >= failFastAfterFirstSuccessFailures;
-      const failureReason = shouldFailFast
-        ? 'health_flapping_after_success'
-        : undefined;
-      recordConnectionLifecycle({
-        stage: `connection.balancer.container_health.${healthType}_attempt`,
-        decision: 'http_health_check',
-        outcome: shouldFailFast
-          ? 'failed'
-          : healthy
-            ? 'healthy'
-            : hasHealthyStatus
-              ? 'healthy_waiting_for_stability'
-              : 'unhealthy',
-        reason: failureReason,
-        container_id: containerId,
-        health_url: url,
-        health_status_code: code || 'none',
-        health_attempt: attempt,
-        health_max_attempts: maxAttempts,
-        health_delay_ms: delayMs,
-        consecutive_successes: consecutiveSuccesses,
-        required_consecutive_successes: requiredConsecutiveSuccesses,
-        health_duration_ms: probe.durationMs,
-        health_error: probe.error,
-        failures_after_first_success: failuresAfterFirstSuccess,
-        fail_fast_after_first_success_failures:
-          failFastAfterFirstSuccessFailures,
-        deadline_ms: HEALTH_HTTP_DEADLINE_MS,
-      });
 
       if (healthy) {
-        recordConnectionLifecycle({
-          stage: `connection.balancer.container_health.${healthType}_success`,
-          decision: 'http_health_check',
-          outcome: 'success',
-          container_id: containerId,
-          health_url: url,
-          health_status_code: code,
-          health_attempt: attempt,
-          health_max_attempts: maxAttempts,
-          health_delay_ms: delayMs,
-          consecutive_successes: consecutiveSuccesses,
-          required_consecutive_successes: requiredConsecutiveSuccesses,
-          health_duration_ms: probe.durationMs,
-          health_error: probe.error,
-          deadline_ms: HEALTH_HTTP_DEADLINE_MS,
-        });
-
         return {
           healthy: true,
           container_id: containerId,
@@ -251,28 +186,6 @@ export class ContainerHealthService {
       }
 
       if (shouldFailFast) {
-        recordConnectionLifecycle({
-          stage: `connection.balancer.container_health.${healthType}_failed`,
-          decision: 'http_health_check',
-          outcome: 'failed',
-          reason: 'health_flapping_after_success',
-          level: 'warn',
-          container_id: containerId,
-          health_url: url,
-          health_status_code: code || 'none',
-          health_attempt: attempt,
-          health_max_attempts: maxAttempts,
-          health_delay_ms: delayMs,
-          consecutive_successes: consecutiveSuccesses,
-          required_consecutive_successes: requiredConsecutiveSuccesses,
-          health_duration_ms: probe.durationMs,
-          health_error: probe.error,
-          failures_after_first_success: failuresAfterFirstSuccess,
-          fail_fast_after_first_success_failures:
-            failFastAfterFirstSuccessFailures,
-          deadline_ms: HEALTH_HTTP_DEADLINE_MS,
-        });
-
         return {
           healthy: false,
           container_id: containerId,
@@ -294,25 +207,6 @@ export class ContainerHealthService {
         await this.sleep(delayMs);
       }
     }
-
-    recordConnectionLifecycle({
-      stage: `connection.balancer.container_health.${healthType}_failed`,
-      decision: 'http_health_check',
-      outcome: 'failed',
-      reason: 'http_health_not_ready',
-      level: 'warn',
-      container_id: containerId,
-      health_url: url,
-      health_status_code: lastStatusCode || 'none',
-      health_attempt: maxAttempts,
-      health_max_attempts: maxAttempts,
-      health_delay_ms: delayMs,
-      consecutive_successes: consecutiveSuccesses,
-      required_consecutive_successes: requiredConsecutiveSuccesses,
-      health_duration_ms: lastHealthDurationMs,
-      health_error: lastHealthError,
-      deadline_ms: HEALTH_HTTP_DEADLINE_MS,
-    });
 
     return {
       healthy: false,
@@ -406,20 +300,6 @@ export class ContainerHealthService {
         ),
       };
     }
-  }
-
-  private normalizeHttpStatusProbe(
-    result: ContainerHttpStatusResult | string
-  ): ContainerHttpStatusResult {
-    if (typeof result === 'string') {
-      return {
-        statusCode: result,
-        durationMs: 0,
-        ...(result ? {} : { error: 'empty_status_code' }),
-      };
-    }
-
-    return result;
   }
 
   private normalizePositiveInteger(

@@ -2,6 +2,8 @@ FROM node:24.12.0-bookworm-slim AS base
 
 FROM base AS turbo
 
+ENV TURBO_TELEMETRY_DISABLED=1
+
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       bash \
@@ -117,4 +119,4 @@ EXPOSE 3005 50052
 
 WORKDIR /app/apps/worker_wwebjs
 
-CMD ["/usr/local/bin/worker-wwebjs-entrypoint.sh", "node", "--import", "../../packages/plugins/telemetry/instrumentation.js", "src/index.js"]
+CMD ["/usr/local/bin/worker-wwebjs-entrypoint.sh", "node", "src/index.js"]

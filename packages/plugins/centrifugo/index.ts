@@ -6,7 +6,6 @@ import jwt from 'jsonwebtoken';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { Centrifuge, UnauthorizedError, State } from 'centrifuge';
 import WebSocket from 'ws';
-import { recordException } from '@core/plugins/telemetry/observability';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { PresenceCentrifugoService } from '@core/services/presenceCentrifugo.service';
 
@@ -65,12 +64,6 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
       },
       'Centrifugo client error'
     );
-
-    recordException(error, {
-      centrifugo: {
-        type: 'connection_error',
-      },
-    });
   };
 
   client.on('error', errorHandler);

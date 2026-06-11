@@ -24,7 +24,6 @@ import {
   ChatPatch,
   ChatPatchOptions,
 } from '@core/common/interfaces/IChatPatch';
-import { incrementCounter } from '@core/plugins/telemetry/observability';
 import {
   createChatCacheKey,
   createChatCacheKeyChatId,
@@ -1530,9 +1529,6 @@ export class ChatService {
       );
 
     if (result === 'conflict') {
-      incrementCounter('chat.summary.update.conflict', 1, {
-        chat_id: chatId,
-      });
     }
 
     return result === 'updated' || result === 'created' || result === 'noop';

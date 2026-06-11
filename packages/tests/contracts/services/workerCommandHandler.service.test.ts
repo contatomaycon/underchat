@@ -199,7 +199,6 @@ function buildHandler(
     >(
       async () => overrides.workerInspection ?? buildWorkerContainerInspection()
     ),
-    recordContainerDiagnostics: jest.fn(async () => undefined),
     createContainerWorker: jest.fn(async () => 'container-1'),
     renameContainer: jest.fn(async () => undefined),
   };
@@ -587,7 +586,6 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_id: 'worker-1',
         account_id: 'account-1',
         connection_attempt_id: 'uuid-v7',
-        connection_lifecycle_id: expect.any(String),
         worker_type_id: EWorkerType.wwebjs,
         source: 'manager',
         requested_at: expect.any(String),
@@ -859,9 +857,6 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(
       deps.containerHealthService.checkServiceHealth
     ).not.toHaveBeenCalled();
-    expect(
-      deps.workerService.recordContainerDiagnostics
-    ).not.toHaveBeenCalled();
     expect(deps.redisQueueService.enqueue).toHaveBeenCalledTimes(1);
   });
 
@@ -913,9 +908,6 @@ describe('WorkerCommandHandlerService connection', () => {
       'account-1'
     );
 
-    expect(
-      deps.workerService.recordContainerDiagnostics
-    ).not.toHaveBeenCalled();
     expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
     expect(
       deps.containerHealthService.checkServiceHealth
@@ -1418,10 +1410,6 @@ describe('WorkerCommandHandlerService connection', () => {
       worker_type_id: EWorkerType.wwebjs,
     });
 
-    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
-      'worker-1',
-      'create_health_failed'
-    );
     expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
       'worker-1',
       false
@@ -1451,10 +1439,6 @@ describe('WorkerCommandHandlerService connection', () => {
       })
     ).rejects.toThrow('Worker service is not healthy');
 
-    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
-      'worker-1',
-      'create_health_flapping_after_success'
-    );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalledTimes(2);
     expect(deps.workerService.removeContainerWorker).toHaveBeenCalledTimes(1);
     expect(
@@ -1482,10 +1466,6 @@ describe('WorkerCommandHandlerService connection', () => {
       worker_type_id: EWorkerType.wwebjs,
     });
 
-    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
-      'worker-1',
-      'create_grpc_readiness_failed'
-    );
     expect(deps.workerService.removeContainerWorker).toHaveBeenCalledWith(
       'worker-1',
       false
@@ -1509,10 +1489,6 @@ describe('WorkerCommandHandlerService connection', () => {
       })
     ).rejects.toThrow('gRPC unavailable');
 
-    expect(deps.workerService.recordContainerDiagnostics).toHaveBeenCalledWith(
-      'worker-1',
-      'create_grpc_readiness_failed'
-    );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalledTimes(2);
     expect(
       deps.workerService.updateWorkerById.mock.calls.some(

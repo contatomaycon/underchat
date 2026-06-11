@@ -7,7 +7,6 @@ import { IPresenceMessage } from '@core/common/interfaces/IPresenceMessage';
 import { publish } from '@webcore/centrifugo';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
-import { recordException, recordMessage } from '@webcore/observability';
 import { getActivePinia } from 'pinia';
 
 type PresenceMode = EChatUserStatus;
@@ -144,23 +143,8 @@ const sendPresence = async (
     if (error?.code === 103) {
       hasPermissionError = true;
       if (!asHeartbeat) {
-        recordMessage(
-          'Permission denied for presence channel. Connection may need to be reset.',
-          'warn',
-          {
-            source: 'presence.sendPresence',
-            channel,
-            code: error?.code,
-          }
-        );
       }
     } else {
-      recordException(error, {
-        source: 'presence.sendPresence',
-        channel,
-        mode,
-        asHeartbeat,
-      });
     }
   });
 };
@@ -323,11 +307,7 @@ const isReady = async (): Promise<void> => {
   try {
     await router.isReady();
     refreshPresenceForCurrentRoute();
-  } catch (error) {
-    recordException(error, {
-      source: 'presence.isReady',
-    });
-  }
+  } catch {}
 };
 
 void isReady();

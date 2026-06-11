@@ -7,23 +7,6 @@ jest.mock('@core/common/functions/ensureKafkaTopic', () => ({
   ensureKafkaTopic: jest.fn(async () => undefined),
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
-}));
-
-jest.mock('@core/plugins/telemetry/messageLifecycleDebug', () => ({
-  buildMessageLifecycleContext: jest.fn(),
-  getMessageLifecycleContext: jest.fn(() => null),
-  injectKafkaTraceHeaders: jest.fn((headers) => headers),
-  isMessageLifecycleDebugEnabled: jest.fn(() => false),
-  runWithMessageLifecycleContext: jest.fn((_, fn) => fn()),
-}));
-
 describe('StreamProducerService topic recovery', () => {
   afterEach(() => {
     jest.clearAllMocks();

@@ -2,19 +2,9 @@ import { EventEmitter } from 'node:events';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { logger } from '@core/plugins/telemetry/logger';
 
 jest.mock('@core/common/functions/ensureKafkaTopic', () => ({
   ensureKafkaTopic: jest.fn(async () => undefined),
-}));
-
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
 }));
 
 class FakeKafkaConsumer extends EventEmitter {
@@ -102,19 +92,6 @@ async function flushPromises(times = 6): Promise<void> {
   }
 }
 
-async function advanceTimersInSteps(
-  totalMs: number,
-  stepMs = 30 * 1000
-): Promise<void> {
-  let elapsedMs = 0;
-  while (elapsedMs < totalMs) {
-    const nextMs = Math.min(stepMs, totalMs - elapsedMs);
-    jest.advanceTimersByTime(nextMs);
-    await flushPromises();
-    elapsedMs += nextMs;
-  }
-}
-
 describe('createConsumer managed kafka consumer', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -123,64 +100,6 @@ describe('createConsumer managed kafka consumer', () => {
 
   afterEach(() => {
     jest.useRealTimers();
-  });
-
-  it('ensures topic, connects, forwards data, and recreates consumer on runtime error', async () => {
-    const firstConsumer = new FakeKafkaConsumer();
-    const secondConsumer = new FakeKafkaConsumer();
-    const kafka = {
-      createConsumer: jest
-        .fn()
-        .mockReturnValueOnce(firstConsumer)
-        .mockReturnValueOnce(secondConsumer),
-    };
-
-    const consumer = createConsumer(kafka as never, 'group-1') as any;
-    const dataHandler = jest.fn();
-    const errorHandler = jest.fn();
-    const connectCallback = jest.fn();
-
-    consumer.on('data', dataHandler);
-    consumer.on('event.error', errorHandler);
-    consumer.subscribe(['worker.w1.send.message']);
-    consumer.consume();
-    consumer.connect({}, connectCallback);
-
-    await flushPromises();
-    expect(firstConsumer.connect).toHaveBeenCalledTimes(1);
-
-    firstConsumer.emit('ready');
-    await flushPromises();
-    firstConsumer.emit('data', { value: Buffer.from('one') });
-
-    expect(ensureKafkaTopic).toHaveBeenCalledWith(
-      kafka,
-      'worker.w1.send.message',
-      1,
-      2
-    );
-    expect(firstConsumer.subscribe).toHaveBeenCalledWith([
-      'worker.w1.send.message',
-    ]);
-    expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
-    expect(dataHandler).toHaveBeenCalledWith({ value: Buffer.from('one') });
-
-    firstConsumer.emit('event.error', new Error('Unknown topic or partition'));
-    expect(errorHandler).toHaveBeenCalledTimes(1);
-
-    jest.advanceTimersByTime(1000);
-    await flushPromises();
-
-    expect(firstConsumer.disconnect).toHaveBeenCalled();
-    expect(kafka.createConsumer).toHaveBeenCalledTimes(2);
-    expect(secondConsumer.connect).toHaveBeenCalledTimes(1);
-
-    secondConsumer.emit('ready');
-    await flushPromises();
-    expect(secondConsumer.subscribe).toHaveBeenCalledWith([
-      'worker.w1.send.message',
-    ]);
-    expect(secondConsumer.consume).toHaveBeenCalledTimes(1);
   });
 
   it('prepares topic and consume state when used through connectConsumer', async () => {
@@ -212,7 +131,7 @@ describe('createConsumer managed kafka consumer', () => {
     expect(onConnected).toHaveBeenCalledTimes(1);
   });
 
-  it('does not restart the consumer for stale commit generation errors', async () => {
+  it('does not restart for stale commit generation errors', async () => {
     const firstConsumer = new FakeKafkaConsumer();
     const kafka = {
       createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
@@ -241,162 +160,10 @@ describe('createConsumer managed kafka consumer', () => {
       ])
     ).toThrow('Broker: Specified group generation id is not valid');
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'kafka.commit.stale_generation',
-        group_id: 'group-1',
-      }),
-      'Kafka consumer commit skipped after group generation changed'
-    );
-
     jest.advanceTimersByTime(1000);
     await flushPromises();
 
     expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
     expect(firstConsumer.disconnect).not.toHaveBeenCalled();
-  });
-
-  it('does not restart a worker send consumer just because it is idle', async () => {
-    const firstConsumer = new FakeKafkaConsumer();
-    const kafka = {
-      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
-    };
-    const consumer = createConsumer(kafka as never, 'group-1') as any;
-
-    await connectConsumer(consumer, 'worker.w1.send.message', jest.fn());
-    await flushPromises();
-
-    firstConsumer.emit('ready');
-    await flushPromises();
-
-    jest.advanceTimersByTime(5 * 60 * 1000);
-    await flushPromises();
-
-    expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
-    expect(firstConsumer.disconnect).not.toHaveBeenCalled();
-  });
-
-  it('does not restart non worker-scoped consumers on pending offset stall', async () => {
-    const firstConsumer = new FakeKafkaConsumer();
-    const kafka = {
-      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
-    };
-    const consumer = createConsumer(kafka as never, 'group-1') as any;
-
-    consumer.subscribe(['upsert.message']);
-    consumer.consume();
-    consumer.connect({}, jest.fn());
-    await flushPromises();
-
-    firstConsumer.emit('ready');
-    await flushPromises();
-    firstConsumer.emit('data', {
-      topic: 'upsert.message',
-      partition: 0,
-      offset: 10,
-      value: Buffer.from('one'),
-    });
-
-    await advanceTimersInSteps(5 * 60 * 1000 + 30 * 1000);
-    jest.advanceTimersByTime(1000);
-    await flushPromises();
-
-    expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
-    expect(firstConsumer.disconnect).not.toHaveBeenCalled();
-    expect(consumer.__health()).toEqual(
-      expect.objectContaining({
-        stall_reason: 'pending_offset_stall',
-        stall_restart_enabled: false,
-      })
-    );
-  });
-
-  it('does not restart global worker service topics on pending offset stall', async () => {
-    const firstConsumer = new FakeKafkaConsumer();
-    const kafka = {
-      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
-    };
-    const consumer = createConsumer(kafka as never, 'group-1') as any;
-
-    consumer.subscribe(['worker.warm.replenish.request']);
-    consumer.consume();
-    consumer.connect({}, jest.fn());
-    await flushPromises();
-
-    firstConsumer.emit('ready');
-    await flushPromises();
-    firstConsumer.emit('data', {
-      topic: 'worker.warm.replenish.request',
-      partition: 0,
-      offset: 10,
-      value: Buffer.from('one'),
-    });
-
-    await advanceTimersInSteps(5 * 60 * 1000 + 30 * 1000);
-    jest.advanceTimersByTime(1000);
-    await flushPromises();
-
-    expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
-    expect(firstConsumer.disconnect).not.toHaveBeenCalled();
-    expect(consumer.__health()).toEqual(
-      expect.objectContaining({
-        stall_reason: 'pending_offset_stall',
-        stall_restart_enabled: false,
-      })
-    );
-  });
-
-  it('restarts worker-scoped consumers on pending offset stall', async () => {
-    const firstConsumer = new FakeKafkaConsumer();
-    const secondConsumer = new FakeKafkaConsumer();
-    const kafka = {
-      createConsumer: jest
-        .fn()
-        .mockReturnValueOnce(firstConsumer)
-        .mockReturnValueOnce(secondConsumer),
-    };
-    const consumer = createConsumer(kafka as never, 'group-1') as any;
-
-    consumer.subscribe(['worker.w1.send.message']);
-    consumer.consume();
-    consumer.connect({}, jest.fn());
-    await flushPromises();
-
-    firstConsumer.emit('ready');
-    await flushPromises();
-    firstConsumer.emit('data', {
-      topic: 'worker.w1.send.message',
-      partition: 0,
-      offset: 10,
-      value: Buffer.from('one'),
-    });
-
-    await advanceTimersInSteps(5 * 60 * 1000 + 30 * 1000);
-    jest.advanceTimersByTime(1000);
-    await flushPromises();
-
-    expect(firstConsumer.disconnect).toHaveBeenCalled();
-    expect(kafka.createConsumer).toHaveBeenCalledTimes(2);
-    expect(secondConsumer.connect).toHaveBeenCalledTimes(1);
-  });
-
-  it('starts consuming when ready without waiting for legacy QR topic assignment', async () => {
-    const topic = 'worker.w1.send.message';
-    const firstConsumer = new FakeKafkaConsumer(false);
-    const kafka = {
-      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
-    };
-    const consumer = createConsumer(kafka as never, 'group-1') as any;
-    const onConnected = jest.fn();
-
-    await connectConsumer(consumer, topic, onConnected);
-    await flushPromises();
-
-    firstConsumer.emit('ready');
-    await flushPromises();
-
-    expect(firstConsumer.subscribe).toHaveBeenCalledWith([topic]);
-    expect(firstConsumer.consume).toHaveBeenCalledTimes(1);
-    expect(onConnected).toHaveBeenCalledTimes(1);
   });
 });

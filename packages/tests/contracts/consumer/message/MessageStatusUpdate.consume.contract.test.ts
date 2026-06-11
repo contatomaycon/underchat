@@ -50,19 +50,6 @@ jest.mock('@whiskeysockets/baileys', () => ({
   jidNormalizedUser: jest.fn((jid: string) => jid),
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    error: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-  },
-}));
-
-jest.mock('@core/plugins/telemetry/observability', () => ({
-  incrementCounter: jest.fn(),
-  recordHistogram: jest.fn(),
-}));
-
 import type { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 
 const { MessageStatusUpdateConsume } =

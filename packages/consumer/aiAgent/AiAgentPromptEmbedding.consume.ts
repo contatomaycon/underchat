@@ -18,7 +18,6 @@ import {
   PromptDocumentExtractorService,
   type IPromptDocumentExtractionResult,
 } from '@core/services/promptDocumentExtractor.service';
-import { incrementCounter } from '@core/plugins/telemetry/observability';
 
 @singleton()
 export class AiAgentPromptEmbeddingConsume {
@@ -199,10 +198,6 @@ export class AiAgentPromptEmbeddingConsume {
         }
       );
     } catch (error) {
-      incrementCounter('ai_agent_prompt_embedding.failure', 1, {
-        stage: 'extract_document',
-        reason: this.normalizeErrorReason(error),
-      });
       console.error('[AiAgentPromptEmbedding] extração falhou', {
         error,
         account_id: data.account_id,
@@ -215,10 +210,6 @@ export class AiAgentPromptEmbeddingConsume {
 
     const textContent = extraction.text.trim();
     if (!textContent) {
-      incrementCounter('ai_agent_prompt_embedding.failure', 1, {
-        stage: 'extract_document',
-        reason: 'empty_content',
-      });
       console.warn(
         '[AiAgentPromptEmbedding] conteúdo vazio, pulando embedding',
         {
@@ -251,10 +242,6 @@ export class AiAgentPromptEmbeddingConsume {
         }
       );
     } catch (error) {
-      incrementCounter('ai_agent_prompt_embedding.failure', 1, {
-        stage: 'store_embeddings',
-        reason: this.normalizeErrorReason(error),
-      });
       console.error('[AiAgentPromptEmbedding] indexação falhou', {
         error,
         account_id: data.account_id,
@@ -265,10 +252,6 @@ export class AiAgentPromptEmbeddingConsume {
       return;
     }
 
-    incrementCounter('ai_agent_prompt_embedding.success', 1, {
-      extraction_source: extraction.source,
-      source: data.source ?? 'unknown',
-    });
     console.log('[AiAgentPromptEmbedding] embeddings gerados', {
       account_id: data.account_id,
       ai_agent_id: data.ai_agent_id,
@@ -480,10 +463,6 @@ export class AiAgentPromptEmbeddingConsume {
         file_id: fileId,
       });
     } catch (error) {
-      incrementCounter('ai_agent_prompt_embedding.failure', 1, {
-        stage: 'openai_file_upload',
-        reason: this.normalizeErrorReason(error),
-      });
       console.error(
         '[AiAgentPromptEmbedding] erro ao enviar arquivo para OpenAI',
         {
@@ -581,10 +560,6 @@ export class AiAgentPromptEmbeddingConsume {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
         if (attempt > 1) {
-          incrementCounter('ai_agent_prompt_embedding.retry', 1, {
-            stage: context.stage,
-            source: context.source,
-          });
         }
         return await operation();
       } catch (error) {

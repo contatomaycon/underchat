@@ -111,9 +111,6 @@ export function protoToStatusConnectionRequest(
   if (proto.connection_attempt_id) {
     payload.connection_attempt_id = proto.connection_attempt_id;
   }
-  if (proto.connection_lifecycle_id) {
-    payload.connection_lifecycle_id = proto.connection_lifecycle_id;
-  }
   if (proto.runtime_generation) {
     payload.runtime_generation = Number(proto.runtime_generation);
   }
@@ -158,9 +155,6 @@ export function statusConnectionRequestToProto(
   }
   if (payload.connection_attempt_id) {
     proto.connection_attempt_id = payload.connection_attempt_id;
-  }
-  if (payload.connection_lifecycle_id) {
-    proto.connection_lifecycle_id = payload.connection_lifecycle_id;
   }
   if (payload.runtime_generation) {
     proto.runtime_generation = payload.runtime_generation;

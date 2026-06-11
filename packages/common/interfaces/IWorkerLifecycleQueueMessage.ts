@@ -17,7 +17,6 @@ export type WorkerLifecycleQueueSource =
 
 export interface IWorkerLifecycleQueueMessage {
   request_id: string;
-  connection_lifecycle_id: string;
   operation_id: string;
   action: WorkerLifecycleQueueAction;
   worker_id: string;

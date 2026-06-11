@@ -10,7 +10,6 @@ import { PasswordEncryptorService } from '@core/services/passwordEncryptor.servi
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWorkerWarmPoolState } from '@core/common/enums/EWorkerWarmPoolState';
 import { currentTime } from '@core/common/functions/currentTime';
-import { logger } from '@core/plugins/telemetry/logger';
 import { IBalanceMonitorServer } from '@core/common/interfaces/IBalanceMonitorServer';
 import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
 import { IWorkerWarmPoolSettings } from '@core/common/interfaces/IWorkerWarmPoolSettings';
@@ -56,18 +55,14 @@ export class WorkerWarmPoolActivity {
       return;
     }
 
-    const startedAt = Date.now();
     await this.workerWarmPoolQueueService.ensure();
-    const releasedReservations =
-      await this.workerWarmPoolRepository.releaseExpiredReservations();
+    await this.workerWarmPoolRepository.releaseExpiredReservations();
     const servers =
       await this.workerServerListerRepository.listWarmPoolEligibleBalanceServers();
     const targets = this.getTargetsByType(settings);
-    let replenishPublished = 0;
-    let staleReconciled = 0;
 
     for (const server of servers) {
-      staleReconciled += await this.reconcileServerWarmPool(
+      await this.reconcileServerWarmPool(
         server,
         settings.warming_stale_after_seconds * 1000
       );
@@ -81,18 +76,6 @@ export class WorkerWarmPoolActivity {
           );
         const missing = Math.max(0, target - activeCount);
 
-        logger.info(
-          {
-            type: 'warm_pool.scan',
-            server_id: server.server_id,
-            worker_type_id: workerTypeId,
-            active_count: activeCount,
-            target_count: target,
-            missing_count: missing,
-          },
-          'Warm worker pool scan'
-        );
-
         for (let index = 0; index < missing; index++) {
           await this.workerWarmPoolQueueService.publishReplenish({
             request_id: uuidv7(),
@@ -101,25 +84,9 @@ export class WorkerWarmPoolActivity {
             reason: 'scheduled_scan',
             requested_at: currentTime(),
           });
-          replenishPublished += 1;
         }
       }
     }
-
-    logger.info(
-      {
-        type: 'warm_pool.scan.summary',
-        duration_ms: Date.now() - startedAt,
-        servers_count: servers.length,
-        target_ready_baileys: settings.target_ready_baileys,
-        target_ready_wwebjs: settings.target_ready_wwebjs,
-        target_ready_whatsmeow: settings.target_ready_whatsmeow,
-        released_reservations: releasedReservations,
-        stale_reconciled: staleReconciled,
-        replenish_published: replenishPublished,
-      },
-      'Warm worker pool scan completed'
-    );
   }
 
   private getTargetsByType(
@@ -198,15 +165,7 @@ export class WorkerWarmPoolActivity {
         .split('\n')
         .map((line) => this.parseRunningWarmContainerLine(line))
         .filter((container): container is IRunningWarmContainer => !!container);
-    } catch (error) {
-      logger.warn(
-        {
-          type: 'warm_pool.reconcile.docker_list_error',
-          server_id: server.server_id,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Warm worker pool docker reconcile skipped'
-      );
+    } catch {
       return null;
     }
   }
@@ -321,20 +280,6 @@ export class WorkerWarmPoolActivity {
       });
 
       reconciled += 1;
-
-      logger.warn(
-        {
-          type: 'warm_pool.reconcile.missing_runtime',
-          server_id: entry.server_id,
-          worker_type_id: entry.worker_type_id,
-          warm_pool_id: entry.warm_pool_id,
-          container_id: entry.container_id,
-          container_name: reference.containerName,
-          session_volume_name: entry.session_volume_name,
-          state: entry.state,
-        },
-        'Warm worker pool entry missing in Docker; scheduled cleanup and replenish'
-      );
     }
 
     return reconciled;

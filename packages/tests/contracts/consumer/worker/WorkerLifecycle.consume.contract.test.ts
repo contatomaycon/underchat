@@ -21,27 +21,6 @@ jest.mock('@core/common/functions/ensureKafkaTopic', () => ({
 
 jest.mock('@core/plugins/kafkaStreams', () => ({}));
 
-const mockLifecycleDebug = {
-  buildConnectionLifecycleContext: jest.fn((input) => input),
-  isConnectionLifecycleDebugEnabled: jest.fn(() => false),
-  recordConnectionLifecycle: jest.fn(),
-  runWithConnectionLifecycleContext: jest.fn((_, callback) => callback()),
-};
-
-jest.mock('@core/plugins/telemetry/connectionLifecycleDebug', () => ({
-  buildConnectionLifecycleContext:
-    mockLifecycleDebug.buildConnectionLifecycleContext,
-  isConnectionLifecycleDebugEnabled:
-    mockLifecycleDebug.isConnectionLifecycleDebugEnabled,
-  recordConnectionLifecycle: mockLifecycleDebug.recordConnectionLifecycle,
-  runWithConnectionLifecycleContext:
-    mockLifecycleDebug.runWithConnectionLifecycleContext,
-}));
-
-jest.mock('@core/plugins/telemetry/messageLifecycleDebug', () => ({
-  runWithKafkaTraceContext: jest.fn((_, callback) => callback()),
-}));
-
 jest.mock('@core/services/kafkaServiceQueue.service', () => ({
   KafkaServiceQueueService: class KafkaServiceQueueService {},
 }));
@@ -75,7 +54,6 @@ function lifecyclePayload(
 ): Record<string, unknown> {
   return {
     request_id: 'request-1',
-    connection_lifecycle_id: 'lifecycle-1',
     operation_id: 'operation-1',
     action: 'create',
     worker_id: 'worker-1',
@@ -173,7 +151,6 @@ function makeSut() {
 describe('WorkerLifecycleConsume', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockLifecycleDebug.isConnectionLifecycleDebugEnabled.mockReturnValue(false);
   });
 
   it('dispatches valid create messages and commits after processing', async () => {
@@ -182,7 +159,6 @@ describe('WorkerLifecycleConsume', () => {
     await deps.sut.execute(deps.server as never);
     await deps.handlers.data({
       value: Buffer.from(JSON.stringify(lifecyclePayload())),
-      headers: [{ traceparent: 'trace-1' }],
       partition: 2,
       offset: 7,
     });
@@ -247,9 +223,15 @@ describe('WorkerLifecycleConsume', () => {
     });
 
     expect(commitOffset).not.toHaveBeenCalled();
-    expect(deps.server.log.error).not.toHaveBeenCalled();
+    expect(deps.server.log.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: EWorkerAction.create,
+        operationId: 'operation-1',
+        workerId: 'worker-1',
+      }),
+      'Worker lifecycle consume failed'
+    );
 
-    mockLifecycleDebug.isConnectionLifecycleDebugEnabled.mockReturnValue(true);
     await deps.handlers.data({
       value: Buffer.from(JSON.stringify(lifecyclePayload())),
       partition: 1,
@@ -262,7 +244,7 @@ describe('WorkerLifecycleConsume', () => {
       1,
       5
     );
-    expect(deps.server.log.error).not.toHaveBeenCalled();
+    expect(deps.server.log.error).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to clean create preserving worker_id when warm activation fails', async () => {
@@ -287,7 +269,9 @@ describe('WorkerLifecycleConsume', () => {
       offset: 9,
     });
 
-    expect(deps.workerGrpcClientService.activateWarmWorker).toHaveBeenCalledWith(
+    expect(
+      deps.workerGrpcClientService.activateWarmWorker
+    ).toHaveBeenCalledWith(
       'server-1',
       expect.objectContaining({
         warm_pool_id: 'warm-1',

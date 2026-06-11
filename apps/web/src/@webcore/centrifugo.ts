@@ -11,8 +11,6 @@ import { isAxiosError } from 'axios';
 import axios from '@webcore/axios';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
-import { getCentrifugoTelemetry } from './centrifugoTelemetry';
-import { recordException, recordMessage } from './observability';
 
 export type { Subscription };
 
@@ -32,9 +30,6 @@ const channelStreamPositions = new Map<
   { offset: number; epoch: string }
 >();
 const subscriptionHandlersBound = new WeakSet<Subscription>();
-
-const telemetry = getCentrifugoTelemetry();
-telemetry.setStreamPositionProvider(() => channelStreamPositions);
 
 const clearCachedToken = (): void => {
   cachedToken = null;
@@ -244,21 +239,12 @@ const setupSubscriptionHandlers = (
       }
     }
 
-    telemetry.trackPublication(channel);
-
     const handlersForChannel = channelHandlers.get(channel);
     if (handlersForChannel) {
       for (const h of handlersForChannel) {
         try {
           h(ctx.data, ctx);
-          telemetry.trackPublicationProcessed(channel);
-        } catch (error) {
-          telemetry.trackPublicationDropped(channel, error);
-          recordException(error, {
-            source: 'centrifugo.publication_handler',
-            channel,
-          });
-        }
+        } catch {}
       }
     }
   });
@@ -272,44 +258,17 @@ const setupSubscriptionHandlers = (
     }
 
     if (ctx.wasRecovering && ctx.recovered) {
-      telemetry.trackSubscription(channel, 'recovered', {
-        recovered: true,
-        wasRecovering: true,
-      });
-      recordMessage(`Channel ${channel} recovered successfully`, 'info', {
-        source: 'centrifugo.recovery',
-        channel,
-      });
     } else if (ctx.wasRecovering && !ctx.recovered) {
-      telemetry.trackSubscription(channel, 'recovery_failed', {
-        recovered: false,
-        wasRecovering: true,
-      });
-      recordMessage(
-        `Channel ${channel} recovery failed, may have missed messages`,
-        'warn',
-        {
-          source: 'centrifugo.recovery',
-          channel,
-        }
-      );
       globalThis.dispatchEvent(
         new CustomEvent('centrifugo-recovery-failed', {
           detail: { channel },
         })
       );
     } else {
-      telemetry.trackSubscription(channel, 'subscribed');
     }
   });
 
-  sub.on('unsubscribed', () => {
-    telemetry.trackSubscription(channel, 'unsubscribed');
-    recordMessage(`Unsubscribed from ${channel}`, 'info', {
-      source: 'centrifugo.subscription',
-      channel,
-    });
-  });
+  sub.on('unsubscribed', () => {});
 };
 
 /**
@@ -361,7 +320,6 @@ const createConnection = async (): Promise<Centrifuge> => {
       try {
         return await generateToken();
       } catch (error) {
-        telemetry.trackError('token_refresh', error);
         throw error;
       }
     },
@@ -373,12 +331,9 @@ const createConnection = async (): Promise<Centrifuge> => {
 
   centrifugeClient = client;
 
-  client.on('connected', () => {
-    telemetry.trackConnectionState('connected');
-  });
+  client.on('connected', () => {});
 
   client.on('disconnected', (ctx) => {
-    telemetry.trackConnectionState('disconnected', ctx.reason, ctx.code);
     if (isTokenExpiredSignal(ctx.code, ctx.reason)) {
       clearCachedToken();
     }
@@ -396,11 +351,6 @@ const createConnection = async (): Promise<Centrifuge> => {
   });
 
   client.on('error', (error) => {
-    telemetry.trackConnectionState('error', String(error));
-    recordException(error, {
-      source: 'centrifugo.client.error',
-    });
-
     if (!error || typeof error !== 'object') {
       return;
     }
@@ -423,12 +373,9 @@ const createConnection = async (): Promise<Centrifuge> => {
   try {
     await waitForConnected(client);
   } catch (error) {
-    telemetry.trackError('initial_connection', error);
     try {
       client.disconnect();
-    } catch (disconnectError) {
-      telemetry.trackError('disconnect_after_init_fail', disconnectError);
-    }
+    } catch {}
 
     if (centrifugeClient === client) {
       centrifugeClient = null;
@@ -453,25 +400,19 @@ const getConnection = async (): Promise<Centrifuge> => {
     if (state === State.Disconnected) {
       try {
         centrifugeClient.disconnect();
-      } catch (error) {
-        telemetry.trackError('disconnect_cleanup', error);
-      }
+      } catch {}
       centrifugeClient = null;
-      // BUG 4 FIX: Clear stale subscription references
+
       channelSubscriptions.clear();
     } else {
       try {
         await waitForConnected(centrifugeClient);
         return centrifugeClient;
-      } catch (error) {
-        telemetry.trackError('wait_for_connected', error);
+      } catch {
         try {
           centrifugeClient.disconnect();
-        } catch (disconnectError) {
-          telemetry.trackError('disconnect_after_wait_fail', disconnectError);
-        }
+        } catch {}
         centrifugeClient = null;
-        // BUG 4 FIX: Clear stale subscription references
         channelSubscriptions.clear();
       }
     }
@@ -597,9 +538,7 @@ export const resetConnection = (): void => {
   if (centrifugeClient) {
     try {
       centrifugeClient.disconnect();
-    } catch (error) {
-      telemetry.trackError('reset_connection_disconnect', error);
-    }
+    } catch {}
     centrifugeClient = null;
   }
   connectionPromise = null;
@@ -660,22 +599,18 @@ export const fetchRecentHistoryAndProcess = async (
 
 const processPublicationThroughHandlers = (
   pub: { data: unknown; offset?: number },
-  handlers: Set<(data: any, ctx: PublicationContext) => void>,
-  channel: string
+  handlers: Set<(data: any, ctx: PublicationContext) => void>
 ): void => {
   for (const handler of handlers) {
     try {
       handler(pub.data, pub as PublicationContext);
-    } catch (error) {
-      telemetry.trackError('history_publication_handler', error, channel);
-    }
+    } catch {}
   }
 };
 
 /**
  * Fetches history from a channel since the last known position.
  * Returns publications that were missed and processes them through handlers.
- * BUG 3 FIX: Now paginates through all missed messages instead of fetching only 100.
  */
 export const fetchHistoryAndProcess = async (
   channel: string
@@ -692,8 +627,6 @@ export const fetchHistoryAndProcess = async (
     return { processed: 0 };
   }
 
-  const startTime = Date.now();
-
   try {
     const handlers = channelHandlers.get(channel);
     if (!handlers || handlers.size === 0) {
@@ -708,7 +641,6 @@ export const fetchHistoryAndProcess = async (
     };
     const FETCH_LIMIT = 100;
     const MAX_ITERATIONS = 10;
-    let pages = 0;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const historyResult = await sub.history({
@@ -723,14 +655,12 @@ export const fetchHistoryAndProcess = async (
         break;
       }
 
-      pages++;
-
       for (const pub of historyResult.publications) {
         if (!pub.offset || pub.offset <= currentSince.offset) {
           continue;
         }
 
-        processPublicationThroughHandlers(pub, handlers, channel);
+        processPublicationThroughHandlers(pub, handlers);
 
         if (pub.offset > maxOffset) {
           maxOffset = pub.offset;
@@ -756,19 +686,11 @@ export const fetchHistoryAndProcess = async (
       });
     }
 
-    const durationMs = Date.now() - startTime;
-    telemetry.trackHistorySync(channel, totalProcessed, pages, durationMs);
-
     return {
       processed: totalProcessed,
       newOffset: maxOffset,
     };
-  } catch (error) {
-    telemetry.trackError('fetch_history', error, channel);
-    recordException(error, {
-      source: 'centrifugo.fetch_history',
-      channel,
-    });
+  } catch {
     return { processed: 0 };
   }
 };

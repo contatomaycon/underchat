@@ -222,6 +222,7 @@ declare global {
   const useBrowserLocation: typeof import('@vueuse/core').useBrowserLocation
   const useCached: typeof import('@vueuse/core').useCached
   const useCeil: typeof import('@vueuse/math').useCeil
+  const useChannelRecreateCooldown: typeof import('./src/composables/useChannelRecreateCooldown').useChannelRecreateCooldown
   const useChatNotificationToast: typeof import('./src/composables/useChatNotificationToast').useChatNotificationToast
   const useChatNotifications: typeof import('./src/composables/useChatNotifications').useChatNotifications
   const useChatSocket: typeof import('./src/composables/useChatSocket').useChatSocket
@@ -639,6 +640,7 @@ declare module 'vue' {
     readonly useBrowserLocation: UnwrapRef<typeof import('@vueuse/core')['useBrowserLocation']>
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
     readonly useCeil: UnwrapRef<typeof import('@vueuse/math')['useCeil']>
+    readonly useChannelRecreateCooldown: UnwrapRef<typeof import('./src/composables/useChannelRecreateCooldown')['useChannelRecreateCooldown']>
     readonly useChatNotificationToast: UnwrapRef<typeof import('./src/composables/useChatNotificationToast')['useChatNotificationToast']>
     readonly useChatNotifications: UnwrapRef<typeof import('./src/composables/useChatNotifications')['useChatNotifications']>
     readonly useChatSocket: UnwrapRef<typeof import('./src/composables/useChatSocket')['useChatSocket']>

@@ -6,19 +6,11 @@ import { ulid } from 'ulid';
 import { IPendingMessageWithTimestamp } from '@core/common/interfaces/IPendingMessageWithTimestamp';
 import { IQueuedMessage } from '@core/common/interfaces/IQueuedMessage';
 import { IDeferred } from '@core/common/interfaces/IDeferred';
-import {
-  buildMessageLifecycleContext,
-  getMessageLifecycleContext,
-  injectKafkaTraceHeaders,
-  isMessageLifecycleDebugEnabled,
-  runWithMessageLifecycleContext,
-} from '@core/plugins/telemetry/messageLifecycleDebug';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import {
   isRecoverableKafkaTopicError,
   resolveKafkaTopicConfig,
 } from '@core/common/functions/kafkaTopicConfig';
-import { logger } from '@core/plugins/telemetry/logger';
 
 @singleton()
 export class StreamProducerService {
@@ -45,18 +37,6 @@ export class StreamProducerService {
 
   private closing = false;
   private closePromise: Promise<boolean[]> | null = null;
-
-  private metrics = {
-    messagesSent: 0,
-    messagesFailed: 0,
-    messagesRejected: 0,
-    reconnections: 0,
-    connectionErrors: 0,
-    queueFullErrors: 0,
-    deliveryTimeouts: 0,
-    totalLatencyMs: 0,
-    lastMessageTime: 0,
-  };
 
   // Retry - alinhado com producer config (retry.backoff.ms: 100, retry.backoff.max.ms: 1000)
   private static readonly MAX_RETRIES = 10;
@@ -113,7 +93,6 @@ export class StreamProducerService {
       return;
     }
 
-    const startTime = pending.startTime;
     this.pendingMessages.delete(correlationId);
     clearTimeout(pending.timeoutHandle);
 
@@ -121,26 +100,19 @@ export class StreamProducerService {
       if (this.isDisconnectedError(err)) {
         this.invalidateProducerForReconnect(toError(err));
       }
-      this.metrics.messagesFailed += 1;
       pending.reject(toError(err));
       this.signalPendingDrain();
       return;
     }
 
-    const latency = Date.now() - startTime;
-    this.metrics.messagesSent += 1;
-    this.metrics.totalLatencyMs += latency;
-    this.metrics.lastMessageTime = Date.now();
     pending.resolve();
     this.signalPendingDrain();
   };
 
   private readonly runtimeErrorHandler = (err: LibrdKafkaError): void => {
-    this.metrics.connectionErrors += 1;
     console.error('Kafka producer error:', {
       error: getErrorMessage(err),
       code: 'code' in err ? (err as any).code : null,
-      metrics: this.getMetrics(),
     });
     if (!this.isDisconnectedError(err)) {
       return;
@@ -487,7 +459,6 @@ export class StreamProducerService {
 
     for (const message of pending) {
       clearTimeout(message.timeoutHandle);
-      this.metrics.messagesRejected += 1;
       message.reject(error);
     }
 
@@ -513,7 +484,6 @@ export class StreamProducerService {
 
     const queued = this.sendQueue.splice(0);
     for (const message of queued) {
-      this.metrics.messagesRejected += 1;
       message.reject(error);
     }
   }
@@ -543,7 +513,6 @@ export class StreamProducerService {
       throw new Error('Cannot reconnect during shutdown');
     }
 
-    this.metrics.reconnections += 1;
     this.stopPolling();
 
     const producer = this.producer;
@@ -605,22 +574,8 @@ export class StreamProducerService {
     );
   }
 
-  private async ensureTopicForProduce(
-    topic: string,
-    cause: unknown
-  ): Promise<void> {
+  private async ensureTopicForProduce(topic: string): Promise<void> {
     const topicConfig = resolveKafkaTopicConfig(topic);
-
-    logger.warn(
-      {
-        type: 'kafka.producer.topic_recovery',
-        topic,
-        partitions: topicConfig.numPartitions,
-        replication_factor: topicConfig.replicationFactor,
-        error: getErrorMessage(cause),
-      },
-      `Kafka producer recovering topic ${topic}`
-    );
 
     await ensureKafkaTopic(
       this.kafka,
@@ -658,7 +613,6 @@ export class StreamProducerService {
 
       const correlationId = ulid();
 
-      const startTime = Date.now();
       const timeoutHandle = setTimeout(() => {
         const pending = this.pendingMessages.get(correlationId);
         if (!pending) {
@@ -674,9 +628,6 @@ export class StreamProducerService {
 
         this.signalPendingDrain();
 
-        this.metrics.deliveryTimeouts += 1;
-        this.metrics.messagesFailed += 1;
-
         reject(
           new Error(
             `Message delivery timeout after ${StreamProducerService.DELIVERY_TIMEOUT_MS}ms`
@@ -688,7 +639,6 @@ export class StreamProducerService {
         resolve,
         reject,
         timeoutHandle,
-        startTime,
         timeoutFired: false,
       });
 
@@ -850,7 +800,6 @@ export class StreamProducerService {
       }
 
       if (attempt >= StreamProducerService.MAX_QUEUE_FULL_RETRIES) {
-        this.metrics.queueFullErrors += 1;
         throw new Error(
           `Kafka queue full after ${StreamProducerService.MAX_QUEUE_FULL_RETRIES} retries. Backpressure exceeded.`
         );
@@ -968,7 +917,6 @@ export class StreamProducerService {
       const bufferedCount = this.pendingMessages.size + this.sendQueue.length;
 
       if (bufferedCount >= StreamProducerService.MAX_INFLIGHT_MESSAGES) {
-        this.metrics.messagesRejected += 1;
         reject(
           new Error(
             `Producer backpressure: ${bufferedCount} buffered messages exceeds limit ${StreamProducerService.MAX_INFLIGHT_MESSAGES}`
@@ -1045,7 +993,6 @@ export class StreamProducerService {
       try {
         if (this.closing) {
           for (const message of batch) {
-            this.metrics.messagesRejected += 1;
             message.reject(new Error('Producer is closing'));
           }
           return;
@@ -1056,7 +1003,6 @@ export class StreamProducerService {
       } catch {
         if (this.closing) {
           for (const message of batch) {
-            this.metrics.messagesRejected += 1;
             message.reject(new Error('Producer is closing'));
           }
           return;
@@ -1066,7 +1012,6 @@ export class StreamProducerService {
 
         if (this.flushFailureCount > StreamProducerService.MAX_RETRIES) {
           for (const message of batch) {
-            this.metrics.messagesRejected += 1;
             message.reject(
               new Error(
                 `Failed to establish producer connection after ${StreamProducerService.MAX_RETRIES} attempts`
@@ -1075,7 +1020,6 @@ export class StreamProducerService {
           }
           const queued = this.sendQueue.splice(0);
           for (const message of queued) {
-            this.metrics.messagesRejected += 1;
             message.reject(
               new Error('Producer connection failed, rejecting queued messages')
             );
@@ -1101,7 +1045,6 @@ export class StreamProducerService {
 
       if (this.closing) {
         for (const message of batch) {
-          this.metrics.messagesRejected += 1;
           message.reject(new Error('Producer is closing'));
         }
         return;
@@ -1130,7 +1073,6 @@ export class StreamProducerService {
     if (batch.length <= StreamProducerService.MAX_CONCURRENT_SENDS) {
       if (this.closing) {
         for (const message of batch) {
-          this.metrics.messagesRejected += 1;
           message.reject(new Error('Producer is closing'));
         }
         return;
@@ -1171,7 +1113,6 @@ export class StreamProducerService {
     for (const chunk of chunks) {
       if (this.closing) {
         for (const message of chunk) {
-          this.metrics.messagesRejected += 1;
           message.reject(new Error('Producer is closing'));
         }
         return;
@@ -1239,7 +1180,7 @@ export class StreamProducerService {
       const isRecoverableTopicError = isRecoverableKafkaTopicError(error);
 
       if (isRecoverableTopicError && !topicRecoveryAttempted) {
-        await this.ensureTopicForProduce(topic, error);
+        await this.ensureTopicForProduce(topic);
 
         const recoveredProducer = await this.reconnectProducer();
 
@@ -1302,25 +1243,9 @@ export class StreamProducerService {
     key?: string | Buffer,
     headers?: MessageHeader[]
   ): Promise<void> {
-    const enqueue = () => {
-      const value = this.serializePayload(payload);
-      const keyBuffer = this.serializeKey(key);
-      const kafkaHeaders = injectKafkaTraceHeaders(headers);
-      return this.enqueueSend(topic, value, keyBuffer, kafkaHeaders);
-    };
-
-    if (
-      isMessageLifecycleDebugEnabled() &&
-      !getMessageLifecycleContext() &&
-      this.isMessageLifecyclePayload(payload)
-    ) {
-      return runWithMessageLifecycleContext(
-        buildMessageLifecycleContext(payload as never),
-        enqueue
-      ) as Promise<void>;
-    }
-
-    return enqueue();
+    const value = this.serializePayload(payload);
+    const keyBuffer = this.serializeKey(key);
+    return this.enqueueSend(topic, value, keyBuffer, headers);
   }
 
   async close(): Promise<boolean[]> {
@@ -1444,52 +1369,5 @@ export class StreamProducerService {
     }
 
     return [true];
-  }
-
-  getMetrics(): {
-    messagesSent: number;
-    messagesFailed: number;
-    messagesRejected: number;
-    reconnections: number;
-    connectionErrors: number;
-    queueFullErrors: number;
-    deliveryTimeouts: number;
-    averageLatencyMs: number;
-    queueSize: number;
-    pendingMessages: number;
-    inflightMessages: number;
-  } {
-    const averageLatencyMs =
-      this.metrics.messagesSent > 0
-        ? Math.round(this.metrics.totalLatencyMs / this.metrics.messagesSent)
-        : 0;
-
-    return {
-      messagesSent: this.metrics.messagesSent,
-      messagesFailed: this.metrics.messagesFailed,
-      messagesRejected: this.metrics.messagesRejected,
-      reconnections: this.metrics.reconnections,
-      connectionErrors: this.metrics.connectionErrors,
-      queueFullErrors: this.metrics.queueFullErrors,
-      deliveryTimeouts: this.metrics.deliveryTimeouts,
-      averageLatencyMs,
-      queueSize: this.sendQueue.length,
-      pendingMessages: this.pendingMessages.size,
-      inflightMessages: this.inflight.size,
-    };
-  }
-
-  resetMetrics(): void {
-    this.metrics = {
-      messagesSent: 0,
-      messagesFailed: 0,
-      messagesRejected: 0,
-      reconnections: 0,
-      connectionErrors: 0,
-      queueFullErrors: 0,
-      deliveryTimeouts: 0,
-      totalLatencyMs: 0,
-      lastMessageTime: 0,
-    };
   }
 }

@@ -15,7 +15,6 @@ RUN CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w"
 
 FROM debian:bookworm-slim AS runner
 
-ENV OTEL_SERVICE_NAME=whatsmeow
 WORKDIR /app/apps/worker_whatsmeow
 
 RUN apt-get update \

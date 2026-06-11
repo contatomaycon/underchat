@@ -24,10 +24,6 @@ import { UserService } from '@core/services/user.service';
 import { USER_ATTENDANCE_HOURS_BLOCK_REASON } from '@core/common/functions/userAttendanceHours';
 import { normalizeSessionPlatform } from '@core/common/functions/sessionPlatform';
 import type { SessionPlatform } from '@core/common/types/SessionPlatform';
-import {
-  measureRequestLatencyStage,
-  recordRequestLatencyStage,
-} from '@core/plugins/telemetry/requestLatency';
 import { safeRedisGet, safeRedisSet } from '@core/plugins/redis';
 
 type AuthFailureReason =
@@ -157,29 +153,11 @@ async function getCachedUserAccessScope(
   const cacheKey = createUserAccessScopeCacheKey(userId);
 
   try {
-    const cachedValue = await measureRequestLatencyStage(
-      'auth.access_scope.cache_get',
-      () => safeRedisGet(redis, cacheKey),
-      {
-        cache: 'user_access_scope',
-      }
-    );
+    const cachedValue = await safeRedisGet(redis, cacheKey);
     const cachedScope = parseCachedUserAccessScope(cachedValue, accountId);
 
-    recordRequestLatencyStage('auth.access_scope.cache_result', 0, {
-      hit: Boolean(cachedScope),
-    });
-
     return cachedScope;
-  } catch (error) {
-    recordRequestLatencyStage(
-      'auth.access_scope.cache_get_fallback',
-      0,
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-      false
-    );
+  } catch {
     return null;
   }
 }
@@ -194,35 +172,19 @@ async function setCachedUserAccessScope(
   const cacheKey = createUserAccessScopeCacheKey(userId);
 
   try {
-    await measureRequestLatencyStage(
-      'auth.access_scope.cache_set',
-      async () => {
-        await safeRedisSet(
-          redis,
-          cacheKey,
-          JSON.stringify({
-            account_id: accountId,
-            sectors,
-            channels,
-          }),
-          'EX',
-          USER_ACCESS_SCOPE_CACHE_TTL_SECONDS
-        );
-      },
-      {
-        cache: 'user_access_scope',
-        ttl_seconds: USER_ACCESS_SCOPE_CACHE_TTL_SECONDS,
-      }
+    await safeRedisSet(
+      redis,
+      cacheKey,
+      JSON.stringify({
+        account_id: accountId,
+        sectors,
+        channels,
+      }),
+      'EX',
+      USER_ACCESS_SCOPE_CACHE_TTL_SECONDS
     );
-  } catch (error) {
-    recordRequestLatencyStage(
-      'auth.access_scope.cache_set_ignored',
-      0,
-      {
-        error: error instanceof Error ? error.message : String(error),
-      },
-      false
-    );
+  } catch {
+    return;
   }
 }
 
@@ -297,17 +259,10 @@ async function generateTokenJwtAccess(
       channels = cachedScope.channels;
     } else {
       const userService = container.resolve(UserService);
-      [sectors, channels] = await measureRequestLatencyStage(
-        'auth.access_scope.load_db',
-        () =>
-          Promise.all([
-            userService.listUserSectors(accountId, userId),
-            userService.listUserChannelsWithNames(accountId, userId),
-          ]),
-        {
-          source: 'postgres',
-        }
-      );
+      [sectors, channels] = await Promise.all([
+        userService.listUserSectors(accountId, userId),
+        userService.listUserChannelsWithNames(accountId, userId),
+      ]);
       await setCachedUserAccessScope(
         redis,
         accountId,
@@ -344,16 +299,14 @@ async function authenticateJwt(
   let decoded: DecodedJwtPayload;
 
   try {
-    decoded = await measureRequestLatencyStage('auth.jwt_verify', () =>
-      request.jwtVerify({
-        verify: {
-          key: generalEnvironment.jwtSecret,
-        },
-        decode: {
-          complete: true,
-        },
-      })
-    );
+    decoded = (await request.jwtVerify({
+      verify: {
+        key: generalEnvironment.jwtSecret,
+      },
+      decode: {
+        complete: true,
+      },
+    })) as DecodedJwtPayload;
   } catch (error) {
     return sendUnauthorized(request, reply, 'jwt_verify_failed', {
       error: error instanceof Error ? error.message : String(error),
@@ -398,10 +351,7 @@ async function authenticateJwt(
     let cacheVersion = '0';
 
     try {
-      const cacheVersionRaw = await measureRequestLatencyStage(
-        'auth.redis.cache_version_get',
-        () => Redis.get(cacheVersionKey)
-      );
+      const cacheVersionRaw = await Redis.get(cacheVersionKey);
       cacheVersion = normalizeCacheVersion(cacheVersionRaw);
     } catch (error) {
       return sendUnauthorized(request, reply, 'redis_cache_version_error', {
@@ -420,10 +370,10 @@ async function authenticateJwt(
     let cachedPermissions: string | null = null;
 
     try {
-      [activeSession, cachedPermissions] = await measureRequestLatencyStage(
-        'auth.redis.session_permissions_get',
-        () => Promise.all([Redis.get(sessionKey), Redis.get(cacheKey)])
-      );
+      [activeSession, cachedPermissions] = await Promise.all([
+        Redis.get(sessionKey),
+        Redis.get(cacheKey),
+      ]);
     } catch (error) {
       return sendUnauthorized(request, reply, 'redis_session_lookup_error', {
         error: error instanceof Error ? error.message : String(error),
@@ -444,13 +394,9 @@ async function authenticateJwt(
 
     if (!shouldBypassAttendanceGuard) {
       const userService = container.resolve(UserService);
-      const attendanceGuard = await measureRequestLatencyStage(
-        'auth.attendance_guard',
-        () =>
-          userService.getAttendanceGuardStatus(
-            decoded.user_id,
-            decoded.account_id
-          )
+      const attendanceGuard = await userService.getAttendanceGuardStatus(
+        decoded.user_id,
+        decoded.account_id
       );
 
       if (attendanceGuard.is_blocked_now) {
@@ -467,38 +413,23 @@ async function authenticateJwt(
       }
     }
 
-    const responseAuth = await measureRequestLatencyStage(
-      'auth.permissions.resolve',
-      () =>
-        handleApiKeyCacheWithCachedValue(
-          Redis,
-          cacheKey,
-          cachedPermissions,
-          decoded,
-          routeModule,
-          request.module,
-          permissions
-        ),
-      {
-        cached_permissions_present: Boolean(cachedPermissions),
-      }
+    const responseAuth = await handleApiKeyCacheWithCachedValue(
+      Redis,
+      cacheKey,
+      cachedPermissions,
+      decoded,
+      routeModule,
+      request.module,
+      permissions
     );
 
     if (!responseAuth) {
       return sendUnauthorized(request, reply, 'auth_viewer_empty');
     }
 
-    const permissionStart = Date.now();
     const hasPermission = hasRequiredPermission(
       responseAuth.actions,
       permissions
-    );
-    recordRequestLatencyStage(
-      'auth.permissions.check',
-      Date.now() - permissionStart,
-      {
-        allowed: hasPermission,
-      }
     );
 
     if (!hasPermission) {

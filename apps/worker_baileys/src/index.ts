@@ -6,7 +6,6 @@ import fastify from 'fastify';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { v7 } from 'uuid';
 import swaggerPlugin from '@/plugins/swagger';
-import telemetryPlugin from '@core/plugins/telemetry';
 import corsPlugin from '@core/plugins/cors';
 import centrifugoPlugin from '@core/plugins/centrifugo';
 import databaseElasticPlugin from '@core/plugins/dbElastic';
@@ -21,7 +20,6 @@ import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnecti
 import baileysConsumersOnListenHook, {
   activateBaileysRuntime,
 } from './consumer';
-import { setupGracefulShutdown } from '@core/plugins/telemetry/errorHandlers';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -38,7 +36,6 @@ server.decorateRequest('module', ERouteModule.worker_baileys);
 server.decorate('baileysInitialized', Promise.resolve());
 server.decorate('qrStreamReady', false);
 
-server.register(safePlugin(telemetryPlugin, 'telemetry'));
 server.register(safePlugin(corsPlugin, 'cors'));
 server.register(safePlugin(swaggerPlugin, 'swagger'));
 server.register(safePlugin(routes, 'routes', true), {
@@ -73,7 +70,6 @@ const start = async () => {
     await server.listen({ port: 3005, host: '0.0.0.0' });
 
     console.log('Server running');
-    setupGracefulShutdown(server);
   } catch {
     process.exit(1);
   }

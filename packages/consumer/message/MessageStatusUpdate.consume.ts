@@ -12,11 +12,6 @@ import { handleConsumerError } from '@core/common/functions/handleConsumerError'
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import Redis from 'ioredis';
-import { logger } from '@core/plugins/telemetry/logger';
-import {
-  incrementCounter,
-  recordHistogram,
-} from '@core/plugins/telemetry/observability';
 
 interface BufferedUpdate {
   data: IMessageStatusUpdate;
@@ -133,10 +128,7 @@ export class MessageStatusUpdateConsume {
         try {
           await this.addToBatch(data, topic, partition, offset);
         } catch (error) {
-          this.markPartitionAsFailed(topic, partition, error, {
-            account_id: data.account_id,
-            message_id: data.message_id,
-          });
+          this.markPartitionAsFailed(topic, partition);
           throw error;
         } finally {
           stop();
@@ -237,29 +229,11 @@ export class MessageStatusUpdateConsume {
     return code === 22 || code === 25 || code === 27;
   }
 
-  private markPartitionAsFailed(
-    topic: string,
-    partition: number,
-    error: unknown,
-    details?: { account_id?: string; message_id?: string }
-  ): void {
+  private markPartitionAsFailed(topic: string, partition: number): void {
     const currentCount = (this.partitionFailureCounts.get(partition) ?? 0) + 1;
     this.partitionFailureCounts.set(partition, currentCount);
 
     if (currentCount < this.maxConsecutiveFailures) {
-      logger.warn(
-        {
-          err: error,
-          topic,
-          partition,
-          consecutive_failures: currentCount,
-          max_failures: this.maxConsecutiveFailures,
-          account_id: details?.account_id,
-          message_id: details?.message_id,
-          type: 'message_status_update_partition_transient_failure',
-        },
-        `Transient failure on partition ${partition} (${currentCount}/${this.maxConsecutiveFailures}), will retry`
-      );
       return;
     }
 
@@ -269,36 +243,9 @@ export class MessageStatusUpdateConsume {
 
     this.failedPartitions.add(partition);
 
-    logger.error(
-      {
-        err: error,
-        topic,
-        partition,
-        consecutive_failures: currentCount,
-        account_id: details?.account_id,
-        message_id: details?.message_id,
-        type: 'message_status_update_partition_paused',
-      },
-      `Partition ${partition} paused after ${currentCount} consecutive failures (will auto-recover in ${this.partitionRecoveryIntervalMs / 1000}s)`
-    );
-
-    incrementCounter('message_status_update_partition_paused', 1, {
-      partition: partition.toString(),
-    });
-
     try {
       this.consumerOrThrow.pause([{ topic, partition }]);
-    } catch (pauseError) {
-      logger.error(
-        {
-          err: pauseError,
-          topic,
-          partition,
-          type: 'message_status_update_partition_pause_error',
-        },
-        'Falha ao pausar partição após erro crítico'
-      );
-    }
+    } catch {}
   }
 
   private resetPartitionFailureCount(partition: number): void {
@@ -333,31 +280,7 @@ export class MessageStatusUpdateConsume {
         this.consumerOrThrow.resume([{ topic: this.currentTopic, partition }]);
         this.failedPartitions.delete(partition);
         this.partitionFailureCounts.set(partition, 0);
-
-        logger.info(
-          {
-            topic: this.currentTopic,
-            partition,
-            remaining_paused: this.failedPartitions.size,
-            type: 'message_status_update_partition_resumed',
-          },
-          `Partition ${partition} resumed after recovery interval`
-        );
-
-        incrementCounter('message_status_update_partition_resumed', 1, {
-          partition: partition.toString(),
-        });
-      } catch (resumeError) {
-        logger.error(
-          {
-            err: resumeError,
-            topic: this.currentTopic,
-            partition,
-            type: 'message_status_update_partition_resume_error',
-          },
-          `Failed to resume partition ${partition}`
-        );
-      }
+      } catch {}
     }
   }
 
@@ -367,15 +290,7 @@ export class MessageStatusUpdateConsume {
     }
 
     this.missingStatusRetryTimer = setInterval(() => {
-      void this.processDuePendingStatuses().catch((error) => {
-        logger.error(
-          {
-            err: error,
-            type: 'message_status_pending_retry_worker_error',
-          },
-          'Error while processing deferred message status updates'
-        );
-      });
+      void this.processDuePendingStatuses().catch(() => {});
     }, this.missingStatusRetryIntervalMs);
 
     this.missingStatusRetryTimer.unref?.();
@@ -412,9 +327,6 @@ export class MessageStatusUpdateConsume {
           statusUpdate.message_id
         );
         await this.markAsProcessed(statusUpdate);
-        incrementCounter('message_status_update_duplicate', 1, {
-          account_id: statusUpdate.account_id,
-        });
         return;
       }
 
@@ -435,10 +347,6 @@ export class MessageStatusUpdateConsume {
             duration,
           }
         );
-        recordHistogram('message_status_update_deferred_duration', duration, {
-          account_id: statusUpdate.account_id,
-          batch_size: '1',
-        });
         return;
       }
 
@@ -447,31 +355,8 @@ export class MessageStatusUpdateConsume {
         updatedMessage.message_id
       );
       await this.markAsProcessed(statusUpdate);
-
-      incrementCounter('message_status_update_success', 1, {
-        account_id: statusUpdate.account_id,
-        batched: 'false',
-        retry: 'true',
-      });
-      recordHistogram('message_status_update_duration', duration, {
-        account_id: statusUpdate.account_id,
-        batch_size: '1',
-        retry: 'true',
-      });
-    } catch (error) {
+    } catch {
       const duration = Date.now() - startTime;
-
-      logger.error(
-        {
-          err: error,
-          account_id: statusUpdate.account_id,
-          message_id: statusUpdate.message_id,
-          patch: normalizedPatch,
-          duration,
-          type: 'message_status_pending_retry_error',
-        },
-        'Erro ao reconciliar atualização de status pendente'
-      );
 
       await this.messageStatusPendingService.reschedulePendingStatus(
         statusUpdate,
@@ -578,9 +463,6 @@ export class MessageStatusUpdateConsume {
           statusUpdate.message_id
         );
         await this.markAsProcessed(statusUpdate);
-        incrementCounter('message_status_update_duplicate', buffered.length, {
-          account_id: firstUpdate.account_id,
-        });
 
         await Promise.all(
           buffered.map((item) =>
@@ -601,9 +483,6 @@ export class MessageStatusUpdateConsume {
           firstUpdate.account_id,
           firstUpdate.message_id
         );
-        incrementCounter('message_status_update_duplicate', buffered.length, {
-          account_id: firstUpdate.account_id,
-        });
 
         await Promise.all(
           buffered.map((item) =>
@@ -634,11 +513,6 @@ export class MessageStatusUpdateConsume {
           }
         );
 
-        recordHistogram('message_status_update_deferred_duration', duration, {
-          account_id: firstUpdate.account_id,
-          batch_size: buffered.length.toString(),
-        });
-
         await Promise.all(
           buffered.map((item) =>
             this.commitNext(item.topic, item.partition, item.offset)
@@ -662,53 +536,14 @@ export class MessageStatusUpdateConsume {
         patch: mergedPatch,
       });
 
-      const duration = Date.now() - startTime;
-      incrementCounter('message_status_update_success', buffered.length, {
-        account_id: firstUpdate.account_id,
-        batched: 'true',
-      });
-      recordHistogram('message_status_update_duration', duration, {
-        account_id: firstUpdate.account_id,
-        batch_size: buffered.length.toString(),
-      });
-
       await Promise.all(
         buffered.map((item) =>
           this.commitNext(item.topic, item.partition, item.offset)
         )
       );
     } catch (error) {
-      const duration = Date.now() - startTime;
-
-      logger.error(
-        {
-          err: error,
-          account_id: firstUpdate.account_id,
-          message_id: firstUpdate.message_id,
-          patch: mergedPatch,
-          batch_size: buffered.length,
-          duration,
-          type: 'message_status_update_error',
-        },
-        'Erro ao processar atualização de status da mensagem em batch'
-      );
-
-      incrementCounter('message_status_update_error', buffered.length, {
-        account_id: firstUpdate.account_id,
-        batched: 'true',
-      });
-      recordHistogram('message_status_update_error_duration', duration);
-
       const firstBuffered = buffered[0];
-      this.markPartitionAsFailed(
-        firstBuffered.topic,
-        firstBuffered.partition,
-        error,
-        {
-          account_id: firstUpdate.account_id,
-          message_id: firstUpdate.message_id,
-        }
-      );
+      this.markPartitionAsFailed(firstBuffered.topic, firstBuffered.partition);
       throw error;
     }
   }

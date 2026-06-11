@@ -22,7 +22,6 @@ import { AccountService } from './account.service';
 import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
-import { logger } from '@core/plugins/telemetry/logger';
 
 const mapConcurrent = async <T, R>(
   items: T[],
@@ -667,17 +666,6 @@ export class WorkerMonitorService {
       const code = health.code;
       const healthy = code === 200;
       if (!healthy) {
-        logger.warn(
-          {
-            type: 'worker_monitor.connection_health_unhealthy',
-            worker_id: workerId,
-            server_id: serverId,
-            http_code: code,
-            kafka_unhealthy: this.readKafkaUnhealthy(health.body),
-            health: health.body,
-          },
-          'Worker connection health check failed'
-        );
       }
       return healthy;
     } catch {

@@ -97,11 +97,7 @@ describe('WorkerWarmReplenishConsume', () => {
   it('commits replenish messages without creating containers when warmup is disabled', async () => {
     const deps = makeSut(false);
 
-    await deps.sut.execute({
-      log: {
-        error: jest.fn(),
-      },
-    } as never);
+    await deps.sut.execute();
     await deps.handlers.data({
       value: Buffer.from(
         JSON.stringify({
@@ -130,11 +126,7 @@ describe('WorkerWarmReplenishConsume', () => {
   it('commits invalid payloads before loading settings', async () => {
     const deps = makeSut(true);
 
-    await deps.sut.execute({
-      log: {
-        error: jest.fn(),
-      },
-    } as never);
+    await deps.sut.execute();
     await deps.handlers.data({
       value: Buffer.from('{}'),
       partition: 1,

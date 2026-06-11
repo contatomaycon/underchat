@@ -11,11 +11,6 @@ import {
 } from '@core/common/interfaces/IMessageSummaryUpdate';
 import Redis from 'ioredis';
 import { createHash } from 'node:crypto';
-import { logger } from '@core/plugins/telemetry/logger';
-import {
-  recordException,
-  incrementCounter,
-} from '@core/plugins/telemetry/observability';
 import type { WAMessageKey } from '@whiskeysockets/baileys';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
@@ -246,46 +241,12 @@ export class MessageStatusService {
         expectedAccountId
       )
     ) {
-      logger.error(
-        {
-          type: 'message_status_invalid_centrifugo_message_payload',
-          message_id: message.message_id,
-          chat_id: message.chat_id,
-          account_id: message.account?.id,
-          expected_account_id: expectedAccountId,
-          channel,
-        },
-        'Blocked Centrifugo publish for status update without matching chat/account ownership'
-      );
-      incrementCounter('message_status_invalid_centrifugo_message_payload', 1, {
-        channel,
-      });
       return;
     }
 
     try {
       await this.centrifugoService.publishSubImmediate(channel, message);
-    } catch (error) {
-      logger.error(
-        {
-          err: error,
-          type: 'message_status_centrifugo_publish_error',
-          message_id: message.message_id,
-          channel,
-        },
-        'Failed to publish message status update to Centrifugo (best-effort, enqueuing retry)'
-      );
-      recordException(error, {
-        level: 'error',
-        messageStatus: {
-          type: 'centrifugo_publish_error',
-          message_id: message.message_id,
-          channel,
-        },
-      });
-      incrementCounter('message_status_centrifugo_publish_failed', 1, {
-        channel,
-      });
+    } catch {
       this.enqueueCentrifugoRetry(channel, message);
     }
   }
@@ -499,23 +460,6 @@ export class MessageStatusService {
 
     if (this.circuitBreakerFailures >= this.circuitBreakerThreshold) {
       this.circuitBreakerOpenUntil = Date.now() + this.circuitBreakerResetMs;
-
-      logger.error(
-        {
-          type: 'elasticsearch_circuit_breaker_open',
-          failures: this.circuitBreakerFailures,
-          resetMs: this.circuitBreakerResetMs,
-        },
-        'Elasticsearch circuit breaker opened'
-      );
-
-      recordException(new Error('Elasticsearch circuit breaker opened'), {
-        level: 'error',
-        elasticsearch: {
-          type: 'circuit_breaker_open',
-          failures: this.circuitBreakerFailures,
-        },
-      });
     }
   }
 
@@ -716,15 +660,12 @@ export class MessageStatusService {
     key?: MessageKeyLike,
     maxRetries = 5
   ): Promise<IChatMessage | null> {
-    let lastCandidateCount = 0;
-
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const result = await this.findMessageByWhatsAppId(
         accountId,
         messageId,
         key
       );
-      lastCandidateCount = result.candidateCount;
       if (result.message?.message_id) {
         return result.message;
       }
@@ -734,17 +675,6 @@ export class MessageStatusService {
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
-
-    logger.info(
-      {
-        type: 'ack_match_miss',
-        account_id: accountId,
-        message_id: messageId,
-        candidate_count: lastCandidateCount,
-        attempts: maxRetries,
-      },
-      'No message found for WhatsApp status update after immediate lookup retries'
-    );
 
     return null;
   }

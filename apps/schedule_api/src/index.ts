@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import fastify from 'fastify';
-import telemetryPlugin from '@core/plugins/telemetry';
 import dbConnector from '@core/config/database';
 import i18nextPlugin from '@core/plugins/i18next';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
@@ -16,7 +15,6 @@ import fastifyQs from 'fastify-qs';
 import routes from '@/routes';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
 import { safePlugin } from '@core/common/functions/safePlugin';
-import { setupGracefulShutdown } from '@core/plugins/telemetry/errorHandlers';
 import startJobs from '@core/jobs';
 
 const server = fastify({
@@ -32,7 +30,6 @@ const server = fastify({
 
 server.decorateRequest('module', ERouteModule.schedule);
 
-server.register(safePlugin(telemetryPlugin, 'telemetry'));
 server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
   module: ERouteModule.schedule,
 });
@@ -58,8 +55,6 @@ const start = async () => {
     await server.listen({ port: 3006, host: '0.0.0.0' });
 
     console.log('Server running');
-
-    setupGracefulShutdown(server);
 
     startJobs(server, { enableWarmPoolJobs: true });
   } catch (err) {

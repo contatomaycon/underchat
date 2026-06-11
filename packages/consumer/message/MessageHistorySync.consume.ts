@@ -25,13 +25,6 @@ import { MessageHistoryReceiptCacheService } from '@core/services/messageHistory
 import { WAMessage } from '@whiskeysockets/baileys';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import Redis from 'ioredis';
-import {
-  buildMessageLifecycleContext,
-  recordMessageLifecycle,
-  runWithKafkaTraceContext,
-  runWithMessageLifecycleContext,
-  type MessageLifecycleEvent,
-} from '@core/plugins/telemetry/messageLifecycleDebug';
 
 interface KafkaConsumerMessage {
   value: Buffer | null;
@@ -39,8 +32,6 @@ interface KafkaConsumerMessage {
   offset: number;
   headers?: MessageHeader[];
 }
-
-type MessageLifecycleContext = ReturnType<typeof buildMessageLifecycleContext>;
 
 @singleton()
 export class MessageHistorySyncConsume {
@@ -106,17 +97,10 @@ export class MessageHistorySyncConsume {
 
   private logLifecycle(
     data: IUpsertMessage | null | undefined,
-    event: MessageLifecycleEvent
+    event: Record<string, unknown>
   ): void {
-    const contextData = buildMessageLifecycleContext(
-      data ?? undefined,
-      data?.source_provider
-    );
-
-    recordMessageLifecycle({
-      ...contextData,
-      ...event,
-    });
+    void data;
+    void event;
   }
 
   public async execute(): Promise<void> {
@@ -163,49 +147,19 @@ export class MessageHistorySyncConsume {
     topic: string,
     message: KafkaConsumerMessage
   ): Promise<void> {
-    await runWithKafkaTraceContext(message.headers, () =>
-      this.handleKafkaMessageWithTrace(topic, message)
-    );
-  }
-
-  private async handleKafkaMessageWithTrace(
-    topic: string,
-    message: KafkaConsumerMessage
-  ): Promise<void> {
     const { partition, offset } = message;
     const data = this.parseMessage(message.value);
 
     if (!data) {
-      recordMessageLifecycle({
-        stage: 'message_history_sync.consume.parse',
-        decision: 'parse_kafka_payload',
-        outcome: 'skipped',
-        reason: 'invalid_or_empty_payload',
-        level: 'warn',
-        topic,
-        partition,
-        offset,
-      });
       await this.commitNext(topic, partition, offset);
       return;
     }
 
-    const contextData = buildMessageLifecycleContext(
-      data,
-      data.source_provider
-    );
     const previousChain =
       this.partitionChains.get(partition) ?? Promise.resolve();
 
     const currentChain = previousChain.then(() =>
-      this.processKafkaMessageInPartition(
-        topic,
-        data,
-        partition,
-        offset,
-        contextData,
-        message.headers
-      )
+      this.processKafkaMessageInPartition(topic, data, partition, offset)
     );
 
     this.partitionChains.set(partition, currentChain);
@@ -215,14 +169,13 @@ export class MessageHistorySyncConsume {
     topic: string,
     data: IUpsertMessage,
     partition: number,
-    offset: number,
-    contextData: MessageLifecycleContext,
-    kafkaHeaders?: MessageHeader[]
+    offset: number
   ): Promise<void> {
-    await runWithKafkaTraceContext(kafkaHeaders, () =>
-      runWithMessageLifecycleContext(contextData, () =>
-        this.processHistoryMessageWithLifecycle(topic, data, partition, offset)
-      )
+    await this.processHistoryMessageWithLifecycle(
+      topic,
+      data,
+      partition,
+      offset
     );
   }
 
@@ -761,43 +714,14 @@ export class MessageHistorySyncConsume {
   ): Promise<void> {
     try {
       await commitOffset(this.consumerOrThrow, topic, partition, offset);
-      recordMessageLifecycle({
-        stage: 'message_history_sync.kafka.commit',
-        decision: 'commit_offset',
-        outcome: 'committed',
-        topic,
-        partition,
-        offset,
-      });
     } catch (error: unknown) {
       if (
         MessageHistorySyncConsume.isLibrdKafkaError(error) &&
         error.code === 22
       ) {
-        recordMessageLifecycle({
-          stage: 'message_history_sync.kafka.commit',
-          decision: 'commit_offset',
-          outcome: 'ignored',
-          reason: 'local_state_error',
-          level: 'warn',
-          topic,
-          partition,
-          offset,
-        });
         return;
       }
 
-      recordMessageLifecycle({
-        stage: 'message_history_sync.kafka.commit',
-        decision: 'commit_offset',
-        outcome: 'error',
-        reason: 'commit_failed',
-        level: 'error',
-        topic,
-        partition,
-        offset,
-        error: error instanceof Error ? error.message : String(error),
-      });
       throw error;
     }
   }

@@ -47,12 +47,6 @@ type Config struct {
 	CentrifugoHTTPAPIURL string
 	CentrifugoHTTPAPIKey string
 
-	OTELEnabled          bool
-	OTELServiceName      string
-	OTELEnvironment      string
-	OTELTraceSampleRate  float64
-	OTELResourceAttrsRaw string
-
 	ProxyProtocol string
 	ProxyHost     string
 	ProxyPort     int
@@ -83,16 +77,6 @@ type Config struct {
 	HistoryReconciliationEnabled      bool
 	HistoryReconciliationMessageLimit int
 	HistoryReconciliationMaxAge       time.Duration
-
-	MessageLifecycleDebugEnabled           bool
-	MessageLifecycleDebugBodyLimit         int
-	MessageLifecycleDebugRawLimit          int
-	MessageLifecycleIncomingSuccessEnabled bool
-	MessageLifecycleOutboundSuccessEnabled bool
-
-	ConnectionLifecycleDebugEnabled    bool
-	ConnectionLifecycleDebugValueLimit int
-	ConnectionLifecycleDebugRawLimit   int
 }
 
 func LoadConfig() (Config, error) {
@@ -129,11 +113,6 @@ func LoadConfig() (Config, error) {
 		S3BucketPrefixBackup: os.Getenv("S3_BUCKET_PREFIX_BACKUP"),
 		CentrifugoHTTPAPIURL: os.Getenv("CENTRIFUGO_HTTP_API_URL"),
 		CentrifugoHTTPAPIKey: os.Getenv("CENTRIFUGO_HTTP_API_KEY"),
-		OTELEnabled:          envBoolDefault("OTEL_ENABLE", true),
-		OTELServiceName:      envDefault("OTEL_SERVICE_NAME", "whatsmeow"),
-		OTELEnvironment:      firstEnv("OTEL_ENVIRONMENT", "NODE_ENV", "LOCAL"),
-		OTELTraceSampleRate:  envFloatDefault("OTEL_TRACE_SAMPLE_RATE", 1.0),
-		OTELResourceAttrsRaw: os.Getenv("OTEL_RESOURCE_ATTRIBUTES"),
 		ProxyProtocol:        strings.ToLower(envDefault("PROXY_PROTOCOL", "http")),
 		ProxyHost:            os.Getenv("PROXY_HOST"),
 		ProxyPort:            envIntDefault("PROXY_PORT", 0),
@@ -144,39 +123,25 @@ func LoadConfig() (Config, error) {
 			"WORKER_WHATSAPP_CONNECT_TIMEOUT",
 			45*time.Second,
 		),
-		ConnectionQRFirstQRTimeout:             envMillisDurationDefault("CONNECTION_QR_FIRST_QR_TIMEOUT_MS", 75*time.Second),
-		KafkaPollInterval:                      250 * time.Millisecond,
-		OutboundReadyTimeout:                   envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
-		SendMaxInFlight:                        envIntDefault("WORKER_SEND_MAX_IN_FLIGHT", 256),
-		SendQueueTimeout:                       envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
-		ConnectionHealthFailOnKafkaUnhealthy:   envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
-		KafkaSendConsumerIdleRecreateInterval:  envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
-		KafkaHandlerErrorBackoff:               envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
-		KafkaConsumerStallTimeout:              kafkaConsumerStallTimeout,
-		KafkaConsumerStallCheckInterval:        envMillisDurationDefault("KAFKA_CONSUMER_STALL_CHECK_MS", 30*time.Second),
-		KafkaConsumerMaxStallRestarts:          envIntDefault("KAFKA_CONSUMER_MAX_RESTARTS_BEFORE_UNHEALTHY", 3),
-		OutboundFailureReconnectThreshold:      envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
-		OutboundFailureReconnectCooldown:       envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
-		SendIdempotencyInProgressTTL:           envDurationDefault("WORKER_SEND_IDEMPOTENCY_IN_PROGRESS_TTL", 10*time.Minute),
-		SendIdempotencyFinalTTL:                envDurationDefault("WORKER_SEND_IDEMPOTENCY_FINAL_TTL", 24*time.Hour),
-		SendIdempotencyStaleAfter:              envDurationDefault("WORKER_SEND_IDEMPOTENCY_STALE_AFTER", 0),
-		HistoryReconciliationEnabled:           envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
-		HistoryReconciliationMessageLimit:      envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
-		HistoryReconciliationMaxAge:            envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
-		MessageLifecycleDebugEnabled:           envBoolDefault("MESSAGE_LIFECYCLE_DEBUG_ENABLED", false),
-		MessageLifecycleDebugBodyLimit:         envIntDefault("MESSAGE_LIFECYCLE_DEBUG_BODY_LIMIT", 500),
-		MessageLifecycleDebugRawLimit:          envIntDefault("MESSAGE_LIFECYCLE_DEBUG_RAW_LIMIT", 4000),
-		MessageLifecycleIncomingSuccessEnabled: envBoolDefault("MESSAGE_LIFECYCLE_INCOMING_SUCCESS_ENABLED", false),
-		MessageLifecycleOutboundSuccessEnabled: envBoolDefault("MESSAGE_LIFECYCLE_OUTBOUND_SUCCESS_ENABLED", true),
-		ConnectionLifecycleDebugEnabled:        envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
-		ConnectionLifecycleDebugValueLimit: envIntDefault(
-			"CONNECTION_LIFECYCLE_DEBUG_VALUE_LIMIT",
-			500,
-		),
-		ConnectionLifecycleDebugRawLimit: envIntDefault(
-			"CONNECTION_LIFECYCLE_DEBUG_RAW_LIMIT",
-			4000,
-		),
+		ConnectionQRFirstQRTimeout:            envMillisDurationDefault("CONNECTION_QR_FIRST_QR_TIMEOUT_MS", 75*time.Second),
+		KafkaPollInterval:                     250 * time.Millisecond,
+		OutboundReadyTimeout:                  envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
+		SendMaxInFlight:                       envIntDefault("WORKER_SEND_MAX_IN_FLIGHT", 256),
+		SendQueueTimeout:                      envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
+		ConnectionHealthFailOnKafkaUnhealthy:  envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
+		KafkaSendConsumerIdleRecreateInterval: envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
+		KafkaHandlerErrorBackoff:              envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
+		KafkaConsumerStallTimeout:             kafkaConsumerStallTimeout,
+		KafkaConsumerStallCheckInterval:       envMillisDurationDefault("KAFKA_CONSUMER_STALL_CHECK_MS", 30*time.Second),
+		KafkaConsumerMaxStallRestarts:         envIntDefault("KAFKA_CONSUMER_MAX_RESTARTS_BEFORE_UNHEALTHY", 3),
+		OutboundFailureReconnectThreshold:     envIntDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_THRESHOLD", 3),
+		OutboundFailureReconnectCooldown:      envDurationDefault("WORKER_OUTBOUND_FAILURE_RECONNECT_COOLDOWN", 2*time.Minute),
+		SendIdempotencyInProgressTTL:          envDurationDefault("WORKER_SEND_IDEMPOTENCY_IN_PROGRESS_TTL", 10*time.Minute),
+		SendIdempotencyFinalTTL:               envDurationDefault("WORKER_SEND_IDEMPOTENCY_FINAL_TTL", 24*time.Hour),
+		SendIdempotencyStaleAfter:             envDurationDefault("WORKER_SEND_IDEMPOTENCY_STALE_AFTER", 0),
+		HistoryReconciliationEnabled:          envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
+		HistoryReconciliationMessageLimit:     envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
+		HistoryReconciliationMaxAge:           envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
 	}
 
 	if cfg.WarmStandby {
@@ -249,19 +214,6 @@ func LoadConfig() (Config, error) {
 	if cfg.SendIdempotencyStaleAfter < cfg.SendTimeout {
 		cfg.SendIdempotencyStaleAfter = cfg.SendTimeout
 	}
-	if cfg.MessageLifecycleDebugBodyLimit <= 0 {
-		cfg.MessageLifecycleDebugBodyLimit = 500
-	}
-	if cfg.MessageLifecycleDebugRawLimit <= 0 {
-		cfg.MessageLifecycleDebugRawLimit = 4000
-	}
-	if cfg.ConnectionLifecycleDebugValueLimit <= 0 {
-		cfg.ConnectionLifecycleDebugValueLimit = 500
-	}
-	if cfg.ConnectionLifecycleDebugRawLimit <= 0 {
-		cfg.ConnectionLifecycleDebugRawLimit = 4000
-	}
-
 	return cfg, nil
 }
 

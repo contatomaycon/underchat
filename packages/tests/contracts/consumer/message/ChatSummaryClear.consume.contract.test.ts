@@ -25,12 +25,6 @@ jest.mock('@core/common/functions/startHeartbeat', () => ({
   startHeartbeat: jest.fn(() => jest.fn()),
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    error: jest.fn(),
-  },
-}));
-
 jest.mock('@core/plugins/kafkaStreams', () => ({}));
 
 jest.mock('@core/services/kafkaServiceQueue.service', () => ({
@@ -47,7 +41,6 @@ jest.mock('@core/services/centrifugo.service', () => ({
 
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { commitOffset } from '@core/common/functions/commitOffset';
-import { logger } from '@core/plugins/telemetry/logger';
 
 const { ChatSummaryClearConsume } =
   require('@core/consumer/message/ChatSummaryClear.consume') as typeof import('@core/consumer/message/ChatSummaryClear.consume');
@@ -68,7 +61,7 @@ describe('ChatSummaryClearConsume', () => {
     jest.clearAllMocks();
   });
 
-  it('attaches a partition-chain catch when processing fails', async () => {
+  it('commits the offset when processing fails inside the partition chain', async () => {
     const kafkaConsumer = new FakeConsumer();
     (createConsumer as jest.Mock).mockReturnValue(kafkaConsumer);
 
@@ -109,17 +102,6 @@ describe('ChatSummaryClearConsume', () => {
       'clear.chat.summary',
       4,
       10
-    );
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'chat_summary_clear_partition_error',
-        partition: 4,
-        offset: 10,
-        account_id: 'acc-1',
-        chat_id: 'chat-1',
-        error: 'database timeout',
-      }),
-      'Error processing chat summary clear message'
     );
   });
 });

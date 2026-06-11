@@ -8,7 +8,6 @@ import type {
 } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { EventEmitter } from 'node:events';
-import { logger } from '@core/plugins/telemetry/logger';
 import { ensureKafkaTopic } from './ensureKafkaTopic';
 import {
   isRecoverableKafkaTopicError,
@@ -149,9 +148,9 @@ class ManagedKafkaConsumer extends EventEmitter {
   private connected = false;
   private closed = false;
   private connecting = false;
-  private restartTimer: NodeJS.Timeout | null = null;
-  private connectTimeout: NodeJS.Timeout | null = null;
-  private watchdogTimer: NodeJS.Timeout | null = null;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private restartCount = 0;
   private lastMessageAt = 0;
   private lastCommitAt = 0;
@@ -219,16 +218,6 @@ class ManagedKafkaConsumer extends EventEmitter {
 
   async __ensureTopic(topic: string): Promise<void> {
     const config = resolveKafkaTopicConfig(topic);
-    logger.info(
-      {
-        type: 'kafka.topic.ensure.start',
-        group_id: this.groupId,
-        topic,
-        partitions: config.numPartitions,
-        replication_factor: config.replicationFactor,
-      },
-      'Kafka consumer ensuring topic'
-    );
     try {
       await ensureKafkaTopic(
         this.kafka,
@@ -237,30 +226,8 @@ class ManagedKafkaConsumer extends EventEmitter {
         config.replicationFactor
       );
     } catch (error) {
-      logger.error(
-        {
-          type: 'kafka.topic.ensure.error',
-          group_id: this.groupId,
-          topic,
-          partitions: config.numPartitions,
-          replication_factor: config.replicationFactor,
-          error: getErrorMessage(error),
-        },
-        'Kafka consumer topic ensure failed'
-      );
       throw error;
     }
-
-    logger.info(
-      {
-        type: 'kafka.topic.ensure.success',
-        group_id: this.groupId,
-        topic,
-        partitions: config.numPartitions,
-        replication_factor: config.replicationFactor,
-      },
-      'Kafka consumer topic ensured'
-    );
   }
 
   connect(optionsOrCallback: unknown = {}, callback?: ConsumerCallback): this {
@@ -297,15 +264,6 @@ class ManagedKafkaConsumer extends EventEmitter {
     if (!consumer || !this.connected) {
       const error = new Error('Kafka consumer is not connected');
       this.lastError = error.message;
-      logger.debug(
-        {
-          type: 'kafka.commit_without_connection',
-          group_id: this.groupId,
-          topics: this.topics,
-          error: error.message,
-        },
-        'Kafka consumer commit skipped because consumer is not connected'
-      );
       throw error;
     }
 
@@ -316,27 +274,8 @@ class ManagedKafkaConsumer extends EventEmitter {
     } catch (error) {
       this.lastError = getErrorMessage(error);
       if (isStaleCommitGenerationError(error)) {
-        logger.warn(
-          {
-            type: 'kafka.commit.stale_generation',
-            group_id: this.groupId,
-            topics: this.topics,
-            error: this.lastError,
-          },
-          'Kafka consumer commit skipped after group generation changed'
-        );
         throw error;
       }
-
-      logger.error(
-        {
-          type: 'kafka.commit.error',
-          group_id: this.groupId,
-          topics: this.topics,
-          error: this.lastError,
-        },
-        'Kafka consumer commit failed'
-      );
       this.scheduleRestart('commit_error', error);
       throw error;
     }
@@ -359,15 +298,6 @@ class ManagedKafkaConsumer extends EventEmitter {
       }
     } catch (error) {
       this.lastError = getErrorMessage(error);
-      logger.debug(
-        {
-          type: 'kafka.commit.heartbeat_error',
-          group_id: this.groupId,
-          topics: this.topics,
-          error: this.lastError,
-        },
-        'Kafka consumer heartbeat commit failed'
-      );
     }
 
     return this;
@@ -451,33 +381,15 @@ class ManagedKafkaConsumer extends EventEmitter {
     this.current = consumer;
     this.attachCurrentConsumer(consumer, callback);
 
-    logger.info(
-      {
-        type: 'kafka.consumer.connect.start',
-        group_id: this.groupId,
-        topics: this.topics,
-      },
-      'Kafka consumer connect start'
-    );
-
     this.connectTimeout = setTimeout(() => {
       if (this.closed || this.current !== consumer || this.connected) {
         return;
       }
+
       const error = new Error(
         `Kafka consumer connection timeout after ${CONNECT_TIMEOUT_MS}ms`
       );
       this.lastError = error.message;
-      logger.warn(
-        {
-          type: 'kafka.consumer.connect.timeout',
-          group_id: this.groupId,
-          topics: this.topics,
-          timeout_ms: CONNECT_TIMEOUT_MS,
-          error: error.message,
-        },
-        'Kafka consumer connect timeout'
-      );
       callback?.(error);
       this.scheduleRestart('connect_timeout', error);
     }, CONNECT_TIMEOUT_MS);
@@ -487,30 +399,13 @@ class ManagedKafkaConsumer extends EventEmitter {
         if (!err) {
           return;
         }
+
         this.lastError = getErrorMessage(err);
-        logger.error(
-          {
-            type: 'kafka.consumer.connect.error',
-            group_id: this.groupId,
-            topics: this.topics,
-            error: this.lastError,
-          },
-          'Kafka consumer connect callback failed'
-        );
         callback?.(err instanceof Error ? err : new Error(this.lastError));
         this.scheduleRestart('connect_error', err);
       });
     } catch (error) {
       this.lastError = getErrorMessage(error);
-      logger.error(
-        {
-          type: 'kafka.consumer.connect.error',
-          group_id: this.groupId,
-          topics: this.topics,
-          error: this.lastError,
-        },
-        'Kafka consumer connect threw'
-      );
       callback?.(error instanceof Error ? error : new Error(this.lastError));
       this.scheduleRestart('connect_exception', error);
     }
@@ -530,7 +425,7 @@ class ManagedKafkaConsumer extends EventEmitter {
     });
 
     consumer.on('data', (message) => {
-      this.recordMessage(message);
+      this.trackReceivedMessage(message);
       this.emit('data', message);
     });
 
@@ -563,16 +458,6 @@ class ManagedKafkaConsumer extends EventEmitter {
       this.connecting = false;
       this.connected = false;
       this.lastError = getErrorMessage(error);
-      logger.warn(
-        {
-          type: 'kafka.consumer.metadata.refresh.error',
-          group_id: this.groupId,
-          topics: this.topics,
-          timeout_ms: METADATA_REFRESH_TIMEOUT_MS,
-          error: this.lastError,
-        },
-        'Kafka consumer topic metadata refresh failed'
-      );
       callback?.(error instanceof Error ? error : new Error(this.lastError));
       this.scheduleRestart('metadata_refresh_error', error);
       return;
@@ -587,7 +472,7 @@ class ManagedKafkaConsumer extends EventEmitter {
     }
 
     if (this.consuming) {
-      if (!this.startConsuming(consumer, 'ready')) {
+      if (!this.startConsuming(consumer)) {
         callback?.(new Error(this.lastError));
         return;
       }
@@ -599,49 +484,19 @@ class ManagedKafkaConsumer extends EventEmitter {
     this.lastProgressAt = Math.max(this.lastProgressAt, this.connectedAt);
     this.lastError = '';
 
-    logger.info(
-      {
-        type: 'kafka.consumer.connect.success',
-        group_id: this.groupId,
-        topics: this.topics,
-        restart_count: this.restartCount,
-        assignment_count: this.getAssignments().length,
-      },
-      'Kafka consumer connected'
-    );
-
     callback?.(null);
     this.emit('ready');
     this.armWatchdog();
   }
 
-  private startConsuming(consumer: KafkaConsumer, phase: string): boolean {
+  private startConsuming(consumer: KafkaConsumer): boolean {
     try {
       consumer.consume();
-      logger.info(
-        {
-          type: 'kafka.consumer.consume.start',
-          group_id: this.groupId,
-          topics: this.topics,
-          phase,
-        },
-        'Kafka consumer consume loop started'
-      );
       return true;
     } catch (error) {
       this.connecting = false;
       this.connected = false;
       this.lastError = getErrorMessage(error);
-      logger.error(
-        {
-          type: 'kafka.consumer.consume.error',
-          group_id: this.groupId,
-          topics: this.topics,
-          phase,
-          error: this.lastError,
-        },
-        'Kafka consumer consume loop failed to start'
-      );
       this.scheduleRestart('consume_error', error);
       return false;
     }
@@ -686,16 +541,6 @@ class ManagedKafkaConsumer extends EventEmitter {
           })
       )
     );
-
-    logger.info(
-      {
-        type: 'kafka.consumer.metadata.refresh.success',
-        group_id: this.groupId,
-        topics: this.topics,
-        timeout_ms: METADATA_REFRESH_TIMEOUT_MS,
-      },
-      'Kafka consumer topic metadata refreshed'
-    );
   }
 
   private getAssignments(): ITopicPartition[] {
@@ -730,9 +575,10 @@ class ManagedKafkaConsumer extends EventEmitter {
       return;
     }
 
-    const recoverableTopicError = error
-      ? isRecoverableKafkaTopicError(error)
-      : false;
+    if (error && !isRecoverableKafkaTopicError(error)) {
+      this.lastError = getErrorMessage(error);
+    }
+
     this.restartCount += 1;
     if (reason.includes('stall') || reason.includes('watchdog')) {
       this.consecutiveStallRestarts += 1;
@@ -744,22 +590,6 @@ class ManagedKafkaConsumer extends EventEmitter {
       }
     }
     this.lastRestartAt = Date.now();
-
-    logger.warn(
-      {
-        type:
-          reason.includes('watchdog') || reason.includes('stall')
-            ? 'kafka.consumer.stalled'
-            : 'kafka.consumer.restart',
-        group_id: this.groupId,
-        topics: this.topics,
-        reason,
-        restart_count: this.restartCount,
-        recoverable_topic_error: recoverableTopicError,
-        error: error ? getErrorMessage(error) : undefined,
-      },
-      'Kafka consumer restarting'
-    );
 
     const delayMs = Math.min(
       RESTART_MAX_MS,
@@ -865,7 +695,7 @@ class ManagedKafkaConsumer extends EventEmitter {
     return shouldRestartStalledConsumerForTopics(this.topics);
   }
 
-  private recordMessage(message: {
+  private trackReceivedMessage(message: {
     topic?: string;
     partition?: number;
     offset?: number;
@@ -982,15 +812,6 @@ class ManagedKafkaConsumer extends EventEmitter {
       );
     } catch (error) {
       this.lastError = getErrorMessage(error);
-      logger.debug(
-        {
-          type: 'kafka.consumer.watchdog.committed_error',
-          group_id: this.groupId,
-          topics: this.topics,
-          error: this.lastError,
-        },
-        'Kafka consumer watchdog failed to read committed offsets'
-      );
     }
 
     await Promise.all(
@@ -1028,16 +849,6 @@ class ManagedKafkaConsumer extends EventEmitter {
             typeof offsets?.highOffset === 'number' ? offsets.highOffset : null;
         } catch (error) {
           this.lastError = getErrorMessage(error);
-          logger.debug(
-            {
-              type: 'kafka.consumer.watchdog.watermark_error',
-              group_id: this.groupId,
-              topic: assignment.topic,
-              partition: assignment.partition,
-              error: this.lastError,
-            },
-            'Kafka consumer watchdog failed to read watermark offsets'
-          );
         }
 
         const effectiveCommittedOffset = committedOffset ?? 0;

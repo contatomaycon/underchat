@@ -1,10 +1,6 @@
 import 'reflect-metadata';
 jest.mock('@core/common/vendors/nodeRdkafka', () => ({ rdkafka: {} }));
 
-jest.mock('@core/plugins/telemetry/connectionLifecycleDebug', () => ({
-  recordConnectionLifecycle: jest.fn(),
-}));
-
 import { WorkerLifecycleQueueService } from '@core/services/workerLifecycleQueue.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
@@ -33,7 +29,6 @@ describe('WorkerLifecycleQueueService', () => {
     await sut.ensure();
     await sut.publish({
       request_id: 'request-1',
-      connection_lifecycle_id: 'lifecycle-1',
       operation_id: 'operation-1',
       action: 'recreate',
       worker_id: 'worker-1',
@@ -60,11 +55,7 @@ describe('WorkerLifecycleQueueService', () => {
         operation_id: 'operation-1',
       }),
       'worker-1',
-      [
-        {
-          'x-connection-lifecycle-id': 'lifecycle-1',
-        },
-      ]
+      []
     );
   });
 });

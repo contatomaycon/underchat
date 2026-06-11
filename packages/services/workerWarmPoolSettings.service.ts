@@ -11,7 +11,6 @@ import {
   safeRedisGet,
   safeRedisSet,
 } from '@core/plugins/redis';
-import { logger } from '@core/plugins/telemetry/logger';
 
 const SETTINGS_CACHE_KEY = 'worker:warm_pool:settings:v1';
 const SCAN_GATE_CACHE_KEY = 'worker:warm_pool:scan:gate:v1';
@@ -121,14 +120,7 @@ export class WorkerWarmPoolSettingsService {
       );
 
       return result === 'OK';
-    } catch (error) {
-      logger.warn(
-        {
-          type: 'warm_pool.settings.scan_gate_error',
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Warm pool scan gate Redis check failed'
-      );
+    } catch {
       return true;
     }
   }
@@ -150,14 +142,7 @@ export class WorkerWarmPoolSettingsService {
     let cached: string | null = null;
     try {
       cached = await safeRedisGet(this.redis, SETTINGS_CACHE_KEY);
-    } catch (error) {
-      logger.warn(
-        {
-          type: 'warm_pool.settings.cache_read_error',
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Warm pool settings cache read failed'
-      );
+    } catch {
       return null;
     }
 
@@ -167,14 +152,7 @@ export class WorkerWarmPoolSettingsService {
 
     try {
       return JSON.parse(cached) as IWorkerWarmPoolSettings;
-    } catch (error) {
-      logger.warn(
-        {
-          type: 'warm_pool.settings.cache_parse_error',
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Warm pool settings cache parse failed'
-      );
+    } catch {
       await this.invalidateCache();
       return null;
     }
@@ -189,15 +167,7 @@ export class WorkerWarmPoolSettingsService {
         'EX',
         SETTINGS_CACHE_TTL_SECONDS
       );
-    } catch (error) {
-      logger.warn(
-        {
-          type: 'warm_pool.settings.cache_write_error',
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Warm pool settings cache write failed'
-      );
-    }
+    } catch {}
   }
 
   private async invalidateCache(): Promise<void> {
@@ -207,14 +177,6 @@ export class WorkerWarmPoolSettingsService {
 
     try {
       await this.redis.del(SETTINGS_CACHE_KEY);
-    } catch (error) {
-      logger.warn(
-        {
-          type: 'warm_pool.settings.cache_invalidate_error',
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Warm pool settings cache invalidation failed'
-      );
-    }
+    } catch {}
   }
 }

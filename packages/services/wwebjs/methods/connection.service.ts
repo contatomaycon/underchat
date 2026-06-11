@@ -29,12 +29,6 @@ import { WwebjsIncomingMessageService } from './incoming.service';
 import { WwebjsHealthCheckService } from './healthCheck.service';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
-import { logger } from '@core/plugins/telemetry/logger';
-import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
-import {
-  getConnectionQrFirstQrTimeoutMs,
-  recordConnectionAttemptTelemetry,
-} from '@core/plugins/telemetry/connectionAttemptTelemetry';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const RETRY_DELAY = 60_000;
@@ -91,6 +85,12 @@ const WWEBJS_PENDING_TEARDOWN_TIMEOUT_MS = readBoundedIntEnv(
   DEFAULT_PENDING_TEARDOWN_TIMEOUT_MS,
   1_000,
   120_000
+);
+const CONNECTION_QR_FIRST_QR_TIMEOUT_MS = readBoundedIntEnv(
+  'CONNECTION_QR_FIRST_QR_TIMEOUT_MS',
+  25_000,
+  1_000,
+  300_000
 );
 
 function getFolder(): string {
@@ -243,7 +243,6 @@ export class WwebjsConnectionService {
     EBaileysConnectionType.qrcode;
   private phoneConnection: string | undefined;
   private connectionAttemptId: string | undefined;
-  private connectionLifecycleId: string | undefined;
   private connectionAttemptStartedAtMs = 0;
 
   constructor(
@@ -341,7 +340,6 @@ export class WwebjsConnectionService {
       requested_by_user: requestedByUser = false,
       from_disconnect_restart: fromDisconnectRestart = false,
       connection_attempt_id: connectionAttemptId,
-      connection_lifecycle_id: connectionLifecycleId,
     } = input;
     const normalizedPhoneConnection =
       this.normalizePhoneConnection(phoneConnection);
@@ -350,23 +348,7 @@ export class WwebjsConnectionService {
         ? (normalizedPhoneConnection ?? this.phoneConnection)
         : undefined;
 
-    this.logConnectionEvent('connect_requested', {
-      requested_by_user: requestedByUser,
-      from_disconnect_restart: fromDisconnectRestart,
-      force_new: forceNew,
-      allow_restore: allowRestore,
-      connection_type: typeConnection,
-      has_phone_connection: Boolean(effectivePhoneConnection),
-      has_session: this.hasSession(),
-      has_active_socket: Boolean(this.client),
-      connection_attempt_id: connectionAttemptId,
-      connection_lifecycle_id: connectionLifecycleId,
-    });
-
     if (typeConnection === EBaileysConnectionType.phone) {
-      this.logConnectionEvent('connect_rejected', {
-        reason: 'phone_connection_disabled',
-      });
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
 
@@ -375,11 +357,6 @@ export class WwebjsConnectionService {
     }
 
     if (this.userRequestedDisconnect && !fromDisconnectRestart) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'user_requested_disconnect_guard',
-        requested_by_user: requestedByUser,
-        from_disconnect_restart: fromDisconnectRestart,
-      });
       return this.state();
     }
 
@@ -387,13 +364,9 @@ export class WwebjsConnectionService {
     this.typeConnection = typeConnection;
     this.phoneConnection = effectivePhoneConnection;
     this.connectionAttemptId = connectionAttemptId;
-    this.connectionLifecycleId = connectionLifecycleId;
     this.trackQrReadSession(requestedByUser, typeConnection);
 
     if (this.connected) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'already_connected',
-      });
       return this.reportConnected();
     }
 
@@ -401,28 +374,14 @@ export class WwebjsConnectionService {
       forceNew && this.connecting && (requestedByUser || fromDisconnectRestart);
 
     if (forcedRestartActiveConnection) {
-      this.logConnectionEvent('connection_force_new_active_attempt', {
-        requested_by_user: requestedByUser,
-        from_disconnect_restart: fromDisconnectRestart,
-        active_attempt_id: this.activeConnectionAttemptId,
-      });
       this.cancelAttempt(false);
     }
 
     if (this.connecting && this.currentPromise) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'already_connecting',
-        active_attempt_id: this.activeConnectionAttemptId,
-      });
       return this.currentPromise;
     }
 
     if (forceNew && this.connecting && !forcedRestartActiveConnection) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'force_new_ignored_while_connecting',
-        from_disconnect_restart: fromDisconnectRestart,
-        active_attempt_id: this.activeConnectionAttemptId,
-      });
       return this.currentPromise ?? this.state();
     }
 
@@ -439,10 +398,6 @@ export class WwebjsConnectionService {
       !shouldBypassRestoreForQrRequest &&
       this.hasSession()
     ) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'restore_session',
-        allow_restore: allowRestore,
-      });
       return this.startConnection(fromDisconnectRestart);
     }
 
@@ -452,12 +407,6 @@ export class WwebjsConnectionService {
       shouldBypassRestoreForQrRequest &&
       this.hasSession()
     ) {
-      this.logConnectionEvent('connect_restore_bypassed', {
-        reason: 'manual_qrcode_request',
-        allow_restore: allowRestore,
-        requested_by_user: requestedByUser,
-        connection_type: typeConnection,
-      });
     }
 
     if (
@@ -466,11 +415,6 @@ export class WwebjsConnectionService {
       (this.qrReadSessionLocked ||
         (!this.qrReadSessionActive && !this.hasSession()))
     ) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'qr_session_locked_or_inactive',
-        connection_type: this.typeConnection,
-        requested_by_user: requestedByUser,
-      });
       return this.state();
     }
 
@@ -485,14 +429,6 @@ export class WwebjsConnectionService {
       remove_session: removeSession = false,
     } = input;
     const shouldRemoveSession = removeSession || !preserveSession;
-
-    this.logConnectionEvent('disconnect_requested', {
-      requested_by_user: disconnectedUser,
-      preserve_session: preserveSession,
-      remove_session: removeSession,
-      should_remove_session: shouldRemoveSession,
-      initial_connection: initialConnection,
-    });
 
     this.initialConnection = initialConnection;
     this.connectionEstablished = false;
@@ -578,10 +514,6 @@ export class WwebjsConnectionService {
   }
 
   async shutdown(): Promise<void> {
-    this.logConnectionEvent('shutdown', {
-      has_active_socket: Boolean(this.client),
-      has_session: this.hasSession(),
-    });
     this.resetQrReadSession();
     this.qrReadSessionLocked = false;
     this.pendingResolve?.(this.state());
@@ -603,18 +535,7 @@ export class WwebjsConnectionService {
     this.clearChromiumProfileLock();
   }
 
-  cancelConnectionAttempt(reason = 'connection_attempt_cancelled'): void {
-    this.logConnectionEvent(
-      'connection_attempt_cancel_requested',
-      {
-        reason,
-        status: this.status,
-        code: this.code,
-        has_active_socket: Boolean(this.client),
-        active_attempt_id: this.activeConnectionAttemptId,
-      },
-      'warn'
-    );
+  cancelConnectionAttempt(): void {
     this.cancelAttempt(false);
   }
 
@@ -634,11 +555,6 @@ export class WwebjsConnectionService {
     if (!fromDisconnectRestart) {
       this.retryCount = 0;
     }
-    this.logConnectionEvent('connection_attempt_started', {
-      attempt_id: attemptId,
-      from_disconnect_restart: fromDisconnectRestart,
-      connection_type: this.typeConnection,
-    });
     this.currentPromise = this.waitForPendingTeardown()
       .then(() =>
         this.withConnectionAttemptGuardTimeout(
@@ -662,18 +578,11 @@ export class WwebjsConnectionService {
     attemptId: number
   ): Promise<IBaileysConnectionState> {
     const deadlineMs =
-      getConnectionQrFirstQrTimeoutMs() +
+      CONNECTION_QR_FIRST_QR_TIMEOUT_MS +
       CONNECTION_ATTEMPT_GUARD_TIMEOUT_GRACE_MS;
     const startedAtMs = this.connectionAttemptStartedAtMs || Date.now();
     let guardTimeout: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
-
-    this.logConnectionEvent('connection_attempt_guard_timeout_armed', {
-      attempt_id: attemptId,
-      deadline_ms: deadlineMs,
-      first_qr_timeout_ms: getConnectionQrFirstQrTimeoutMs(),
-      grace_ms: CONNECTION_ATTEMPT_GUARD_TIMEOUT_GRACE_MS,
-    });
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
       const settle = (state: IBaileysConnectionState): void => {
@@ -692,33 +601,17 @@ export class WwebjsConnectionService {
           return;
         }
 
-        const elapsedMs = Date.now() - startedAtMs;
         if (
           this.activeConnectionAttemptId !== attemptId ||
           this.connectionEstablished ||
           this.status !== Status.connecting
         ) {
-          this.logConnectionEvent(
-            'connection_attempt_guard_timeout_skipped',
-            {
-              attempt_id: attemptId,
-              active_attempt_id: this.activeConnectionAttemptId,
-              status: this.status,
-              code: this.code,
-              connection_established: this.connectionEstablished,
-              deadline_ms: deadlineMs,
-              time_to_first_qr_ms: elapsedMs,
-            },
-            'warn'
-          );
           settle(this.state());
           return;
         }
 
         const payload = this.resolveQrAttemptTimeout(
-          attemptId,
           startedAtMs,
-          deadlineMs,
           'connection_attempt_guard_timeout'
         );
         settle(payload);
@@ -743,15 +636,7 @@ export class WwebjsConnectionService {
         this.teardownPromise.catch(() => undefined),
         WWEBJS_PENDING_TEARDOWN_TIMEOUT_MS
       );
-    } catch (error) {
-      this.logConnectionEvent(
-        'pending_teardown_wait_timeout',
-        {
-          timeout_ms: WWEBJS_PENDING_TEARDOWN_TIMEOUT_MS,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'warn'
-      );
+    } catch {
       this.teardownPromise = Promise.resolve();
       this.clearChromiumProfileLock();
     }
@@ -764,31 +649,13 @@ export class WwebjsConnectionService {
     this.teardownPromise = this.teardownPromise
       .catch(() => undefined)
       .then(async () => {
-        this.logConnectionEvent('connection_teardown_started', {
-          operation,
-          active_attempt_id: this.activeConnectionAttemptId,
-          timeout_ms: WWEBJS_CLIENT_DESTROY_TIMEOUT_MS,
-        });
         try {
           await this.runWithTimeout(
             `connection_teardown:${operation}`,
             teardown(),
             WWEBJS_CLIENT_DESTROY_TIMEOUT_MS
           );
-        } catch (error) {
-          this.logConnectionEvent(
-            'connection_teardown_timeout',
-            {
-              operation,
-              timeout_ms: WWEBJS_CLIENT_DESTROY_TIMEOUT_MS,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            'warn'
-          );
-        }
-        this.logConnectionEvent('connection_teardown_finished', {
-          operation,
-        });
+        } catch {}
       });
   }
 
@@ -838,17 +705,7 @@ export class WwebjsConnectionService {
         client.destroy(),
         WWEBJS_CLIENT_DESTROY_TIMEOUT_MS
       );
-    } catch (error) {
-      this.logConnectionEvent(
-        'client_destroy_timeout',
-        {
-          operation,
-          timeout_ms: WWEBJS_CLIENT_DESTROY_TIMEOUT_MS,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'warn'
-      );
-    }
+    } catch {}
   }
 
   private prepareFolder(): void {
@@ -987,30 +844,11 @@ export class WwebjsConnectionService {
     const delayMs = nextAttempt === 1 ? 0 : RETRY_DELAY;
 
     this.retryCount = nextAttempt;
-    this.logConnectionEvent('reconnect_scheduled', {
-      attempt: nextAttempt,
-      max_attempts: MAX_RETRIES,
-      delay_ms: delayMs,
-      force_new: forceNew,
-      connection_type: this.typeConnection,
-      has_phone_connection: Boolean(this.phoneConnection),
-      requested_by_user: false,
-      from_disconnect_restart: true,
-    });
     this.publishReconnectAttempt(nextAttempt, delayMs);
 
     this.clearDisconnectRetryTimer();
     this.disconnectRetryTimer = setTimeout(() => {
       this.disconnectRetryTimer = undefined;
-      this.logConnectionEvent('reconnect_triggered', {
-        attempt: nextAttempt,
-        max_attempts: MAX_RETRIES,
-        delay_ms: delayMs,
-        force_new: forceNew,
-        connection_type: this.typeConnection,
-        has_phone_connection: Boolean(this.phoneConnection),
-        from_disconnect_restart: true,
-      });
       this.connect({
         initial_connection: this.initialConnection,
         force_new: forceNew,
@@ -1020,15 +858,6 @@ export class WwebjsConnectionService {
         requested_by_user: false,
         from_disconnect_restart: true,
       }).catch(() => {
-        this.logConnectionEvent(
-          'connection_connect_error',
-          {
-            attempt: nextAttempt,
-            max_attempts: MAX_RETRIES,
-            reason: 'Reconnect attempt failed',
-          },
-          'error'
-        );
         this.scheduleNextReconnectAttempt(forceNew);
       });
     }, delayMs);
@@ -1093,33 +922,15 @@ export class WwebjsConnectionService {
 
   private async handleInitializeError(
     message: string,
-    client: Client,
-    attemptId?: number
+    client: Client
   ): Promise<void> {
     if (!this.isActiveClient(client)) {
-      this.logConnectionEvent(
-        'initialize_error',
-        {
-          reason: message,
-          stale_client: true,
-          attempt_id: attemptId,
-        },
-        'warn'
-      );
       console.warn('[Wwebjs] Ignoring initialize error from stale client:', {
         message,
       });
       return;
     }
 
-    this.logConnectionEvent(
-      'initialize_error',
-      {
-        reason: message,
-        attempt_id: attemptId,
-      },
-      'error'
-    );
     console.error('[Wwebjs] client.initialize() failed:', message);
     this.setStatus(Status.disconnected, ECodeMessage.connectionLost);
     this.clearConnectionStateProbe();
@@ -1156,10 +967,6 @@ export class WwebjsConnectionService {
         !this.userRequestedDisconnect
       ) {
         this.retryCount = 0;
-        this.logConnectionEvent('initialize_error_scheduling_qr', {
-          connection_type: this.typeConnection,
-          reason: message,
-        });
         this.clearDisconnectRetryTimer();
         this.disconnectRetryTimer = setTimeout(() => {
           this.disconnectRetryTimer = undefined;
@@ -1187,53 +994,12 @@ export class WwebjsConnectionService {
   }
 
   private resolveQrAttemptTimeout(
-    attemptId: number,
     startedAtMs: number,
-    deadlineMs: number,
     reason: 'qr_event_timeout' | 'connection_attempt_guard_timeout'
   ): IBaileysConnectionState {
     const elapsedMs = Date.now() - startedAtMs;
     this.setStatus(Status.connecting, ECodeMessage.awaitingReadQrCode);
     this.clearConnectionStateProbe();
-    this.logConnectionEvent(
-      reason === 'qr_event_timeout'
-        ? 'first_qr_timeout'
-        : 'connection_attempt_guard_timeout',
-      {
-        attempt_id: attemptId,
-        reason,
-        deadline_ms: deadlineMs,
-        time_to_first_qr_ms: elapsedMs,
-        connection_type: this.typeConnection,
-        has_session: this.hasSession(),
-        has_active_socket: Boolean(this.client),
-      },
-      'warn'
-    );
-    recordConnectionAttemptTelemetry({
-      event:
-        reason === 'qr_event_timeout'
-          ? 'worker_wwebjs_first_qr_timeout'
-          : 'worker_wwebjs_connection_attempt_guard_timeout',
-      stage:
-        reason === 'qr_event_timeout'
-          ? 'connection.wwebjs.service.first_qr_timeout'
-          : 'connection.wwebjs.service.connection_attempt_guard_timeout',
-      metric_event: 'qr_outcome',
-      level: 'warn',
-      worker_id: getWorker(),
-      account_id: getAccount(),
-      worker_type: 'wwebjs',
-      library: 'wwebjs',
-      connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
-      status: this.status,
-      code: this.code,
-      outcome: 'timeout',
-      reason,
-      deadline_ms: deadlineMs,
-      time_to_first_qr_ms: elapsedMs,
-    });
 
     const payload = this.state(undefined, undefined, {
       qr_pending: true,
@@ -1267,7 +1033,7 @@ export class WwebjsConnectionService {
   ): Promise<IBaileysConnectionState> {
     return new Promise<IBaileysConnectionState>((resolve) => {
       const startedAtMs = this.connectionAttemptStartedAtMs || Date.now();
-      const firstQrTimeoutMs = getConnectionQrFirstQrTimeoutMs();
+      const firstQrTimeoutMs = CONNECTION_QR_FIRST_QR_TIMEOUT_MS;
       let settled = false;
       let firstQrTimeout: ReturnType<typeof setTimeout> | undefined;
       const settle = (state: IBaileysConnectionState): void => {
@@ -1290,34 +1056,15 @@ export class WwebjsConnectionService {
           this.connectionEstablished ||
           this.status !== Status.connecting
         ) {
-          this.logConnectionEvent(
-            'first_qr_timeout_skipped',
-            {
-              attempt_id: attemptId,
-              active_attempt_id: this.activeConnectionAttemptId,
-              status: this.status,
-              code: this.code,
-              connection_established: this.connectionEstablished,
-              deadline_ms: firstQrTimeoutMs,
-              time_to_first_qr_ms: Date.now() - startedAtMs,
-            },
-            'warn'
-          );
           return;
         }
 
         const payload = this.resolveQrAttemptTimeout(
-          attemptId,
           startedAtMs,
-          firstQrTimeoutMs,
           'qr_event_timeout'
         );
         settle(payload);
       }, firstQrTimeoutMs);
-      this.logConnectionEvent('first_qr_timeout_armed', {
-        attempt_id: attemptId,
-        deadline_ms: firstQrTimeoutMs,
-      });
 
       this.clearChromiumProfileLock();
 
@@ -1365,14 +1112,6 @@ export class WwebjsConnectionService {
           2000, 5000, 10000, 20000, 30000, 45000, 60000, 90000, 120000,
         ],
       };
-      this.logConnectionEvent('client_options_resolved', {
-        attempt_id: attemptId,
-        user_agent_mode: userAgent === false ? 'browser_default' : 'custom',
-        has_proxy: Boolean(proxy),
-        has_executable_path: Boolean(puppeteerOpts.executablePath),
-        protocol_timeout_ms: puppeteerOpts.protocolTimeout,
-        history_reconciliation_enabled: HISTORY_RECONCILIATION_ENABLED,
-      });
 
       if (proxy?.username && proxy.password) {
         clientOptions.proxyAuthentication = {
@@ -1397,9 +1136,6 @@ export class WwebjsConnectionService {
       this.client = client;
       this.incomingMessageService.bindTo(client);
       this.startConnectionStateProbe(client, attemptId, proxy);
-      this.logConnectionEvent('client_initialized', {
-        attempt_id: attemptId,
-      });
 
       client.on('code', (code: string) => {
         if (!this.isActiveClient(client)) {
@@ -1438,16 +1174,6 @@ export class WwebjsConnectionService {
 
       client.on('qr', async (qr: string) => {
         if (!this.isActiveClient(client)) {
-          this.logConnectionEvent(
-            'qr_ignored',
-            {
-              reason: 'stale_client',
-              attempt_id: attemptId,
-              active_attempt_id: this.activeConnectionAttemptId,
-              connection_type: this.typeConnection,
-            },
-            'warn'
-          );
           return;
         }
 
@@ -1456,42 +1182,15 @@ export class WwebjsConnectionService {
           !this.qrReadSessionActive ||
           this.qrReadSessionLocked
         ) {
-          this.logConnectionEvent(
-            'qr_ignored',
-            {
-              reason: 'qr_session_not_accepting',
-              attempt_id: attemptId,
-              connection_type: this.typeConnection,
-              qr_read_session_active: this.qrReadSessionActive,
-              qr_read_session_locked: this.qrReadSessionLocked,
-            },
-            'warn'
-          );
           return;
         }
 
         const hash = qr.slice(-20);
         if (hash === this.qrHash) {
-          this.logConnectionEvent('qr_ignored', {
-            reason: 'duplicate_qr_hash',
-            attempt_id: attemptId,
-            attempt: this.qrGenerationCount,
-            connection_type: this.typeConnection,
-          });
           return;
         }
 
         if (this.qrGenerationCount >= MAX_QR_GENERATIONS) {
-          this.logConnectionEvent(
-            'qr_generation_limit_reached',
-            {
-              attempt_id: attemptId,
-              attempt: this.qrGenerationCount + 1,
-              max_attempts: MAX_QR_GENERATIONS,
-              connection_type: this.typeConnection,
-            },
-            'warn'
-          );
           this.handleQrGenerationLimitReached();
           return;
         }
@@ -1504,126 +1203,21 @@ export class WwebjsConnectionService {
           this.connectionAttemptStartedAtMs > 0
             ? Date.now() - this.connectionAttemptStartedAtMs
             : undefined;
-        this.logConnectionEvent('qr_generated', {
-          attempt_id: attemptId,
-          attempt: this.qrGenerationCount,
-          max_attempts: MAX_QR_GENERATIONS,
-          connection_type: this.typeConnection,
-          time_to_first_qr_ms: timeToFirstQrMs,
-        });
-        recordConnectionAttemptTelemetry({
-          event: 'worker_wwebjs_qr_generated',
-          stage: 'connection.wwebjs.service.qr_generated',
-          metric_event: 'qr_outcome',
-          worker_id: getWorker(),
-          account_id: getAccount(),
-          worker_type: 'wwebjs',
-          library: 'wwebjs',
-          connection_attempt_id: this.connectionAttemptId,
-          status: this.status,
-          code: this.code,
-          outcome: 'qr_generated',
-          attempt: this.qrGenerationCount,
-          max_attempts: MAX_QR_GENERATIONS,
-          time_to_first_qr_ms: timeToFirstQrMs,
-          has_qr: true,
-        });
 
         await this.printQrInConsole(qr);
-        const qrDataUrlStartedAt = Date.now();
-        this.logConnectionEvent('qr_dataurl_generate_start', {
-          attempt_id: attemptId,
-          attempt: this.qrGenerationCount,
-          max_attempts: MAX_QR_GENERATIONS,
-          time_to_first_qr_ms: timeToFirstQrMs,
-        });
         let img: string;
-        let qrImageRenderer = 'png';
-        let qrImageFallback = false;
         try {
           img = await this.withTimeout(
             QRCode.toDataURL(qr),
             QR_DATA_URL_GENERATION_TIMEOUT_MS,
             `QR data URL generation timeout after ${QR_DATA_URL_GENERATION_TIMEOUT_MS}ms`
           );
-          this.logConnectionEvent('qr_dataurl_generate_success', {
-            attempt_id: attemptId,
-            attempt: this.qrGenerationCount,
-            max_attempts: MAX_QR_GENERATIONS,
-            duration_ms: Date.now() - qrDataUrlStartedAt,
-            time_to_first_qr_ms: timeToFirstQrMs,
-            renderer: qrImageRenderer,
-            fallback_used: qrImageFallback,
-          });
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
-          this.logConnectionEvent(
-            'qr_dataurl_generate_primary_error',
-            {
-              reason: 'qr_png_dataurl_generation_failed',
-              attempt_id: attemptId,
-              error: errorMessage,
-              duration_ms: Date.now() - qrDataUrlStartedAt,
-              timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
-              time_to_first_qr_ms: timeToFirstQrMs,
-            },
-            'warn'
-          );
-          const fallbackStartedAt = Date.now();
           try {
             img = renderQrSvgDataUrl(qr);
-            qrImageRenderer = 'svg';
-            qrImageFallback = true;
-            this.logConnectionEvent('qr_dataurl_generate_success', {
-              reason: 'qr_svg_fallback_used',
-              attempt_id: attemptId,
-              attempt: this.qrGenerationCount,
-              max_attempts: MAX_QR_GENERATIONS,
-              duration_ms: Date.now() - qrDataUrlStartedAt,
-              fallback_duration_ms: Date.now() - fallbackStartedAt,
-              timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
-              time_to_first_qr_ms: timeToFirstQrMs,
-              renderer: qrImageRenderer,
-              fallback_used: qrImageFallback,
-            });
-          } catch (fallbackError) {
-            const fallbackErrorMessage =
-              fallbackError instanceof Error
-                ? fallbackError.message
-                : String(fallbackError);
-            this.logConnectionEvent(
-              'qr_dataurl_generate_error',
-              {
-                reason: 'qr_dataurl_generation_failed',
-                attempt_id: attemptId,
-                error: errorMessage,
-                fallback_error: fallbackErrorMessage,
-                duration_ms: Date.now() - qrDataUrlStartedAt,
-                fallback_duration_ms: Date.now() - fallbackStartedAt,
-                timeout_ms: QR_DATA_URL_GENERATION_TIMEOUT_MS,
-                time_to_first_qr_ms: timeToFirstQrMs,
-              },
-              'error'
-            );
-            recordConnectionAttemptTelemetry({
-              event: 'worker_wwebjs_qr_dataurl_generation_error',
-              stage: 'connection.wwebjs.service.qr_dataurl_generate_error',
-              metric_event: 'qr_outcome',
-              level: 'error',
-              worker_id: getWorker(),
-              account_id: getAccount(),
-              worker_type: 'wwebjs',
-              library: 'wwebjs',
-              connection_attempt_id: this.connectionAttemptId,
-              status: this.status,
-              code: this.code,
-              outcome: 'error',
-              reason: 'qr_dataurl_generation_failed',
-              error: errorMessage,
-              fallback_error: fallbackErrorMessage,
-              time_to_first_qr_ms: timeToFirstQrMs,
-            });
+          } catch {
             const payload = this.state(undefined, undefined, {
               qr_pending: true,
               reason: 'qr_dataurl_generation_failed',
@@ -1642,17 +1236,6 @@ export class WwebjsConnectionService {
           }
         }
         if (!this.isActiveClient(client)) {
-          this.logConnectionEvent(
-            'qr_dataurl_ignored',
-            {
-              reason: 'stale_client_after_dataurl',
-              attempt_id: attemptId,
-              active_attempt_id: this.activeConnectionAttemptId,
-              attempt: this.qrGenerationCount,
-              max_attempts: MAX_QR_GENERATIONS,
-            },
-            'warn'
-          );
           return;
         }
 
@@ -1666,21 +1249,10 @@ export class WwebjsConnectionService {
           max_attempts: MAX_QR_GENERATIONS,
           worker_status_id: EWorkerStatus.disponible,
           connection_attempt_id: this.connectionAttemptId,
-          connection_lifecycle_id: this.connectionLifecycleId,
           qr_generated_at: qrGeneratedAt,
           time_to_first_qr_ms: timeToFirstQrMs,
         };
 
-        this.logConnectionEvent('qr_payload_ready', {
-          attempt_id: attemptId,
-          attempt: this.qrGenerationCount,
-          max_attempts: MAX_QR_GENERATIONS,
-          worker_status_id: payload.worker_status_id,
-          has_qr: true,
-          time_to_first_qr_ms: timeToFirstQrMs,
-          renderer: qrImageRenderer,
-          fallback_used: qrImageFallback,
-        });
         this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'qr');
 
@@ -1698,13 +1270,6 @@ export class WwebjsConnectionService {
           time_to_first_qr_ms: timeToFirstQrMs,
         });
         this.pendingResolve?.(state);
-        this.logConnectionEvent('qr_resolved_to_requester', {
-          attempt_id: attemptId,
-          attempt: this.qrGenerationCount,
-          max_attempts: MAX_QR_GENERATIONS,
-          has_qr: true,
-          time_to_first_qr_ms: timeToFirstQrMs,
-        });
         this.pendingResolve = undefined;
       });
 
@@ -1739,10 +1304,6 @@ export class WwebjsConnectionService {
 
         this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'pairing_in_progress');
-        this.logConnectionEvent('pairing_in_progress', {
-          attempt_id: attemptId,
-          connection_type: this.typeConnection,
-        });
       });
 
       client.on('ready', () => {
@@ -1765,12 +1326,6 @@ export class WwebjsConnectionService {
         void this.healthCheckService.notifyDisconnected(reason);
         this.healthCheckService.stop();
         this.setStatus(Status.disconnected, statusCode);
-        this.logConnectionEvent('disconnected', {
-          attempt_id: attemptId,
-          reason: reason || 'Wwebjs disconnected',
-          mapped_code: statusCode,
-          from_disconnect_restart: false,
-        });
 
         const isMismatchedStatus =
           statusCode === ECodeMessage.loggedOut ||
@@ -1835,9 +1390,6 @@ export class WwebjsConnectionService {
           !this.userRequestedDisconnect
         ) {
           this.retryCount = 0;
-          this.logConnectionEvent('session_invalidated_scheduling_qr', {
-            connection_type: this.typeConnection,
-          });
           this.clearDisconnectRetryTimer();
           this.disconnectRetryTimer = setTimeout(() => {
             this.disconnectRetryTimer = undefined;
@@ -1864,11 +1416,6 @@ export class WwebjsConnectionService {
 
         this.setStatus(Status.disconnected, ECodeMessage.badSession);
         this.clearConnectionStateProbe();
-        this.logConnectionEvent('auth_failure', {
-          attempt_id: attemptId,
-          reason: 'auth_failure_event',
-          mapped_code: ECodeMessage.badSession,
-        });
         const payload: IBaileysConnectionState = {
           status: this.status,
           worker_id: getWorker(),
@@ -1901,9 +1448,6 @@ export class WwebjsConnectionService {
           !this.userRequestedDisconnect
         ) {
           this.retryCount = 0;
-          this.logConnectionEvent('auth_failure_scheduling_qr', {
-            connection_type: this.typeConnection,
-          });
           this.clearDisconnectRetryTimer();
           this.disconnectRetryTimer = setTimeout(() => {
             this.disconnectRetryTimer = undefined;
@@ -1929,22 +1473,10 @@ export class WwebjsConnectionService {
         this.handleChatState(state);
       });
 
-      const initializeStartedAt = Date.now();
-      this.logConnectionEvent('client_initialize_start', {
-        attempt_id: attemptId,
+      client.initialize().catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        void this.handleInitializeError(msg, client);
       });
-      client
-        .initialize()
-        .then(() => {
-          this.logConnectionEvent('client_initialize_complete', {
-            attempt_id: attemptId,
-            duration_ms: Date.now() - initializeStartedAt,
-          });
-        })
-        .catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          void this.handleInitializeError(msg, client, attemptId);
-        });
     });
   }
 
@@ -2117,10 +1649,7 @@ export class WwebjsConnectionService {
     );
   }
 
-  private async ensureClientEventBridgeReady(
-    client: Client,
-    attemptId: number
-  ): Promise<boolean> {
+  private async ensureClientEventBridgeReady(client: Client): Promise<boolean> {
     const clientWithInternals = client as WwebjsClientInternals;
     if (!this.getClientIdentityJid(client)) {
       return false;
@@ -2129,28 +1658,13 @@ export class WwebjsConnectionService {
     try {
       const hasStore = await this.hasWwebjsStoreInjected(client);
       if (!hasStore) {
-        this.logConnectionEvent('connection_state_probe_waiting_store', {
-          attempt_id: attemptId,
-        });
         return false;
       }
-    } catch (error) {
-      this.logConnectionEvent('connection_state_probe_waiting_store', {
-        attempt_id: attemptId,
-        reason: error instanceof Error ? error.message : String(error),
-      });
+    } catch {
       return false;
     }
 
     if (typeof clientWithInternals.attachEventListeners !== 'function') {
-      this.logConnectionEvent(
-        'connection_event_bridge_unavailable',
-        {
-          attempt_id: attemptId,
-          reason: 'attachEventListeners_missing',
-        },
-        'warn'
-      );
       return false;
     }
 
@@ -2160,19 +1674,8 @@ export class WwebjsConnectionService {
         CONNECTION_EVENT_BRIDGE_ATTACH_TIMEOUT_MS,
         'Event bridge attach timeout'
       );
-      this.logConnectionEvent('connection_event_bridge_ready', {
-        attempt_id: attemptId,
-      });
       return true;
-    } catch (error) {
-      this.logConnectionEvent(
-        'connection_event_bridge_pending',
-        {
-          attempt_id: attemptId,
-          reason: error instanceof Error ? error.message : String(error),
-        },
-        'warn'
-      );
+    } catch {
       return false;
     }
   }
@@ -2198,12 +1701,7 @@ export class WwebjsConnectionService {
       let waState: string | undefined;
       try {
         waState = await this.getClientStateWithTimeout(client);
-      } catch (error) {
-        this.logConnectionEvent('connection_state_probe_pending', {
-          attempt_id: attemptId,
-          reason: error instanceof Error ? error.message : String(error),
-        });
-      }
+      } catch {}
 
       if (
         !this.isActiveClient(client) ||
@@ -2215,43 +1713,23 @@ export class WwebjsConnectionService {
       }
 
       const elapsedMs = Date.now() - startedAt;
-      if (waState === 'CONNECTED') {
-        if (!this.getClientIdentityJid(client)) {
-          this.logConnectionEvent('connection_state_probe_waiting_identity', {
-            attempt_id: attemptId,
-            wa_state: waState,
-            has_info: Boolean(client.info),
-            has_wid: Boolean(client.info?.wid),
-          });
-        } else if (elapsedMs < CONNECTION_STATE_READY_GRACE_MS) {
-          this.logConnectionEvent('connection_state_probe_waiting_ready', {
-            attempt_id: attemptId,
-            wa_state: waState,
-            elapsed_ms: elapsedMs,
-            grace_ms: CONNECTION_STATE_READY_GRACE_MS,
-          });
-        } else if (await this.ensureClientEventBridgeReady(client, attemptId)) {
-          if (
-            this.isActiveClient(client) &&
-            this.status === Status.connecting &&
-            !this.connectionEstablished
-          ) {
-            this.markConnected(client, attemptId, proxy, 'state_probe');
-          }
-          return;
+      if (
+        waState === 'CONNECTED' &&
+        this.getClientIdentityJid(client) &&
+        elapsedMs >= CONNECTION_STATE_READY_GRACE_MS &&
+        (await this.ensureClientEventBridgeReady(client))
+      ) {
+        if (
+          this.isActiveClient(client) &&
+          this.status === Status.connecting &&
+          !this.connectionEstablished
+        ) {
+          this.markConnected(client, attemptId, proxy, 'state_probe');
         }
+        return;
       }
 
       if (elapsedMs >= CONNECTION_STATE_RECONCILE_TIMEOUT_MS) {
-        this.logConnectionEvent(
-          'connection_state_probe_timeout',
-          {
-            attempt_id: attemptId,
-            elapsed_ms: elapsedMs,
-            wa_state: waState,
-          },
-          'warn'
-        );
         this.clearConnectionStateProbe();
 
         if (this.shouldScheduleRetryAfterDisconnect()) {
@@ -2298,11 +1776,6 @@ export class WwebjsConnectionService {
     }
 
     if (this.connectionEstablished && this.status === Status.connected) {
-      this.logConnectionEvent('connect_short_circuit', {
-        reason: 'already_marked_connected',
-        attempt_id: attemptId,
-        source,
-      });
       return;
     }
 
@@ -2329,12 +1802,6 @@ export class WwebjsConnectionService {
     this.publishSub(payload, true);
     void this.notifyWorkerStatusSafely(payload, source);
     void this.logConnectionIpInLocal(client, proxy);
-    this.logConnectionEvent('connected_ready', {
-      attempt_id: attemptId,
-      source,
-      worker_status_id: payload.worker_status_id,
-      has_phone: Boolean(payload.phone),
-    });
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
     this.pendingResolve?.(payload);
     this.pendingResolve = undefined;
@@ -2647,22 +2114,9 @@ export class WwebjsConnectionService {
   }
 
   private setStatus(s: Status, c?: ECodeMessage): void {
-    const previousStatus = this.status;
-    const previousCode = this.code;
-    const nextCode = c ?? this.code;
-
     this.status = s;
     if (c) {
       this.code = c;
-    }
-
-    if (previousStatus !== s || previousCode !== nextCode) {
-      this.logConnectionEvent('connection_status_transition', {
-        previous_status: previousStatus,
-        previous_code: previousCode,
-        status: this.status,
-        code: this.code,
-      });
     }
   }
 
@@ -2679,7 +2133,6 @@ export class WwebjsConnectionService {
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
       ...extras,
     };
     if (qr && qrGeneratedAt) {
@@ -2692,17 +2145,13 @@ export class WwebjsConnectionService {
     return result;
   }
 
-  private withConnectionLifecycle(
+  private withConnectionMetadata(
     payload: IBaileysConnectionState
   ): IBaileysConnectionState {
     const connectionAttemptId =
       payload.connection_attempt_id ?? this.connectionAttemptId;
-    const connectionLifecycleId =
-      payload.connection_lifecycle_id ?? this.connectionLifecycleId;
-
     if (
       payload.connection_attempt_id === connectionAttemptId &&
-      payload.connection_lifecycle_id === connectionLifecycleId &&
       payload.worker_type_id === EWorkerType.wwebjs
     ) {
       return payload;
@@ -2712,198 +2161,49 @@ export class WwebjsConnectionService {
       ...payload,
       worker_type_id: EWorkerType.wwebjs,
       connection_attempt_id: connectionAttemptId,
-      connection_lifecycle_id: connectionLifecycleId,
     };
   }
 
   private publishSub(payload: IBaileysConnectionState, force = false): void {
-    const payloadWithLifecycle = this.withConnectionLifecycle(payload);
+    const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     if (!this.initialConnection && !force) {
-      recordConnectionLifecycle({
-        stage: 'connection.wwebjs.centrifugo.publish_skipped',
-        decision: 'publish_sub_initial_connection_gate',
-        outcome: 'skipped',
-        reason: 'initial_connection_false',
-        source_provider: 'wwebjs',
-        worker_type: 'wwebjs',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      });
       return;
     }
 
-    const data = JSON.stringify(payloadWithLifecycle);
+    const data = JSON.stringify(payloadWithConnectionMetadata);
     if (data === this.lastPayload && !force) {
-      recordConnectionLifecycle({
-        stage: 'connection.wwebjs.centrifugo.publish_skipped',
-        decision: 'publish_sub_dedupe',
-        outcome: 'skipped',
-        reason: 'payload_duplicated',
-        source_provider: 'wwebjs',
-        worker_type: 'wwebjs',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      });
       return;
     }
 
     this.lastPayload = data;
-    const startedAt = Date.now();
     const hasConnectionCredential = Boolean(
-      payloadWithLifecycle.qrcode || payloadWithLifecycle.pairing_code
+      payloadWithConnectionMetadata.qrcode ||
+      payloadWithConnectionMetadata.pairing_code
     );
-    const publishMode = hasConnectionCredential ? 'immediate' : 'standard';
-    recordConnectionLifecycle({
-      stage: 'connection.wwebjs.centrifugo.publish_start',
-      decision: 'publish_sub',
-      outcome: 'started',
-      source_provider: 'wwebjs',
-      worker_type: 'wwebjs',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      status: payloadWithLifecycle.status,
-      code: payloadWithLifecycle.code,
-      worker_status_id: payloadWithLifecycle.worker_status_id,
-      connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-      connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      has_qr: Boolean(payloadWithLifecycle.qrcode),
-      has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-      publish_mode: publishMode,
-      force,
-    });
     const publishPromise = hasConnectionCredential
-      ? this.centrifugo.publishSubImmediate(getChannel(), payloadWithLifecycle)
-      : this.centrifugo.publishSub(getChannel(), payloadWithLifecycle);
+      ? this.centrifugo.publishSubImmediate(
+          getChannel(),
+          payloadWithConnectionMetadata
+        )
+      : this.centrifugo.publishSub(getChannel(), payloadWithConnectionMetadata);
 
-    void publishPromise
-      .then(() => {
-        recordConnectionLifecycle({
-          stage: 'connection.wwebjs.centrifugo.publish_success',
-          decision: 'publish_sub',
-          outcome: 'success',
-          source_provider: 'wwebjs',
-          worker_type: 'wwebjs',
-          worker_id: getWorker(),
-          channel_id: getWorker(),
-          account_id: getAccount(),
-          status: payloadWithLifecycle.status,
-          code: payloadWithLifecycle.code,
-          worker_status_id: payloadWithLifecycle.worker_status_id,
-          connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-          connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-          has_qr: Boolean(payloadWithLifecycle.qrcode),
-          has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-          publish_mode: publishMode,
-          duration_ms: Date.now() - startedAt,
-        });
-      })
-      .catch((error) => {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        recordConnectionLifecycle({
-          stage: 'connection.wwebjs.centrifugo.publish_error',
-          decision: 'publish_sub',
-          outcome: 'error',
-          reason: 'centrifugo_publish_failed',
-          level: 'error',
-          source_provider: 'wwebjs',
-          worker_type: 'wwebjs',
-          worker_id: getWorker(),
-          channel_id: getWorker(),
-          account_id: getAccount(),
-          status: payloadWithLifecycle.status,
-          code: payloadWithLifecycle.code,
-          worker_status_id: payloadWithLifecycle.worker_status_id,
-          connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-          connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-          has_qr: Boolean(payloadWithLifecycle.qrcode),
-          has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-          publish_mode: publishMode,
-          duration_ms: Date.now() - startedAt,
-          error: errorMessage,
-        });
-        console.error('[WwebjsConnection] Publish failed', error);
-      });
+    void publishPromise.catch((error) => {
+      console.error('[WwebjsConnection] Publish failed', error);
+    });
   }
 
   private async notifyWorkerStatusSafely(
     payload: IBaileysConnectionState,
     context: string
   ): Promise<void> {
-    const payloadWithLifecycle = this.withConnectionLifecycle(payload);
-    const startedAt = Date.now();
-    recordConnectionLifecycle({
-      stage: 'connection.wwebjs.balance.notify_start',
-      decision: 'notify_worker_status',
-      outcome: 'started',
-      source_provider: 'wwebjs',
-      worker_type: 'wwebjs',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      status: payloadWithLifecycle.status,
-      code: payloadWithLifecycle.code,
-      worker_status_id: payloadWithLifecycle.worker_status_id,
-      reason: context,
-      connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-      connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-      has_qr: Boolean(payloadWithLifecycle.qrcode),
-      has_pairing_code: Boolean(payloadWithLifecycle.pairing_code),
-    });
+    const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     try {
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
-        payloadWithLifecycle
+        payloadWithConnectionMetadata
       );
-      recordConnectionLifecycle({
-        stage: 'connection.wwebjs.balance.notify_success',
-        decision: 'notify_worker_status',
-        outcome: 'success',
-        source_provider: 'wwebjs',
-        worker_type: 'wwebjs',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        worker_status_id: payloadWithLifecycle.worker_status_id,
-        reason: context,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-        duration_ms: Date.now() - startedAt,
-      });
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      recordConnectionLifecycle({
-        stage: 'connection.wwebjs.balance.notify_error',
-        decision: 'notify_worker_status',
-        outcome: 'error',
-        reason: context,
-        level: 'error',
-        source_provider: 'wwebjs',
-        worker_type: 'wwebjs',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: payloadWithLifecycle.status,
-        code: payloadWithLifecycle.code,
-        worker_status_id: payloadWithLifecycle.worker_status_id,
-        connection_attempt_id: payloadWithLifecycle.connection_attempt_id,
-        connection_lifecycle_id: payloadWithLifecycle.connection_lifecycle_id,
-        duration_ms: Date.now() - startedAt,
-        error: errorMessage,
-      });
       console.error('[WwebjsConnection] NotifyWorkerStatus failed', {
         context,
         worker_id: payload.worker_id,
@@ -2927,72 +2227,9 @@ export class WwebjsConnectionService {
     await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
   }
 
-  private logConnectionEvent(
-    event: string,
-    details: Record<string, unknown> = {},
-    level: 'info' | 'warn' | 'error' = 'info'
-  ): void {
-    const payload = {
-      module: 'worker_wwebjs',
-      component: 'wwebjs_connection_service',
-      type: 'connection_status',
-      event,
-      worker_id: getWorker(),
-      account_id: getAccount(),
-      connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
-      status: this.status,
-      code: this.code,
-      ...details,
-    };
-
-    recordConnectionLifecycle({
-      stage: `connection.wwebjs.service.${event}`,
-      decision: event,
-      outcome: level === 'error' ? 'error' : 'logged',
-      level,
-      source_provider: 'wwebjs',
-      worker_type: 'wwebjs',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      connection_attempt_id: this.connectionAttemptId,
-      connection_lifecycle_id: this.connectionLifecycleId,
-      status: this.status,
-      code: this.code,
-      ...details,
-    });
-
-    if (level === 'error') {
-      logger.error(payload, 'Wwebjs connection event');
-      return;
-    }
-
-    if (level === 'warn') {
-      logger.warn(payload, 'Wwebjs connection event');
-      return;
-    }
-
-    logger.info(payload, 'Wwebjs connection event');
-  }
-
   private readonly saveLogWppConnection = async (
     wppLog: EWppConnection
   ): Promise<boolean> => {
-    const startedAt = Date.now();
-    recordConnectionLifecycle({
-      stage: 'connection.wwebjs.elastic.wpp_connection_start',
-      decision: 'save_wpp_connection',
-      outcome: 'started',
-      source_provider: 'wwebjs',
-      worker_type: 'wwebjs',
-      worker_id: getWorker(),
-      channel_id: getWorker(),
-      account_id: getAccount(),
-      status: wppLog?.status,
-      code: wppLog?.code,
-      elastic_index: EElasticIndex.wpp_connection,
-    });
     const mappings = wppConnectionMappings();
     const result = await this.elasticDatabaseService.indices(
       EElasticIndex.wpp_connection,
@@ -3000,20 +2237,6 @@ export class WwebjsConnectionService {
     );
 
     if (!result || !wppLog) {
-      recordConnectionLifecycle({
-        stage: 'connection.wwebjs.elastic.wpp_connection_skipped',
-        decision: 'save_wpp_connection',
-        outcome: 'skipped',
-        reason: !wppLog ? 'missing_wpp_log' : 'index_creation_failed',
-        level: 'warn',
-        source_provider: 'wwebjs',
-        worker_type: 'wwebjs',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        elastic_index: EElasticIndex.wpp_connection,
-        duration_ms: Date.now() - startedAt,
-      });
       return false;
     }
 
@@ -3022,62 +2245,17 @@ export class WwebjsConnectionService {
       wppLog.worker_id
     );
 
-    try {
-      const updateResult = await this.elasticDatabaseService.updateWithOCC(
-        EElasticIndex.wpp_connection,
-        documentId,
-        wppLog as unknown as Record<string, unknown>,
-        { upsert: true, maxRetries: 5 }
-      );
+    const updateResult = await this.elasticDatabaseService.updateWithOCC(
+      EElasticIndex.wpp_connection,
+      documentId,
+      wppLog as unknown as Record<string, unknown>,
+      { upsert: true, maxRetries: 5 }
+    );
 
-      const success =
-        updateResult === 'updated' ||
-        updateResult === 'created' ||
-        updateResult === 'noop';
-
-      recordConnectionLifecycle({
-        stage: success
-          ? 'connection.wwebjs.elastic.wpp_connection_success'
-          : 'connection.wwebjs.elastic.wpp_connection_unexpected_result',
-        decision: 'save_wpp_connection',
-        outcome: success ? 'success' : 'error',
-        level: success ? 'info' : 'warn',
-        reason: updateResult,
-        source_provider: 'wwebjs',
-        worker_type: 'wwebjs',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: wppLog.status,
-        code: wppLog.code,
-        elastic_index: EElasticIndex.wpp_connection,
-        document_id: documentId,
-        duration_ms: Date.now() - startedAt,
-      });
-
-      return success;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      recordConnectionLifecycle({
-        stage: 'connection.wwebjs.elastic.wpp_connection_error',
-        decision: 'save_wpp_connection',
-        outcome: 'error',
-        reason: 'elastic_update_failed',
-        level: 'error',
-        source_provider: 'wwebjs',
-        worker_type: 'wwebjs',
-        worker_id: getWorker(),
-        channel_id: getWorker(),
-        account_id: getAccount(),
-        status: wppLog.status,
-        code: wppLog.code,
-        elastic_index: EElasticIndex.wpp_connection,
-        document_id: documentId,
-        duration_ms: Date.now() - startedAt,
-        error: errorMessage,
-      });
-      throw error;
-    }
+    return (
+      updateResult === 'updated' ||
+      updateResult === 'created' ||
+      updateResult === 'noop'
+    );
   };
 }

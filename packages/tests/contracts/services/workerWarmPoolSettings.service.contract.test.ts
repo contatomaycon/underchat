@@ -11,14 +11,6 @@ jest.mock('@core/config/environments', () => ({
   },
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    error: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-  },
-}));
-
 function makeSettings(
   overrides: Partial<IWorkerWarmPoolSettings> = {}
 ): IWorkerWarmPoolSettings {

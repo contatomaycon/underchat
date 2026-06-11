@@ -7,7 +7,7 @@ export function startWorkerWarmReplenishConsume(
 ): WorkerWarmReplenishConsume {
   const consume = container.resolve(WorkerWarmReplenishConsume);
 
-  consume.execute(server).catch((error: unknown) => {
+  consume.execute().catch((error: unknown) => {
     server.log.error(
       { err: error },
       'Error starting worker warm replenish consume'

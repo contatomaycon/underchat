@@ -7,7 +7,7 @@ export function startWorkerWarmDeleteConsume(
 ): WorkerWarmDeleteConsume {
   const consume = container.resolve(WorkerWarmDeleteConsume);
 
-  consume.execute(server).catch((error: unknown) => {
+  consume.execute().catch((error: unknown) => {
     server.log.error(
       { err: error },
       'Error starting worker warm delete consume'

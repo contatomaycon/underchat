@@ -1,6 +1,4 @@
 import { injectable, inject } from 'tsyringe';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -24,17 +22,9 @@ import {
   IDeleteWarmWorkerRequestProto,
   IWarmWorkerCommandResponseProto,
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
-import {
-  buildConnectionLifecycleContext,
-  injectGrpcConnectionMetadata,
-  recordConnectionLifecycle,
-  runWithConnectionLifecycleContext,
-} from '@core/plugins/telemetry/connectionLifecycleDebug';
-import { recordConnectionAttemptTelemetry } from '@core/plugins/telemetry/connectionAttemptTelemetry';
+import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const protoPath = path.join(__dirname, '..', 'proto', 'worker_command.proto');
+const protoPath = resolveProtoPath('worker_command.proto');
 const packageDefinition = loadSync(protoPath, {
   keepCase: true,
   longs: String,
@@ -110,80 +100,32 @@ export class WorkerGrpcClientService {
     payload: StatusConnectionWorkerRequest,
     accountId: string
   ): Promise<void> {
-    const contextData = buildConnectionLifecycleContext({
-      connection_lifecycle_id: payload.connection_lifecycle_id,
-      account_id: accountId,
-      worker_id: payload.worker_id,
-      channel_id: payload.worker_id,
-      source_provider: 'manager',
-      connection_type: payload.type,
-      connection_action: 'change_status',
-    });
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
 
-    await runWithConnectionLifecycleContext(contextData, async () => {
-      const { host, port } =
-        await this.workerGrpcRegistryService.getAddress(serverId);
-      const address = `${host}:${port}`;
-      const client = new WorkerCommandClient(
-        address,
-        credentials.createInsecure()
-      );
+    const protoPayload = statusConnectionRequestToProto(payload, accountId);
+    const metadata = new Metadata();
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
 
-      const protoPayload = statusConnectionRequestToProto(payload, accountId);
-      const metadata = injectGrpcConnectionMetadata(
-        new Metadata(),
-        contextData
-      );
-      const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
-
-      recordConnectionLifecycle({
-        stage: 'connection.manager.worker_command_grpc.change_status_start',
-        decision: 'grpc_change_connection_status',
-        outcome: 'started',
-        grpc_method: 'ChangeConnectionStatus',
-        grpc_address: address,
-        deadline_ms: GRPC_DEADLINE_MS,
-        server_id: serverId,
-        status: payload.status,
-        connection_type: payload.type,
-      });
-
-      await new Promise<void>((resolve, reject) => {
-        (client as any).ChangeConnectionStatus(
-          protoPayload,
-          metadata,
-          { deadline },
-          (err: ServiceError | null) => {
-            client.close();
-            if (err) {
-              recordConnectionLifecycle({
-                stage:
-                  'connection.manager.worker_command_grpc.change_status_error',
-                decision: 'grpc_change_connection_status',
-                outcome: 'error',
-                reason: 'grpc_error',
-                level: 'error',
-                grpc_method: 'ChangeConnectionStatus',
-                grpc_address: address,
-                deadline_ms: GRPC_DEADLINE_MS,
-                error: err.message,
-              });
-              reject(err);
-              return;
-            }
-            recordConnectionLifecycle({
-              stage:
-                'connection.manager.worker_command_grpc.change_status_success',
-              decision: 'grpc_change_connection_status',
-              outcome: 'success',
-              grpc_method: 'ChangeConnectionStatus',
-              grpc_address: address,
-              deadline_ms: GRPC_DEADLINE_MS,
-            });
-            resolve();
+    await new Promise<void>((resolve, reject) => {
+      (client as any).ChangeConnectionStatus(
+        protoPayload,
+        metadata,
+        { deadline },
+        (err: ServiceError | null) => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
           }
-        );
-      });
+          resolve();
+        }
+      );
     });
   }
 
@@ -196,93 +138,31 @@ export class WorkerGrpcClientService {
     payload: IWorkerPayload,
     timeoutMs?: number
   ): Promise<void> {
-    const contextData = buildConnectionLifecycleContext({
-      account_id: payload.account_id,
-      worker_id: payload.worker_id,
-      channel_id: payload.worker_id,
-      worker_type: payload.worker_type_id,
-      source_provider: 'manager',
-      connection_action: method,
-    });
+    const { host, port } = await this.workerGrpcRegistryService.getAddress(
+      payload.server_id
+    );
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
 
-    await runWithConnectionLifecycleContext(contextData, async () => {
-      const { host, port } = await this.workerGrpcRegistryService.getAddress(
-        payload.server_id
-      );
-      const address = `${host}:${port}`;
-      const client = new WorkerCommandClient(
-        address,
-        credentials.createInsecure()
-      );
+    const protoPayload: IWorkerPayloadProto = workerPayloadToProto(payload);
+    const metadata = new Metadata();
+    const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
+    const options = deadline ? { deadline } : {};
 
-      const protoPayload: IWorkerPayloadProto = workerPayloadToProto(payload);
-      const metadata = injectGrpcConnectionMetadata(
-        new Metadata(),
-        contextData
-      );
-      const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
-      const options = deadline ? { deadline } : {};
+    await new Promise<void>((resolve, reject) => {
+      const callback = (err: ServiceError | null) => {
+        client.close();
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      };
 
-      recordConnectionLifecycle({
-        stage: 'connection.manager.worker_command_grpc.command_start',
-        decision: 'grpc_worker_command',
-        outcome: 'started',
-        grpc_method: method,
-        grpc_address: address,
-        deadline_ms: timeoutMs,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        status: payload.worker_status_id,
-      });
-      recordConnectionAttemptTelemetry({
-        event: 'manager_balancer_worker_command_start',
-        stage: 'connection.manager.worker_command_grpc.command_start',
-        metric_event: 'grpc_request',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        server_id: payload.server_id,
-        worker_type: payload.worker_type_id,
-        grpc_method: method,
-        grpc_address: address,
-        outcome: 'started',
-        deadline_ms: timeoutMs,
-      });
-
-      await new Promise<void>((resolve, reject) => {
-        const callback = (err: ServiceError | null) => {
-          client.close();
-          if (err) {
-            recordConnectionLifecycle({
-              stage: 'connection.manager.worker_command_grpc.command_error',
-              decision: 'grpc_worker_command',
-              outcome: 'error',
-              reason: 'grpc_error',
-              level: 'error',
-              grpc_method: method,
-              grpc_address: address,
-              deadline_ms: timeoutMs,
-              server_id: payload.server_id,
-              worker_type: payload.worker_type_id,
-              error: err.message,
-            });
-            reject(err);
-            return;
-          }
-          recordConnectionLifecycle({
-            stage: 'connection.manager.worker_command_grpc.command_success',
-            decision: 'grpc_worker_command',
-            outcome: 'success',
-            grpc_method: method,
-            grpc_address: address,
-            deadline_ms: timeoutMs,
-            server_id: payload.server_id,
-            worker_type: payload.worker_type_id,
-          });
-          resolve();
-        };
-
-        (client as any)[method](protoPayload, metadata, options, callback);
-      });
+      (client as any)[method](protoPayload, metadata, options, callback);
     });
   }
 
@@ -295,104 +175,31 @@ export class WorkerGrpcClientService {
       | IActivateWarmWorkerRequestProto,
     timeoutMs?: number
   ): Promise<IWarmWorkerCommandResponseProto> {
-    const workerId = 'worker_id' in payload ? payload.worker_id : undefined;
-    const accountId = 'account_id' in payload ? payload.account_id : undefined;
-    const workerType =
-      'worker_type_id' in payload ? payload.worker_type_id : undefined;
-    const warmPoolId =
-      'warm_pool_id' in payload ? payload.warm_pool_id : undefined;
-    const contextData = buildConnectionLifecycleContext({
-      account_id: accountId,
-      worker_id: workerId,
-      channel_id: workerId,
-      worker_type: workerType,
-      source_provider: 'manager',
-      connection_action: method,
-    });
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
+    const metadata = new Metadata();
+    const options = deadline ? { deadline } : {};
 
-    return runWithConnectionLifecycleContext(contextData, async () => {
-      const { host, port } =
-        await this.workerGrpcRegistryService.getAddress(serverId);
-      const address = `${host}:${port}`;
-      const client = new WorkerCommandClient(
-        address,
-        credentials.createInsecure()
-      );
-      const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
-      const metadata = injectGrpcConnectionMetadata(
-        new Metadata(),
-        contextData
-      );
-      const options = deadline ? { deadline } : {};
+    return new Promise<IWarmWorkerCommandResponseProto>((resolve, reject) => {
+      const callback = (
+        err: ServiceError | null,
+        response?: IWarmWorkerCommandResponseProto
+      ) => {
+        client.close();
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(response ?? {});
+      };
 
-      recordConnectionLifecycle({
-        stage: 'connection.manager.worker_command_grpc.warm_command_start',
-        decision: 'grpc_warm_worker_command',
-        outcome: 'started',
-        grpc_method: method,
-        grpc_address: address,
-        deadline_ms: timeoutMs,
-        server_id: serverId,
-        worker_type: workerType,
-        warm_pool_id: warmPoolId,
-      });
-      recordConnectionAttemptTelemetry({
-        event: 'manager_balancer_warm_command_start',
-        stage: 'connection.manager.worker_command_grpc.warm_command_start',
-        metric_event: 'grpc_request',
-        worker_id: workerId,
-        account_id: accountId,
-        server_id: serverId,
-        worker_type: workerType,
-        warm_pool_id: warmPoolId,
-        grpc_method: method,
-        grpc_address: address,
-        outcome: 'started',
-        deadline_ms: timeoutMs,
-      });
-
-      return new Promise<IWarmWorkerCommandResponseProto>((resolve, reject) => {
-        const callback = (
-          err: ServiceError | null,
-          response?: IWarmWorkerCommandResponseProto
-        ) => {
-          client.close();
-          if (err) {
-            recordConnectionLifecycle({
-              stage:
-                'connection.manager.worker_command_grpc.warm_command_error',
-              decision: 'grpc_warm_worker_command',
-              outcome: 'error',
-              reason: 'grpc_error',
-              level: 'error',
-              grpc_method: method,
-              grpc_address: address,
-              deadline_ms: timeoutMs,
-              server_id: serverId,
-              worker_type: workerType,
-              warm_pool_id: warmPoolId,
-              error: err.message,
-            });
-            reject(err);
-            return;
-          }
-          recordConnectionLifecycle({
-            stage:
-              'connection.manager.worker_command_grpc.warm_command_success',
-            decision: 'grpc_warm_worker_command',
-            outcome: 'success',
-            grpc_method: method,
-            grpc_address: address,
-            deadline_ms: timeoutMs,
-            server_id: serverId,
-            worker_type: workerType,
-            warm_pool_id: warmPoolId,
-          });
-          resolve(response ?? {});
-        };
-
-        (client as any)[method](payload, metadata, options, callback);
-      });
+      (client as any)[method](payload, metadata, options, callback);
     });
   }
 

@@ -31,14 +31,6 @@ jest.mock('@core/common/functions/centrifugoQueue', () => ({
   workerCentrifugoQueue: (accountId: string) => `worker-${accountId}`,
 }));
 
-jest.mock('@core/plugins/telemetry/logger', () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-}));
-
 jest.mock('@core/services/balanceWorkerStatusGrpcClient.service', () => ({
   BalanceWorkerStatusGrpcClientService: class {},
 }));
@@ -78,7 +70,6 @@ type BaileysConnectionServicePrivate = {
   createSocket: () => Promise<{ socket: unknown; saveCreds: () => void }>;
   wait: (socket: unknown, id: number) => Promise<IBaileysConnectionState>;
   prepareFolder: () => void;
-  logConnectionEvent: (...args: unknown[]) => void;
 };
 
 describe('BaileysConnectionService', () => {
@@ -115,10 +106,6 @@ describe('BaileysConnectionService', () => {
 
     const servicePrivate =
       service as unknown as BaileysConnectionServicePrivate;
-
-    jest
-      .spyOn(servicePrivate, 'logConnectionEvent')
-      .mockImplementation(() => undefined);
 
     return {
       service,

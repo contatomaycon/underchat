@@ -12,8 +12,6 @@ import WebSocket from 'ws';
 import { createHash } from 'crypto';
 import Redis from 'ioredis';
 import { centrifugoEnvironment } from '@core/config/environments';
-import { logger } from '@core/plugins/telemetry/logger';
-import { recordException } from '@core/plugins/telemetry/observability';
 import {
   IQueuedPublish,
   ICachedPublish,
@@ -33,7 +31,6 @@ export class CentrifugoService {
   private readonly queueProcessIntervalMs = 25;
   private readonly publishCacheWindowMs = 2_000;
   private readonly publishCacheCleanupIntervalMs = 5_000;
-  private readonly publishErrorLogThrottleMs = 30_000;
 
   private circuitBreakerFailures = 0;
   private circuitBreakerOpenUntil = 0;
@@ -57,10 +54,6 @@ export class CentrifugoService {
   private halfOpenSuccessCount = 0;
   private readonly useDistributed: boolean;
   private readonly redis: Redis | undefined;
-  private readonly publishErrorLogState = new Map<
-    string,
-    { lastLoggedAt: number; suppressedCount: number }
-  >();
 
   constructor(@inject('Centrifuge') private readonly client: Centrifuge) {
     try {
@@ -119,10 +112,6 @@ export class CentrifugoService {
       if (now >= this.circuitBreakerOpenUntil) {
         this.circuitBreakerState = 'half-open';
         this.halfOpenSuccessCount = 0;
-        logger.info(
-          { type: 'centrifugo_circuit_breaker_half_open' },
-          'Centrifugo circuit breaker moved to half-open state'
-        );
         return false;
       }
       return true;
@@ -155,26 +144,8 @@ export class CentrifugoService {
             'EX',
             Math.ceil(this.circuitBreakerResetMs / 1000) + 60
           );
-
-          logger.error(
-            {
-              type: 'centrifugo_circuit_breaker_open',
-              failures,
-              resetMs: this.circuitBreakerResetMs,
-            },
-            'Centrifugo circuit breaker opened'
-          );
-
-          recordException(new Error('Centrifugo circuit breaker opened'), {
-            level: 'error',
-            centrifugo: { type: 'circuit_breaker_open', failures },
-          });
         }
-      } catch (error) {
-        logger.warn(
-          { err: error },
-          'Error in distributed circuit breaker, falling back to local'
-        );
+      } catch {
         this.recordCircuitFailureLocal();
       }
       return;
@@ -190,36 +161,12 @@ export class CentrifugoService {
       this.circuitBreakerState = 'open';
       this.circuitBreakerOpenUntil = Date.now() + this.circuitBreakerResetMs;
       this.halfOpenSuccessCount = 0;
-
-      logger.error(
-        {
-          type: 'centrifugo_circuit_breaker_half_open_failed',
-        },
-        'Centrifugo circuit breaker half-open test failed, reopening'
-      );
       return;
     }
 
     if (this.circuitBreakerFailures >= this.circuitBreakerThreshold) {
       this.circuitBreakerState = 'open';
       this.circuitBreakerOpenUntil = Date.now() + this.circuitBreakerResetMs;
-
-      logger.error(
-        {
-          type: 'centrifugo_circuit_breaker_open',
-          failures: this.circuitBreakerFailures,
-          resetMs: this.circuitBreakerResetMs,
-        },
-        'Centrifugo circuit breaker opened'
-      );
-
-      recordException(new Error('Centrifugo circuit breaker opened'), {
-        level: 'error',
-        centrifugo: {
-          type: 'circuit_breaker_open',
-          failures: this.circuitBreakerFailures,
-        },
-      });
     }
   }
 
@@ -234,11 +181,7 @@ export class CentrifugoService {
             await this.redis.set(failuresKey, (failures - 1).toString());
           }
         }
-      } catch (error) {
-        logger.warn(
-          { err: error },
-          'Error in distributed circuit breaker success, falling back to local'
-        );
+      } catch {
         this.recordCircuitSuccessLocal();
       }
       return;
@@ -255,14 +198,6 @@ export class CentrifugoService {
         this.circuitBreakerState = 'closed';
         this.circuitBreakerFailures = 0;
         this.halfOpenSuccessCount = 0;
-
-        logger.info(
-          {
-            type: 'centrifugo_circuit_breaker_closed',
-            halfOpenAttempts: this.halfOpenSuccessCount,
-          },
-          'Centrifugo circuit breaker closed after successful half-open'
-        );
         return;
       }
     }
@@ -313,11 +248,7 @@ export class CentrifugoService {
       }
 
       return true;
-    } catch (error) {
-      logger.warn(
-        { err: error },
-        'Error in distributed rate limiting, falling back to local'
-      );
+    } catch {
       return this.consumeToken();
     }
   }
@@ -375,11 +306,6 @@ export class CentrifugoService {
         .update(Date.now().toString())
         .digest('hex')
         .substring(0, 16);
-
-      logger.warn(
-        { channel, error },
-        'Failed to generate hash, using fallback'
-      );
       return `${channel}:${fallback}`;
     }
   }
@@ -396,12 +322,7 @@ export class CentrifugoService {
       try {
         const result = await this.redis.set(key, '1', 'EX', ttlSeconds, 'NX');
         return result === null;
-      } catch (error) {
-        logger.warn(
-          { err: error, channel, hash },
-          'Error checking duplicate publish, falling back to local'
-        );
-      }
+      } catch {}
     }
 
     const hash = this.generateHash(channel, data);
@@ -464,14 +385,6 @@ export class CentrifugoService {
     }
 
     if (toDelete.length > 0) {
-      logger.debug(
-        {
-          type: 'centrifugo_cache_cleanup',
-          removed: toDelete.length,
-          remaining: this.publishCache.size,
-        },
-        'Cleaned up Centrifugo publish cache'
-      );
     }
   }
 
@@ -498,15 +411,7 @@ export class CentrifugoService {
     }
 
     this.queueProcessTimer = setInterval(() => {
-      this.processQueue().catch((error) => {
-        logger.error(
-          {
-            err: error,
-            type: 'centrifugo_queue_processor_error',
-          },
-          'Error processing Centrifugo queue'
-        );
-      });
+      void this.processQueue().catch(() => {});
     }, this.queueProcessIntervalMs);
   }
 
@@ -585,13 +490,6 @@ export class CentrifugoService {
       });
 
       if (this.publishQueue.length > 1000) {
-        logger.warn(
-          {
-            type: 'centrifugo_queue_overflow',
-            queueSize: this.publishQueue.length,
-          },
-          'Centrifugo publish queue is growing large'
-        );
       }
     });
   }
@@ -728,31 +626,14 @@ export class CentrifugoService {
 
   private async withPublishRetry(
     action: () => Promise<PublishResult>,
-    context: { channel: string; subId?: string },
     options?: { failHard?: boolean }
   ): Promise<PublishResult> {
     const failHard = options?.failHard ?? false;
     let lastError: Error | null = null;
-    const startTime = Date.now();
 
     for (let attempt = 1; attempt <= this.publishRetryAttempts; attempt++) {
       try {
-        const result = await action();
-
-        if (attempt > 1) {
-          logger.info(
-            {
-              type: 'centrifugo_publish_retry_success',
-              channel: context.channel,
-              subId: context.subId,
-              attempt,
-              durationMs: Date.now() - startTime,
-            },
-            'Centrifugo publish succeeded after retry'
-          );
-        }
-
-        return result;
+        return await action();
       } catch (error) {
         const normalizedError = this.toError(error);
         lastError = normalizedError;
@@ -760,52 +641,11 @@ export class CentrifugoService {
         const isLastAttempt = attempt === this.publishRetryAttempts;
         const isTimeout = this.isTimeoutError(normalizedError);
 
-        if (attempt > 1) {
-          logger.warn(
-            {
-              type: 'centrifugo_publish_retry_attempt',
-              channel: context.channel,
-              subId: context.subId,
-              attempt,
-              error: normalizedError.message,
-            },
-            `Centrifugo publish retry attempt ${attempt} failed`
-          );
-        }
-
         if (!isTransient && !isTimeout) {
           throw normalizedError;
         }
 
         if (isLastAttempt) {
-          const logLevel = isTimeout ? 'warn' : 'error';
-          const logMessage = isTimeout
-            ? 'Centrifugo publish timeout after retries - non-critical'
-            : 'Centrifugo publish failed after retries';
-
-          logger[logLevel](
-            {
-              err: normalizedError,
-              type: 'centrifugo_publish_error',
-              channel: context.channel,
-              subId: context.subId,
-              attempts: this.publishRetryAttempts,
-              durationMs: Date.now() - startTime,
-            },
-            logMessage
-          );
-
-          recordException(normalizedError, {
-            level: isTimeout ? 'warning' : 'error',
-            centrifugo: {
-              type: 'publish_error',
-              channel: context.channel,
-              subId: context.subId,
-              attempts: this.publishRetryAttempts,
-              durationMs: Date.now() - startTime,
-            },
-          });
-
           if (failHard) {
             throw normalizedError;
           }
@@ -820,37 +660,6 @@ export class CentrifugoService {
 
         await this.delay(backoff);
       }
-    }
-
-    if (lastError) {
-      const isTimeout = this.isTimeoutError(lastError);
-      const logLevel = isTimeout ? 'warn' : 'error';
-      const logMessage = isTimeout
-        ? 'Centrifugo publish timeout without recovery - non-critical'
-        : 'Centrifugo publish failed without recovery';
-
-      logger[logLevel](
-        {
-          err: lastError,
-          type: 'centrifugo_publish_error',
-          channel: context.channel,
-          subId: context.subId,
-          attempts: this.publishRetryAttempts,
-          durationMs: Date.now() - startTime,
-        },
-        logMessage
-      );
-
-      recordException(lastError, {
-        level: isTimeout ? 'warning' : 'error',
-        centrifugo: {
-          type: 'publish_error',
-          channel: context.channel,
-          subId: context.subId,
-          attempts: this.publishRetryAttempts,
-          durationMs: Date.now() - startTime,
-        },
-      });
     }
 
     if (failHard && lastError) {
@@ -997,130 +806,23 @@ export class CentrifugoService {
     );
   }
 
-  private isCircuitBreakerOpenError(error: Error): boolean {
-    return error.message.toLowerCase().includes('circuit breaker is open');
-  }
-
-  private getPublishErrorLogState(key: string): {
-    lastLoggedAt: number;
-    suppressedCount: number;
-  } {
-    const existing = this.publishErrorLogState.get(key);
-
-    if (existing) {
-      return existing;
-    }
-
-    const created = { lastLoggedAt: 0, suppressedCount: 0 };
-    this.publishErrorLogState.set(key, created);
-
-    return created;
-  }
-
-  private getPublishErrorKind(
-    error: Error,
-    isTimeout: boolean
-  ): 'circuit_breaker_open' | 'timeout' | 'error' {
-    if (this.isCircuitBreakerOpenError(error)) {
-      return 'circuit_breaker_open';
-    }
-
-    if (isTimeout) {
-      return 'timeout';
-    }
-
-    return 'error';
-  }
-
-  private handlePublishError(
-    error: unknown,
-    channel: string,
-    type: string
-  ): PublishResult {
-    const errorObj = this.toError(error);
-    const isTimeout = this.isTimeoutError(errorObj);
-    const errorKind = this.getPublishErrorKind(errorObj, isTimeout);
-    const isCircuitBreakerOpen = errorKind === 'circuit_breaker_open';
-    const logState = this.getPublishErrorLogState(
-      `${type}:${channel}:${errorKind}:${errorObj.message}`
-    );
-    const now = Date.now();
-
-    if (now - logState.lastLoggedAt < this.publishErrorLogThrottleMs) {
-      logState.suppressedCount += 1;
-      return {} as PublishResult;
-    }
-
-    const suppressedCount = logState.suppressedCount;
-    logState.lastLoggedAt = now;
-    logState.suppressedCount = 0;
-
-    if (isCircuitBreakerOpen) {
-      logger.warn(
-        {
-          type,
-          channel,
-          reason: errorKind,
-          error: errorObj.message,
-          suppressed_count: suppressedCount,
-        },
-        `Centrifugo ${type} skipped because circuit breaker is open - non-critical`
-      );
-
-      return {} as PublishResult;
-    }
-
-    logger.warn(
-      {
-        err: errorObj,
-        type,
-        channel,
-        reason: errorKind,
-        suppressed_count: suppressedCount,
-      },
-      isTimeout
-        ? `Centrifugo ${type} timeout - non-critical`
-        : `Centrifugo ${type} error - non-critical`
-    );
-
-    recordException(errorObj, {
-      level: 'warning',
-      centrifugo: {
-        type,
-        channel,
-        reason: errorKind,
-      },
-    });
-
+  private handlePublishError(): PublishResult {
     return {} as PublishResult;
   }
 
   async publish(channel: string, data: unknown): Promise<PublishResult> {
     try {
       if (await this.isDuplicatePublish(channel, data)) {
-        logger.debug(
-          {
-            type: 'centrifugo_publish_deduplicated',
-            channel,
-          },
-          'Skipped duplicate publish within cache window'
-        );
-
         return {} as PublishResult;
       }
 
       await this.cachePublish(channel, data);
 
-      return await this.withPublishRetry(
-        () => this.publishViaHttpApi(channel, data),
-        { channel }
+      return await this.withPublishRetry(() =>
+        this.publishViaHttpApi(channel, data)
       );
-    } catch (error) {
-      return this.handlePublishError(
-        error,
-        channel,
-        'centrifugo_publish_error'
-      );
+    } catch {
+      return this.handlePublishError();
     }
   }
 
@@ -1129,16 +831,11 @@ export class CentrifugoService {
     data: unknown
   ): Promise<PublishResult> {
     try {
-      return await this.withPublishRetry(
-        () => this.publishViaHttpApiDirect(channel, data),
-        { channel }
+      return await this.withPublishRetry(() =>
+        this.publishViaHttpApiDirect(channel, data)
       );
-    } catch (error) {
-      return this.handlePublishError(
-        error,
-        channel,
-        'centrifugo_publish_immediate_error'
-      );
+    } catch {
+      return this.handlePublishError();
     }
   }
 
@@ -1147,44 +844,20 @@ export class CentrifugoService {
       const subId = this.extractSubId(channel);
 
       if (!subId) {
-        logger.warn(
-          {
-            type: 'centrifugo_invalid_channel',
-            channel,
-          },
-          'Invalid channel format for publishSub'
-        );
         return {} as PublishResult;
       }
 
       if (await this.isDuplicatePublish(channel, data)) {
-        logger.debug(
-          {
-            type: 'centrifugo_publish_sub_deduplicated',
-            channel,
-            subId,
-          },
-          'Skipped duplicate publishSub within cache window'
-        );
-
         return {} as PublishResult;
       }
 
       await this.cachePublish(channel, data);
 
-      return await this.withPublishRetry(
-        () => this.publishViaHttpApi(channel, data),
-        {
-          channel,
-          subId,
-        }
+      return await this.withPublishRetry(() =>
+        this.publishViaHttpApi(channel, data)
       );
-    } catch (error) {
-      return this.handlePublishError(
-        error,
-        channel,
-        'centrifugo_publish_sub_error'
-      );
+    } catch {
+      return this.handlePublishError();
     }
   }
 
@@ -1200,22 +873,11 @@ export class CentrifugoService {
     const subId = this.extractSubId(channel);
 
     if (!subId) {
-      logger.warn(
-        {
-          type: 'centrifugo_invalid_channel',
-          channel,
-        },
-        'Invalid channel format for publishSubImmediate'
-      );
       throw new Error('Invalid channel format for publishSubImmediate');
     }
 
     return this.withPublishRetry(
       () => this.publishViaHttpApiDirectWithHistory(channel, data),
-      {
-        channel,
-        subId,
-      },
       {
         failHard: true,
       }
@@ -1339,13 +1001,6 @@ export class CentrifugoService {
       const subId = this.extractSubId(channel);
 
       if (!subId) {
-        logger.warn(
-          {
-            type: 'centrifugo_invalid_channel',
-            channel,
-          },
-          'Invalid channel format for onMessageSub'
-        );
         return;
       }
 
@@ -1376,9 +1031,7 @@ export class CentrifugoService {
             tempClient.disconnect();
           }
           this.tempSubscriptions.delete(channel);
-        } catch (error) {
-          logger.warn({ err: error }, 'Error during tempClient cleanup');
-        }
+        } catch {}
       };
 
       await new Promise<void>((resolve, reject) => {
@@ -1397,26 +1050,6 @@ export class CentrifugoService {
           if (timer) {
             clearTimeout(timer);
           }
-
-          if (this.isTimeoutError(error)) {
-            logger.warn(
-              {
-                err: error,
-                type: 'centrifugo_on_message_sub_timeout',
-                channel,
-              },
-              'Centrifugo onMessageSub connection timeout - non-critical'
-            );
-
-            recordException(error, {
-              level: 'warning',
-              centrifugo: {
-                type: 'on_message_sub_timeout',
-                channel,
-              },
-            });
-          }
-
           reject(error);
         };
 
@@ -1459,20 +1092,7 @@ export class CentrifugoService {
         };
 
         onError = (err: unknown): void => {
-          const error = this.toError(err);
-
-          if (this.isTimeoutError(error)) {
-            logger.warn(
-              {
-                err: error,
-                type: 'centrifugo_on_message_sub_error',
-                channel,
-              },
-              'Centrifugo onMessageSub error - non-critical'
-            );
-          }
-
-          safeReject(error);
+          safeReject(this.toError(err));
         };
 
         timer = setTimeout(() => {
@@ -1487,12 +1107,8 @@ export class CentrifugoService {
           safeReject(this.toError(err));
         }
       });
-    } catch (error) {
-      this.handlePublishError(
-        error,
-        channel,
-        'centrifugo_on_message_sub_error'
-      );
+    } catch {
+      this.handlePublishError();
     }
   }
 
@@ -1506,9 +1122,7 @@ export class CentrifugoService {
         if (entry.client.state !== State.Disconnected) {
           entry.client.disconnect();
         }
-      } catch (error) {
-        logger.warn({ err: error }, 'Error during cleanupOnMessageSub');
-      }
+      } catch {}
       this.tempSubscriptions.delete(channel);
     }
   }
@@ -1561,12 +1175,7 @@ export class CentrifugoService {
     }
 
     this.statusRetryTimer = setInterval(() => {
-      this.processStatusRetryQueue().catch((error) => {
-        logger.error(
-          { err: error, type: 'centrifugo_status_retry_worker_error' },
-          'Error in Centrifugo status retry worker'
-        );
-      });
+      void this.processStatusRetryQueue().catch(() => {});
     }, this.statusRetryIntervalMs);
   }
 
@@ -1604,15 +1213,6 @@ export class CentrifugoService {
 
         const age = Date.now() - item.enqueued_at;
         if (age > 60_000) {
-          logger.warn(
-            {
-              type: 'centrifugo_status_retry_expired',
-              message_id: item.message_id,
-              channel: item.channel,
-              age_ms: age,
-            },
-            'Discarding expired Centrifugo status retry item'
-          );
           continue;
         }
 
@@ -1623,7 +1223,7 @@ export class CentrifugoService {
             item.channel,
             item.data
           );
-        } catch (error) {
+        } catch {
           if (attempts < this.statusRetryMaxAttempts) {
             const requeue = JSON.stringify({
               ...item,
@@ -1632,17 +1232,6 @@ export class CentrifugoService {
             await this.redis
               .lpush(this.statusRetryKey, requeue)
               .catch(() => {});
-          } else {
-            logger.error(
-              {
-                err: error,
-                type: 'centrifugo_status_retry_exhausted',
-                message_id: item.message_id,
-                channel: item.channel,
-                attempts,
-              },
-              'Centrifugo status retry exhausted, discarding'
-            );
           }
         }
       } catch {
