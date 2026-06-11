@@ -278,13 +278,11 @@ axiosAuth.interceptors.request.use(
     }
 
     const currentLocale = getCurrentLocale();
-    if (config.headers) {
-      config.headers = applyAuthHeaders(
-        config.headers as AxiosRequestHeaders | AxiosHeaders | undefined,
-        token,
-        currentLocale
-      );
-    }
+    config.headers = applyAuthHeaders(
+      config.headers as AxiosRequestHeaders | AxiosHeaders | undefined,
+      token,
+      currentLocale
+    );
     return config;
   },
   (error: unknown) => {

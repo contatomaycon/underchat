@@ -47,6 +47,7 @@ const isVisible = computed({
 const channelId = toRef(props, 'channelId');
 const channelType = toRef(props, 'channelType');
 const accountId = toRef(props, 'accountId');
+const activeWorkerTypeId = shallowRef<string | null>(props.channelType ?? null);
 const workerConnectionChannel = computed(() =>
   accountId.value ? workerCentrifugoQueue(accountId.value) : ''
 );
@@ -374,14 +375,37 @@ function clearQrHistoryRecovery() {
 }
 
 function shouldIgnoreConnectionPayloadForWorkerType(
-  data: Partial<IBaileysConnectionState>
+  data: Partial<IBaileysConnectionState>,
+  options: { trustWorkerType?: boolean } = {}
 ): boolean {
-  const expectedWorkerTypeId = channelType.value;
+  const expectedWorkerTypeId = activeWorkerTypeId.value ?? channelType.value;
   if (!expectedWorkerTypeId) {
     return false;
   }
 
+  const isCurrentAttemptPayload = Boolean(
+    connectionAttemptId.value &&
+      data.connection_attempt_id &&
+      data.connection_attempt_id === connectionAttemptId.value
+  );
+
   if (data.worker_type_id && data.worker_type_id !== expectedWorkerTypeId) {
+    if (options.trustWorkerType || isCurrentAttemptPayload) {
+      activeWorkerTypeId.value = data.worker_type_id;
+      recordMessage('connection.qrcode.worker_type_mismatch_allowed', 'warn', {
+        source: 'connection_dialog',
+        worker_id: data.worker_id,
+        expected_worker_type_id: expectedWorkerTypeId,
+        incoming_worker_type_id: data.worker_type_id,
+        connection_attempt_id: data.connection_attempt_id,
+        has_qrcode: Boolean(data.qrcode),
+        reason: options.trustWorkerType
+          ? 'trusted_direct_response'
+          : 'current_connection_attempt',
+      });
+      return false;
+    }
+
     recordMessage('connection.qrcode.worker_type_mismatch_ignored', 'warn', {
       source: 'connection_dialog',
       worker_id: data.worker_id,
@@ -394,6 +418,20 @@ function shouldIgnoreConnectionPayloadForWorkerType(
   }
 
   if (data.qrcode && !data.worker_type_id) {
+    if (options.trustWorkerType || isCurrentAttemptPayload) {
+      recordMessage('connection.qrcode.missing_worker_type_allowed', 'warn', {
+        source: 'connection_dialog',
+        worker_id: data.worker_id,
+        expected_worker_type_id: expectedWorkerTypeId,
+        connection_attempt_id: data.connection_attempt_id,
+        qrcode_len: data.qrcode.length,
+        reason: options.trustWorkerType
+          ? 'trusted_direct_response'
+          : 'current_connection_attempt',
+      });
+      return false;
+    }
+
     recordMessage('connection.qrcode.missing_worker_type_ignored', 'warn', {
       source: 'connection_dialog',
       worker_id: data.worker_id,
@@ -774,13 +812,20 @@ function shouldIgnorePhoneUnavailableState(
   );
 }
 
-function applyReducedConnectionState(data: IBaileysConnectionState) {
+function applyReducedConnectionState(
+  data: IBaileysConnectionState,
+  options: { trustWorkerType?: boolean } = {}
+) {
   if (!channelId.value || data.worker_id !== channelId.value) {
     return;
   }
 
-  if (shouldIgnoreConnectionPayloadForWorkerType(data)) {
+  if (shouldIgnoreConnectionPayloadForWorkerType(data, options)) {
     return;
+  }
+
+  if (data.worker_type_id) {
+    activeWorkerTypeId.value = data.worker_type_id;
   }
 
   if (shouldIgnorePhoneUnavailableState(data)) {
@@ -888,7 +933,7 @@ function applyReducedConnectionState(data: IBaileysConnectionState) {
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
-  applyReducedConnectionState(data);
+  applyReducedConnectionState(data, { trustWorkerType: true });
 }
 
 async function recoverQrAfterCentrifugoRecoveryFailure() {
@@ -1010,6 +1055,13 @@ watch(isVisible, (visible) => {
   void recoverQrFromRecentHistory('dialog_visible');
   void requestQrCodeIfReady({ silent: true });
 });
+
+watch(
+  () => props.channelType,
+  (workerTypeId) => {
+    activeWorkerTypeId.value = workerTypeId ?? null;
+  }
+);
 
 watch(
   () => props.initialStatusId,
