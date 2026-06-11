@@ -59,13 +59,14 @@ type Config struct {
 	ProxyUsername string
 	ProxyPassword string
 
-	SendTimeout                time.Duration
-	WhatsAppConnectTimeout     time.Duration
-	ConnectionQRFirstQRTimeout time.Duration
-	KafkaPollInterval          time.Duration
-	OutboundReadyTimeout       time.Duration
-	SendMaxInFlight            int
-	SendQueueTimeout           time.Duration
+	SendTimeout                          time.Duration
+	WhatsAppConnectTimeout               time.Duration
+	ConnectionQRFirstQRTimeout           time.Duration
+	KafkaPollInterval                    time.Duration
+	OutboundReadyTimeout                 time.Duration
+	SendMaxInFlight                      int
+	SendQueueTimeout                     time.Duration
+	ConnectionHealthFailOnKafkaUnhealthy bool
 
 	KafkaSendConsumerIdleRecreateInterval time.Duration
 	KafkaHandlerErrorBackoff              time.Duration
@@ -148,6 +149,7 @@ func LoadConfig() (Config, error) {
 		OutboundReadyTimeout:                   envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
 		SendMaxInFlight:                        envIntDefault("WORKER_SEND_MAX_IN_FLIGHT", 256),
 		SendQueueTimeout:                       envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
+		ConnectionHealthFailOnKafkaUnhealthy:   envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
 		KafkaSendConsumerIdleRecreateInterval:  envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
 		KafkaHandlerErrorBackoff:               envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
 		KafkaConsumerStallTimeout:              kafkaConsumerStallTimeout,

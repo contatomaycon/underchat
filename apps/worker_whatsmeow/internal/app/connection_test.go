@@ -127,6 +127,9 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if cfg.KafkaConsumerMaxStallRestarts != 3 {
 		t.Fatalf("unexpected kafka max stall restarts %d", cfg.KafkaConsumerMaxStallRestarts)
 	}
+	if cfg.ConnectionHealthFailOnKafkaUnhealthy {
+		t.Fatal("expected connection health to ignore kafka unhealthy by default")
+	}
 	if cfg.KafkaSendConsumerIdleRecreateInterval != 0 {
 		t.Fatalf("unexpected kafka send idle recreate interval %s", cfg.KafkaSendConsumerIdleRecreateInterval)
 	}

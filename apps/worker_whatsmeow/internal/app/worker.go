@@ -149,7 +149,8 @@ func (w *Worker) startHTTP() error {
 		health["kafka_consumers"] = w.kafka.ConsumerHealthSnapshot()
 		kafkaUnhealthy := w.kafka.HasUnhealthyConsumers()
 		health["kafka_unhealthy"] = kafkaUnhealthy
-		if ready, _ := health["ready"].(bool); ready && !kafkaUnhealthy {
+		failOnKafkaUnhealthy := w.cfg.ConnectionHealthFailOnKafkaUnhealthy
+		if ready, _ := health["ready"].(bool); ready && (!kafkaUnhealthy || !failOnKafkaUnhealthy) {
 			writeJSON(resp, http.StatusOK, health)
 			return
 		}

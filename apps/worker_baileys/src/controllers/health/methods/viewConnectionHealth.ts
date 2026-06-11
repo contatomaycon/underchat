@@ -8,6 +8,9 @@ import {
   hasUnhealthyKafkaConsumer,
 } from '@/consumer/registry';
 
+const FAIL_ON_KAFKA_UNHEALTHY =
+  process.env.WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY === 'true';
+
 export const viewConnectionHealth = async (
   _request: FastifyRequest,
   reply: FastifyReply
@@ -21,7 +24,7 @@ export const viewConnectionHealth = async (
     kafka_consumers: getKafkaConsumerHealthSnapshots(),
   };
 
-  if (isConnected && !kafkaUnhealthy) {
+  if (isConnected && (!kafkaUnhealthy || !FAIL_ON_KAFKA_UNHEALTHY)) {
     return sendResponse(reply, {
       httpStatusCode: EHTTPStatusCode.ok,
       data,
