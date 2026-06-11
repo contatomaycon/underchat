@@ -43,6 +43,7 @@ export class WorkerViewerRepository {
           name: account.name,
         },
         connection_date: worker.connection_date,
+        recreate_available_at: worker.recreate_available_at,
         created_at: worker.created_at,
         updated_at: worker.updated_at,
       })
@@ -81,6 +82,7 @@ export class WorkerViewerRepository {
       server: item.server,
       account: item.account,
       connection_date: item.connection_date,
+      recreate_available_at: item.recreate_available_at,
       created_at: item.created_at,
       updated_at: item.updated_at,
     };

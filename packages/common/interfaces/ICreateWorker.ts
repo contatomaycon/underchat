@@ -5,4 +5,5 @@ export interface ICreateWorker {
   server_id: string;
   account_id: string;
   name: string;
+  recreate_available_at?: string | null;
 }

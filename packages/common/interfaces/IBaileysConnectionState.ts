@@ -24,6 +24,7 @@ export interface IBaileysConnectionState {
   qr_pending?: boolean;
   qr_generated_at?: string;
   expires_at?: string;
+  recreate_available_at?: string | null;
   reason?: string;
   error?: string;
   time_to_first_qr_ms?: number;

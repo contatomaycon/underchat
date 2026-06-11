@@ -575,6 +575,7 @@
   "worker_logs_connection": "Logs de Conexão do Canal",
   "last_sync": "Última Sincronização",
   "recreate_channel": "Recriar Canal",
+  "recreate_channel_available_in": "Liberado em {time}",
   "recreate_channel_confirmation": "Você tem certeza que deseja recriar este canal?",
   "worker_recreation_failed": "Falha ao recriar o canal. Por favor, tente novamente.",
   "worker_recreate_success": "Canal recriado com sucesso!",

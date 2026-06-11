@@ -2,7 +2,7 @@ import * as schema from '@core/models';
 import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import { IUpdateWorker } from '@core/common/interfaces/IUpdateWorker';
 import { currentTime } from '@core/common/functions/currentTime';
 
@@ -54,6 +54,10 @@ export class WorkerUpdaterRepository {
 
     if ('connection_date' in input) {
       inputUpdate.connection_date = input.connection_date;
+    }
+
+    if ('recreate_available_at' in input) {
+      inputUpdate.recreate_available_at = input.recreate_available_at;
     }
 
     if (input.deleted_at) {
@@ -127,6 +131,37 @@ export class WorkerUpdaterRepository {
       .update(worker)
       .set(updateInput)
       .where(and(...conditions))
+      .execute();
+
+    return result.rowCount === 1;
+  };
+
+  updateWorkerByIdIfRecreateAvailable = async (
+    accountId: string,
+    input: IUpdateWorker,
+    now: string
+  ): Promise<boolean> => {
+    const updateInput = this.updateInput(input);
+
+    if (Object.keys(updateInput).length === 0) {
+      return false;
+    }
+
+    updateInput.updated_at = currentTime();
+
+    const result = await this.dbRw
+      .update(worker)
+      .set(updateInput)
+      .where(
+        and(
+          eq(worker.account_id, accountId),
+          eq(worker.worker_id, input.worker_id),
+          or(
+            isNull(worker.recreate_available_at),
+            lte(worker.recreate_available_at, now)
+          )
+        )
+      )
       .execute();
 
     return result.rowCount === 1;

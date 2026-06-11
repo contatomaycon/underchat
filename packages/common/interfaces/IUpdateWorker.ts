@@ -11,5 +11,6 @@ export interface IUpdateWorker {
   container_id?: string | null;
   lifecycle_operation_id?: string | null;
   connection_date?: string | null;
+  recreate_available_at?: string | null;
   deleted_at?: string;
 }

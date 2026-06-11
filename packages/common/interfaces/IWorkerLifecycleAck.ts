@@ -14,4 +14,5 @@ export interface IWorkerLifecycleAck {
   connection_lifecycle_id: string;
   operation_id: string;
   reason: string;
+  recreate_available_at?: string | null;
 }

@@ -152,6 +152,7 @@
   "worker_external_connection_invalid": "Link externo de conexão inválido.",
   "worker_external_connection_expired": "Link externo de conexão expirado.",
   "worker_recreate_success": "Canal recriado com sucesso!",
+  "worker_recreate_cooldown_active": "Aguarde para recriar este canal novamente.",
   "worker_connection_reset_success": "Conexao removida com limpeza de sessao e volume, e canal recriado com sucesso!",
   "worker_recreate_not_found": "Canal não encontrado para recriação!",
   "worker_recreation_failed": "Erro ao recriar o canal!",

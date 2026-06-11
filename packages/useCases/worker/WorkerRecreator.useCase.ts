@@ -21,6 +21,8 @@ import { IWorkerLifecycleQueueMessage } from '@core/common/interfaces/IWorkerLif
 import { currentTime } from '@core/common/functions/currentTime';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { WorkerRecreateCooldownError } from '@core/common/exceptions/WorkerRecreateCooldownError';
+import { getWorkerRecreateAvailableAt } from '@core/common/functions/workerRecreateCooldown';
 
 @injectable()
 export class WorkerRecreatorUseCase {
@@ -164,6 +166,7 @@ export class WorkerRecreatorUseCase {
     options?: {
       remove_session?: boolean;
       remove_volume?: boolean;
+      enforce_recreate_cooldown?: boolean;
       lifecycle_operation_id?: string;
       previous_worker_status_id?: EWorkerStatus;
     }
@@ -181,6 +184,7 @@ export class WorkerRecreatorUseCase {
       lifecycle_operation_id: lifecycleOperationId,
       remove_session: options?.remove_session === true,
       remove_volume: options?.remove_volume === true,
+      enforce_recreate_cooldown: options?.enforce_recreate_cooldown === true,
       previous_worker_status_id: options?.previous_worker_status_id,
     });
 
@@ -269,6 +273,15 @@ export class WorkerRecreatorUseCase {
       ...(options?.remove_volume === true ? { remove_volume: true } : {}),
     };
 
+    const shouldApplyCooldown = options?.enforce_recreate_cooldown === true;
+    const recreateAvailableAt = shouldApplyCooldown
+      ? getWorkerRecreateAvailableAt()
+      : undefined;
+
+    if (recreateAvailableAt) {
+      inputRecreate.recreate_available_at = recreateAvailableAt;
+    }
+
     if (options?.remove_session === true) {
       recordConnectionLifecycle({
         stage: 'connection.manager.worker_recreator.logout_intent_start',
@@ -301,6 +314,9 @@ export class WorkerRecreatorUseCase {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.recreating,
       lifecycle_operation_id: lifecycleOperationId,
+      ...(recreateAvailableAt
+        ? { recreate_available_at: recreateAvailableAt }
+        : {}),
       ...(options?.remove_session === true
         ? { number: null, connection_date: null }
         : {}),
@@ -319,8 +335,45 @@ export class WorkerRecreatorUseCase {
       lifecycle_operation_id: lifecycleOperationId,
       worker_status_id: EWorkerStatus.recreating,
       remove_session: options?.remove_session === true,
+      enforce_recreate_cooldown: shouldApplyCooldown,
     });
-    await this.workerService.updateWorkerById(accountId, inputUpdate);
+    const workerUpdated = shouldApplyCooldown
+      ? await this.workerService.updateWorkerByIdIfRecreateAvailable(
+          accountId,
+          inputUpdate,
+          new Date().toISOString()
+        )
+      : await this.workerService.updateWorkerById(accountId, inputUpdate);
+
+    if (!workerUpdated && shouldApplyCooldown) {
+      const currentWorker = await this.workerService.viewWorker(
+        accountId,
+        workerId
+      );
+      const currentRecreateAvailableAt =
+        currentWorker?.recreate_available_at ?? null;
+
+      recordConnectionLifecycle({
+        stage: 'connection.manager.worker_recreator.cooldown_active',
+        decision: 'persist_worker_recreating_state',
+        outcome: 'blocked',
+        reason: 'recreate_cooldown_active',
+        level: 'warn',
+        connection_lifecycle_id: connectionLifecycleId,
+        worker_id: workerId,
+        account_id: accountId,
+        server_id: viewWorkerBalancer.server_id,
+        worker_type: inputRecreate.worker_type_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+        recreate_available_at: currentRecreateAvailableAt,
+      });
+
+      throw new WorkerRecreateCooldownError(
+        t('worker_recreate_cooldown_active'),
+        currentRecreateAvailableAt
+      );
+    }
     recordConnectionLifecycle({
       stage: 'connection.manager.worker_recreator.db_update_success',
       decision: 'persist_worker_recreating_state',
@@ -334,6 +387,8 @@ export class WorkerRecreatorUseCase {
       lifecycle_operation_id: lifecycleOperationId,
       worker_status_id: EWorkerStatus.recreating,
       remove_session: options?.remove_session === true,
+      enforce_recreate_cooldown: shouldApplyCooldown,
+      recreate_available_at: recreateAvailableAt,
     });
 
     recordConnectionLifecycle({
@@ -390,6 +445,7 @@ export class WorkerRecreatorUseCase {
       operation_id: lifecycleOperationId,
       reason:
         options?.remove_session === true ? 'reset_queued' : 'recreate_queued',
+      recreate_available_at: recreateAvailableAt,
     };
     recordConnectionLifecycle({
       stage: 'connection.manager.worker_recreator.ack_returned',

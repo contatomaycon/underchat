@@ -4,6 +4,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { WorkerRecreateCooldownError } from '@core/common/exceptions/WorkerRecreateCooldownError';
 
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'operation-1'),
@@ -37,8 +38,10 @@ function makeSut() {
     })),
     viewWorker: jest.fn(async () => ({
       status: { id: EWorkerStatus.online },
+      recreate_available_at: '2026-06-11T12:01:00.000Z',
     })),
     updateWorkerById: jest.fn(async () => true),
+    updateWorkerByIdIfRecreateAvailable: jest.fn(async () => true),
   };
   const accountService = {
     existsAccountById: jest.fn(async () => true),
@@ -104,7 +107,12 @@ describe('WorkerRecreatorUseCase', () => {
   });
 
   it('publishes logout before recreating when session cleanup is requested', async () => {
-    const { sut, centrifugoService, workerLifecycleQueueService } = makeSut();
+    const {
+      sut,
+      workerService,
+      centrifugoService,
+      workerLifecycleQueueService,
+    } = makeSut();
 
     await sut.execute(t, 'account-1', 'worker-1', {
       remove_session: true,
@@ -141,5 +149,58 @@ describe('WorkerRecreatorUseCase', () => {
         remove_volume: true,
       })
     );
+    expect(
+      workerService.updateWorkerByIdIfRecreateAvailable
+    ).not.toHaveBeenCalled();
+  });
+
+  it('updates worker with recreate cooldown guard when requested', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-11T12:00:00.000Z'));
+
+    try {
+      const { sut, workerService } = makeSut();
+
+      await expect(
+        sut.execute(t, 'account-1', 'worker-1', {
+          enforce_recreate_cooldown: true,
+        })
+      ).resolves.toMatchObject({
+        recreate_available_at: '2026-06-11T12:02:00.000Z',
+      });
+
+      expect(
+        workerService.updateWorkerByIdIfRecreateAvailable
+      ).toHaveBeenCalledWith(
+        'account-1',
+        expect.objectContaining({
+          worker_id: 'worker-1',
+          worker_status_id: EWorkerStatus.recreating,
+          recreate_available_at: '2026-06-11T12:02:00.000Z',
+        }),
+        '2026-06-11T12:00:00.000Z'
+      );
+      expect(workerService.updateWorkerById).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('blocks recreate when cooldown guard does not update the worker', async () => {
+    const {
+      sut,
+      workerService,
+      centrifugoService,
+      workerLifecycleQueueService,
+    } = makeSut();
+    workerService.updateWorkerByIdIfRecreateAvailable.mockResolvedValue(false);
+
+    await expect(
+      sut.execute(t, 'account-1', 'worker-1', {
+        enforce_recreate_cooldown: true,
+      })
+    ).rejects.toBeInstanceOf(WorkerRecreateCooldownError);
+
+    expect(centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
   });
 });

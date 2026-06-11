@@ -29,6 +29,7 @@ export const viewWorkerResponseSchema = Type.Object({
   server: Type.Optional(Type.Union([workerServerSchema, Type.Null()])),
   account: Type.Optional(Type.Union([workerAccountSchema, Type.Null()])),
   connection_date: Type.Union([Type.String(), Type.Null()]),
+  recreate_available_at: Type.Union([Type.String(), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
 });

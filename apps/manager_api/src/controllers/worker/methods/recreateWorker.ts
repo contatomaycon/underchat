@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WorkerRecreatorUseCase } from '@core/useCases/worker/WorkerRecreator.useCase';
 import { RecreateWorkerRequest } from '@core/schema/worker/recreateWorker/request.schema';
+import { WorkerRecreateCooldownError } from '@core/common/exceptions/WorkerRecreateCooldownError';
 
 export const recreateWorker = async (
   request: FastifyRequest<{
@@ -19,7 +20,10 @@ export const recreateWorker = async (
     const response = await workerRecreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
-      request.params.worker_id
+      request.params.worker_id,
+      {
+        enforce_recreate_cooldown: true,
+      }
     );
 
     if (response) {
@@ -35,6 +39,16 @@ export const recreateWorker = async (
       httpStatusCode: EHTTPStatusCode.bad_request,
     });
   } catch (error) {
+    if (error instanceof WorkerRecreateCooldownError) {
+      return sendResponse(reply, {
+        message: error.message,
+        httpStatusCode: EHTTPStatusCode.conflict,
+        data: {
+          recreate_available_at: error.recreateAvailableAt,
+        },
+      });
+    }
+
     handleControllerError(error, reply, t);
   }
 };

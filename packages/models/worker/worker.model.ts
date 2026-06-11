@@ -41,6 +41,10 @@ export const worker = pgTable(
       mode: 'string',
       withTimezone: true,
     }),
+    recreate_available_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    }),
     created_at: timestamp({
       mode: 'string',
       withTimezone: true,

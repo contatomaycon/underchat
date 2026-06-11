@@ -40,9 +40,23 @@ export const recreateWorkerSchema = {
           connection_lifecycle_id: Type.String(),
           operation_id: Type.String(),
           reason: Type.String(),
+          recreate_available_at: Type.Optional(
+            Type.Union([Type.String(), Type.Null()])
+          ),
         }),
       },
       { description: 'Accepted' }
+    ),
+    409: Type.Object(
+      {
+        id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+        status: Type.Boolean({ default: false }),
+        message: Type.String(),
+        data: Type.Object({
+          recreate_available_at: Type.Union([Type.String(), Type.Null()]),
+        }),
+      },
+      { description: 'Conflict' }
     ),
     401: Type.Object(
       {

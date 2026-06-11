@@ -39,6 +39,7 @@ describe('WorkerViewerRepository', () => {
       server: { id: 's-1', name: 'Server 1' },
       account: { id: 'a-1', name: 'Account 1' },
       connection_date: '2026-04-21T10:00:00.000Z',
+      recreate_available_at: '2026-06-11T12:02:00.000Z',
       created_at: '2026-04-20T10:00:00.000Z',
       updated_at: '2026-04-21T10:00:00.000Z',
     };

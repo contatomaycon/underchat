@@ -40,6 +40,9 @@ export const createWorkerSchema = {
           connection_lifecycle_id: Type.String(),
           operation_id: Type.String(),
           reason: Type.String(),
+          recreate_available_at: Type.Optional(
+            Type.Union([Type.String(), Type.Null()])
+          ),
           warm_pool_claimed: Type.Optional(Type.Boolean()),
           warm_pool_id: Type.Optional(Type.String()),
           fallback_created: Type.Optional(Type.Boolean()),

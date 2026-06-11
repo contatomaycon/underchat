@@ -48,6 +48,11 @@ import { UpdateSecurityKeyResponse } from '@core/schema/worker/updateSecurityKey
 import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/externalConnectionLink/response.schema';
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
+import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+
+type WorkerRecreateCooldownConflictResponse = IApiResponse<{
+  recreate_available_at: string | null;
+}>;
 
 const workerConfigForChatPendingModule: Record<
   string,
@@ -85,6 +90,18 @@ export const useChannelsStore = defineStore('channels', {
     },
     hideSnackbar() {
       this.snackbar.status = false;
+    },
+    updateChannelRecreateAvailableAt(
+      workerId: string,
+      recreateAvailableAt: string | null
+    ) {
+      const channel = this.list.find((item) => item.id === workerId);
+
+      if (!channel) {
+        return;
+      }
+
+      channel.recreate_available_at = recreateAvailableAt;
     },
     async listChannels(
       input?: IListChannels
@@ -569,7 +586,7 @@ export const useChannelsStore = defineStore('channels', {
       try {
         this.loading = true;
 
-        const response = await axios.patch<IApiResponse<boolean>>(
+        const response = await axios.patch<IApiResponse<IWorkerLifecycleAck>>(
           `/worker/${workerId}`
         );
 
@@ -586,6 +603,19 @@ export const useChannelsStore = defineStore('channels', {
           return false;
         }
 
+        if (
+          data.data &&
+          Object.prototype.hasOwnProperty.call(
+            data.data,
+            'recreate_available_at'
+          )
+        ) {
+          this.updateChannelRecreateAvailableAt(
+            workerId,
+            data.data.recreate_available_at ?? null
+          );
+        }
+
         this.showSnackbar(
           this.i18n.global.t('worker_recreate_success'),
           EColor.success
@@ -595,6 +625,23 @@ export const useChannelsStore = defineStore('channels', {
       } catch (error) {
         let errorMessage = this.i18n.global.t('worker_recreation_failed');
         if (error instanceof AxiosError) {
+          const responseData = error.response?.data as
+            | WorkerRecreateCooldownConflictResponse
+            | undefined;
+
+          if (
+            responseData?.data &&
+            Object.prototype.hasOwnProperty.call(
+              responseData.data,
+              'recreate_available_at'
+            )
+          ) {
+            this.updateChannelRecreateAvailableAt(
+              workerId,
+              responseData.data.recreate_available_at
+            );
+          }
+
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }
 
@@ -2296,6 +2343,10 @@ export const useChannelsStore = defineStore('channels', {
       const channel = this.list[index];
       if (channel?.status && input?.worker_status_id) {
         channel.status.id = input.worker_status_id;
+      }
+
+      if (channel && 'recreate_available_at' in input) {
+        channel.recreate_available_at = input.recreate_available_at ?? null;
       }
     },
   },

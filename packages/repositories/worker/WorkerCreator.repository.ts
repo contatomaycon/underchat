@@ -20,6 +20,7 @@ export class WorkerCreatorRepository {
         server_id: input.server_id,
         account_id: input.account_id,
         name: input.name,
+        recreate_available_at: input.recreate_available_at ?? null,
       })
       .execute();
 

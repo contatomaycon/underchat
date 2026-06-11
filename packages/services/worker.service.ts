@@ -1339,6 +1339,18 @@ export class WorkerService {
     );
   };
 
+  updateWorkerByIdIfRecreateAvailable = async (
+    accountId: string,
+    input: IUpdateWorker,
+    now: string
+  ): Promise<boolean> => {
+    return this.workerUpdaterRepository.updateWorkerByIdIfRecreateAvailable(
+      accountId,
+      input,
+      now
+    );
+  };
+
   viewWorker = async (
     accountId: string,
     workerId: string

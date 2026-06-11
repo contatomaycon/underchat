@@ -15,4 +15,5 @@ export interface IWorkerPayload {
   remove_session?: boolean;
   remove_volume?: boolean;
   lifecycle_operation_id?: string;
+  recreate_available_at?: string | null;
 }

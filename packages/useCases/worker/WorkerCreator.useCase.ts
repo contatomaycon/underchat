@@ -22,6 +22,7 @@ import { WorkerLifecycleQueueService } from '@core/services/workerLifecycleQueue
 import { IWorkerLifecycleQueueMessage } from '@core/common/interfaces/IWorkerLifecycleQueueMessage';
 import { recordConnectionLifecycle } from '@core/plugins/telemetry/connectionLifecycleDebug';
 import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
+import { getWorkerRecreateAvailableAt } from '@core/common/functions/workerRecreateCooldown';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -417,6 +418,7 @@ export class WorkerCreatorUseCase {
       throw new Error(t('worker_name_required'));
     }
 
+    const recreateAvailableAt = getWorkerRecreateAvailableAt();
     const createWorkerPayload: ICreateWorker = {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.creating,
@@ -424,6 +426,7 @@ export class WorkerCreatorUseCase {
       server_id: serverId,
       account_id: accountId,
       name: input.name.trim(),
+      recreate_available_at: recreateAvailableAt,
     };
 
     recordConnectionLifecycle({
@@ -562,6 +565,7 @@ export class WorkerCreatorUseCase {
       account_id: accountId,
       name: input.name.trim(),
       lifecycle_operation_id: lifecycleOperationId,
+      recreate_available_at: recreateAvailableAt,
     };
 
     recordConnectionLifecycle({
@@ -650,6 +654,7 @@ export class WorkerCreatorUseCase {
       connection_lifecycle_id: connectionLifecycleId,
       operation_id: lifecycleOperationId,
       reason: warmReserved ? 'warm_activation_queued' : 'create_queued',
+      recreate_available_at: recreateAvailableAt,
       warm_pool_claimed: Boolean(warmReserved),
       warm_pool_id: warmReserved?.warm_pool_id,
       fallback_created: !warmReserved && warmSettings.warmup_enabled,

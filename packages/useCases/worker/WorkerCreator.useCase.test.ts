@@ -4,6 +4,7 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerCreatorUseCase } from './WorkerCreator.useCase';
 import { container } from 'tsyringe';
+import { WORKER_RECREATE_COOLDOWN_SECONDS } from '@core/common/functions/workerRecreateCooldown';
 
 jest.mock('@core/services/worker.service', () => ({
   WorkerService: class WorkerService {},
@@ -38,10 +39,6 @@ jest.mock('uuid', () => ({
 }));
 
 const t = ((key: string) => key) as never;
-
-const flushPromises = async (): Promise<void> => {
-  await new Promise((resolve) => setImmediate(resolve));
-};
 
 function buildUseCase(
   overrides: {
@@ -203,6 +200,7 @@ describe('WorkerCreatorUseCase', () => {
       server_id: 'server-1',
       account_id: 'account-1',
       name: 'Canal principal',
+      recreate_available_at: expect.any(String),
     });
     expect(
       deps.workerConfigService.ensureTypingSimulationDefault
@@ -234,6 +232,33 @@ describe('WorkerCreatorUseCase', () => {
         lifecycle_operation_id: 'worker-created-id',
       }
     );
+  });
+
+  it('sets the initial recreate cooldown to two minutes after creation', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-06-11T12:00:00.000Z'));
+
+    try {
+      const deps = buildUseCase();
+
+      await expect(
+        deps.useCase.execute(t, 'account-1', {
+          name: 'Canal principal',
+          server_id: 'server-1',
+          worker_type: EWorkerType.baileys,
+        })
+      ).resolves.toMatchObject({
+        recreate_available_at: '2026-06-11T12:02:00.000Z',
+      });
+
+      expect(deps.workerService.createWorker).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recreate_available_at: '2026-06-11T12:02:00.000Z',
+        })
+      );
+      expect(WORKER_RECREATE_COOLDOWN_SECONDS).toBe(120);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('returns after publishing creating status and enqueueing lifecycle', async () => {

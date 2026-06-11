@@ -23,6 +23,7 @@ describe('WorkerUpdaterRepository', () => {
       number: null,
       container_id: 'container-1',
       connection_date: '2026-04-21T10:00:00.000Z',
+      recreate_available_at: '2026-06-11T12:02:00.000Z',
       deleted_at: '2026-04-21T10:00:00.000Z',
     });
 
@@ -34,6 +35,7 @@ describe('WorkerUpdaterRepository', () => {
       number: null,
       container_id: 'container-1',
       connection_date: '2026-04-21T10:00:00.000Z',
+      recreate_available_at: '2026-06-11T12:02:00.000Z',
       deleted_at: '2026-04-21T10:00:00.000Z',
     });
   });
@@ -87,6 +89,57 @@ describe('WorkerUpdaterRepository', () => {
         worker_id: 'w-1',
         name: 'Worker 1',
       } as never)
+    ).resolves.toBe(false);
+  });
+
+  it('uses cooldown guard when updating recreate state', async () => {
+    const execute = jest.fn(async () => ({ rowCount: 1 }));
+    const where = jest.fn(() => ({ execute }));
+    const set = jest.fn(() => ({ where }));
+    const repository = new WorkerUpdaterRepository({
+      update: jest.fn(() => ({ set })),
+    } as never);
+
+    await expect(
+      repository.updateWorkerByIdIfRecreateAvailable(
+        'account-1',
+        {
+          worker_id: 'w-1',
+          recreate_available_at: '2026-06-11T12:02:00.000Z',
+        } as never,
+        '2026-06-11T12:00:00.000Z'
+      )
+    ).resolves.toBe(true);
+
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recreate_available_at: '2026-06-11T12:02:00.000Z',
+        updated_at: '2026-04-21T10:00:00.000Z',
+      })
+    );
+    expect(where).toHaveBeenCalled();
+  });
+
+  it('returns false when cooldown guard update affects zero rows', async () => {
+    const repository = new WorkerUpdaterRepository({
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn(() => ({
+            execute: jest.fn(async () => ({ rowCount: 0 })),
+          })),
+        })),
+      })),
+    } as never);
+
+    await expect(
+      repository.updateWorkerByIdIfRecreateAvailable(
+        'account-1',
+        {
+          worker_id: 'w-1',
+          recreate_available_at: '2026-06-11T12:02:00.000Z',
+        } as never,
+        '2026-06-11T12:00:00.000Z'
+      )
     ).resolves.toBe(false);
   });
 });

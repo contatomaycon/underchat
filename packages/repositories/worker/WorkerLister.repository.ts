@@ -112,6 +112,7 @@ export class WorkerListerRepository {
         },
         connection_date: worker.connection_date,
         last_connection_check_at: worker.last_connection_check_at,
+        recreate_available_at: worker.recreate_available_at,
         created_at: worker.created_at,
         updated_at: worker.updated_at,
       })
@@ -157,6 +158,7 @@ export class WorkerListerRepository {
       account: item.account,
       connection_date: item.connection_date,
       last_connection_check_at: item.last_connection_check_at,
+      recreate_available_at: item.recreate_available_at,
       created_at: item.created_at,
       updated_at: item.updated_at,
     }));

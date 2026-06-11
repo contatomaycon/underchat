@@ -24,6 +24,7 @@ import {
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
+import { useChannelRecreateCooldown } from '@/composables/useChannelRecreateCooldown';
 
 definePage({
   meta: {
@@ -81,6 +82,8 @@ const channelsStore = useChannelsStore();
 const dashboardStore = useDashboardStore();
 useSnackbarCleanup(channelsStore);
 const user = getUser();
+const { isRecreateCooldownActive, formatRecreateCooldownRemaining } =
+  useChannelRecreateCooldown();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -263,8 +266,22 @@ const deleteChannel = async (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
-const recreateChannel = async (id: string) => {
-  channelToRecreate.value = id;
+const recreateChannelTooltip = (channel: ListWorkerResponse) => {
+  if (!isRecreateCooldownActive(channel)) {
+    return t('recreate_channel');
+  }
+
+  return t('recreate_channel_available_in', {
+    time: formatRecreateCooldownRemaining(channel),
+  });
+};
+
+const recreateChannel = async (channel: ListWorkerResponse) => {
+  if (isRecreateCooldownActive(channel)) {
+    return;
+  }
+
+  channelToRecreate.value = channel.id;
   isDialogRecreatorShow.value = true;
 };
 
@@ -404,7 +421,10 @@ const workerStatusHandler = (
     channelConnectionStatus.value = data.worker_status_id;
   }
 
-  if (data.worker_id === channelConnectionChannel.value && data.worker_type_id) {
+  if (
+    data.worker_id === channelConnectionChannel.value &&
+    data.worker_type_id
+  ) {
     channelConnectionType.value = data.worker_type_id;
   }
 };
@@ -637,17 +657,25 @@ onUnmounted(async () => {
                     @click="openConnectionLogDialog(item.id)"
                 /></IconBtn>
 
-                <IconBtn v-if="$canPermission(permissionsRecreate)"
-                  ><VTooltip
-                    location="top"
-                    transition="scale-transition"
-                    activator="parent"
-                  >
-                    <span>{{ $t('recreate_channel') }}</span> </VTooltip
-                  ><VIcon
-                    icon="tabler-refresh"
-                    @click="recreateChannel(item.id)"
-                /></IconBtn>
+                <VTooltip
+                  v-if="$canPermission(permissionsRecreate)"
+                  location="top"
+                  transition="scale-transition"
+                >
+                  <template #activator="{ props }">
+                    <span v-bind="props" class="channel-action-tooltip-anchor">
+                      <IconBtn
+                        :disabled="isRecreateCooldownActive(item)"
+                        :aria-label="recreateChannelTooltip(item)"
+                        :data-testid="`channel-recreate-${item.id}`"
+                        @click="recreateChannel(item)"
+                      >
+                        <VIcon icon="tabler-refresh" />
+                      </IconBtn>
+                    </span>
+                  </template>
+                  <span>{{ recreateChannelTooltip(item) }}</span>
+                </VTooltip>
 
                 <IconBtn v-if="$canPermission(permissionsDelete)"
                   ><VTooltip
@@ -759,6 +787,10 @@ onUnmounted(async () => {
 
 .invoice-list-filter {
   inline-size: 20rem;
+}
+
+.channel-action-tooltip-anchor {
+  display: inline-flex;
 }
 
 .data-table {
