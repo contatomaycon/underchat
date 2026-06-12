@@ -124,6 +124,18 @@ function isIdempotentDockerRemoveError(error: unknown): boolean {
   );
 }
 
+function isDockerNotFoundError(error: unknown): boolean {
+  const statusCode = dockerErrorStatusCode(error);
+  const message = dockerErrorMessage(error).toLowerCase();
+
+  return (
+    statusCode === 404 ||
+    message.includes('no such volume') ||
+    message.includes('no such container') ||
+    message.includes('not found')
+  );
+}
+
 @injectable()
 export class WorkerService {
   private readonly docker: Docker;
@@ -464,6 +476,10 @@ export class WorkerService {
 
       return true;
     } catch (error) {
+      if (isDockerNotFoundError(error)) {
+        return false;
+      }
+
       console.warn(`Volume ${volumeName} does not exist or is inaccessible:`, {
         error: dockerErrorMessage(error),
       });

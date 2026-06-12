@@ -2381,13 +2381,16 @@ describe('WorkerCommandHandlerService cleanup', () => {
 });
 
 describe('WorkerService cleanupContainerWorker', () => {
-  it('treats missing container and volume as a successful cleanup', async () => {
+  function buildActualWorkerService(): WorkerService {
     const { WorkerService: ActualWorkerService } = jest.requireActual<
       typeof import('@core/services/worker.service')
     >('@core/services/worker.service');
-    const workerService = Object.create(
-      ActualWorkerService.prototype
-    ) as WorkerService;
+
+    return Object.create(ActualWorkerService.prototype) as WorkerService;
+  }
+
+  it('treats missing container and volume as a successful cleanup', async () => {
+    const workerService = buildActualWorkerService();
     workerService.existsContainerWorkerById = jest.fn(async () => false);
     workerService.existsVolumeWorkerById = jest.fn(async () => false);
     workerService.removeContainerWorkerById = jest.fn(async () => true);
@@ -2399,5 +2402,68 @@ describe('WorkerService cleanupContainerWorker', () => {
 
     expect(workerService.removeContainerWorkerById).not.toHaveBeenCalled();
     expect(workerService.removeVolumeWorkerById).not.toHaveBeenCalled();
+  });
+
+  it('does not warn when a Docker volume existence check returns not found', async () => {
+    const workerService = buildActualWorkerService();
+    const notFoundError = Object.assign(new Error('no such volume'), {
+      statusCode: 404,
+    });
+    (
+      workerService as unknown as {
+        docker: {
+          getVolume: jest.Mock;
+        };
+      }
+    ).docker = {
+      getVolume: jest.fn(() => ({
+        inspect: jest.fn(async () => {
+          throw notFoundError;
+        }),
+      })),
+    };
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      workerService.existsVolumeByName('warm-missing')
+    ).resolves.toBe(false);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('still warns when a Docker volume existence check fails unexpectedly', async () => {
+    const workerService = buildActualWorkerService();
+    const dockerError = Object.assign(new Error('docker daemon unavailable'), {
+      statusCode: 500,
+    });
+    (
+      workerService as unknown as {
+        docker: {
+          getVolume: jest.Mock;
+        };
+      }
+    ).docker = {
+      getVolume: jest.fn(() => ({
+        inspect: jest.fn(async () => {
+          throw dockerError;
+        }),
+      })),
+    };
+    const warnSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+
+    await expect(workerService.existsVolumeByName('warm-error')).resolves.toBe(
+      false
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Volume warm-error does not exist or is inaccessible:',
+      { error: 'docker daemon unavailable' }
+    );
+    warnSpy.mockRestore();
   });
 });
