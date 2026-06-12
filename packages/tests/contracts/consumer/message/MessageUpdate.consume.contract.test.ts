@@ -34,10 +34,6 @@ jest.mock('@core/common/functions/handleConsumerError', () => ({
   handleConsumerError: jest.fn(),
 }));
 
-jest.mock('@core/common/functions/startHeartbeat', () => ({
-  startHeartbeat: jest.fn(() => jest.fn()),
-}));
-
 jest.mock('@whiskeysockets/baileys', () => ({}));
 
 import { MessageUpdateConsume } from '@core/consumer/message/MessageUpdate.consume';
@@ -47,6 +43,13 @@ import { commitOffset } from '@core/common/functions/commitOffset';
 import { connectConsumer } from '@core/common/functions/connectConsumer';
 import { createConsumer } from '@core/common/functions/createConsumer';
 import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
+
+async function flushPromises(times = 6): Promise<void> {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve();
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+}
 
 describe('MessageUpdateConsume', () => {
   beforeEach(() => {
@@ -112,7 +115,7 @@ describe('MessageUpdateConsume', () => {
     );
   });
 
-  it('logs update failures without leaving the partition chain rejected', async () => {
+  it('logs update failures and lets the runner commit the offset', async () => {
     const handlers: Record<string, (...args: any[]) => unknown> = {};
     const kafkaConsumer: {
       on: jest.Mock;
@@ -181,14 +184,12 @@ describe('MessageUpdateConsume', () => {
         },
       } as IUpdateMessage;
 
-      await handlers.data?.({
+      handlers.data?.({
         value: Buffer.from(JSON.stringify(data)),
         partition: 3,
         offset: 41,
       });
-      await expect((consumer as any).partitionChains.get(3)).resolves.toBe(
-        undefined
-      );
+      await flushPromises();
 
       expect(consoleSpy).toHaveBeenCalledWith(
         '[MessageUpdateConsume] message update failed',

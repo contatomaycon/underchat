@@ -3,12 +3,8 @@ import { inject, singleton } from 'tsyringe';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { ServerBuildExecutorService } from '@core/services/serverBuildExecutor.service';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 interface IBuildVersionCancelPayload {
   server_build_job_id: string;
@@ -17,6 +13,7 @@ interface IBuildVersionCancelPayload {
 @singleton()
 export class BuildVersionCancelConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IBuildVersionCancelPayload> | null = null;
   private isRunning = false;
 
   constructor(
@@ -26,14 +23,6 @@ export class BuildVersionCancelConsume {
     @inject(ServerBuildExecutorService)
     private readonly serverBuildExecutorService: ServerBuildExecutorService
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parsePayload(
     value: Buffer | null
@@ -62,79 +51,42 @@ export class BuildVersionCancelConsume {
     }
 
     const topic = this.kafkaServiceQueueService.buildVersionCancelRequest();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IBuildVersionCancelPayload>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-build-version-cancel'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const payload = this.parsePayload(message.value);
-      if (!payload) {
-        server.log.warn('Skipping invalid build cancel payload');
-        await commitOffset(
-          this.consumerOrThrow,
-          topic,
-          message.partition,
-          message.offset
-        );
-        return;
-      }
-
-      try {
-        await this.serverBuildExecutorService.requestCancel(
+      groupId: 'group-underchat-build-version-cancel',
+      parse: (message) => this.parsePayload(message.value),
+      resolveEntityKey: (payload) => payload.server_build_job_id,
+      handle: (payload) =>
+        this.serverBuildExecutorService.requestCancel(
           payload.server_build_job_id
-        );
-      } catch (error) {
+        ),
+      onInvalidMessage: () => {
+        server.log.warn('Skipping invalid build cancel payload');
+      },
+      onFailed: (payload, _context, error) => {
         server.log.error(
           { err: error, server_build_job_id: payload.server_build_job_id },
           'Failed to execute build cancel payload'
         );
-      } finally {
-        await commitOffset(
-          this.consumerOrThrow,
-          topic,
-          message.partition,
-          message.offset
-        );
-      }
+      },
+      maxRetries: 3,
+      retryDelaysMs: [1000, 5000],
+      logger: server.log,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    connectConsumer(this.consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    this.consumer = null;
   }
 }

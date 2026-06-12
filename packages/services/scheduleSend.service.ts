@@ -27,6 +27,10 @@ import { ISchedulePendingData } from '@core/interfaces/repositories/schedule/ISc
 import { IScheduleMessageResult } from '@core/common/interfaces/IScheduleMessageResult';
 import { IScheduleContactValidated } from '@core/common/interfaces/IScheduleContactValidated';
 import { IScheduleMessage } from '@core/common/interfaces/IScheduleMessage';
+import {
+  buildScheduleSendQueueKey,
+  ensureMessageSendHash,
+} from '@core/common/functions/messageIdentity';
 import { PlanAccountService } from './planAccount.service';
 import moment from 'moment-timezone';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
@@ -50,7 +54,6 @@ import {
 import { ScheduleControlRepository } from '@core/repositories/schedule/ScheduleControl.repository';
 import { PhoneValidationService } from './phoneValidation.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
-import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
 import {
   appendSecurityKeyToText,
   shouldApplySecurityKey,
@@ -947,6 +950,7 @@ export class ScheduleSendService {
   ): Promise<void> {
     const scheduleMessage: IScheduleMessage = {
       schedule_id: schedule.schedule_id,
+      account_id: schedule.account_id,
       contact_id: contact.contact_id,
       message,
       is_validated: contact.is_validated,
@@ -962,7 +966,7 @@ export class ScheduleSendService {
     await this.streamProducerService.send(
       topic,
       scheduleMessage,
-      message.chat_id
+      buildScheduleSendQueueKey(schedule.account_id, workerId)
     );
   }
 
@@ -1333,7 +1337,12 @@ export class ScheduleSendService {
 
     return withLock(
       this.redis,
-      `schedule:send:${schedule.worker_id}`,
+      [
+        'schedule:send:account',
+        schedule.account_id,
+        'channel',
+        schedule.worker_id,
+      ].join(':'),
       async () => {
         const now = new Date().toISOString();
         const chat = this.buildScheduleChatbotChat(schedule, contact, jid, now);

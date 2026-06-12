@@ -8,10 +8,6 @@ import { wwebjsEnvironment } from '@core/config/environments';
 import { IScheduleMessage } from '@core/common/interfaces/IScheduleMessage';
 import { IScheduleStatusUpdate } from '@core/common/interfaces/IScheduleStatusUpdate';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { WwebjsMessageTextService } from '@core/services/wwebjs/methods/messageText.service';
 import { WwebjsMessageMediaService } from '@core/services/wwebjs/methods/messageMedia.service';
 import { WwebjsPhoneValidationService } from '@core/services/wwebjs/methods/phoneValidation.service';
@@ -19,8 +15,6 @@ import { IContactValidationUpdate } from '@core/common/interfaces/IContactValida
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { selectJidChatWwebjs } from '@core/common/functions/selectJidChatWwebjs';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { withLock } from '@core/common/functions/withLock';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import Redis from 'ioredis';
@@ -30,12 +24,17 @@ import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
-import { resolveMessageSendIdentity } from '@core/common/functions/messageIdentity';
+import {
+  buildScheduleSendQueueKey,
+  resolveMessageSendIdentity,
+} from '@core/common/functions/messageIdentity';
 import { MessageSendIdempotencyService } from '@core/services/messageSendIdempotency.service';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class ScheduleMessageWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IScheduleMessage> | null = null;
   private isRunning = false;
 
   constructor(
@@ -59,14 +58,6 @@ export class ScheduleMessageWwebjsConsume {
     private readonly messageSendIdempotencyService: MessageSendIdempotencyService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
@@ -75,104 +66,33 @@ export class ScheduleMessageWwebjsConsume {
       this.kafkaBaileysQueueService.workerScheduleSendMessage(workerId);
     const groupId = `group-underchat-schedule-message-wwebjs-${workerId}`;
 
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IScheduleMessage>({
+      kafka: this.kafka,
       topic,
-      this.kafkaBaileysQueueService.getNumPartitions(),
-      this.kafkaBaileysQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(this.kafka, groupId);
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        const claimStatus = await this.claimMessageSend(data);
-        if (claimStatus === 'duplicate') {
-          return;
-        }
-
-        if (claimStatus !== 'acquired') {
-          throw new Error(`message_send_idempotency_${claimStatus}`);
-        }
-
-        await withLock(
-          this.redis,
-          `schedule:send:${workerId}`,
-          () => this.handleMessage(data),
-          { ttlMs: 300000, retryMs: 500 }
-        );
-      } catch (error) {
-        console.error(
-          `Error processing schedule message for schedule ${data.schedule_id}, contact ${data.contact_id}:`,
-          error
-        );
-
-        await this.sendStatusUpdate(
-          data.schedule_id,
-          data.contact_id,
-          data.message.message_id,
-          EScheduleStatus.failed
-        );
-      } finally {
-        stop();
-      }
-
-      await this.commitNext(topic, message.partition, message.offset);
+      groupId,
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => this.resolveEntityKey(workerId, data),
+      preserveEntityOrder: true,
+      handle: (data) => this.processScheduleMessage(workerId, data),
+      onInvalidMessage: () => {
+        console.warn('Skipping invalid schedule message payload');
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumer = null;
   }
 
   private async claimMessageSend(
@@ -226,6 +146,54 @@ export class ScheduleMessageWwebjsConsume {
     } catch {
       return null;
     }
+  }
+
+  private async processScheduleMessage(
+    workerId: string,
+    data: IScheduleMessage
+  ): Promise<void> {
+    try {
+      const claimStatus = await this.claimMessageSend(data);
+      if (claimStatus === 'duplicate') {
+        return;
+      }
+
+      if (claimStatus !== 'acquired') {
+        throw new Error(`message_send_idempotency_${claimStatus}`);
+      }
+
+      await withLock(
+        this.redis,
+        `schedule:send:${this.resolveEntityKey(workerId, data)}`,
+        () => this.handleMessage(data),
+        { ttlMs: 300000, retryMs: 500 }
+      );
+    } catch (error) {
+      console.error(
+        `Error processing schedule message for schedule ${data.schedule_id}, contact ${data.contact_id}:`,
+        error
+      );
+
+      await this.sendStatusUpdateBestEffort(
+        data.schedule_id,
+        data.contact_id,
+        data.message.message_id,
+        EScheduleStatus.failed
+      );
+    }
+  }
+
+  private resolveEntityKey(workerId: string, data: IScheduleMessage): string {
+    const identity = resolveMessageSendIdentity(data.message);
+    const accountId =
+      identity?.accountId ||
+      data.account_id ||
+      data.message?.account?.id ||
+      'unknown-account';
+    const normalizedAccountId = String(accountId).trim() || 'unknown-account';
+    const normalizedWorkerId = workerId.trim() || 'unknown-channel';
+
+    return buildScheduleSendQueueKey(normalizedAccountId, normalizedWorkerId);
   }
 
   private buildPhoneWithDdi(
@@ -414,7 +382,7 @@ export class ScheduleMessageWwebjsConsume {
 
     const jid = await this.resolveValidatedJid(data, fallbackJid);
     if (!jid) {
-      await this.sendStatusUpdate(
+      await this.sendStatusUpdateBestEffort(
         data.schedule_id,
         data.contact_id,
         data.message.message_id,
@@ -452,7 +420,7 @@ export class ScheduleMessageWwebjsConsume {
 
       throw new Error(`Unsupported message type: ${messageType}`);
     } catch (error) {
-      await this.sendStatusUpdate(
+      await this.sendStatusUpdateBestEffort(
         data.schedule_id,
         data.contact_id,
         data.message.message_id,
@@ -480,9 +448,9 @@ export class ScheduleMessageWwebjsConsume {
       }
 
       const update: IUpdateMessage = { message: result, data: data.message };
-      await this.pushUpdate(update);
+      await this.pushUpdateBestEffort(update, data.message.message_id);
 
-      await this.sendStatusUpdate(
+      await this.sendStatusUpdateBestEffort(
         data.schedule_id,
         data.contact_id,
         data.message.message_id,
@@ -524,9 +492,9 @@ export class ScheduleMessageWwebjsConsume {
       }
 
       const update: IUpdateMessage = { message: result, data: data.message };
-      await this.pushUpdate(update);
+      await this.pushUpdateBestEffort(update, data.message.message_id);
 
-      await this.sendStatusUpdate(
+      await this.sendStatusUpdateBestEffort(
         data.schedule_id,
         data.contact_id,
         data.message.message_id,
@@ -577,9 +545,9 @@ export class ScheduleMessageWwebjsConsume {
       }
 
       const update: IUpdateMessage = { message: result, data: data.message };
-      await this.pushUpdate(update);
+      await this.pushUpdateBestEffort(update, data.message.message_id);
 
-      await this.sendStatusUpdate(
+      await this.sendStatusUpdateBestEffort(
         data.schedule_id,
         data.contact_id,
         data.message.message_id,
@@ -632,9 +600,9 @@ export class ScheduleMessageWwebjsConsume {
       }
 
       const update: IUpdateMessage = { message: result, data: data.message };
-      await this.pushUpdate(update);
+      await this.pushUpdateBestEffort(update, data.message.message_id);
 
-      await this.sendStatusUpdate(
+      await this.sendStatusUpdateBestEffort(
         data.schedule_id,
         data.contact_id,
         data.message.message_id,
@@ -652,6 +620,20 @@ export class ScheduleMessageWwebjsConsume {
   private async pushUpdate(input: IUpdateMessage): Promise<void> {
     const topic = this.kafkaServiceQueueService.updateMessage();
     await this.streamProducerService.send(topic, input);
+  }
+
+  private async pushUpdateBestEffort(
+    input: IUpdateMessage,
+    messageId: string
+  ): Promise<void> {
+    try {
+      await this.pushUpdate(input);
+    } catch (error) {
+      console.error(
+        `Failed to publish schedule message update for message ${messageId}:`,
+        error
+      );
+    }
   }
 
   private async sendStatusUpdate(
@@ -675,6 +657,25 @@ export class ScheduleMessageWwebjsConsume {
     await this.streamProducerService.send(topic, statusUpdate);
   }
 
+  private async sendStatusUpdateBestEffort(
+    scheduleId: string,
+    contactId: string,
+    messageId: string,
+    status:
+      | EScheduleStatus.sent
+      | EScheduleStatus.failed
+      | EScheduleStatus.ignored
+  ): Promise<void> {
+    try {
+      await this.sendStatusUpdate(scheduleId, contactId, messageId, status);
+    } catch (error) {
+      console.error(
+        `Failed to publish schedule status update for message ${messageId}:`,
+        error
+      );
+    }
+  }
+
   private async sendSendLog(
     data: IScheduleMessage,
     jid: string,
@@ -682,20 +683,20 @@ export class ScheduleMessageWwebjsConsume {
     error: string | null,
     success: boolean
   ): Promise<void> {
-    await this.elasticDatabaseService.indices(
-      EElasticIndex.schedule,
-      scheduleMappings()
-    );
-
-    const sendLog = {
-      result: success ? result : null,
-      error,
-      success,
-      jid,
-      payload: data.message.content,
-    };
-
     try {
+      await this.elasticDatabaseService.indices(
+        EElasticIndex.schedule,
+        scheduleMappings()
+      );
+
+      const sendLog = {
+        result: success ? result : null,
+        error,
+        success,
+        jid,
+        payload: data.message.content,
+      };
+
       await this.elasticDatabaseService.updateField(
         EElasticIndex.schedule,
         data.message.message_id,

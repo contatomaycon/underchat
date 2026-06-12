@@ -5,16 +5,12 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IWorkerConfigUpdateEvent } from '@core/common/interfaces/IWorkerConfigUpdateEvent';
 import { BaileysIncomingMessageService } from '@core/services/baileys/methods/incoming.service';
 import { baileysEnvironment } from '@core/config/environments';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class WorkerConfigUpdateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IWorkerConfigUpdateEvent> | null = null;
   private isRunning = false;
 
   constructor(
@@ -24,14 +20,6 @@ export class WorkerConfigUpdateConsume {
     @inject(BaileysIncomingMessageService)
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parseMessage(value: Buffer | null): IWorkerConfigUpdateEvent | null {
     if (!value) {
@@ -55,90 +43,43 @@ export class WorkerConfigUpdateConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.workerConfigUpdate();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IWorkerConfigUpdateEvent>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
+      groupId: `group-underchat-worker-config-update-${baileysEnvironment.baileysWorkerId}`,
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => data.worker_id,
+      handle: async (data) => {
+        if (data.worker_id !== baileysEnvironment.baileysWorkerId) {
+          return;
+        }
 
-    this.consumer = createConsumer(
-      this.kafka,
-      `group-underchat-worker-config-update-${baileysEnvironment.baileysWorkerId}`
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      if (data.worker_id !== baileysEnvironment.baileysWorkerId) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
         const rejectCall = data.reject_call ?? false;
         this.baileysIncomingMessageService.updateRejectCallConfig(rejectCall);
-      } catch (error) {
+      },
+      onInvalidMessage: () => {
+        console.warn('Skipping invalid worker config update payload');
+      },
+      onFailed: (_payload, _context, error) => {
         console.error('Error updating worker config:', error);
-        await this.commitNext(topic, message.partition, message.offset);
-      } finally {
-        stop();
-      }
-
-      await this.commitNext(topic, message.partition, message.offset);
+      },
+      maxRetries: 3,
+      retryDelaysMs: [250, 1000],
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumer = null;
   }
 }

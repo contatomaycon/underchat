@@ -150,7 +150,29 @@ export class NotificationMessageService {
 
     const kafkaTopic =
       this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
-    await this.streamProducerService.send(kafkaTopic, notificationMessage);
+    await this.streamProducerService.send(
+      kafkaTopic,
+      notificationMessage,
+      this.buildWhatsAppNotificationQueueKey(notificationMessage)
+    );
+  }
+
+  private buildWhatsAppNotificationQueueKey(
+    notificationMessage: INotificationMessage
+  ): string {
+    const accountId = notificationMessage.account?.id?.trim() ?? 'unknown';
+    const remoteJid = notificationMessage.message_key?.remote_jid?.trim();
+    if (remoteJid) {
+      return `chat:${accountId}:jid:${remoteJid}`;
+    }
+
+    return [
+      'chat',
+      accountId,
+      'phone',
+      notificationMessage.message_key.phone_ddi,
+      notificationMessage.message_key.phone_number,
+    ].join(':');
   }
 
   private async sendEmailNotification(

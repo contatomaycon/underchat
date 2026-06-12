@@ -570,60 +570,10 @@ func (k *KafkaClient) consumerWatchdogStalled(reader *kafka.Reader, topic, group
 }
 
 func (k *KafkaClient) consumeReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, handler KafkaMessageHandler) error {
-	if isWorkerSendTopic(topic) {
-		return k.consumeWorkerSendReader(ctx, reader, topic, groupID, state, handler)
-	}
-
-	idleRecreateInterval := k.consumerIdleRecreateInterval(topic)
-	for {
-		msg, err := k.fetchMessage(ctx, reader, idleRecreateInterval)
-		if err != nil {
-			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-				state.LastError = err.Error()
-			})
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if errors.Is(err, errKafkaConsumerIdleRecreate) {
-				return err
-			}
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return err
-			}
-			log.Printf("kafka fetch error topic=%s group=%s: %v", topic, groupID, err)
-			time.Sleep(k.fetchErrorBackoff())
-			continue
-		}
-		k.markConsumerPendingStart(state, msg)
-
-		if err := handler(ctx, msg); err != nil {
-			k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
-				state.LastError = err.Error()
-			})
-			log.Printf("kafka handler error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
-			if dlqErr := k.publishConsumerDLQ(ctx, msg, groupID, "handler_failed", err); dlqErr != nil {
-				k.markConsumerPendingDone(state, msg, dlqErr, false)
-				return fmt.Errorf("kafka consumer dlq publish failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, dlqErr)
-			}
-			if commitErr := reader.CommitMessages(ctx, msg); commitErr != nil {
-				k.markConsumerPendingDone(state, msg, commitErr, false)
-				return fmt.Errorf("kafka commit failed after dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr)
-			}
-			k.markConsumerPendingDone(state, msg, nil, true)
-			continue
-		}
-
-		if err := reader.CommitMessages(ctx, msg); err != nil {
-			k.markConsumerPendingDone(state, msg, err, false)
-			log.Printf("kafka commit error topic=%s partition=%d offset=%d: %v", topic, msg.Partition, msg.Offset, err)
-			return fmt.Errorf("kafka commit failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err)
-		} else {
-			k.markConsumerPendingDone(state, msg, nil, true)
-		}
-	}
+	return k.consumeParallelReader(ctx, reader, topic, groupID, state, handler)
 }
 
-func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, handler KafkaMessageHandler) error {
+func (k *KafkaClient) consumeParallelReader(ctx context.Context, reader *kafka.Reader, topic, groupID string, state *kafkaConsumerHealthState, handler KafkaMessageHandler) error {
 	sequencer := newKeyedSequencer()
 	commits := newPartitionCommitCoordinator(func(commitCtx context.Context, msg kafka.Message) error {
 		return reader.CommitMessages(commitCtx, msg)
@@ -631,7 +581,7 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 	consumeCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	maxInFlight := k.sendMaxInFlight()
+	maxInFlight := k.consumerMaxInFlight(topic)
 	inFlight := make(chan struct{}, maxInFlight)
 	var wg sync.WaitGroup
 	var firstErrMu sync.Mutex
@@ -698,12 +648,19 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 
 		k.markConsumerPendingStart(state, msg)
 
-		queueKey := workerSendQueueKey(msg.Value)
+		queueKey := kafkaMessageQueueKey(topic, msg)
 		commits.register(msg)
 
-		done := sequencer.enqueue(consumeCtx, consumeCtx, queueKey, k.cfg.SendQueueTimeout, func(taskCtx context.Context) error {
-			return handler(taskCtx, msg)
-		})
+		var done <-chan error
+		if kafkaTopicRequiresMessageOrder(topic) {
+			done = sequencer.enqueue(consumeCtx, consumeCtx, queueKey, k.handlerTimeout(topic), func(taskCtx context.Context) error {
+				return handler(taskCtx, msg)
+			})
+		} else {
+			done = runKafkaQueueTask(consumeCtx, k.handlerTimeout(topic), func(taskCtx context.Context) error {
+				return handler(taskCtx, msg)
+			})
+		}
 
 		wg.Add(1)
 		go func(msg kafka.Message, queueKey string, done <-chan error) {
@@ -713,29 +670,33 @@ func (k *KafkaClient) consumeWorkerSendReader(ctx context.Context, reader *kafka
 			}()
 
 			if err := <-done; err != nil {
+				if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+					k.markConsumerPendingDone(state, msg, err, false)
+					return
+				}
+
 				k.updateConsumerHealth(state, func(state *kafkaConsumerHealthState) {
 					state.LastError = err.Error()
 				})
 				log.Printf("kafka async handler error topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, err)
+				reason := "handler_failed"
+				cause := err
 				if errors.Is(err, context.DeadlineExceeded) {
-					terminalErr := fmt.Errorf("send queue timeout after %s: %w", k.cfg.SendQueueTimeout, err)
-					if dlqErr := k.publishSendMessageDLQ(consumeCtx, msg, groupID, "handler_timeout", terminalErr); dlqErr != nil {
-						k.markConsumerPendingDone(state, msg, dlqErr, false)
-						setFirstErr(fmt.Errorf("kafka send dlq publish failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, dlqErr))
-						return
-					}
+					reason = "handler_timeout"
+					cause = fmt.Errorf("handler timeout after %s: %w", k.handlerTimeout(topic), err)
+				}
 
-					committed, commitErr := commits.complete(consumeCtx, msg)
-					if commitErr != nil {
-						k.markConsumerPendingDone(state, msg, commitErr, false)
-						setFirstErr(fmt.Errorf("kafka commit failed after send dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr))
-						return
-					}
-					k.markConsumerPendingDone(state, msg, nil, committed)
+				if dlqErr := k.publishHandlerDLQ(consumeCtx, topic, msg, groupID, reason, cause); dlqErr != nil {
+					log.Printf("kafka dlq publish failed; committing failed message to avoid blocking queue topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, dlqErr)
+				}
+
+				committed, commitErr := commits.complete(consumeCtx, msg)
+				if commitErr != nil {
+					k.markConsumerPendingDone(state, msg, commitErr, false)
+					setFirstErr(fmt.Errorf("kafka commit failed after dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr))
 					return
 				}
-				k.markConsumerPendingDone(state, msg, err, false)
-				setFirstErr(fmt.Errorf("kafka handler failed topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, err))
+				k.markConsumerPendingDone(state, msg, nil, committed)
 				return
 			}
 
@@ -799,6 +760,30 @@ func (k *KafkaClient) sendMaxInFlight() int {
 		return 256
 	}
 	return k.cfg.SendMaxInFlight
+}
+
+func (k *KafkaClient) consumerMaxInFlight(topic string) int {
+	if isWorkerSendTopic(topic) {
+		return k.sendMaxInFlight()
+	}
+	if k.cfg.KafkaConsumerMaxInFlight <= 0 {
+		return 32
+	}
+	return k.cfg.KafkaConsumerMaxInFlight
+}
+
+func (k *KafkaClient) handlerTimeout(topic string) time.Duration {
+	if isWorkerSendTopic(topic) {
+		return k.cfg.SendQueueTimeout
+	}
+	return k.cfg.KafkaConsumerStallTimeout
+}
+
+func (k *KafkaClient) publishHandlerDLQ(ctx context.Context, topic string, msg kafka.Message, groupID, reason string, cause error) error {
+	if isWorkerSendTopic(topic) {
+		return k.publishSendMessageDLQ(ctx, msg, groupID, reason, cause)
+	}
+	return k.publishConsumerDLQ(ctx, msg, groupID, reason, cause)
 }
 
 func isWorkerSendTopic(topic string) bool {

@@ -1,9 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import type {
-  KafkaConsumer,
-  LibrdKafkaError,
-  MessageHeader,
-} from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -43,9 +39,6 @@ import {
 import { buildQuotedTextFromExtended } from '@core/common/functions/buildQuotedTextFromExtended';
 import { buildContextInfoFromMessage } from '@core/common/functions/buildContextInfoFromMessage';
 import { unwrapMessage } from '@core/common/functions/unwrapMessage';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import Redis from 'ioredis';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -65,8 +58,6 @@ import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.servi
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { PushNotificationService } from '@core/services/pushNotification.service';
 import { SectorService } from '@core/services/sector.service';
 import { UserService } from '@core/services/user.service';
@@ -94,6 +85,12 @@ import { generalEnvironment } from '@core/config/environments';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappValidation.service';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import type { KafkaRunnerMessage } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
+import {
+  buildUpsertMessageDlqKey,
+  buildUpsertMessageKafkaKey,
+} from '@core/common/functions/buildUpsertMessageKafkaKey';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -149,13 +146,6 @@ const CHATBOT_TRIGGER_FUTURE_TOLERANCE_MS = readPositiveIntEnv(
   60 * 1000
 );
 
-interface KafkaConsumerMessage {
-  value: Buffer | null;
-  partition: number;
-  offset: number;
-  headers?: MessageHeader[];
-}
-
 function isReactionInactivityTypeUser(
   typeUser: ETypeUserChat
 ): typeUser is ReactionInactivityTypeUser {
@@ -167,8 +157,8 @@ function isReactionInactivityTypeUser(
 @singleton()
 export class MessageUpsertConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IUpsertMessage> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAYS = [100, 500, 2000];
   private readonly MESSAGE_PROCESSING_TIMEOUT_MS = 120000;
@@ -182,11 +172,15 @@ export class MessageUpsertConsume {
     generalEnvironment.automationSendDedupeTtlSeconds;
   private readonly DLQ_SEND_DEDUPE_PREFIX = 'message-upsert:dlq:v1';
   private readonly DLQ_SEND_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
+  private readonly DLQ_FALLBACK_REDIS_KEY = 'message-upsert:dlq:fallback:v1';
+  private readonly DLQ_FALLBACK_MAX_ITEMS = readPositiveIntEnv(
+    'MESSAGE_UPSERT_DLQ_FALLBACK_MAX_ITEMS',
+    10_000
+  );
   private readonly historyReceiptCache: MessageHistoryReceiptCacheService;
 
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SYNC_RESPONSE = 4;
-  private partitionFailureCounts: Map<number, number> = new Map();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -235,24 +229,9 @@ export class MessageUpsertConsume {
     );
   }
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   private normalizePhoneForLock(phone: string): string {
     const candidates = buildCandidates(phone);
     return candidates.sort()[0] ?? phone;
-  }
-
-  private incrementPartitionFailure(partition: number): number {
-    const current = this.partitionFailureCounts.get(partition) ?? 0;
-    const next = current + 1;
-    this.partitionFailureCounts.set(partition, next);
-    return next;
   }
 
   private isLockAcquisitionTimeoutError(error: unknown): boolean {
@@ -309,14 +288,18 @@ export class MessageUpsertConsume {
           retry_count: retryCount,
           error: error instanceof Error ? error.message : String(error),
         });
-        await this.streamProducerService.send(dlqTopic, {
-          ...data,
-          dlq_error: error instanceof Error ? error.message : String(error),
-          dlq_stack: error instanceof Error ? error.stack : undefined,
-          dlq_timestamp: new Date().toISOString(),
-          dlq_retry_count: retryCount,
-          dlq_pod: process.env.HOSTNAME || 'unknown',
-        });
+        await this.streamProducerService.send(
+          dlqTopic,
+          {
+            ...data,
+            dlq_error: error instanceof Error ? error.message : String(error),
+            dlq_stack: error instanceof Error ? error.stack : undefined,
+            dlq_timestamp: new Date().toISOString(),
+            dlq_retry_count: retryCount,
+            dlq_pod: process.env.HOSTNAME || 'unknown',
+          },
+          this.resolveUpsertDlqKafkaKey(data)
+        );
         this.logLifecycle(data, {
           stage: 'message_upsert.dlq.publish_success',
           decision: 'publish_dlq',
@@ -371,7 +354,63 @@ export class MessageUpsertConsume {
       topic: dlqTopic,
       retry_count: retryCount,
     });
-    return false;
+
+    const fallbackStored = await this.persistDlqFallback(
+      data,
+      error,
+      retryCount
+    );
+    this.logLifecycle(data, {
+      stage: 'message_upsert.dlq.fallback',
+      decision: 'persist_dlq_fallback',
+      outcome: fallbackStored ? 'persisted' : 'failed_open',
+      reason: fallbackStored
+        ? 'kafka_dlq_failed_redis_fallback_persisted'
+        : 'kafka_dlq_and_redis_fallback_failed',
+      level: fallbackStored ? 'warn' : 'error',
+      retry_count: retryCount,
+    });
+
+    return true;
+  }
+
+  private async persistDlqFallback(
+    data: IUpsertMessage,
+    error: unknown,
+    retryCount: number
+  ): Promise<boolean> {
+    try {
+      const payload = JSON.stringify({
+        failed_at: new Date().toISOString(),
+        retry_count: retryCount,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+        payload: data,
+      });
+
+      await this.redis.lpush(this.DLQ_FALLBACK_REDIS_KEY, payload);
+      await this.redis.ltrim(
+        this.DLQ_FALLBACK_REDIS_KEY,
+        0,
+        this.DLQ_FALLBACK_MAX_ITEMS - 1
+      );
+      await this.redis.expire(
+        this.DLQ_FALLBACK_REDIS_KEY,
+        this.DLQ_SEND_DEDUPE_TTL_SECONDS
+      );
+      return true;
+    } catch (fallbackError) {
+      console.error('[DLQ] CRITICAL: Failed to persist Redis DLQ fallback:', {
+        fallbackError,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_key_id: data.message?.key?.id,
+      });
+      return false;
+    }
   }
 
   private buildDlqDedupeKey(
@@ -5751,64 +5790,29 @@ export class MessageUpsertConsume {
 
     const topic = this.kafkaServiceQueueService.upsertMessage();
 
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IUpsertMessage>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-message-upsert'
-    );
-
-    this.consumer.on('data', (message) => {
-      void this.handleKafkaMessage(
-        t,
-        topic,
-        message as KafkaConsumerMessage
-      ).catch(() => {});
+      groupId: 'group-underchat-message-upsert',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data, message) =>
+        this.resolveUpsertKafkaKey(data, message),
+      handle: (data, context) =>
+        this.processKafkaMessageInPartition(
+          t,
+          topic,
+          data,
+          context.partition,
+          context.offset
+        ),
+      maxRetries: 1,
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
-  }
-
-  private async handleKafkaMessage(
-    t: TFunction<'translation', undefined>,
-    topic: string,
-    message: KafkaConsumerMessage
-  ): Promise<void> {
-    const { partition, offset } = message;
-    const data = this.parseMessage(message.value);
-    if (!data) {
-      await this.commitNext(topic, partition, offset);
-      return;
-    }
-
-    const previousChain =
-      this.partitionChains.get(partition) ?? Promise.resolve();
-
-    const currentChain = previousChain
-      .then(() =>
-        this.processKafkaMessageInPartition(t, topic, data, partition, offset)
-      )
-      .catch((error) => {
-        this.handlePartitionChainError(data, partition, offset, error);
-      });
-
-    this.partitionChains.set(partition, currentChain);
+    this.consumer = this.runner.consumer;
   }
 
   private async processKafkaMessageInPartition(
@@ -5837,6 +5841,7 @@ export class MessageUpsertConsume {
       offset,
     });
 
+    let consecutiveFailureCount = 0;
     while (true) {
       let timeoutLogged = false;
       const timeout = this.startMessageProcessingTimeout(
@@ -5861,21 +5866,19 @@ export class MessageUpsertConsume {
           throw new Error('Message processing returned false');
         }
 
-        this.partitionFailureCounts.set(partition, 0);
-        await this.commitNext(topic, partition, offset);
         return;
       } catch (error) {
         clearTimeout(timeout);
+        consecutiveFailureCount += 1;
         const sentToDlq = await this.handleProcessRetry(
           data,
           partition,
           offset,
+          consecutiveFailureCount,
           timeoutLogged,
           error
         );
         if (sentToDlq) {
-          this.partitionFailureCounts.set(partition, 0);
-          await this.commitNext(topic, partition, offset);
           return;
         }
       }
@@ -6008,6 +6011,7 @@ export class MessageUpsertConsume {
     data: IUpsertMessage,
     partition: number,
     offset: number,
+    consecutiveFailureCount: number,
     timeoutLogged: boolean,
     error: unknown
   ): Promise<boolean> {
@@ -6025,7 +6029,6 @@ export class MessageUpsertConsume {
       return false;
     }
 
-    const consecutiveFailureCount = this.incrementPartitionFailure(partition);
     const lockTimeout = this.isLockAcquisitionTimeoutError(error);
 
     if (
@@ -6074,89 +6077,28 @@ export class MessageUpsertConsume {
     return false;
   }
 
-  private handlePartitionChainError(
-    data: IUpsertMessage,
-    partition: number,
-    offset: number,
-    error: unknown
-  ): void {
-    this.logLifecycle(data, {
-      stage: 'message_upsert.process.unhandled_error',
-      decision: 'partition_chain',
-      outcome: 'error',
-      reason: 'unhandled_exception',
-      level: 'error',
-      partition,
-      offset,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    this.incrementPartitionFailure(partition);
-  }
-
   public async close(): Promise<void> {
     this.isRunning = false;
 
-    const pendingChains = Array.from(this.partitionChains.values());
-    if (pendingChains.length > 0) {
-      const SHUTDOWN_TIMEOUT_MS = 30000;
-      const chainsPromise = Promise.allSettled(pendingChains);
-      const timeoutPromise = new Promise<'timeout'>((resolve) =>
-        setTimeout(() => resolve('timeout'), SHUTDOWN_TIMEOUT_MS)
-      );
-
-      const result = await Promise.race([chainsPromise, timeoutPromise]);
-
-      if (result === 'timeout') {
-        console.warn(
-          `[MessageUpsert] WARNING: Shutdown timeout after ${SHUTDOWN_TIMEOUT_MS}ms. Some messages may be reprocessed on restart.`
-        );
-      }
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
 
-    if (!this.consumer) {
-      return;
-    }
-
-    try {
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-      this.partitionFailureCounts.clear();
-    }
+    this.consumer = null;
   }
 
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    try {
-      await commitOffset(this.consumerOrThrow, topic, partition, offset);
-    } catch (error: unknown) {
-      if (MessageUpsertConsume.isLibrdKafkaError(error) && error.code === 22) {
-        return;
-      }
-
-      throw error;
-    }
+  private resolveUpsertKafkaKey(
+    data: IUpsertMessage,
+    message?: KafkaRunnerMessage
+  ): string {
+    const messageKey =
+      data.message?.key?.id ?? message?.key?.toString() ?? null;
+    return buildUpsertMessageKafkaKey(data, messageKey);
   }
 
-  private static isLibrdKafkaError(error: unknown): error is LibrdKafkaError {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      typeof (error as { code: unknown }).code === 'number'
-    );
+  private resolveUpsertDlqKafkaKey(data: IUpsertMessage): string {
+    return buildUpsertMessageDlqKey(data, data.message?.key?.id ?? null);
   }
 
   private async saveChatWithCaches(chat: IChat): Promise<boolean> {

@@ -4,24 +4,20 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IScheduleStatusUpdate } from '@core/common/interfaces/IScheduleStatusUpdate';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { scheduleMappings } from '@core/mappings/schedule.mappings';
 import { IScheduleTracker } from '@core/common/interfaces/IScheduleTracker';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import {
   ScheduleStatusUpdateScriptParams,
   ScheduleDocumentBaseline,
 } from '@core/common/interfaces/IScheduleStatusUpdateScript';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class ScheduleStatusUpdateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IScheduleStatusUpdate> | null = null;
   private isRunning = false;
   private readonly scheduleTrackers: Map<string, IScheduleTracker> = new Map();
   private readonly TIMEOUT_MS = 5 * 60 * 1000;
@@ -34,70 +30,33 @@ export class ScheduleStatusUpdateConsume {
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.scheduleStatusUpdate();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IScheduleStatusUpdate>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-schedule-status-update'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.handleStatusUpdate(data, message);
-      } catch (error) {
-        console.error(
-          `Error processing schedule status update for schedule ${data.schedule_id}, contact ${data.contact_id}:`,
-          error
-        );
-      } finally {
-        stop();
-      }
-
-      await this.commitNext(topic, message.partition, message.offset);
+      groupId: 'group-underchat-schedule-status-update',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => data.schedule_id,
+      handle: async (data, context) => {
+        try {
+          await this.handleStatusUpdate(data, context.message);
+        } catch (error) {
+          console.error(
+            `Error processing schedule status update for schedule ${data.schedule_id}, contact ${data.contact_id}:`,
+            error
+          );
+        }
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
@@ -109,32 +68,12 @@ export class ScheduleStatusUpdateConsume {
 
     this.scheduleTrackers.clear();
 
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumer = null;
   }
 
   private parseMessage(value: Buffer | null): IScheduleStatusUpdate | null {

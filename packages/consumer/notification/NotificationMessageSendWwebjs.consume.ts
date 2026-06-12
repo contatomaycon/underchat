@@ -7,20 +7,16 @@ import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.servi
 import { WwebjsMessageTextService } from '@core/services/wwebjs/methods/messageText.service';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { INotificationMessage } from '@core/common/interfaces/INotificationMessage';
 import { WwebjsPhoneValidationService } from '@core/services/wwebjs/methods/phoneValidation.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import Redis from 'ioredis';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class NotificationMessageSendWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<INotificationMessage> | null = null;
   private isRunning = false;
   private readonly NOTIFICATION_DEDUPE_PREFIX =
     'notification-send:idempotency:v1';
@@ -40,14 +36,6 @@ export class NotificationMessageSendWwebjsConsume {
     @inject('Redis') private readonly redis: Redis
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
@@ -57,50 +45,27 @@ export class NotificationMessageSendWwebjsConsume {
       const topic =
         this.kafkaBaileysQueueService.workerNotificationMessage(workerId);
 
-      await ensureKafkaTopic(
-        this.kafka,
+      this.runner = new KafkaConsumerRunner<INotificationMessage>({
+        kafka: this.kafka,
         topic,
-        this.kafkaBaileysQueueService.getNumPartitions(),
-        this.kafkaBaileysQueueService.getReplicationFactor()
-      );
-
-      this.consumer = createConsumer(this.kafka, groupId);
-
-      this.consumer.on('data', async (message) => {
-        const data = this.parseNotificationMessage(message.value);
-
-        if (!data) {
-          await this.commitNext(topic, message.partition, message.offset);
-          return;
-        }
-
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-
-        const stop = startHeartbeat(heartbeat);
-        try {
-          await this.processNotificationMessage(data);
-        } catch (error) {
+        groupId,
+        parse: (message) => this.parseNotificationMessage(message.value),
+        resolveEntityKey: (data) => this.buildNotificationQueueKey(data),
+        preserveEntityOrder: true,
+        handle: (data) => this.processNotificationMessage(data),
+        onInvalidMessage: () => {
+          console.warn('Skipping invalid notification message payload');
+        },
+        onFailed: (_payload, _context, error) => {
           console.error('Erro ao processar mensagem:', error);
-        } finally {
-          stop();
-          await this.commitNext(topic, message.partition, message.offset);
-        }
+        },
+        logger: console,
       });
 
-      this.consumer.on('event.error', (err) => {
-        handleConsumerError(err, topic);
-      });
-
-      const consumer = this.consumer;
-      if (!consumer) {
-        throw new Error('Consumer not initialized');
-      }
-
-      connectConsumer(consumer, topic, () => {
+      await this.runner.start(() => {
         this.isRunning = true;
       });
+      this.consumer = this.runner.consumer;
     } catch (error) {
       console.error(
         'Erro ao executar NotificationMessageSendWwebjsConsume:',
@@ -112,24 +77,12 @@ export class NotificationMessageSendWwebjsConsume {
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    this.consumer = null;
   }
 
   private parseNotificationMessage(
@@ -217,6 +170,16 @@ export class NotificationMessageSendWwebjsConsume {
     return '';
   }
 
+  private buildNotificationQueueKey(data: INotificationMessage): string {
+    const destination = this.buildNotificationDestination(data);
+    if (destination) {
+      const accountId = data.account?.id?.trim() ?? 'unknown';
+      return `chat:${accountId}:${destination}`;
+    }
+
+    return this.buildNotificationDedupeKey(data);
+  }
+
   private buildNotificationDedupeKey(data: INotificationMessage): string {
     const accountId = data.account?.id?.trim() ?? 'unknown';
     const notificationId = data.notification_id?.trim() ?? '';
@@ -260,13 +223,5 @@ export class NotificationMessageSendWwebjsConsume {
       user_id: userId,
       phone_jid: phoneJid,
     });
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }

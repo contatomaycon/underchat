@@ -81,7 +81,11 @@ async function restartUnhealthyConsumers(log: {
         continue;
       }
 
-      forceResetConsumerOwner(consumer);
+      if (consumer.close) {
+        await consumer.close();
+      } else {
+        forceResetConsumerOwner(consumer);
+      }
       await consumer.execute?.();
     } catch (err) {
       log.error(
@@ -113,21 +117,11 @@ function forceResetConsumerOwner(consumer: IWorkerConsumer): void {
 
   owner.consumer = null;
   owner.isRunning = false;
-  clearMap(owner.partitionChains);
-  clearMap(owner.partitionCommitStates);
-  clearMap(owner.partitionCommitChains);
   clearMap(owner.lastMessageTypeByChatId);
-  clearSet(owner.inFlightTasks);
 }
 
 function clearMap(value: unknown): void {
   if (value instanceof Map) {
-    value.clear();
-  }
-}
-
-function clearSet(value: unknown): void {
-  if (value instanceof Set) {
     value.clear();
   }
 }

@@ -13,9 +13,15 @@ export const KAFKA_GLOBAL_TOPIC_CONFIG: IKafkaTopicConfig = {
   replicationFactor: 3,
 };
 
+const GLOBAL_WORKER_TOPIC_SEGMENTS = new Set(['config', 'warm', 'lifecycle']);
+
 export function isWorkerScopedKafkaTopic(topic: string): boolean {
   const parts = topic.split('.');
-  return parts.length >= 2 && parts[0] === 'worker' && parts[1] !== 'config';
+  return (
+    parts.length >= 2 &&
+    parts[0] === 'worker' &&
+    !GLOBAL_WORKER_TOPIC_SEGMENTS.has(parts[1])
+  );
 }
 
 export function resolveKafkaTopicConfig(topic: string): IKafkaTopicConfig {

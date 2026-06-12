@@ -49,6 +49,13 @@ import { WorkerLifecycleConsume } from '@core/consumer/worker/WorkerLifecycle.co
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { createConsumer } from '@core/common/functions/createConsumer';
 
+async function flushPromises(times = 6): Promise<void> {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve();
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 function lifecyclePayload(
   overrides: Record<string, unknown> = {}
 ): Record<string, unknown> {
@@ -157,11 +164,12 @@ describe('WorkerLifecycleConsume', () => {
     const deps = makeSut();
 
     await deps.sut.execute(deps.server as never);
-    await deps.handlers.data({
+    deps.handlers.data({
       value: Buffer.from(JSON.stringify(lifecyclePayload())),
       partition: 2,
       offset: 7,
     });
+    await flushPromises();
 
     expect(deps.workerService.viewWorkerForMonitor).toHaveBeenCalledWith(
       'worker-1'
@@ -192,11 +200,12 @@ describe('WorkerLifecycleConsume', () => {
     );
 
     await deps.sut.execute(deps.server as never);
-    await deps.handlers.data({
+    deps.handlers.data({
       value: Buffer.from(JSON.stringify(lifecyclePayload())),
       partition: 1,
       offset: 3,
     });
+    await flushPromises();
 
     expect(deps.workerGrpcClientService.createWorker).not.toHaveBeenCalled();
     expect(deps.workerGrpcClientService.recreateWorker).not.toHaveBeenCalled();
@@ -209,42 +218,37 @@ describe('WorkerLifecycleConsume', () => {
     );
   });
 
-  it('does not commit transient runtime failures so Kafka can retry', async () => {
+  it('retries transient runtime failures internally and commits after success', async () => {
+    jest.useFakeTimers();
     const deps = makeSut();
     deps.workerGrpcClientService.createWorker.mockRejectedValueOnce(
       new Error('grpc unavailable')
     );
 
-    await deps.sut.execute(deps.server as never);
-    await deps.handlers.data({
-      value: Buffer.from(JSON.stringify(lifecyclePayload())),
-      partition: 1,
-      offset: 4,
-    });
+    try {
+      await deps.sut.execute(deps.server as never);
+      deps.handlers.data({
+        value: Buffer.from(JSON.stringify(lifecyclePayload())),
+        partition: 1,
+        offset: 4,
+      });
+      await flushPromises();
+      await jest.advanceTimersByTimeAsync(1000);
+      await flushPromises();
 
-    expect(commitOffset).not.toHaveBeenCalled();
-    expect(deps.server.log.error).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: EWorkerAction.create,
-        operationId: 'operation-1',
-        workerId: 'worker-1',
-      }),
-      'Worker lifecycle consume failed'
-    );
-
-    await deps.handlers.data({
-      value: Buffer.from(JSON.stringify(lifecyclePayload())),
-      partition: 1,
-      offset: 5,
-    });
-
-    expect(commitOffset).toHaveBeenCalledWith(
-      deps.kafkaConsumer,
-      'worker.lifecycle.request',
-      1,
-      5
-    );
-    expect(deps.server.log.error).toHaveBeenCalledTimes(1);
+      expect(deps.workerGrpcClientService.createWorker).toHaveBeenCalledTimes(
+        2
+      );
+      expect(commitOffset).toHaveBeenCalledWith(
+        deps.kafkaConsumer,
+        'worker.lifecycle.request',
+        1,
+        4
+      );
+      expect(deps.server.log.error).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('falls back to clean create preserving worker_id when warm activation fails', async () => {
@@ -254,7 +258,7 @@ describe('WorkerLifecycleConsume', () => {
     );
 
     await deps.sut.execute(deps.server as never);
-    await deps.handlers.data({
+    deps.handlers.data({
       value: Buffer.from(
         JSON.stringify(
           lifecyclePayload({
@@ -268,6 +272,7 @@ describe('WorkerLifecycleConsume', () => {
       partition: 4,
       offset: 9,
     });
+    await flushPromises();
 
     expect(
       deps.workerGrpcClientService.activateWarmWorker

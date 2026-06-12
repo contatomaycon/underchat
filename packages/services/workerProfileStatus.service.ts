@@ -347,7 +347,11 @@ export class WorkerProfileStatusService {
 
       const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
 
-      await this.streamProducerService.send(topic, deleteMessage);
+      await this.streamProducerService.send(
+        topic,
+        deleteMessage,
+        `profile_status_delete:${externalId || workerProfileStatusId}`
+      );
     } catch (error) {
       throw error;
     }
@@ -406,7 +410,11 @@ export class WorkerProfileStatusService {
         status.worker_id
       );
 
-      await this.streamProducerService.send(topic, statusMessage);
+      await this.streamProducerService.send(
+        topic,
+        statusMessage,
+        `profile_status:${status.worker_profile_status_id}`
+      );
     } catch (error) {
       throw error;
     }

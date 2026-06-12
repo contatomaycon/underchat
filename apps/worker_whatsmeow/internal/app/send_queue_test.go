@@ -153,29 +153,93 @@ func TestPartitionCommitCoordinatorDoesNotCommitPastGap(t *testing.T) {
 }
 
 func TestWorkerSendQueueKeyUsesChatID(t *testing.T) {
-	raw := []byte(`{"message_id":"m1","chat_id":"chat-a","phone":"5511999999999"}`)
-	if got := workerSendQueueKey(raw); got != "chat:chat-a" {
+	raw := []byte(`{"message_id":"m1","chat_id":"chat-a","phone":"5511999999999","account":{"id":"account-1"}}`)
+	if got := workerSendQueueKey(raw); got != "chat:account-1:chat-a" {
 		t.Fatalf("unexpected queue key %q", got)
 	}
 }
 
 func TestWorkerSendQueueKeyFallsBackToMessageRemoteJID(t *testing.T) {
-	raw := []byte(`{"message_id":"m1","message_key":{"remote_jid":"5511999999999@s.whatsapp.net"},"phone":"5511888888888"}`)
-	if got := workerSendQueueKey(raw); got != "chat:5511999999999@s.whatsapp.net" {
+	raw := []byte(`{"message_id":"m1","message_key":{"remote_jid":"5511999999999@s.whatsapp.net"},"phone":"5511888888888","account":{"id":"account-1"}}`)
+	if got := workerSendQueueKey(raw); got != "chat:account-1:5511999999999@s.whatsapp.net" {
 		t.Fatalf("unexpected queue key %q", got)
 	}
 }
 
 func TestWorkerSendQueueKeyFallsBackToPhone(t *testing.T) {
-	raw := []byte(`{"message_id":"m1","phone":"5511999999999"}`)
-	if got := workerSendQueueKey(raw); got != "chat:5511999999999" {
+	raw := []byte(`{"message_id":"m1","phone":"5511999999999","account":{"id":"account-1"}}`)
+	if got := workerSendQueueKey(raw); got != "chat:account-1:5511999999999" {
 		t.Fatalf("unexpected queue key %q", got)
 	}
 }
 
-func TestWorkerSendQueueKeyUsesSystemForNonChatPayload(t *testing.T) {
+func TestWorkerSendQueueKeyUsesProfileStatusKeyForProfilePayload(t *testing.T) {
 	raw := []byte(`{"worker_id":"w1","account_id":"a1","worker_profile_status_id":"s1","value":"ola"}`)
-	if got := workerSendQueueKey(raw); got != workerSendSystemQueueKey {
+	if got := workerSendQueueKey(raw); got != "profile_status:s1" {
+		t.Fatalf("unexpected queue key %q", got)
+	}
+}
+
+func TestWorkerSendQueueKeyUsesExternalIDForProfileStatusDelete(t *testing.T) {
+	raw := []byte(`{"worker_id":"w1","account_id":"a1","worker_profile_status_id":"s1","external_id":"ext1"}`)
+	if got := workerSendQueueKey(raw); got != "profile_status_delete:ext1" {
+		t.Fatalf("unexpected queue key %q", got)
+	}
+}
+
+func TestWorkerSendQueueKeyUsesWorkerAndAccountForProfileInfo(t *testing.T) {
+	raw := []byte(`{"worker_id":"w1","account_id":"a1","name":"Atendimento"}`)
+	if got := workerSendQueueKey(raw); got != "profile_info:w1:a1" {
+		t.Fatalf("unexpected queue key %q", got)
+	}
+}
+
+func TestKafkaMessageQueueKeyUsesScheduleAccountChannel(t *testing.T) {
+	msg := kafka.Message{
+		Topic: "worker.w1.schedule.send.message",
+		Key:   []byte("schedule-key-that-must-not-order"),
+		Value: []byte(`{"schedule_id":"sch1","contact_id":"c1","message":{"message_id":"m1","chat_id":"chat-a","account":{"id":"account-1"}}}`),
+	}
+	if got := kafkaMessageQueueKey(msg.Topic, msg); got != "account:account-1:channel:w1" {
+		t.Fatalf("unexpected queue key %q", got)
+	}
+}
+
+func TestKafkaMessageQueueKeyUsesDifferentScheduleQueuesPerChannel(t *testing.T) {
+	raw := []byte(`{"schedule_id":"sch1","contact_id":"c1","message":{"message_id":"m1","chat_id":"chat-a","account":{"id":"account-1"}}}`)
+	msgA := kafka.Message{Topic: "worker.w1.schedule.send.message", Value: raw}
+	msgB := kafka.Message{Topic: "worker.w2.schedule.send.message", Value: raw}
+
+	keyA := kafkaMessageQueueKey(msgA.Topic, msgA)
+	keyB := kafkaMessageQueueKey(msgB.Topic, msgB)
+	if keyA == keyB {
+		t.Fatalf("expected different schedule queue keys per channel, got %q", keyA)
+	}
+	if keyB != "account:account-1:channel:w2" {
+		t.Fatalf("unexpected second channel queue key %q", keyB)
+	}
+}
+
+func TestKafkaMessageQueueKeyUsesNotificationDestination(t *testing.T) {
+	msg := kafka.Message{
+		Topic: "worker.w1.notification.message",
+		Key:   []byte("notification-key-that-must-not-order"),
+		Value: []byte(`{"notification_id":"n1","account":{"id":"a1"},"message_key":{"remote_jid":"5511999999999@s.whatsapp.net"},"message_whatsapp":"hello"}`),
+	}
+	if got := kafkaMessageQueueKey(msg.Topic, msg); got != "chat:a1:jid:5511999999999@s.whatsapp.net" {
+		t.Fatalf("unexpected queue key %q", got)
+	}
+}
+
+func TestKafkaMessageQueueKeyDoesNotSerializeMarkReadByJID(t *testing.T) {
+	msg := kafka.Message{
+		Topic:     topicMarkMessageRead,
+		Key:       []byte("same-chat-key"),
+		Partition: 2,
+		Offset:    45,
+		Value:     []byte(`{"account_id":"acc1","worker_id":"w1","keys":[{"remote_jid":"5511999999999@s.whatsapp.net","id":"m1"}]}`),
+	}
+	if got := kafkaMessageQueueKey(msg.Topic, msg); got != "offset:mark.message.read:2:45" {
 		t.Fatalf("unexpected queue key %q", got)
 	}
 }

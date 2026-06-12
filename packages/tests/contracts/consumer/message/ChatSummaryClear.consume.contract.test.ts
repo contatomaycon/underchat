@@ -21,10 +21,6 @@ jest.mock('@core/common/functions/handleConsumerError', () => ({
   handleConsumerError: jest.fn(),
 }));
 
-jest.mock('@core/common/functions/startHeartbeat', () => ({
-  startHeartbeat: jest.fn(() => jest.fn()),
-}));
-
 jest.mock('@core/plugins/kafkaStreams', () => ({}));
 
 jest.mock('@core/services/kafkaServiceQueue.service', () => ({
@@ -61,7 +57,7 @@ describe('ChatSummaryClearConsume', () => {
     jest.clearAllMocks();
   });
 
-  it('commits the offset when processing fails inside the partition chain', async () => {
+  it('commits the offset when processing fails in the runner handler', async () => {
     const kafkaConsumer = new FakeConsumer();
     (createConsumer as jest.Mock).mockReturnValue(kafkaConsumer);
 

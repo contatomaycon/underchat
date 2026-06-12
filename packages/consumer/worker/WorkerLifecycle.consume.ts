@@ -11,17 +11,16 @@ import {
   IWorkerLifecycleQueueMessage,
   workerLifecycleQueueActionToWorkerAction,
 } from '@core/common/interfaces/IWorkerLifecycleQueueMessage';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { currentTime } from '@core/common/functions/currentTime';
 import { v7 as uuidv7 } from 'uuid';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class WorkerLifecycleConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IWorkerLifecycleQueueMessage> | null =
+    null;
   private isRunning = false;
 
   constructor(
@@ -38,43 +37,23 @@ export class WorkerLifecycleConsume {
     private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-    return this.consumer;
-  }
-
   async execute(server: FastifyInstance): Promise<void> {
     if (this.consumer && this.isRunning) {
       return;
     }
 
     const topic = this.kafkaServiceQueueService.workerLifecycleRequest();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IWorkerLifecycleQueueMessage>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-worker-lifecycle'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const payload = this.parsePayload(message.value);
-      if (!payload) {
-        await this.commit(topic, message.partition, message.offset);
-        return;
-      }
-
-      try {
-        await this.processPayload(payload);
-        await this.commit(topic, message.partition, message.offset);
-      } catch (error) {
+      groupId: 'group-underchat-worker-lifecycle',
+      parse: (message) => this.parsePayload(message.value),
+      resolveEntityKey: (payload) => payload.worker_id,
+      handle: (payload) => this.processPayload(payload),
+      onInvalidMessage: () => {
+        server.log.warn('Skipping invalid worker lifecycle payload');
+      },
+      onFailed: (payload, _context, error) => {
         server.log.error(
           {
             err: error,
@@ -84,33 +63,25 @@ export class WorkerLifecycleConsume {
           },
           'Worker lifecycle consume failed'
         );
-      }
+      },
+      maxRetries: 3,
+      retryDelaysMs: [1000, 5000],
+      logger: server.log,
     });
 
-    const consumer = this.consumer;
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
-    }
     this.isRunning = false;
-    await new Promise<void>((resolve) => {
-      this.consumer?.unsubscribe();
-      this.consumer?.disconnect(resolve);
-    });
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
+    }
     this.consumer = null;
-  }
-
-  private async commit(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private async processPayload(

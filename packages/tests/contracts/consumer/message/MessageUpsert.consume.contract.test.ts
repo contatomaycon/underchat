@@ -28,10 +28,6 @@ jest.mock('@core/common/functions/handleConsumerError', () => ({
   handleConsumerError: jest.fn(),
 }));
 
-jest.mock('@core/common/functions/startHeartbeat', () => ({
-  startHeartbeat: jest.fn(() => jest.fn()),
-}));
-
 jest.mock('@core/common/functions/normalizeJid', () => ({
   normalizeJid: jest.fn((jid?: string | null) => jid ?? undefined),
 }));
@@ -638,7 +634,8 @@ describe('MessageUpsertConsume edit fallback', () => {
         worker_id: 'worker-1',
         dlq_error: error.message,
         dlq_retry_count: 3,
-      })
+      }),
+      'account-1:worker-1:556999715039@s.whatsapp.net:false_6352894177535@lid_3A7E64CFE62F38192A29'
     );
   });
 

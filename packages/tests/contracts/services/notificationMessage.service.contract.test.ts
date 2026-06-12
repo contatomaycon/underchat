@@ -160,6 +160,11 @@ describe('NotificationMessageService', () => {
     ).resolves.toBe(true);
 
     expect(mocks.streamProducerService.send).toHaveBeenCalledTimes(1);
+    expect(mocks.streamProducerService.send).toHaveBeenCalledWith(
+      'worker-topic-worker-1',
+      expect.objectContaining({ notification_id: 'notification-1' }),
+      'chat:account-1:jid:5511991204099@s.whatsapp.net'
+    );
     expect(mocks.emailService.sendEmail).not.toHaveBeenCalled();
     expect(mocks.elasticDatabaseService.updateWithOCC).toHaveBeenCalledWith(
       expect.any(String),

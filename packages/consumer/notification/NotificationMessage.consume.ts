@@ -2,18 +2,15 @@ import { singleton, inject } from 'tsyringe';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { NotificationMessageService } from '@core/services/notificationMessage.service';
 import { INotificationMessageRequest } from '@core/common/interfaces/INotificationMessageRequest';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class NotificationMessageConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<INotificationMessageRequest> | null =
+    null;
   private isRunning = false;
 
   constructor(
@@ -24,94 +21,43 @@ export class NotificationMessageConsume {
     private readonly notificationMessageService: NotificationMessageService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.notificationMessage();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<INotificationMessageRequest>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-notification-message'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseNotificationMessageRequest(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.notificationMessageService.sendNotificationMessage(
-          data.notification_type_id,
-          data.account_id
-        );
-      } catch {
-        stop();
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      } finally {
-        stop();
-      }
-
-      stop();
-      await this.commitNext(topic, message.partition, message.offset);
+      groupId: 'group-underchat-notification-message',
+      parse: (message) => this.parseNotificationMessageRequest(message.value),
+      resolveEntityKey: (data) =>
+        `${data.account_id}:${data.notification_type_id}`,
+      handle: async (data) => {
+        try {
+          await this.notificationMessageService.sendNotificationMessage(
+            data.notification_type_id,
+            data.account_id
+          );
+        } catch (error) {
+          console.error('Error processing notification message:', error);
+        }
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    this.consumer = null;
   }
 
   private parseNotificationMessageRequest(
@@ -139,13 +85,5 @@ export class NotificationMessageConsume {
     } catch {
       return null;
     }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }

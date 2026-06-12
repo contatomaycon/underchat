@@ -4,20 +4,17 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ChannelsRecreatorAllUseCase } from '@core/useCases/config/ChannelsRecreatorAll.useCase';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 import { IConfigChannelsRecreateAllCompleted } from '@core/common/interfaces/IConfigChannelsRecreateAllCompleted';
 import { channelsConfigCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { createI18nInstance } from '@core/common/functions/createI18nInstance';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class ConfigChannelsRecreateAllConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IConfigChannelsRecreateAllPayload> | null =
+    null;
   private isRunning = false;
 
   constructor(
@@ -30,100 +27,33 @@ export class ConfigChannelsRecreateAllConsume {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.configChannelsRecreateAll();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IConfigChannelsRecreateAllPayload>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-config-channels-recreate-all'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        const t = await createI18nInstance('pt');
-        const result = await this.channelsRecreatorAllUseCase.execute(t, {
-          status: data.status,
-          type: data.type,
-          account: data.account,
-          name: data.name,
-          number: data.number,
-        });
-        await this.publishCompleted(
-          data.account_id,
-          result.success,
-          result.errors
-        );
-      } catch {
-        await this.publishCompleted(data.account_id, 0, 1);
-      } finally {
-        stop();
-      }
-
-      await this.commitNext(topic, message.partition, message.offset);
+      groupId: 'group-underchat-config-channels-recreate-all',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => data.account_id,
+      handle: (data) => this.processRecreateAll(data),
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    this.consumer = null;
   }
 
   private parseMessage(
@@ -140,14 +70,6 @@ export class ConfigChannelsRecreateAllConsume {
     }
   }
 
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
-  }
-
   private async publishCompleted(
     accountId: string,
     success: number,
@@ -161,5 +83,27 @@ export class ConfigChannelsRecreateAllConsume {
     };
 
     await this.centrifugoService.publish(channelsConfigCentrifugo(), payload);
+  }
+
+  private async processRecreateAll(
+    data: IConfigChannelsRecreateAllPayload
+  ): Promise<void> {
+    try {
+      const t = await createI18nInstance('pt');
+      const result = await this.channelsRecreatorAllUseCase.execute(t, {
+        status: data.status,
+        type: data.type,
+        account: data.account,
+        name: data.name,
+        number: data.number,
+      });
+      await this.publishCompleted(
+        data.account_id,
+        result.success,
+        result.errors
+      );
+    } catch {
+      await this.publishCompleted(data.account_id, 0, 1);
+    }
   }
 }

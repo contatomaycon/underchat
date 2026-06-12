@@ -31,6 +31,29 @@ export function buildDeterministicMessageHash(
     .digest('hex');
 }
 
+export function buildMessageSendQueueKey(
+  accountId: string,
+  chatId: string
+): string {
+  return `chat:${accountId.trim()}:${chatId.trim()}`;
+}
+
+export function buildScheduleSendQueueKey(
+  accountId: string,
+  workerId: string
+): string {
+  return `account:${accountId.trim()}:channel:${workerId.trim()}`;
+}
+
+export function resolveMessageSendQueueKey(payload: unknown): string | null {
+  const identity = resolveMessageSendIdentity(payload);
+  if (!identity) {
+    return null;
+  }
+
+  return buildMessageSendQueueKey(identity.accountId, identity.chatId);
+}
+
 export function resolveMessageSendIdentity(
   payload: unknown
 ): IMessageSendIdentity | null {

@@ -20,10 +20,6 @@ jest.mock('@core/common/functions/handleConsumerError', () => ({
   handleConsumerError: jest.fn(),
 }));
 
-jest.mock('@core/common/functions/startHeartbeat', () => ({
-  startHeartbeat: jest.fn(() => jest.fn()),
-}));
-
 jest.mock('@core/plugins/kafkaStreams', () => ({}));
 
 jest.mock('@core/services/kafkaServiceQueue.service', () => ({
@@ -126,7 +122,7 @@ describe('MessageStatusUpdateConsume', () => {
     },
   });
 
-  it('defers and commits a status update when the target message is not indexed yet', async () => {
+  it('defers a status update when the target message is not indexed yet', async () => {
     const {
       consumer,
       redis,
@@ -134,21 +130,10 @@ describe('MessageStatusUpdateConsume', () => {
       messageStatusService,
     } = makeConsumer();
     const data = makeStatusUpdate();
-    const commitSpy = jest
-      .spyOn(consumer as any, 'commitNext')
-      .mockResolvedValue(undefined);
 
     messageStatusService.updateSummaryByWhatsAppId.mockResolvedValue(null);
-    (consumer as any).messagePatchBuffer.set('acc-1:msg-1', [
-      {
-        data,
-        offset: 41,
-        partition: 3,
-        topic: 'update.message.status',
-      },
-    ]);
 
-    await (consumer as any).flushBatch('acc-1:msg-1');
+    await (consumer as any).processStatusUpdate(data);
 
     expect(
       messageStatusPendingService.deferMissingStatusUpdate
@@ -163,7 +148,6 @@ describe('MessageStatusUpdateConsume', () => {
     expect(redis.hset).not.toHaveBeenCalled();
     expect(redis.zadd).not.toHaveBeenCalled();
     expect(redis.setex).not.toHaveBeenCalled();
-    expect(commitSpy).toHaveBeenCalledWith('update.message.status', 3, 41);
   });
 
   it('marks a status update as processed only after the message is updated', async () => {
@@ -174,23 +158,12 @@ describe('MessageStatusUpdateConsume', () => {
       messageStatusService,
     } = makeConsumer();
     const data = makeStatusUpdate({ is_seen: true });
-    const commitSpy = jest
-      .spyOn(consumer as any, 'commitNext')
-      .mockResolvedValue(undefined);
 
     messageStatusService.updateSummaryByWhatsAppId.mockResolvedValue({
       message_id: 'internal-message-id',
     });
-    (consumer as any).messagePatchBuffer.set('acc-1:msg-1', [
-      {
-        data,
-        offset: 42,
-        partition: 4,
-        topic: 'update.message.status',
-      },
-    ]);
 
-    await (consumer as any).flushBatch('acc-1:msg-1');
+    await (consumer as any).processStatusUpdate(data);
 
     expect(redis.hset).not.toHaveBeenCalled();
     expect(redis.zadd).not.toHaveBeenCalled();
@@ -210,7 +183,6 @@ describe('MessageStatusUpdateConsume', () => {
       },
       'internal-message-id'
     );
-    expect(commitSpy).toHaveBeenCalledWith('update.message.status', 4, 42);
   });
 
   it('reconciles due pending statuses internally without publishing to Kafka', async () => {

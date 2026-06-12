@@ -13,14 +13,22 @@ describe('ScheduleSendService', () => {
     const contactService = {
       getContactPhoneDecrypted: jest.fn(() => ''),
     };
+    const kafkaBaileysQueueService = {
+      workerScheduleSendMessage: jest.fn((workerId: string) => {
+        return `worker.${workerId}.schedule.send.message`;
+      }),
+    };
+    const streamProducerService = {
+      send: jest.fn(async () => undefined),
+    };
 
     const service = new ScheduleSendService(
       {} as never,
       {} as never,
       {} as never,
       contactService as never,
-      {} as never,
-      {} as never,
+      kafkaBaileysQueueService as never,
+      streamProducerService as never,
       {} as never,
       {} as never,
       {} as never,
@@ -32,7 +40,12 @@ describe('ScheduleSendService', () => {
       {} as never
     );
 
-    return { service, contactService };
+    return {
+      service,
+      contactService,
+      kafkaBaileysQueueService,
+      streamProducerService,
+    };
   };
 
   beforeEach(() => {
@@ -107,5 +120,34 @@ describe('ScheduleSendService', () => {
         }
       )
     ).resolves.toBe('Mensagem fixa');
+  });
+
+  it('publishes schedule messages keyed by account and channel', async () => {
+    const { service, streamProducerService } = makeService();
+
+    await (service as any).sendMessageToKafka(
+      {
+        schedule_id: 'schedule-1',
+        account_id: 'account-1',
+      },
+      {
+        contact_id: 'contact-1',
+        is_validated: true,
+      },
+      {
+        message_id: 'message-1',
+        chat_id: 'chat-1',
+        worker: { id: 'worker-1' },
+      }
+    );
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'worker.worker-1.schedule.send.message',
+      expect.objectContaining({
+        schedule_id: 'schedule-1',
+        contact_id: 'contact-1',
+      }),
+      'account:account-1:channel:worker-1'
+    );
   });
 });

@@ -11,17 +11,12 @@ import {
 } from '@core/common/interfaces/IChatMessage';
 import Redis from 'ioredis';
 import { remoteJid } from '@core/common/functions/remoteJid';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { WAMessageKey } from '@whiskeysockets/baileys';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import { MessageKeyUpdateScriptParams } from '@core/common/interfaces/IMessageKeyUpdateScript';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { MessageStatusPendingService } from '@core/services/messageStatusPending.service';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 type MessageKeyPatch = Pick<
   IMessageKey,
@@ -31,8 +26,8 @@ type MessageKeyPatch = Pick<
 @singleton()
 export class MessageUpdateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IUpdateMessage> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
 
   constructor(
     @inject('Redis') private readonly redis: Redis,
@@ -44,14 +39,6 @@ export class MessageUpdateConsume {
     @inject(MessageStatusPendingService)
     private readonly messageStatusPendingService: MessageStatusPendingService
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private cacheChatKey(accountId: string, chatId: string): string {
     return createChatCacheKeyChatId(accountId, chatId);
@@ -302,120 +289,54 @@ export class MessageUpdateConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.updateMessage();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IUpdateMessage>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-message-update'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain
-        .catch((error) => {
-          console.error(
-            '[MessageUpdateConsume] previous partition task failed',
-            {
-              topic,
-              partition,
-              error,
-            }
-          );
-        })
-        .then(async () => {
-          const heartbeat = async () => {
-            this.consumer?.commit();
-          };
-
-          const stop = startHeartbeat(heartbeat);
-
-          try {
-            await this.handleMessage(data);
-          } catch (error) {
-            console.error('[MessageUpdateConsume] message update failed', {
-              topic,
-              partition,
-              offset,
-              error,
-            });
-          } finally {
-            stop();
-            await this.commitNext(topic, partition, offset);
-          }
-        })
-        .catch((error) => {
-          console.error('[MessageUpdateConsume] partition task failed', {
+      groupId: 'group-underchat-message-update',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data, message) =>
+        this.resolveMessageUpdateEntityKey(data, message.key?.toString()),
+      handle: async (data, context) => {
+        try {
+          await this.handleMessage(data);
+        } catch (error) {
+          console.error('[MessageUpdateConsume] message update failed', {
             topic,
-            partition,
-            offset,
+            partition: context.partition,
+            offset: context.offset,
             error,
           });
-        });
-
-      this.partitionChains.set(partition, currentChain);
+        }
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
-
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-    }
+    this.consumer = null;
   }
 
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+  private resolveMessageUpdateEntityKey(
+    data: IUpdateMessage,
+    fallbackKey?: string | null
+  ): string {
+    const accountId = data.data?.account?.id ?? 'unknown-account';
+    const messageId =
+      data.data?.message_id ??
+      data.message?.key?.id ??
+      fallbackKey ??
+      'unknown-message';
+
+    return `${accountId}:${messageId}`;
   }
 }

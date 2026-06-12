@@ -29,10 +29,6 @@ jest.mock('@core/common/functions/handleConsumerError', () => ({
   handleConsumerError: jest.fn(),
 }));
 
-jest.mock('@core/common/functions/startHeartbeat', () => ({
-  startHeartbeat: jest.fn(() => jest.fn()),
-}));
-
 jest.mock('@core/plugins/kafkaStreams', () => ({}));
 
 jest.mock('@core/services/kafkaServiceQueue.service', () => ({
@@ -47,6 +43,8 @@ const { MessageUpsertDlqConsume } =
 
 class FakeConsumer extends EventEmitter {
   commit = jest.fn();
+  pause = jest.fn();
+  resume = jest.fn();
   unsubscribe = jest.fn();
   disconnect = jest.fn((callback?: () => void) => callback?.());
 }
@@ -104,9 +102,6 @@ describe('MessageUpsertDlqConsume', () => {
       });
 
       await flushPromises();
-      await expect((consumer as any).partitionChains.get(7)).resolves.toBe(
-        undefined
-      );
 
       expect(mockCreateOrUpdateChat).not.toHaveBeenCalled();
       expect(consoleSpy).not.toHaveBeenCalled();
@@ -115,6 +110,119 @@ describe('MessageUpsertDlqConsume', () => {
         'upsert.message.dlq',
         7,
         41
+      );
+    } finally {
+      consoleSpy.mockRestore();
+      await consumer.close();
+    }
+  });
+
+  it('deduplicates DLQ messages by account, worker, jid and message id', async () => {
+    const kafkaConsumer = new FakeConsumer();
+    (createConsumer as jest.Mock).mockReturnValue(kafkaConsumer);
+
+    const kafkaServiceQueueService = {
+      upsertMessageDlq: jest.fn(() => 'upsert.message.dlq'),
+      getNumPartitions: jest.fn(() => 30),
+      getReplicationFactor: jest.fn(() => 3),
+    };
+    const consumer = new MessageUpsertDlqConsume(
+      {} as never,
+      kafkaServiceQueueService as never
+    );
+
+    const payload = {
+      account_id: 'acc-1',
+      worker_id: 'worker-1',
+      message: {
+        key: {
+          id: 'msg-1',
+          remoteJid: '556999715039@s.whatsapp.net',
+        },
+      },
+    };
+
+    await consumer.execute(jest.fn() as never);
+
+    kafkaConsumer.emit('data', {
+      value: Buffer.from(JSON.stringify(payload)),
+      key: Buffer.from('acc-1:worker-1:556999715039@s.whatsapp.net:msg-1'),
+      partition: 3,
+      offset: 20,
+    });
+    kafkaConsumer.emit('data', {
+      value: Buffer.from(JSON.stringify(payload)),
+      key: Buffer.from('acc-1:worker-1:556999715039@s.whatsapp.net:msg-1'),
+      partition: 3,
+      offset: 21,
+    });
+
+    await flushPromises();
+
+    expect(mockCreateOrUpdateChat).toHaveBeenCalledTimes(1);
+    expect(commitOffset).toHaveBeenCalledWith(
+      kafkaConsumer,
+      'upsert.message.dlq',
+      3,
+      20
+    );
+    expect(commitOffset).toHaveBeenCalledWith(
+      kafkaConsumer,
+      'upsert.message.dlq',
+      3,
+      21
+    );
+
+    await consumer.close();
+  });
+
+  it('discards DLQ processing failures after one attempt and commits the offset', async () => {
+    const kafkaConsumer = new FakeConsumer();
+    (createConsumer as jest.Mock).mockReturnValue(kafkaConsumer);
+    mockCreateOrUpdateChat.mockRejectedValueOnce(new Error('db unavailable'));
+    const consoleSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const kafkaServiceQueueService = {
+      upsertMessageDlq: jest.fn(() => 'upsert.message.dlq'),
+      getNumPartitions: jest.fn(() => 30),
+      getReplicationFactor: jest.fn(() => 3),
+    };
+    const consumer = new MessageUpsertDlqConsume(
+      {} as never,
+      kafkaServiceQueueService as never
+    );
+
+    try {
+      await consumer.execute(jest.fn() as never);
+
+      kafkaConsumer.emit('data', {
+        value: Buffer.from(
+          JSON.stringify({
+            account_id: 'acc-1',
+            worker_id: 'worker-1',
+            message: {
+              key: {
+                id: 'msg-2',
+                remoteJid: '556999715039@s.whatsapp.net',
+              },
+            },
+          })
+        ),
+        partition: 4,
+        offset: 31,
+      });
+
+      await flushPromises();
+
+      expect(mockCreateOrUpdateChat).toHaveBeenCalledTimes(1);
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+      expect(commitOffset).toHaveBeenCalledWith(
+        kafkaConsumer,
+        'upsert.message.dlq',
+        4,
+        31
       );
     } finally {
       consoleSpy.mockRestore();

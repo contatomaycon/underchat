@@ -75,6 +75,14 @@ const WATERMARK_TIMEOUT_MS = readPositiveIntegerEnv(
   'KAFKA_CONSUMER_WATERMARK_TIMEOUT_MS',
   2000
 );
+const MAX_PENDING_TOTAL = readPositiveIntegerEnv(
+  'SERVICE_API_KAFKA_MAX_IN_FLIGHT_TOTAL',
+  32
+);
+const MAX_PENDING_PER_PARTITION = readPositiveIntegerEnv(
+  'SERVICE_API_KAFKA_MAX_IN_FLIGHT_PER_PARTITION',
+  4
+);
 const GLOBAL_WORKER_TOPIC_SEGMENTS = new Set(['config', 'warm', 'lifecycle']);
 
 function isWorkerSendTopic(topic: string): boolean {
@@ -164,6 +172,8 @@ class ManagedKafkaConsumer extends EventEmitter {
   private consecutiveStallRestarts = 0;
   private partitionLag = new Map<string, IPartitionLagSnapshot>();
   private pendingOffsets = new Map<string, Map<number, IPendingOffsetState>>();
+  private completedOffsets = new Map<string, Set<number>>();
+  private pausedPartitions = new Map<string, ITopicPartition>();
 
   constructor(
     private readonly kafka: KafkaClient,
@@ -260,6 +270,37 @@ class ManagedKafkaConsumer extends EventEmitter {
   }
 
   commitSync(offsets: ITopicPartitionOffset[]): unknown {
+    const contiguousOffsets = this.resolveContiguousCommitOffsets(offsets);
+    if (contiguousOffsets.length === 0) {
+      return undefined;
+    }
+
+    return this.commitResolvedSync(contiguousOffsets);
+  }
+
+  commitResolvedSync(offsets: ITopicPartitionOffset[]): unknown {
+    return this.commitOffsetsToKafka(offsets);
+  }
+
+  commit(offsets?: ITopicPartitionOffset | ITopicPartitionOffset[]): this {
+    if (!this.current || !this.connected) {
+      return this;
+    }
+
+    if (typeof offsets === 'undefined') {
+      return this;
+    }
+
+    try {
+      this.commitSync(Array.isArray(offsets) ? offsets : [offsets]);
+    } catch (error) {
+      this.lastError = getErrorMessage(error);
+    }
+
+    return this;
+  }
+
+  private commitOffsetsToKafka(offsets: ITopicPartitionOffset[]): unknown {
     const consumer = this.current;
     if (!consumer || !this.connected) {
       const error = new Error('Kafka consumer is not connected');
@@ -279,28 +320,6 @@ class ManagedKafkaConsumer extends EventEmitter {
       this.scheduleRestart('commit_error', error);
       throw error;
     }
-  }
-
-  commit(offsets?: ITopicPartitionOffset | ITopicPartitionOffset[]): this {
-    const consumer = this.current;
-    if (!consumer || !this.connected) {
-      return this;
-    }
-
-    try {
-      const commit = (
-        consumer as unknown as { commit: (offsets?: unknown) => unknown }
-      ).commit.bind(consumer);
-      if (typeof offsets === 'undefined') {
-        commit();
-      } else {
-        commit(offsets);
-      }
-    } catch (error) {
-      this.lastError = getErrorMessage(error);
-    }
-
-    return this;
   }
 
   pause(assignments: Array<{ topic: string; partition: number }>): unknown {
@@ -721,6 +740,70 @@ class ManagedKafkaConsumer extends EventEmitter {
     const offsets = this.pendingOffsets.get(key) ?? new Map();
     offsets.set(message.offset, { firstSeenAt: now });
     this.pendingOffsets.set(key, offsets);
+    this.applyPendingBackpressure(topic, message.partition);
+  }
+
+  private resolveContiguousCommitOffsets(
+    offsets: ITopicPartitionOffset[]
+  ): ITopicPartitionOffset[] {
+    const ready: ITopicPartitionOffset[] = [];
+
+    for (const offset of offsets) {
+      if (
+        !offset.topic ||
+        typeof offset.partition !== 'number' ||
+        typeof offset.offset !== 'number'
+      ) {
+        continue;
+      }
+
+      const key = this.partitionKey(offset.topic, offset.partition);
+      const pending = this.pendingOffsets.get(key);
+      if (!pending || pending.size === 0) {
+        const existing = this.partitionLag.get(key);
+        if (
+          typeof existing?.committed_offset === 'number' &&
+          offset.offset <= existing.committed_offset
+        ) {
+          continue;
+        }
+        ready.push(offset);
+        continue;
+      }
+
+      const completedMessageOffset = offset.offset - 1;
+      const pendingOffsets = Array.from(pending.keys());
+      const firstPendingOffset = Math.min(...pendingOffsets);
+      const lastPendingOffset = Math.max(...pendingOffsets);
+
+      if (completedMessageOffset < firstPendingOffset) {
+        continue;
+      }
+
+      const completed = this.completedOffsets.get(key) ?? new Set<number>();
+      if (completedMessageOffset <= lastPendingOffset) {
+        completed.add(completedMessageOffset);
+        this.completedOffsets.set(key, completed);
+      }
+
+      let commitMessageOffset = firstPendingOffset - 1;
+      while (
+        pending.has(commitMessageOffset + 1) &&
+        completed.has(commitMessageOffset + 1)
+      ) {
+        commitMessageOffset += 1;
+      }
+
+      if (commitMessageOffset >= firstPendingOffset) {
+        ready.push({
+          topic: offset.topic,
+          partition: offset.partition,
+          offset: commitMessageOffset + 1,
+        });
+      }
+    }
+
+    return ready;
   }
 
   private recordCommit(offsets: ITopicPartitionOffset[]): void {
@@ -742,15 +825,20 @@ class ManagedKafkaConsumer extends EventEmitter {
 
       const key = this.partitionKey(offset.topic, offset.partition);
       const pending = this.pendingOffsets.get(key);
+      const completed = this.completedOffsets.get(key);
       if (pending) {
         for (const pendingOffset of pending.keys()) {
           if (pendingOffset < offset.offset) {
             pending.delete(pendingOffset);
+            completed?.delete(pendingOffset);
           }
         }
         if (pending.size === 0) {
           this.pendingOffsets.delete(key);
         }
+      }
+      if (completed?.size === 0) {
+        this.completedOffsets.delete(key);
       }
 
       const existing = this.partitionLag.get(key);
@@ -764,6 +852,60 @@ class ManagedKafkaConsumer extends EventEmitter {
             ? Math.max(0, existing.high_watermark - offset.offset)
             : 0,
       });
+    }
+
+    this.releasePendingBackpressure();
+  }
+
+  private applyPendingBackpressure(topic: string, partition: number): void {
+    if (!this.current || !this.connected) {
+      return;
+    }
+
+    const key = this.partitionKey(topic, partition);
+    if (this.pausedPartitions.has(key)) {
+      return;
+    }
+
+    const partitionPending = this.pendingOffsets.get(key)?.size ?? 0;
+    const totalPending = this.getPendingHealth().pendingCount;
+    if (
+      partitionPending < MAX_PENDING_PER_PARTITION &&
+      totalPending < MAX_PENDING_TOTAL
+    ) {
+      return;
+    }
+
+    try {
+      this.current.pause([{ topic, partition }] as never);
+      this.pausedPartitions.set(key, { topic, partition });
+    } catch (error) {
+      this.lastError = getErrorMessage(error);
+    }
+  }
+
+  private releasePendingBackpressure(): void {
+    if (!this.current || !this.connected || this.pausedPartitions.size === 0) {
+      return;
+    }
+
+    const totalPending = this.getPendingHealth().pendingCount;
+    if (totalPending >= MAX_PENDING_TOTAL) {
+      return;
+    }
+
+    for (const [key, assignment] of this.pausedPartitions.entries()) {
+      const partitionPending = this.pendingOffsets.get(key)?.size ?? 0;
+      if (partitionPending >= MAX_PENDING_PER_PARTITION) {
+        continue;
+      }
+
+      try {
+        this.current.resume([assignment] as never);
+        this.pausedPartitions.delete(key);
+      } catch (error) {
+        this.lastError = getErrorMessage(error);
+      }
     }
   }
 
@@ -881,7 +1023,9 @@ class ManagedKafkaConsumer extends EventEmitter {
 
   private clearOffsetTracking(): void {
     this.pendingOffsets.clear();
+    this.completedOffsets.clear();
     this.partitionLag.clear();
+    this.pausedPartitions.clear();
   }
 
   private clearConnectTimeout(): void {

@@ -5,20 +5,17 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { ReportConversationHistoryPdfService } from '@core/services/reportConversationHistoryPdf.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { EReportConversationHistoryPdfStatus } from '@core/common/enums/EReportConversationHistoryPdfStatus';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { IReportConversationHistoryPdfGeneratePayload } from '@core/common/interfaces/IReportConversationHistoryPdfGeneratePayload';
 import { IReportConversationHistoryPdfNotification } from '@core/common/interfaces/IReportConversationHistoryPdfNotification';
 import { reportConversationHistoryPdfAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { createI18nInstance } from '@core/common/functions/createI18nInstance';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class ReportConversationHistoryPdfGenerateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IReportConversationHistoryPdfGeneratePayload> | null =
+    null;
   private isRunning = false;
 
   constructor(
@@ -31,97 +28,49 @@ export class ReportConversationHistoryPdfGenerateConsume {
     private readonly centrifugoService: CentrifugoService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
     const topic =
       this.kafkaServiceQueueService.reportConversationHistoryPdfGenerate();
+    this.runner =
+      new KafkaConsumerRunner<IReportConversationHistoryPdfGeneratePayload>({
+        kafka: this.kafka,
+        topic,
+        groupId: 'group-underchat-report-conversation-history-pdf-generate',
+        parse: (message) => this.parseMessage(message.value),
+        resolveEntityKey: (data) => data.pdf_record_id,
+        handle: async (data) => {
+          try {
+            await this.handleMessage(data);
+          } catch (error) {
+            console.error('Error processing PDF generation:', error);
+            await this.pdfService.updateStatus(
+              data.pdf_record_id,
+              EReportConversationHistoryPdfStatus.failed
+            );
+            await this.notifyPdfStatus(
+              data,
+              EReportConversationHistoryPdfStatus.failed
+            );
+          }
+        },
+        logger: console,
+      });
 
-    await ensureKafkaTopic(
-      this.kafka,
-      topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-report-conversation-history-pdf-generate'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.handleMessage(data);
-      } catch (error) {
-        console.error('Error processing PDF generation:', error);
-        await this.pdfService.updateStatus(
-          data.pdf_record_id,
-          EReportConversationHistoryPdfStatus.failed
-        );
-        await this.notifyPdfStatus(
-          data,
-          EReportConversationHistoryPdfStatus.failed
-        );
-      } finally {
-        stop();
-      }
-
-      await this.commitNext(topic, message.partition, message.offset);
-    });
-
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    this.consumer = null;
   }
 
   private parseMessage(
@@ -138,14 +87,6 @@ export class ReportConversationHistoryPdfGenerateConsume {
     } catch {
       return null;
     }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private async handleMessage(

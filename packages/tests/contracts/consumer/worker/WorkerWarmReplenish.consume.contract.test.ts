@@ -35,6 +35,13 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { commitOffset } from '@core/common/functions/commitOffset';
 import { createConsumer } from '@core/common/functions/createConsumer';
 
+async function flushPromises(times = 6): Promise<void> {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve();
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 describe('WorkerWarmReplenishConsume', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -98,7 +105,7 @@ describe('WorkerWarmReplenishConsume', () => {
     const deps = makeSut(false);
 
     await deps.sut.execute();
-    await deps.handlers.data({
+    deps.handlers.data({
       value: Buffer.from(
         JSON.stringify({
           request_id: 'req-1',
@@ -110,6 +117,7 @@ describe('WorkerWarmReplenishConsume', () => {
       partition: 3,
       offset: 10,
     });
+    await flushPromises();
 
     expect(deps.workerWarmPoolSettingsService.view).toHaveBeenCalledTimes(1);
     expect(
@@ -127,11 +135,12 @@ describe('WorkerWarmReplenishConsume', () => {
     const deps = makeSut(true);
 
     await deps.sut.execute();
-    await deps.handlers.data({
+    deps.handlers.data({
       value: Buffer.from('{}'),
       partition: 1,
       offset: 2,
     });
+    await flushPromises();
 
     expect(deps.workerWarmPoolSettingsService.view).not.toHaveBeenCalled();
     expect(

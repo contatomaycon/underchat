@@ -138,6 +138,13 @@ export class BuildEnvironment {
     );
   }
 
+  public get serviceApiHealthFailOnKafkaUnhealthy(): boolean {
+    return this.parseOptionalBoolean(
+      'SERVICE_API_HEALTH_FAIL_ON_KAFKA_UNHEALTHY',
+      false
+    );
+  }
+
   public get buildCommandInactivityTimeoutMs(): number {
     return this.parseOptionalPositiveNumber(
       'BUILD_COMMAND_INACTIVITY_TIMEOUT_MS',

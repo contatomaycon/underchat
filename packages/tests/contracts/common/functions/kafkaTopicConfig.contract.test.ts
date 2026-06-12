@@ -19,6 +19,18 @@ describe('kafkaTopicConfig', () => {
       numPartitions: 30,
       replicationFactor: 3,
     });
+    expect(resolveKafkaTopicConfig('worker.warm.replenish.request')).toEqual({
+      numPartitions: 30,
+      replicationFactor: 3,
+    });
+    expect(resolveKafkaTopicConfig('worker.lifecycle.request')).toEqual({
+      numPartitions: 30,
+      replicationFactor: 3,
+    });
+    expect(resolveKafkaTopicConfig('user.phone.jid.update')).toEqual({
+      numPartitions: 30,
+      replicationFactor: 3,
+    });
     expect(resolveKafkaTopicConfig('update.message')).toEqual({
       numPartitions: 30,
       replicationFactor: 3,

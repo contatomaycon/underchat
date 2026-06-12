@@ -2,12 +2,6 @@ import { singleton, inject } from 'tsyringe';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { EmbeddingService } from '@core/services/embedding.service';
 import { OpenAIAssistantService } from '@core/services/openaiAssistant.service';
 import { AiAgentService } from '@core/services/aiAgent.service';
@@ -18,10 +12,13 @@ import {
   PromptDocumentExtractorService,
   type IPromptDocumentExtractionResult,
 } from '@core/services/promptDocumentExtractor.service';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class AiAgentPromptEmbeddingConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IAiAgentPromptEmbeddingRequest> | null =
+    null;
   private isRunning = false;
   private readonly RETRY_ATTEMPTS = 3;
   private readonly RETRY_BASE_DELAY_MS = 700;
@@ -40,96 +37,52 @@ export class AiAgentPromptEmbeddingConsume {
     private readonly promptDocumentExtractorService: PromptDocumentExtractorService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) {
       return;
     }
 
     const topic = this.kafkaServiceQueueService.aiAgentPromptEmbedding();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IAiAgentPromptEmbeddingRequest>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-ai-agent-prompt-embedding'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseRequest(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.processEmbedding(data);
-      } catch (error) {
-        console.error('[AiAgentPromptEmbedding] erro ao processar embedding', {
-          error,
-          account_id: data.account_id,
-          ai_agent_id: data.ai_agent_id,
-          ai_agent_prompt_id: data.ai_agent_prompt_id,
-          source: data.source ?? 'unknown',
-          retry_count: data.retry_count ?? 0,
-        });
-      } finally {
-        stop();
-        await this.commitNext(topic, message.partition, message.offset);
-      }
+      groupId: 'group-underchat-ai-agent-prompt-embedding',
+      parse: (message) => this.parseRequest(message.value),
+      resolveEntityKey: (data) =>
+        `${data.account_id}:${data.ai_agent_id}:${data.ai_agent_prompt_id}`,
+      handle: async (data) => {
+        try {
+          await this.processEmbedding(data);
+        } catch (error) {
+          console.error(
+            '[AiAgentPromptEmbedding] erro ao processar embedding',
+            {
+              error,
+              account_id: data.account_id,
+              ai_agent_id: data.ai_agent_id,
+              ai_agent_prompt_id: data.ai_agent_prompt_id,
+              source: data.source ?? 'unknown',
+              retry_count: data.retry_count ?? 0,
+            }
+          );
+        }
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    this.consumer = null;
   }
 
   private parseRequest(
@@ -600,13 +553,5 @@ export class AiAgentPromptEmbeddingConsume {
 
   private async delay(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 }

@@ -59,6 +59,7 @@ type Config struct {
 	KafkaPollInterval                    time.Duration
 	OutboundReadyTimeout                 time.Duration
 	SendMaxInFlight                      int
+	KafkaConsumerMaxInFlight             int
 	SendQueueTimeout                     time.Duration
 	ConnectionHealthFailOnKafkaUnhealthy bool
 
@@ -127,6 +128,7 @@ func LoadConfig() (Config, error) {
 		KafkaPollInterval:                     250 * time.Millisecond,
 		OutboundReadyTimeout:                  envDurationDefault("WORKER_OUTBOUND_READY_TIMEOUT", 60*time.Second),
 		SendMaxInFlight:                       envIntDefault("WORKER_SEND_MAX_IN_FLIGHT", 256),
+		KafkaConsumerMaxInFlight:              envIntDefault("WORKER_KAFKA_MAX_IN_FLIGHT", 32),
 		SendQueueTimeout:                      envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
 		ConnectionHealthFailOnKafkaUnhealthy:  envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
 		KafkaSendConsumerIdleRecreateInterval: envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
@@ -186,6 +188,9 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.SendMaxInFlight <= 0 {
 		cfg.SendMaxInFlight = 256
+	}
+	if cfg.KafkaConsumerMaxInFlight <= 0 {
+		cfg.KafkaConsumerMaxInFlight = 32
 	}
 	if cfg.SendQueueTimeout <= 0 {
 		cfg.SendQueueTimeout = cfg.KafkaConsumerStallTimeout

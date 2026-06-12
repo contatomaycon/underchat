@@ -43,7 +43,10 @@ import {
   ISendContactMessageOptions,
 } from '@core/common/interfaces/ISendMessageOptions';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
-import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
+import {
+  buildMessageSendQueueKey,
+  ensureMessageSendHash,
+} from '@core/common/functions/messageIdentity';
 import { messageBelongsToChatAndAccount } from '@core/common/functions/chatMessageOwnership';
 import {
   appendSecurityKeyToText,
@@ -454,7 +457,11 @@ export class ChatMessageService {
         message.worker.id
       );
       postPersistPromises.push(
-        this.streamProducerService.send(kafkaTopic, message, message.chat_id)
+        this.streamProducerService.send(
+          kafkaTopic,
+          message,
+          buildMessageSendQueueKey(message.account.id, message.chat_id)
+        )
       );
     }
 

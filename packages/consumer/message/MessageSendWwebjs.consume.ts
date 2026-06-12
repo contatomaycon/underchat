@@ -18,17 +18,11 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { Buffer } from 'node:buffer';
-import { KeyedSequencerService } from '@core/services/keyedSequencer.service';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { selectJidChatWwebjs } from '@core/common/functions/selectJidChatWwebjs';
 import { convertWaveformBase64ToUint8Array } from '@core/common/functions/convertWaveform';
 import { EWorkerProfileStatusType } from '@core/common/enums/EWorkerProfileStatusType';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { webcrypto } from 'node:crypto';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { MessageKeyLookupService } from '@core/services/messageKeyLookup.service';
@@ -36,13 +30,16 @@ import { buildForwardExtraOptions } from '@core/services/wwebjs/util/buildForwar
 import { isMessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { MessageSendIdempotencyService } from '@core/services/messageSendIdempotency.service';
-import { resolveMessageSendIdentity } from '@core/common/functions/messageIdentity';
-
-interface IPartitionCommitState {
-  nextContiguousOffset: number | null;
-  pendingOffsets: Set<number>;
-  completedOffsets: Set<number>;
-}
+import {
+  buildMessageSendQueueKey,
+  resolveMessageSendIdentity,
+} from '@core/common/functions/messageIdentity';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import type {
+  KafkaConsumerRunnerContext,
+  KafkaRunnerMessage,
+} from '@core/common/interfaces/KafkaConsumerRunnerOptions';
+import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 interface IQueuedEnvelope {
   sourceTopic: string;
@@ -65,24 +62,12 @@ interface INonRetryableError extends Error {
   readonly nonRetryable: true;
 }
 
-function readPositiveIntegerEnv(name: string, fallback: number): number {
-  const raw = Number(process.env[name]);
-  if (!Number.isFinite(raw) || raw <= 0) {
-    return fallback;
-  }
-
-  return Math.floor(raw);
-}
-
 @singleton()
 export class MessageSendWwebjsConsume {
   private readonly PROVIDER = 'wwebjs';
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<unknown> | null = null;
   private isRunning = false;
-  private readonly CHAT_QUEUE_TIMEOUT_MS = readPositiveIntegerEnv(
-    'WORKER_SEND_QUEUE_TIMEOUT_MS',
-    readPositiveIntegerEnv('KAFKA_CONSUMER_STALL_MS', 5 * 60 * 1000)
-  );
   private readonly MAX_PROCESS_ATTEMPTS = 5;
   private readonly RETRY_BASE_MS = 500;
   private readonly RETRY_MAX_MS = 8000;
@@ -91,14 +76,6 @@ export class MessageSendWwebjsConsume {
   private readonly SYSTEM_QUEUE_KEY = 'system';
   private readonly lastMessageTypeByChatId: Map<string, EMessageType> =
     new Map();
-  private readonly inFlightTasks = new Set<Promise<void>>();
-  private readonly partitionCommitStates = new Map<
-    number,
-    IPartitionCommitState
-  >();
-  private readonly partitionCommitChains = new Map<number, Promise<void>>();
-  private topic: string | null = null;
-  private generation = 0;
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -124,8 +101,6 @@ export class MessageSendWwebjsConsume {
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaServiceQueueService)
     private readonly kafkaServiceQueueService: KafkaServiceQueueService,
-    @inject(KeyedSequencerService)
-    private readonly keyedSequencerService: KeyedSequencerService,
     @inject(MessageStatusService)
     private readonly messageStatusService: MessageStatusService,
     @inject(MessageSendIdempotencyService)
@@ -199,128 +174,47 @@ export class MessageSendWwebjsConsume {
     } catch {}
   }
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
-
   public async execute(): Promise<void> {
     if (this.consumer && this.isRunning) return;
 
-    const generation = ++this.generation;
     const topic = this.kafkaBaileysQueueService.workerSendMessage(
       wwebjsEnvironment.wwebjsWorkerId
     );
     const groupId = `group-underchat-wwebjs-send-${wwebjsEnvironment.wwebjsWorkerId}`;
 
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<unknown>({
+      kafka: this.kafka,
       topic,
-      this.kafkaBaileysQueueService.getNumPartitions(),
-      this.kafkaBaileysQueueService.getReplicationFactor()
-    );
-
-    this.topic = topic;
-
-    this.consumer = createConsumer(this.kafka, groupId);
-
-    this.consumer.on('data', (message) => {
-      const task = this.handleMessageEvent(topic, message, generation)
-        .catch(() => {})
-        .finally(() => {
-          this.inFlightTasks.delete(task);
-        });
-
-      this.inFlightTasks.add(task);
+      groupId,
+      parse: (message) =>
+        this.parseRawMessage(this.extractRawMessage(message.value)),
+      resolveEntityKey: (payload, message) =>
+        this.resolveQueueContext(payload, message).queueKey,
+      preserveEntityOrder: true,
+      handle: (payload, context) =>
+        this.processRunnerPayload(topic, payload, context),
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.generation += 1;
-      this.isRunning = false;
-      const consumer = this.consumer;
-      const topic = this.topic;
-
-      try {
-        consumer.unsubscribe();
-      } catch {}
-
-      await Promise.allSettled(Array.from(this.inFlightTasks));
-      await this.keyedSequencerService.drain();
-
-      if (topic) {
-        await this.flushAllPartitionCommits(topic);
-      }
-
-      await Promise.allSettled(Array.from(this.partitionCommitChains.values()));
-
-      await new Promise<void>((resolve) => {
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.topic = null;
-      this.inFlightTasks.clear();
-      this.partitionCommitStates.clear();
-      this.partitionCommitChains.clear();
-      this.lastMessageTypeByChatId.clear();
-    }
+    this.consumer = null;
+    this.lastMessageTypeByChatId.clear();
   }
 
   public async restart(): Promise<void> {
-    const consumer = this.consumer;
-    this.generation += 1;
-    this.isRunning = false;
-    this.consumer = null;
-    this.topic = null;
-    this.inFlightTasks.clear();
-    this.partitionCommitStates.clear();
-    this.partitionCommitChains.clear();
-    this.lastMessageTypeByChatId.clear();
-
-    if (consumer) {
-      try {
-        consumer.unsubscribe();
-      } catch {}
-      try {
-        consumer.disconnect(() => {});
-      } catch {}
-    }
-
+    await this.close();
     await this.execute();
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number,
-    generation = this.generation
-  ): Promise<void> {
-    if (generation !== this.generation) {
-      return;
-    }
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
   }
 
   private extractRawMessage(value: Buffer | null): string | null {
@@ -348,75 +242,26 @@ export class MessageSendWwebjsConsume {
     }
   }
 
-  private kafkaKeyToString(
-    key: Buffer | string | null | undefined
-  ): string | null {
-    if (typeof key === 'string') {
-      return key;
-    }
-
-    if (Buffer.isBuffer(key)) {
-      return key.toString('utf8');
-    }
-
-    return null;
-  }
-
-  private async handleMessageEvent(
+  private async processRunnerPayload(
     topic: string,
-    message: {
-      value: Buffer | null;
-      key?: Buffer | string | null;
-      partition: number;
-      offset: number;
-    },
-    generation: number
+    payload: unknown,
+    context: KafkaConsumerRunnerContext<unknown>
   ): Promise<void> {
-    const rawPayload = this.extractRawMessage(message.value);
-    const payload = this.parseRawMessage(rawPayload);
-
-    this.registerPendingOffset(message.partition, message.offset);
-
-    if (!payload) {
-      await this.completeOffset(
-        topic,
-        message.partition,
-        message.offset,
-        generation
-      );
-      return;
-    }
-
     const { queueKey, chatId } = this.resolveQueueContext(payload);
     const envelope: IQueuedEnvelope = {
       sourceTopic: topic,
-      partition: message.partition,
-      offset: message.offset,
-      kafkaKey: this.kafkaKeyToString(message.key),
+      partition: context.partition,
+      offset: context.offset,
+      kafkaKey: context.kafkaKey,
       payload,
       queueKey,
       chatId,
     };
 
-    let shouldCompleteOffset = false;
-
     try {
-      await this.enqueueByQueueKey(queueKey, async () => {
-        await this.processEnvelopeWithRetry(envelope);
-      });
-      shouldCompleteOffset = true;
+      await this.processEnvelopeWithRetry(envelope);
     } catch (error) {
       await this.routeFailedMessage(envelope, error, 'enqueue_error');
-      shouldCompleteOffset = true;
-    } finally {
-      if (shouldCompleteOffset && generation === this.generation) {
-        await this.completeOffset(
-          topic,
-          message.partition,
-          message.offset,
-          generation
-        );
-      }
     }
   }
 
@@ -477,30 +322,61 @@ export class MessageSendWwebjsConsume {
   private resolveQueueContext(payload: unknown): {
     queueKey: string;
     chatId: string | null;
+  };
+  private resolveQueueContext(
+    payload: unknown,
+    message: KafkaRunnerMessage
+  ): {
+    queueKey: string;
+    chatId: string | null;
+  };
+  private resolveQueueContext(
+    payload: unknown,
+    message?: KafkaRunnerMessage
+  ): {
+    queueKey: string;
+    chatId: string | null;
   } {
     if (this.isSendMessage(payload)) {
       const chatId = this.resolveChatId(payload);
       if (chatId) {
+        const accountId =
+          payload.account?.id?.trim() || wwebjsEnvironment.wwebjsAccountId;
         return {
-          queueKey: `chat:${chatId}`,
+          queueKey: buildMessageSendQueueKey(accountId, chatId),
           chatId,
         };
       }
     }
 
+    if (this.isDeleteStatusMessage(payload)) {
+      const id = payload.external_id || payload.worker_profile_status_id;
+      return {
+        queueKey: `profile_status_delete:${id}`,
+        chatId: null,
+      };
+    }
+
+    if (this.isStatusMessage(payload)) {
+      return {
+        queueKey: `profile_status:${payload.worker_profile_status_id}`,
+        chatId: null,
+      };
+    }
+
+    if (this.isProfileInfoMessage(payload)) {
+      return {
+        queueKey: `profile_info:${payload.worker_id}:${payload.account_id}`,
+        chatId: null,
+      };
+    }
+
     return {
-      queueKey: this.SYSTEM_QUEUE_KEY,
+      queueKey: message
+        ? `offset:${message.partition}:${message.offset}`
+        : this.SYSTEM_QUEUE_KEY,
       chatId: null,
     };
-  }
-
-  private async enqueueByQueueKey(
-    queueKey: string,
-    task: () => Promise<void>
-  ): Promise<void> {
-    await this.keyedSequencerService.enqueue(queueKey, task, {
-      timeoutMs: this.CHAT_QUEUE_TIMEOUT_MS,
-    });
   }
 
   private async processEnvelopeWithRetry(
@@ -592,138 +468,6 @@ export class MessageSendWwebjsConsume {
     console.warn(
       '[MessageSendWwebjs] Unsupported payload type. Message skipped.'
     );
-  }
-
-  private getPartitionCommitState(partition: number): IPartitionCommitState {
-    const existingState = this.partitionCommitStates.get(partition);
-    if (existingState) {
-      return existingState;
-    }
-
-    const newState: IPartitionCommitState = {
-      nextContiguousOffset: null,
-      pendingOffsets: new Set<number>(),
-      completedOffsets: new Set<number>(),
-    };
-
-    this.partitionCommitStates.set(partition, newState);
-    return newState;
-  }
-
-  private registerPendingOffset(partition: number, offset: number): void {
-    const state = this.getPartitionCommitState(partition);
-    state.pendingOffsets.add(offset);
-
-    if (
-      state.nextContiguousOffset === null ||
-      offset < state.nextContiguousOffset
-    ) {
-      state.nextContiguousOffset = offset;
-    }
-  }
-
-  private async completeOffset(
-    topic: string,
-    partition: number,
-    offset: number,
-    generation = this.generation
-  ): Promise<void> {
-    if (generation !== this.generation) {
-      return;
-    }
-    await this.enqueuePartitionCommitOperation(partition, async () => {
-      if (generation !== this.generation) {
-        return;
-      }
-      const state = this.partitionCommitStates.get(partition);
-      if (!state || !state.pendingOffsets.has(offset)) {
-        return;
-      }
-
-      state.completedOffsets.add(offset);
-      await this.flushContiguousOffsets(topic, partition, state, generation);
-    });
-  }
-
-  private enqueuePartitionCommitOperation(
-    partition: number,
-    operation: () => Promise<void>
-  ): Promise<void> {
-    const previousChain =
-      this.partitionCommitChains.get(partition) ?? Promise.resolve();
-
-    const nextChain = previousChain
-      .catch(() => {})
-      .then(operation)
-      .catch(() => {});
-
-    this.partitionCommitChains.set(partition, nextChain);
-
-    return nextChain.finally(() => {
-      if (this.partitionCommitChains.get(partition) === nextChain) {
-        this.partitionCommitChains.delete(partition);
-      }
-    });
-  }
-
-  private async flushContiguousOffsets(
-    topic: string,
-    partition: number,
-    state: IPartitionCommitState,
-    generation = this.generation
-  ): Promise<void> {
-    if (generation !== this.generation) {
-      return;
-    }
-
-    if (state.nextContiguousOffset === null) {
-      return;
-    }
-
-    const startOffset = state.nextContiguousOffset;
-    let endOffset = startOffset;
-
-    while (state.completedOffsets.has(endOffset)) {
-      endOffset += 1;
-    }
-
-    const commitUpTo = endOffset - 1;
-    if (commitUpTo < startOffset) {
-      return;
-    }
-
-    await this.commitNext(topic, partition, commitUpTo, generation);
-
-    for (
-      let currentOffset = startOffset;
-      currentOffset <= commitUpTo;
-      currentOffset += 1
-    ) {
-      state.completedOffsets.delete(currentOffset);
-      state.pendingOffsets.delete(currentOffset);
-    }
-
-    state.nextContiguousOffset = commitUpTo + 1;
-
-    if (state.pendingOffsets.size === 0 && state.completedOffsets.size === 0) {
-      state.nextContiguousOffset = null;
-      this.partitionCommitStates.delete(partition);
-    }
-  }
-
-  private async flushAllPartitionCommits(topic: string): Promise<void> {
-    const partitions = Array.from(this.partitionCommitStates.keys());
-
-    for (const partition of partitions) {
-      await this.enqueuePartitionCommitOperation(partition, async () => {
-        const state = this.partitionCommitStates.get(partition);
-        if (!state) {
-          return;
-        }
-
-        await this.flushContiguousOffsets(topic, partition, state);
-      });
-    }
   }
 
   private calculateRetryDelayMs(attempt: number): number {
@@ -1786,7 +1530,14 @@ export class MessageSendWwebjsConsume {
 
   private async pushUpdate(input: IUpdateMessage): Promise<void> {
     const topic = this.kafkaServiceQueueService.updateMessage();
-    await this.streamProducerService.send(topic, input);
+    try {
+      await this.streamProducerService.send(topic, input);
+    } catch (error) {
+      console.error('[MessageSendWwebjs] Failed to publish message update:', {
+        message_id: input.data?.message_id,
+        error,
+      });
+    }
   }
 
   private async sendExternalIdUpdate(

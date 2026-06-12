@@ -1,6 +1,9 @@
 import {
   buildDeterministicMessageHash,
+  buildMessageSendQueueKey,
+  buildScheduleSendQueueKey,
   ensureMessageSendHash,
+  resolveMessageSendQueueKey,
   resolveMessageSendIdentity,
 } from '@core/common/functions/messageIdentity';
 
@@ -82,5 +85,19 @@ describe('messageIdentity', () => {
   it('ensureMessageSendHash returns null when identity cannot be resolved', () => {
     const message = { chat_id: 'chat' } as never;
     expect(ensureMessageSendHash(message)).toBeNull();
+  });
+
+  it('builds queue keys used by Kafka producers and ordered consumers', () => {
+    expect(buildMessageSendQueueKey(' acc ', ' chat ')).toBe('chat:acc:chat');
+    expect(buildScheduleSendQueueKey(' acc ', ' worker ')).toBe(
+      'account:acc:channel:worker'
+    );
+    expect(
+      resolveMessageSendQueueKey({
+        account: { id: 'acc' },
+        chat_id: 'chat',
+        message_id: 'msg',
+      })
+    ).toBe('chat:acc:chat');
   });
 });

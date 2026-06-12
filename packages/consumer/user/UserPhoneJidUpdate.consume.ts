@@ -4,18 +4,13 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IUserPhoneJidUpdate } from '@core/common/interfaces/IUserPhoneJidUpdate';
 import { UserService } from '@core/services/user.service';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class UserPhoneJidUpdateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IUserPhoneJidUpdate> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -24,14 +19,6 @@ export class UserPhoneJidUpdateConsume {
     @inject(UserService)
     private readonly userService: UserService
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parseMessage(value: Buffer | null): IUserPhoneJidUpdate | null {
     if (!value) return null;
@@ -62,96 +49,34 @@ export class UserPhoneJidUpdateConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaBaileysQueueService.userPhoneJidUpdate();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IUserPhoneJidUpdate>({
+      kafka: this.kafka,
       topic,
-      this.kafkaBaileysQueueService.getNumPartitions(),
-      this.kafkaBaileysQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-user-phone-jid-update'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-
-        const stop = startHeartbeat(heartbeat);
-
+      groupId: 'group-underchat-user-phone-jid-update',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => data.user_id,
+      handle: async (data) => {
         try {
           await this.processUpdate(data);
         } catch (error) {
           console.error('Erro ao atualizar phone_jid:', error);
-        } finally {
-          stop();
-          await this.commitNext(topic, partition, offset);
         }
-      });
-
-      this.partitionChains.set(partition, currentChain);
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
-
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-    }
+    this.consumer = null;
   }
 }

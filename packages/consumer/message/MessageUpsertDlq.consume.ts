@@ -1,41 +1,34 @@
 import { singleton, inject, container } from 'tsyringe';
-import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { remoteJid } from '@core/common/functions/remoteJid';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { remoteJidAlt } from '@core/common/functions/remoteJidAlt';
 import { TFunction } from 'i18next';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageUpsertConsume } from '@core/consumer/message/MessageUpsert.consume';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import { buildUpsertMessageDlqKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import Redis from 'ioredis';
 
 @singleton()
 export class MessageUpsertDlqConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IUpsertMessage> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
   private messageUpsertConsume: MessageUpsertConsume;
+  private readonly processedDedupePrefix = 'message-upsert:dlq:processed:v1';
+  private readonly processedDedupeTtlSeconds = 7 * 24 * 60 * 60;
+  private readonly localProcessedDedupe = new Set<string>();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
     @inject(KafkaServiceQueueService)
-    private readonly kafkaServiceQueueService: KafkaServiceQueueService
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
+    @inject('Redis') private readonly redis?: Redis
   ) {
     this.messageUpsertConsume = container.resolve(MessageUpsertConsume);
-  }
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
   }
 
   private parseMessage(value: Buffer | null): IUpsertMessage | null {
@@ -66,141 +59,112 @@ export class MessageUpsertDlqConsume {
 
     const topic = this.kafkaServiceQueueService.upsertMessageDlq();
 
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IUpsertMessage>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-message-upsert-dlq'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-
-        const stop = startHeartbeat(heartbeat);
-        try {
-          const jid = remoteJid(data.message?.key);
-          const jidAlt = remoteJidAlt(data.message?.key);
-
-          if (!jid && !jidAlt) {
-            throw new Error('Received message without remoteJid');
-          }
-
-          const phone = getPhoneFromJid(jid, jidAlt);
-          if (!phone) {
-            throw new Error('Received message without valid phone');
-          }
-
-          await (this.messageUpsertConsume as any).createOrUpdateChat(
-            t,
-            data,
-            phone
-          );
-        } catch (error) {
-          if (MessageUpsertDlqConsume.isTerminalPayloadError(error)) {
-            return;
-          }
-
-          console.error('Error processing DLQ message:', {
-            error,
-            account_id: data.account_id,
-            worker_id: data.worker_id,
-            message_id: data.message?.key?.id,
-            dlq_error: (data as any).dlq_error,
-            dlq_timestamp: (data as any).dlq_timestamp,
-          });
-        } finally {
-          stop();
-          await this.commitNext(topic, partition, offset);
-        }
-      });
-
-      this.partitionChains.set(partition, currentChain);
+      groupId: 'group-underchat-message-upsert-dlq',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data, message) =>
+        this.resolveDlqDedupeKey(data, message.key?.toString() ?? null),
+      handle: (data) => this.processDlqOnce(t, data),
+      maxRetries: 1,
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
+    this.isRunning = false;
 
-    if (!this.consumer) {
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
+    }
+
+    this.consumer = null;
+  }
+
+  private async processDlqOnce(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage
+  ): Promise<void> {
+    const dedupeKey = this.resolveDlqDedupeKey(data);
+    const acquired = await this.acquireDedupe(dedupeKey);
+    if (!acquired) {
       return;
     }
 
     try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-    }
-  }
+      const jid = remoteJid(data.message?.key);
+      const jidAlt = remoteJidAlt(data.message?.key);
 
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    try {
-      await commitOffset(this.consumerOrThrow, topic, partition, offset);
-    } catch (error: unknown) {
-      if (
-        MessageUpsertDlqConsume.isLibrdKafkaError(error) &&
-        error.code === 22
-      ) {
+      if (!jid && !jidAlt) {
+        throw new Error('Received message without remoteJid');
+      }
+
+      const phone = getPhoneFromJid(jid, jidAlt);
+      if (!phone) {
+        throw new Error('Received message without valid phone');
+      }
+
+      await (this.messageUpsertConsume as any).createOrUpdateChat(
+        t,
+        data,
+        phone
+      );
+    } catch (error) {
+      if (MessageUpsertDlqConsume.isTerminalPayloadError(error)) {
         return;
       }
 
-      throw error;
+      console.error('Error processing DLQ message once, discarding:', {
+        error,
+        account_id: data.account_id,
+        worker_id: data.worker_id,
+        message_id: data.message?.key?.id,
+        dlq_error: (data as any).dlq_error,
+        dlq_timestamp: (data as any).dlq_timestamp,
+      });
     }
   }
 
-  private static isLibrdKafkaError(error: unknown): error is LibrdKafkaError {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      typeof (error as { code: unknown }).code === 'number'
-    );
+  private async acquireDedupe(key: string): Promise<boolean> {
+    if (!this.redis) {
+      if (this.localProcessedDedupe.has(key)) {
+        return false;
+      }
+      this.localProcessedDedupe.add(key);
+      return true;
+    }
+
+    try {
+      const result = await this.redis.set(
+        key,
+        '1',
+        'EX',
+        this.processedDedupeTtlSeconds,
+        'NX'
+      );
+      return result === 'OK';
+    } catch {
+      if (this.localProcessedDedupe.has(key)) {
+        return false;
+      }
+      this.localProcessedDedupe.add(key);
+      return true;
+    }
+  }
+
+  private resolveDlqDedupeKey(
+    data: IUpsertMessage,
+    fallbackKey?: string | null
+  ): string {
+    const kafkaKey = buildUpsertMessageDlqKey(data, fallbackKey);
+    return `${this.processedDedupePrefix}:${kafkaKey}`;
   }
 
   private static isTerminalPayloadError(error: unknown): boolean {

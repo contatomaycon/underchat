@@ -30,7 +30,10 @@ import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey'
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { isUuidLike } from '@core/common/functions/isUuidLike';
-import { ensureMessageSendHash } from '@core/common/functions/messageIdentity';
+import {
+  buildMessageSendQueueKey,
+  ensureMessageSendHash,
+} from '@core/common/functions/messageIdentity';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
 
@@ -1341,7 +1344,10 @@ export class ChatMessageCreatorUseCase {
           chatContext.chat.worker.id
         ),
         reactionMessage,
-        reactionMessage.chat_id
+        buildMessageSendQueueKey(
+          reactionMessage.account.id,
+          reactionMessage.chat_id
+        )
       ),
       this.centrifugoChatPublish(updatedMessage),
     ]);
@@ -1431,7 +1437,10 @@ export class ChatMessageCreatorUseCase {
       this.streamProducerService.send(
         this.kafkaBaileysQueueService.workerSendMessage(chat.worker.id),
         deleteMessage,
-        deleteMessage.chat_id
+        buildMessageSendQueueKey(
+          deleteMessage.account.id,
+          deleteMessage.chat_id
+        )
       ),
       this.centrifugoChatPublish(updatedMessage),
     ]);

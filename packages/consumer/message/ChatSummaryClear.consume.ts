@@ -4,20 +4,15 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ChatService } from '@core/services/chat.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { chatAccountCentrifugo } from '@core/common/functions/centrifugoQueue';
 import { IClearChatSummaryMessage } from '@core/common/interfaces/IClearChatSummaryMessage';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class ChatSummaryClearConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IClearChatSummaryMessage> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -28,14 +23,6 @@ export class ChatSummaryClearConsume {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parseMessage(value: Buffer | null): IClearChatSummaryMessage | null {
     if (!value) {
@@ -79,96 +66,29 @@ export class ChatSummaryClearConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.clearChatSummary();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IClearChatSummaryMessage>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-chat-summary-clear'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-
-      const previousChain = (
-        this.partitionChains.get(partition) ?? Promise.resolve()
-      ).catch(() => undefined);
-
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-
-        const stop = startHeartbeat(heartbeat);
-
-        try {
-          await this.handleMessage(data);
-        } finally {
-          stop();
-          await this.commitNext(topic, partition, offset);
-        }
-      });
-
-      this.partitionChains.set(partition, currentChain);
-      void currentChain.catch(() => {});
+      groupId: 'group-underchat-chat-summary-clear',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) =>
+        `${data.account_id ?? 'unknown-account'}:${data.chat_id ?? 'unknown-chat'}`,
+      handle: (data) => this.handleMessage(data),
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
-
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-    }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumer = null;
   }
 }

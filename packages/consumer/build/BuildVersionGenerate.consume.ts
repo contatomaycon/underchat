@@ -5,12 +5,8 @@ import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { EServerBuildType } from '@core/common/enums/EServerBuildType';
 import { IBuildVersionGeneratePayload } from '@core/common/interfaces/IBuildVersionGeneratePayload';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { ServerBuildExecutorService } from '@core/services/serverBuildExecutor.service';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 interface IBuildVersionGenerateLegacyPayload {
   server_build_job_id: string;
@@ -25,6 +21,8 @@ type BuildVersionGenerateConsumerPayload =
 @singleton()
 export class BuildVersionGenerateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<BuildVersionGenerateConsumerPayload> | null =
+    null;
   private isRunning = false;
 
   constructor(
@@ -34,14 +32,6 @@ export class BuildVersionGenerateConsume {
     @inject(ServerBuildExecutorService)
     private readonly serverBuildExecutorService: ServerBuildExecutorService
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parsePayload(
     value: Buffer | null
@@ -94,45 +84,20 @@ export class BuildVersionGenerateConsume {
     }
 
     const topic = this.kafkaServiceQueueService.buildVersionGenerateRequest();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<BuildVersionGenerateConsumerPayload>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-build-version-generate'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const payload = this.parsePayload(message.value);
-
-      if (!payload) {
+      groupId: 'group-underchat-build-version-generate',
+      parse: (message) => this.parsePayload(message.value),
+      resolveEntityKey: (payload) =>
+        payload.build_type
+          ? `${payload.server_build_job_id}:${payload.build_type}`
+          : payload.server_build_job_id,
+      handle: (payload) => this.processPayload(payload),
+      onInvalidMessage: () => {
         server.log.warn('Skipping invalid build generate payload');
-        await commitOffset(
-          this.consumerOrThrow,
-          topic,
-          message.partition,
-          message.offset
-        );
-        return;
-      }
-
-      try {
-        if (payload.build_type) {
-          await this.serverBuildExecutorService.executeBuildJobItem(
-            payload.server_build_job_id,
-            payload.build_type
-          );
-        } else {
-          await this.serverBuildExecutorService.executeBuildJob(
-            payload.server_build_job_id
-          );
-        }
-      } catch (error) {
+      },
+      onFailed: (payload, _context, error) => {
         server.log.error(
           {
             err: error,
@@ -141,44 +106,40 @@ export class BuildVersionGenerateConsume {
           },
           'Failed to execute build generate payload'
         );
-      } finally {
-        await commitOffset(
-          this.consumerOrThrow,
-          topic,
-          message.partition,
-          message.offset
-        );
-      }
+      },
+      maxRetries: 3,
+      retryDelaysMs: [1000, 5000],
+      logger: server.log,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    connectConsumer(this.consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
+    }
+    this.consumer = null;
+  }
+
+  private async processPayload(
+    payload: BuildVersionGenerateConsumerPayload
+  ): Promise<void> {
+    if (payload.build_type) {
+      await this.serverBuildExecutorService.executeBuildJobItem(
+        payload.server_build_job_id,
+        payload.build_type
+      );
       return;
     }
 
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    await this.serverBuildExecutorService.executeBuildJob(
+      payload.server_build_job_id
+    );
   }
 }

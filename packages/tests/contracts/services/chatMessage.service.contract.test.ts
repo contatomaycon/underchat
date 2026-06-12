@@ -136,7 +136,7 @@ describe('ChatMessageService', () => {
     expect(streamProducerService.send).toHaveBeenCalledWith(
       'worker.send.worker-1',
       expect.objectContaining({ message_id: 'message-1' }),
-      'chat-1'
+      'chat:account-1:chat-1'
     );
     expect(
       chatService.saveMessageChat.mock.invocationCallOrder[0]

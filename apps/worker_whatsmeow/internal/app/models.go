@@ -255,6 +255,7 @@ type ProfileInfoMessage struct {
 
 type ScheduleMessage struct {
 	ScheduleID  string      `json:"schedule_id"`
+	AccountID   string      `json:"account_id,omitempty"`
 	ContactID   string      `json:"contact_id"`
 	Message     ChatMessage `json:"message"`
 	IsValidated bool        `json:"is_validated"`

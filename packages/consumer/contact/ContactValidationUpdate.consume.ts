@@ -1,19 +1,15 @@
 import { singleton, inject } from 'tsyringe';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IContactValidationUpdate } from '@core/common/interfaces/IContactValidationUpdate';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { ContactService } from '@core/services/contact.service';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class ContactValidationUpdateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IContactValidationUpdate> | null = null;
   private isRunning = false;
 
   constructor(
@@ -23,14 +19,6 @@ export class ContactValidationUpdateConsume {
     @inject(ContactService)
     private readonly contactService: ContactService
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parseMessage(value: Buffer | null): IContactValidationUpdate | null {
     if (!value) return null;
@@ -64,80 +52,34 @@ export class ContactValidationUpdateConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.contactValidationUpdate();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IContactValidationUpdate>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-contact-validation-update'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.processValidationUpdate(data);
-      } catch (error) {
-        console.error('Error processing contact validation update:', error);
-      } finally {
-        stop();
-        await this.commitNext(topic, message.partition, message.offset);
-      }
+      groupId: 'group-underchat-contact-validation-update',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => data.contact_id,
+      handle: async (data) => {
+        try {
+          await this.processValidationUpdate(data);
+        } catch (error) {
+          console.error('Error processing contact validation update:', error);
+        }
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) return;
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
+    this.consumer = null;
   }
 }

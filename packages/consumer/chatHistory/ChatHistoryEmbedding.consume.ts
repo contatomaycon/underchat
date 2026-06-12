@@ -2,18 +2,15 @@ import { singleton, inject } from 'tsyringe';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { EmbeddingService } from '@core/services/embedding.service';
 import { IChatHistoryEmbeddingRequest } from '@core/common/interfaces/IChatHistoryEmbeddingRequest';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class ChatHistoryEmbeddingConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IChatHistoryEmbeddingRequest> | null =
+    null;
   private isRunning = false;
 
   constructor(
@@ -30,78 +27,39 @@ export class ChatHistoryEmbeddingConsume {
     }
 
     const topic = this.kafkaServiceQueueService.chatHistoryEmbedding();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IChatHistoryEmbeddingRequest>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-chat-history-embedding'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseRequest(message.value);
-
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const heartbeat = async () => {
-        this.consumer?.commit();
-      };
-
-      const stop = startHeartbeat(heartbeat);
-      try {
-        await this.processEmbedding(data);
-      } catch (error) {
-        console.error(
-          '[ChatHistoryEmbedding] Erro ao processar embedding:',
-          error
-        );
-      } finally {
-        stop();
-        await this.commitNext(topic, message.partition, message.offset);
-      }
+      groupId: 'group-underchat-chat-history-embedding',
+      parse: (message) => this.parseRequest(message.value),
+      resolveEntityKey: (data) =>
+        `${data.account_id}:${data.ai_agent_id}:${data.phone}`,
+      handle: async (data) => {
+        try {
+          await this.processEmbedding(data);
+        } catch (error) {
+          console.error(
+            '[ChatHistoryEmbedding] Erro ao processar embedding:',
+            error
+          );
+        }
+      },
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-    }
+    this.consumer = null;
   }
 
   private parseRequest(
@@ -141,21 +99,5 @@ export class ChatHistoryEmbeddingConsume {
       data.phone,
       data.ai_agent_id
     );
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    if (!this.consumer) {
-      return;
-    }
-
-    try {
-      await commitOffset(this.consumer, topic, partition, offset);
-    } catch (error) {
-      console.error('Erro ao commitar mensagem:', error);
-    }
   }
 }

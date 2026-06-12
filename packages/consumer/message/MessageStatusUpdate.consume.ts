@@ -1,45 +1,22 @@
 import { singleton, inject } from 'tsyringe';
-import type { KafkaConsumer, LibrdKafkaError } from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import { MessageStatusPendingService } from '@core/services/messageStatusPending.service';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import Redis from 'ioredis';
-
-interface BufferedUpdate {
-  data: IMessageStatusUpdate;
-  partition: number;
-  offset: number;
-  topic: string;
-}
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class MessageStatusUpdateConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IMessageStatusUpdate> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
-  private failedPartitions = new Set<number>();
-  private partitionFailureCounts = new Map<number, number>();
   private readonly idempotencyTtlSeconds = 86400;
   private readonly idempotencyPrefix = 'status-update:';
-  private readonly batchWindowMs = 50;
-  private readonly batchMaxSize = 20;
-  private readonly maxConsecutiveFailures = 10;
-  private readonly partitionRecoveryIntervalMs = 60_000;
   private readonly missingStatusRetryIntervalMs = 1_000;
-  private partitionRecoveryTimer: ReturnType<typeof setInterval> | null = null;
   private missingStatusRetryTimer: ReturnType<typeof setInterval> | null = null;
-  private currentTopic: string | null = null;
-
-  private messagePatchBuffer = new Map<string, BufferedUpdate[]>();
-  private batchTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -51,14 +28,6 @@ export class MessageStatusUpdateConsume {
     private readonly messageStatusPendingService: MessageStatusPendingService,
     @inject('Redis') private readonly redis: Redis
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parseMessage(value: Buffer | null): IMessageStatusUpdate | null {
     if (!value) {
@@ -83,205 +52,36 @@ export class MessageStatusUpdateConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.updateMessageStatus();
-
-    await ensureKafkaTopic(
-      this.kafka,
-      topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.currentTopic = topic;
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-message-status-update'
-    );
-
-    this.startPartitionRecovery();
     this.startMissingStatusRetryWorker();
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-      if (this.failedPartitions.has(partition)) {
-        return;
-      }
-
-      const previousChain = (
-        this.partitionChains.get(partition) ?? Promise.resolve()
-      ).catch(() => undefined);
-
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-
-        const stop = startHeartbeat(heartbeat);
-
-        try {
-          await this.addToBatch(data, topic, partition, offset);
-        } catch (error) {
-          this.markPartitionAsFailed(topic, partition);
-          throw error;
-        } finally {
-          stop();
-        }
-      });
-
-      this.partitionChains.set(partition, currentChain);
-      void currentChain.catch(() => undefined);
+    this.runner = new KafkaConsumerRunner<IMessageStatusUpdate>({
+      kafka: this.kafka,
+      topic,
+      groupId: 'group-underchat-message-status-update',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) =>
+        this.getMessageKey(data.account_id, data.message_id),
+      handle: (data) => this.processStatusUpdate(data),
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    if (this.partitionRecoveryTimer) {
-      clearInterval(this.partitionRecoveryTimer);
-      this.partitionRecoveryTimer = null;
-    }
-
     if (this.missingStatusRetryTimer) {
       clearInterval(this.missingStatusRetryTimer);
       this.missingStatusRetryTimer = null;
     }
 
-    for (const timer of this.batchTimers.values()) {
-      clearTimeout(timer);
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-    this.batchTimers.clear();
-
-    await this.flushAllBatches();
-
-    await Promise.all(this.partitionChains.values());
-
-    if (!this.consumer) {
-      return;
-    }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-      this.failedPartitions.clear();
-      this.partitionFailureCounts.clear();
-      this.currentTopic = null;
-    }
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    try {
-      await commitOffset(this.consumerOrThrow, topic, partition, offset);
-    } catch (error: unknown) {
-      if (
-        MessageStatusUpdateConsume.isLibrdKafkaError(error) &&
-        MessageStatusUpdateConsume.isNonFatalCommitError(error.code)
-      ) {
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  private static isLibrdKafkaError(error: unknown): error is LibrdKafkaError {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      typeof (error as { code: unknown }).code === 'number'
-    );
-  }
-
-  private static isNonFatalCommitError(code: number): boolean {
-    return code === 22 || code === 25 || code === 27;
-  }
-
-  private markPartitionAsFailed(topic: string, partition: number): void {
-    const currentCount = (this.partitionFailureCounts.get(partition) ?? 0) + 1;
-    this.partitionFailureCounts.set(partition, currentCount);
-
-    if (currentCount < this.maxConsecutiveFailures) {
-      return;
-    }
-
-    if (this.failedPartitions.has(partition)) {
-      return;
-    }
-
-    this.failedPartitions.add(partition);
-
-    try {
-      this.consumerOrThrow.pause([{ topic, partition }]);
-    } catch {}
-  }
-
-  private resetPartitionFailureCount(partition: number): void {
-    if (this.partitionFailureCounts.has(partition)) {
-      this.partitionFailureCounts.set(partition, 0);
-    }
-  }
-
-  private startPartitionRecovery(): void {
-    if (this.partitionRecoveryTimer) {
-      clearInterval(this.partitionRecoveryTimer);
-    }
-
-    this.partitionRecoveryTimer = setInterval(() => {
-      this.attemptPartitionRecovery();
-    }, this.partitionRecoveryIntervalMs);
-  }
-
-  private attemptPartitionRecovery(): void {
-    if (
-      this.failedPartitions.size === 0 ||
-      !this.consumer ||
-      !this.currentTopic
-    ) {
-      return;
-    }
-
-    const partitionsToResume = Array.from(this.failedPartitions);
-
-    for (const partition of partitionsToResume) {
-      try {
-        this.consumerOrThrow.resume([{ topic: this.currentTopic, partition }]);
-        this.failedPartitions.delete(partition);
-        this.partitionFailureCounts.set(partition, 0);
-      } catch {}
-    }
+    this.consumer = null;
   }
 
   private startMissingStatusRetryWorker(): void {
@@ -399,61 +199,17 @@ export class MessageStatusUpdateConsume {
     return `${accountId}:${messageId}`;
   }
 
-  private async addToBatch(
-    data: IMessageStatusUpdate,
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    const messageKey = this.getMessageKey(data.account_id, data.message_id);
-    const buffered = this.messagePatchBuffer.get(messageKey) ?? [];
-    buffered.push({ data, partition, offset, topic });
-    this.messagePatchBuffer.set(messageKey, buffered);
-
-    const existingTimer = this.batchTimers.get(messageKey);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-
-    if (buffered.length >= this.batchMaxSize) {
-      await this.flushBatch(messageKey);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      this.batchTimers.delete(messageKey);
-      void this.flushBatch(messageKey).catch(() => {});
-    }, this.batchWindowMs);
-
-    this.batchTimers.set(messageKey, timer);
-  }
-
-  private async flushBatch(messageKey: string): Promise<void> {
-    const buffered = this.messagePatchBuffer.get(messageKey);
-    if (!buffered || buffered.length === 0) {
-      return;
-    }
-
-    this.messagePatchBuffer.delete(messageKey);
-    const timer = this.batchTimers.get(messageKey);
-    if (timer) {
-      clearTimeout(timer);
-      this.batchTimers.delete(messageKey);
-    }
-
-    const firstUpdate = buffered[0].data;
-    const mergedPatch = this.messageStatusPendingService.mergePatches(
-      buffered.map((b) => b.data.patch)
-    );
-
+  private async processStatusUpdate(data: IMessageStatusUpdate): Promise<void> {
+    const mergedPatch = this.messageStatusPendingService.mergePatches([
+      data.patch,
+    ]);
+    const statusUpdate: IMessageStatusUpdate = {
+      ...data,
+      patch: mergedPatch,
+    };
     const startTime = Date.now();
 
     try {
-      const statusUpdate: IMessageStatusUpdate = {
-        ...firstUpdate,
-        patch: mergedPatch,
-      };
-
       const alreadyApplied =
         await this.messageStatusPendingService.isApplied(statusUpdate);
 
@@ -463,62 +219,38 @@ export class MessageStatusUpdateConsume {
           statusUpdate.message_id
         );
         await this.markAsProcessed(statusUpdate);
-
-        await Promise.all(
-          buffered.map((item) =>
-            this.commitNext(item.topic, item.partition, item.offset)
-          )
-        );
-
         return;
       }
 
-      const isAlreadyProcessed = await this.isAlreadyProcessed({
-        ...firstUpdate,
-        patch: mergedPatch,
-      });
+      const isAlreadyProcessed = await this.isAlreadyProcessed(statusUpdate);
 
       if (isAlreadyProcessed) {
         await this.messageStatusPendingService.clearPendingStatus(
-          firstUpdate.account_id,
-          firstUpdate.message_id
+          statusUpdate.account_id,
+          statusUpdate.message_id
         );
-
-        await Promise.all(
-          buffered.map((item) =>
-            this.commitNext(item.topic, item.partition, item.offset)
-          )
-        );
-
         return;
       }
 
       const updatedMessage =
         await this.messageStatusService.updateSummaryByWhatsAppId(
-          firstUpdate.account_id,
-          firstUpdate.message_id,
+          statusUpdate.account_id,
+          statusUpdate.message_id,
           mergedPatch,
-          firstUpdate.key
+          statusUpdate.key
         );
 
       if (!updatedMessage) {
         const duration = Date.now() - startTime;
 
         await this.messageStatusPendingService.deferMissingStatusUpdate(
-          firstUpdate,
+          statusUpdate,
           mergedPatch,
           {
-            batchSize: buffered.length,
+            batchSize: 1,
             duration,
           }
         );
-
-        await Promise.all(
-          buffered.map((item) =>
-            this.commitNext(item.topic, item.partition, item.offset)
-          )
-        );
-
         return;
       }
 
@@ -527,29 +259,20 @@ export class MessageStatusUpdateConsume {
         updatedMessage.message_id
       );
 
-      for (const item of buffered) {
-        this.resetPartitionFailureCount(item.partition);
-      }
+      await this.markAsProcessed(statusUpdate);
+    } catch {
+      const duration = Date.now() - startTime;
 
-      await this.markAsProcessed({
-        ...firstUpdate,
-        patch: mergedPatch,
-      });
-
-      await Promise.all(
-        buffered.map((item) =>
-          this.commitNext(item.topic, item.partition, item.offset)
-        )
+      await this.messageStatusPendingService.reschedulePendingStatus(
+        statusUpdate,
+        {
+          batchSize: 1,
+          duration,
+        },
+        {
+          incrementRetry: false,
+        }
       );
-    } catch (error) {
-      const firstBuffered = buffered[0];
-      this.markPartitionAsFailed(firstBuffered.topic, firstBuffered.partition);
-      throw error;
     }
-  }
-
-  private async flushAllBatches(): Promise<void> {
-    const messageKeys = Array.from(this.messagePatchBuffer.keys());
-    await Promise.all(messageKeys.map((key) => this.flushBatch(key)));
   }
 }

@@ -2,7 +2,10 @@ jest.mock('@whiskeysockets/baileys', () => ({
   jidNormalizedUser: (jid: string) => jid.replace(/@c\.us$/, '@s.whatsapp.net'),
 }));
 
-import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import {
+  buildUpsertMessageDlqKey,
+  buildUpsertMessageKafkaKey,
+} from '@core/common/functions/buildUpsertMessageKafkaKey';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 
@@ -51,6 +54,29 @@ describe('buildUpsertMessageKafkaKey', () => {
     );
     expect(buildUpsertMessageKafkaKey(withoutRemote)).toBe(
       'account-1:message-3'
+    );
+  });
+
+  it('adds the message id to DLQ keys so distinct chat messages are not deduplicated together', () => {
+    const first = makeUpsert({
+      id: 'message-4',
+      remoteJid: '556481342084@s.whatsapp.net',
+      fromMe: false,
+    });
+    const second = makeUpsert({
+      id: 'message-5',
+      remoteJid: '556481342084@s.whatsapp.net',
+      fromMe: false,
+    });
+
+    expect(buildUpsertMessageKafkaKey(first)).toBe(
+      buildUpsertMessageKafkaKey(second)
+    );
+    expect(buildUpsertMessageDlqKey(first)).toBe(
+      'account-1:worker-1:556481342084@s.whatsapp.net:message-4'
+    );
+    expect(buildUpsertMessageDlqKey(second)).toBe(
+      'account-1:worker-1:556481342084@s.whatsapp.net:message-5'
     );
   });
 });

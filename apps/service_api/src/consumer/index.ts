@@ -28,6 +28,7 @@ import { startWorkerLifecycleConsume } from './workerLifecycle.consume';
 import fp from 'fastify-plugin';
 import { buildEnvironment } from '@core/config/environments';
 import { selectServiceApiConsumerStarters } from '@core/common/functions/selectServiceApiConsumerStarters';
+import { registerServiceApiConsumer } from './registry';
 
 const consumers: Array<{ close?: () => Promise<void> }> = [];
 
@@ -100,7 +101,9 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
 
   for (const start of starters) {
     try {
-      consumers.push(start());
+      const consumer = start();
+      consumers.push(consumer);
+      registerServiceApiConsumer(consumer);
     } catch (err) {
       server.log.error({ err }, 'Erro ao iniciar consumidor Kafka');
     }

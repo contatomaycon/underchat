@@ -5,22 +5,22 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IMessageMarkRead } from '@core/common/interfaces/IMessageMarkRead';
 import { WwebjsIncomingMessageService } from '@core/services/wwebjs/methods/incoming.service';
 import { wwebjsEnvironment } from '@core/config/environments';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageStatusService } from '@core/services/messageStatus.service';
 import Redis from 'ioredis';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import type { IUpsertMessageKey } from '@core/common/interfaces/IUpsertMessage';
+
+type MarkReadKey = IUpsertMessageKey & {
+  remote_jid?: string | null;
+};
 
 @singleton()
 export class MessageMarkReadWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IMessageMarkRead> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -32,14 +32,6 @@ export class MessageMarkReadWwebjsConsume {
     private readonly streamProducerService: StreamProducerService,
     @inject('Redis') private readonly redis: Redis
   ) {}
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
-  }
 
   private parseMessage(value: Buffer | null): IMessageMarkRead | null {
     if (!value) {
@@ -63,133 +55,41 @@ export class MessageMarkReadWwebjsConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.markMessageRead();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IMessageMarkRead>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      `group-underchat-mark-read-wwebjs-${wwebjsEnvironment.wwebjsWorkerId}`
-    );
-
-    this.consumer.on('data', async (message) => {
-      const data = this.parseMessage(message.value);
-      if (!data) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      if (data.worker_id !== wwebjsEnvironment.wwebjsWorkerId) {
-        await this.commitNext(topic, message.partition, message.offset);
-        return;
-      }
-
-      const partition = message.partition;
-      const offset = message.offset;
-
-      const previousChain =
-        this.partitionChains.get(partition) ?? Promise.resolve();
-
-      const currentChain = previousChain.then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-
-        const stop = startHeartbeat(heartbeat);
-
-        try {
-          const isEnabled = await this.isMarkAsReadEnabled(data.worker_id);
-          if (!isEnabled) {
-            return;
-          }
-
-          await this.wwebjsIncomingMessageService.markRead(
-            data.keys as Array<{
-              remoteJid?: string | null;
-              remote_jid?: string | null;
-              id?: string;
-            }>
-          );
-
-          await Promise.all(
-            data.keys.map(async (key) => {
-              if (!key.id) return;
-
-              const statusUpdate: IMessageStatusUpdate = {
-                account_id: data.account_id,
-                message_id: key.id,
-                patch: { is_seen: true },
-                key,
-              };
-
-              const kafkaKey = MessageStatusService.statusKafkaKey(
-                data.account_id,
-                key.id
-              );
-
-              await this.streamProducerService.send(
-                this.kafkaServiceQueueService.updateMessageStatus(),
-                statusUpdate,
-                kafkaKey
-              );
-            })
-          );
-        } catch (error) {
-          throw error;
-        } finally {
-          stop();
-        }
-      });
-
-      currentChain
-        .then(() => {
-          return this.commitNext(topic, partition, offset);
-        })
-        .catch(() => {});
-
-      this.partitionChains.set(partition, currentChain);
+      groupId: `group-underchat-mark-read-wwebjs-${wwebjsEnvironment.wwebjsWorkerId}`,
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => this.resolveEntityKey(data),
+      handle: (data) => this.processMarkRead(data),
+      onInvalidMessage: () => {
+        console.warn('Skipping invalid message mark read payload');
+      },
+      onFailed: (payload, _context, error) => {
+        console.error('Error marking messages as read:', {
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          error,
+        });
+      },
+      maxRetries: 3,
+      retryDelaysMs: [1000, 5000],
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
-
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-    }
+    this.consumer = null;
   }
 
   private async isMarkAsReadEnabled(workerId: string): Promise<boolean> {
@@ -202,11 +102,69 @@ export class MessageMarkReadWwebjsConsume {
     }
   }
 
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await commitOffset(this.consumerOrThrow, topic, partition, offset);
+  private async processMarkRead(data: IMessageMarkRead): Promise<void> {
+    if (data.worker_id !== wwebjsEnvironment.wwebjsWorkerId) {
+      return;
+    }
+
+    const isEnabled = await this.isMarkAsReadEnabled(data.worker_id);
+    if (!isEnabled) {
+      return;
+    }
+
+    await this.wwebjsIncomingMessageService.markRead(
+      data.keys as Array<{
+        remoteJid?: string | null;
+        remote_jid?: string | null;
+        id?: string;
+      }>
+    );
+
+    await Promise.all(
+      data.keys.map(async (key) => {
+        if (!key.id) return;
+
+        const statusUpdate: IMessageStatusUpdate = {
+          account_id: data.account_id,
+          message_id: key.id,
+          patch: { is_seen: true },
+          key,
+        };
+
+        const kafkaKey = MessageStatusService.statusKafkaKey(
+          data.account_id,
+          key.id
+        );
+
+        await this.streamProducerService.send(
+          this.kafkaServiceQueueService.updateMessageStatus(),
+          statusUpdate,
+          kafkaKey
+        );
+      })
+    );
+  }
+
+  private resolveEntityKey(data: IMessageMarkRead): string {
+    const jids = this.resolveJids(data.keys);
+    return `${data.account_id}:${data.worker_id}:${jids.join(',') || 'unknown-chat'}`;
+  }
+
+  private resolveJids(keys: IUpsertMessageKey[]): string[] {
+    return Array.from(
+      new Set(
+        keys
+          .map((key) => {
+            const typedKey = key as MarkReadKey;
+            return (
+              typedKey.remoteJid ??
+              typedKey.remoteJidAlt ??
+              typedKey.remote_jid ??
+              null
+            );
+          })
+          .filter((jid): jid is string => Boolean(jid))
+      )
+    ).sort();
   }
 }

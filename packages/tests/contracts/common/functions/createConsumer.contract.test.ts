@@ -166,4 +166,66 @@ describe('createConsumer managed kafka consumer', () => {
     expect(kafka.createConsumer).toHaveBeenCalledTimes(1);
     expect(firstConsumer.disconnect).not.toHaveBeenCalled();
   });
+
+  it('does not commit when commit is called without explicit offsets', async () => {
+    const firstConsumer = new FakeKafkaConsumer();
+    const kafka = {
+      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+
+    consumer.subscribe(['upsert.message']);
+    consumer.consume();
+    consumer.connect({}, jest.fn());
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+
+    consumer.commit();
+
+    expect(firstConsumer.commitSync).not.toHaveBeenCalled();
+  });
+
+  it('commits only contiguous completed offsets', async () => {
+    const firstConsumer = new FakeKafkaConsumer();
+    const kafka = {
+      createConsumer: jest.fn().mockReturnValueOnce(firstConsumer),
+    };
+    const consumer = createConsumer(kafka as never, 'group-1') as any;
+
+    consumer.subscribe(['upsert.message']);
+    consumer.consume();
+    consumer.connect({}, jest.fn());
+    await flushPromises();
+
+    firstConsumer.emit('ready');
+    await flushPromises();
+
+    firstConsumer.emit('data', {
+      topic: 'upsert.message',
+      partition: 0,
+      offset: 10,
+      value: Buffer.from('{}'),
+    });
+    firstConsumer.emit('data', {
+      topic: 'upsert.message',
+      partition: 0,
+      offset: 11,
+      value: Buffer.from('{}'),
+    });
+
+    consumer.commitSync([
+      { topic: 'upsert.message', partition: 0, offset: 12 },
+    ]);
+    expect(firstConsumer.commitSync).not.toHaveBeenCalled();
+
+    consumer.commitSync([
+      { topic: 'upsert.message', partition: 0, offset: 11 },
+    ]);
+    expect(firstConsumer.commitSync).toHaveBeenCalledTimes(1);
+    expect(firstConsumer.commitSync).toHaveBeenCalledWith([
+      { topic: 'upsert.message', partition: 0, offset: 12 },
+    ]);
+  });
 });

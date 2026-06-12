@@ -160,7 +160,7 @@ describe('ChatMessageService security key append', () => {
           ),
         }),
       }),
-      'chat-1'
+      'chat:account-1:chat-1'
     );
   });
 

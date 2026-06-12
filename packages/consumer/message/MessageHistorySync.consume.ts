@@ -1,9 +1,5 @@
 import { singleton, inject } from 'tsyringe';
-import type {
-  KafkaConsumer,
-  LibrdKafkaError,
-  MessageHeader,
-} from 'node-rdkafka';
+import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
@@ -15,29 +11,17 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { IMessageKeyIdContext } from '@core/common/interfaces/IMessageKeyIdContext';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 import { WAMessage } from '@whiskeysockets/baileys';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import Redis from 'ioredis';
-
-interface KafkaConsumerMessage {
-  value: Buffer | null;
-  partition: number;
-  offset: number;
-  headers?: MessageHeader[];
-}
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class MessageHistorySyncConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IUpsertMessage> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
 
   private readonly HISTORY_RECONCILIATION_ENABLED =
     process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
@@ -62,14 +46,6 @@ export class MessageHistorySyncConsume {
     private readonly streamProducerService: StreamProducerService
   ) {
     this.receiptCache = new MessageHistoryReceiptCacheService(this.redis);
-  }
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    return this.consumer;
   }
 
   private parseMessage(value: Buffer | null): IUpsertMessage | null {
@@ -107,76 +83,27 @@ export class MessageHistorySyncConsume {
     if (this.consumer && this.isRunning) return;
 
     const topic = this.kafkaServiceQueueService.upsertMessageHistory();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IUpsertMessage>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-message-history-sync'
-    );
-
-    this.consumer.on('data', (message) => {
-      void this.handleKafkaMessage(
-        topic,
-        message as KafkaConsumerMessage
-      ).catch((error) => {
-        console.error('[HistorySync] Error handling Kafka message:', error);
-      });
+      groupId: 'group-underchat-message-history-sync',
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data, message) =>
+        buildUpsertMessageKafkaKey(data, message.key?.toString() ?? null),
+      handle: (data, context) =>
+        this.processHistoryMessageWithLifecycle(
+          topic,
+          data,
+          context.partition,
+          context.offset
+        ),
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
-  }
-
-  private async handleKafkaMessage(
-    topic: string,
-    message: KafkaConsumerMessage
-  ): Promise<void> {
-    const { partition, offset } = message;
-    const data = this.parseMessage(message.value);
-
-    if (!data) {
-      await this.commitNext(topic, partition, offset);
-      return;
-    }
-
-    const previousChain =
-      this.partitionChains.get(partition) ?? Promise.resolve();
-
-    const currentChain = previousChain.then(() =>
-      this.processKafkaMessageInPartition(topic, data, partition, offset)
-    );
-
-    this.partitionChains.set(partition, currentChain);
-  }
-
-  private async processKafkaMessageInPartition(
-    topic: string,
-    data: IUpsertMessage,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    await this.processHistoryMessageWithLifecycle(
-      topic,
-      data,
-      partition,
-      offset
-    );
+    this.consumer = this.runner.consumer;
   }
 
   private async processHistoryMessageWithLifecycle(
@@ -194,11 +121,6 @@ export class MessageHistorySyncConsume {
       offset,
     });
 
-    const heartbeat = async () => {
-      this.consumer?.commit();
-    };
-
-    const stop = startHeartbeat(heartbeat);
     try {
       await this.handleHistoryMessage(data);
     } catch (error) {
@@ -219,34 +141,16 @@ export class MessageHistorySyncConsume {
         worker_id: data.worker_id,
         message_key_id: data.message?.key?.id,
       });
-    } finally {
-      stop();
-      await this.commitNext(topic, partition, offset);
     }
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
-
-    if (!this.consumer) {
-      return;
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    try {
-      this.isRunning = false;
-      await new Promise<void>((resolve) => {
-        const consumer = this.consumer;
-        if (!consumer) {
-          resolve();
-          return;
-        }
-        consumer.unsubscribe();
-        consumer.disconnect(resolve);
-      });
-    } finally {
-      this.consumer = null;
-      this.partitionChains.clear();
-    }
+    this.consumer = null;
   }
 
   private async handleHistoryMessage(data: IUpsertMessage): Promise<void> {
@@ -705,33 +609,5 @@ export class MessageHistorySyncConsume {
     }
 
     return Math.floor(parsed);
-  }
-
-  private async commitNext(
-    topic: string,
-    partition: number,
-    offset: number
-  ): Promise<void> {
-    try {
-      await commitOffset(this.consumerOrThrow, topic, partition, offset);
-    } catch (error: unknown) {
-      if (
-        MessageHistorySyncConsume.isLibrdKafkaError(error) &&
-        error.code === 22
-      ) {
-        return;
-      }
-
-      throw error;
-    }
-  }
-
-  private static isLibrdKafkaError(error: unknown): error is LibrdKafkaError {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      typeof (error as { code?: unknown }).code === 'number'
-    );
   }
 }

@@ -11,6 +11,7 @@ import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
+import { buildMessageSendQueueKey } from '@core/common/functions/messageIdentity';
 import { v7 as uuidv7 } from 'uuid';
 
 @injectable()
@@ -114,7 +115,7 @@ export class ChatMessageEditorUseCase {
     await this.streamProducerService.send(
       this.kafkaBaileysQueueService.workerSendMessage(message.worker.id),
       editedMessage,
-      editedMessage.chat_id
+      buildMessageSendQueueKey(editedMessage.account.id, editedMessage.chat_id)
     );
 
     return true;

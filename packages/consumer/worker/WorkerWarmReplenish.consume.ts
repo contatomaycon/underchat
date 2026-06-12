@@ -5,14 +5,13 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { WorkerWarmPoolSettingsService } from '@core/services/workerWarmPoolSettings.service';
 import { IWorkerWarmReplenishRequest } from '@core/common/interfaces/IWorkerWarmPoolQueue';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class WorkerWarmReplenishConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IWorkerWarmReplenishRequest> | null =
+    null;
   private isRunning = false;
 
   constructor(
@@ -25,98 +24,68 @@ export class WorkerWarmReplenishConsume {
     private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService
   ) {}
 
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
-    }
-    return this.consumer;
-  }
-
   async execute(): Promise<void> {
     if (this.consumer && this.isRunning) {
       return;
     }
 
     const topic = this.kafkaServiceQueueService.workerWarmReplenishRequest();
-
-    await ensureKafkaTopic(
-      this.kafka,
+    this.runner = new KafkaConsumerRunner<IWorkerWarmReplenishRequest>({
+      kafka: this.kafka,
       topic,
-      this.kafkaServiceQueueService.getNumPartitions(),
-      this.kafkaServiceQueueService.getReplicationFactor()
-    );
-
-    this.consumer = createConsumer(
-      this.kafka,
-      'group-underchat-worker-warm-replenish'
-    );
-
-    this.consumer.on('data', async (message) => {
-      const payload = this.parsePayload(message.value);
-      if (!payload) {
-        await commitOffset(
-          this.consumerOrThrow,
-          topic,
-          message.partition,
-          message.offset
-        );
-        return;
-      }
-
-      const settings = await this.workerWarmPoolSettingsService.view();
-      if (!settings.warmup_enabled) {
-        await commitOffset(
-          this.consumerOrThrow,
-          topic,
-          message.partition,
-          message.offset
-        );
-        return;
-      }
-
-      try {
-        await this.workerGrpcClientService.createWarmWorker(
-          payload.server_id,
-          {
-            request_id: payload.request_id,
-            warm_pool_id: payload.request_id,
-            server_id: payload.server_id,
-            worker_type_id: payload.worker_type_id,
-          },
-          120_000
-        );
-      } catch (error) {
+      groupId: 'group-underchat-worker-warm-replenish',
+      parse: (message) => this.parsePayload(message.value),
+      resolveEntityKey: (payload) =>
+        `${payload.server_id}:${payload.worker_type_id}`,
+      handle: (payload) => this.replenishWarmWorker(payload),
+      onInvalidMessage: () => {
+        console.warn('Skipping invalid worker warm replenish payload');
+      },
+      onFailed: (payload, _context, error) => {
         console.error('Failed to create warm worker', {
           server_id: payload.server_id,
           worker_type_id: payload.worker_type_id,
           error,
         });
-      } finally {
-        await commitOffset(
-          this.consumerOrThrow,
-          topic,
-          message.partition,
-          message.offset
-        );
-      }
+      },
+      maxRetries: 3,
+      retryDelaysMs: [1000, 5000],
+      logger: console,
     });
 
-    const consumer = this.consumer;
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   async close(): Promise<void> {
-    if (!this.consumer) {
+    this.isRunning = false;
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
+    }
+    this.consumer = null;
+  }
+
+  private async replenishWarmWorker(
+    payload: IWorkerWarmReplenishRequest
+  ): Promise<void> {
+    const settings = await this.workerWarmPoolSettingsService.view();
+    if (!settings.warmup_enabled) {
       return;
     }
-    this.isRunning = false;
-    await new Promise<void>((resolve) => {
-      this.consumer?.unsubscribe();
-      this.consumer?.disconnect(resolve);
-    });
-    this.consumer = null;
+
+    await this.workerGrpcClientService.createWarmWorker(
+      payload.server_id,
+      {
+        request_id: payload.request_id,
+        warm_pool_id: payload.request_id,
+        server_id: payload.server_id,
+        worker_type_id: payload.worker_type_id,
+      },
+      120_000
+    );
   }
 
   private parsePayload(

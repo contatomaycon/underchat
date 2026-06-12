@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -78,6 +80,27 @@ func sequencerTaskContext(parent context.Context, timeout time.Duration) (contex
 		return context.WithCancel(parent)
 	}
 	return context.WithTimeout(parent, timeout)
+}
+
+func runKafkaQueueTask(parent context.Context, timeout time.Duration, task func(context.Context) error) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		taskCtx, cancel := sequencerTaskContext(parent, timeout)
+		defer cancel()
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- task(taskCtx)
+		}()
+
+		select {
+		case err := <-errCh:
+			done <- err
+		case <-taskCtx.Done():
+			done <- taskCtx.Err()
+		}
+	}()
+	return done
 }
 
 func (s *keyedSequencer) cleanup(key string, current chan struct{}) {
@@ -191,13 +214,179 @@ func (c *partitionCommitCoordinator) flushLocked(ctx context.Context, partition 
 func workerSendQueueKey(raw []byte) string {
 	data, err := mapToChatMessage(raw)
 	if err != nil || strings.TrimSpace(data.MessageID) == "" {
-		return workerSendSystemQueueKey
+		return workerSendNonChatQueueKey(raw)
 	}
 	chatID := chatMessageQueueChatID(data)
 	if chatID == "" {
 		return workerSendSystemQueueKey
 	}
-	return "chat:" + chatID
+	accountID := firstNonEmpty(stringValue(data.Account["id"]), "unknown-account")
+	return "chat:" + accountID + ":" + chatID
+}
+
+func kafkaMessageQueueKey(topic string, msg kafka.Message) string {
+	if !kafkaTopicRequiresMessageOrder(topic) {
+		return fmt.Sprintf("offset:%s:%d:%d", topic, msg.Partition, msg.Offset)
+	}
+
+	switch {
+	case isWorkerSendTopic(topic):
+		if queueKey := workerSendQueueKey(msg.Value); queueKey != workerSendSystemQueueKey {
+			return queueKey
+		}
+	case strings.Contains(topic, ".schedule.send.message"):
+		if queueKey := scheduleMessageQueueKey(topic, msg.Value); queueKey != workerSendSystemQueueKey {
+			return queueKey
+		}
+	case strings.Contains(topic, ".notification.message"):
+		if queueKey := notificationQueueKey(msg.Value); queueKey != workerSendSystemQueueKey {
+			return queueKey
+		}
+	}
+
+	if kafkaKey := strings.TrimSpace(string(msg.Key)); kafkaKey != "" {
+		return "kafka:" + kafkaKey
+	}
+
+	return fmt.Sprintf("offset:%s:%d:%d", topic, msg.Partition, msg.Offset)
+}
+
+func kafkaTopicRequiresMessageOrder(topic string) bool {
+	return isWorkerSendTopic(topic) ||
+		strings.Contains(topic, ".schedule.send.message") ||
+		strings.Contains(topic, ".notification.message")
+}
+
+func workerSendNonChatQueueKey(raw []byte) string {
+	var fields map[string]any
+	_ = json.Unmarshal(raw, &fields)
+
+	var profileStatusDelete ProfileStatusDeleteMessage
+	if err := json.Unmarshal(raw, &profileStatusDelete); err == nil && hasAnyJSONField(fields, "external_id") {
+		if id := firstNonEmpty(profileStatusDelete.ExternalID, profileStatusDelete.WorkerProfileStatusID); id != "" {
+			return "profile_status_delete:" + id
+		}
+	}
+
+	var profileInfo ProfileInfoMessage
+	if err := json.Unmarshal(raw, &profileInfo); err == nil && hasAnyJSONField(fields, "name", "message", "photo") {
+		workerID := strings.TrimSpace(profileInfo.WorkerID)
+		accountID := strings.TrimSpace(profileInfo.AccountID)
+		if workerID != "" && accountID != "" {
+			return "profile_info:" + workerID + ":" + accountID
+		}
+		if id := firstNonEmpty(workerID, accountID); id != "" {
+			return "profile_info:" + id
+		}
+	}
+
+	var profileStatus ProfileStatusMessage
+	if err := json.Unmarshal(raw, &profileStatus); err == nil && hasAnyJSONField(fields, "worker_profile_status_id", "worker_profile_status_type_id", "value", "statusJidList") {
+		if id := firstNonEmpty(profileStatus.WorkerProfileStatusID, profileStatus.WorkerID); id != "" {
+			return "profile_status:" + id
+		}
+	}
+
+	return workerSendSystemQueueKey
+}
+
+func hasAnyJSONField(fields map[string]any, keys ...string) bool {
+	if len(fields) == 0 {
+		return false
+	}
+	for _, key := range keys {
+		if _, ok := fields[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func scheduleMessageQueueKey(topic string, raw []byte) string {
+	var data ScheduleMessage
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return workerSendSystemQueueKey
+	}
+
+	accountID := firstNonEmpty(stringValue(data.Message.Account["id"]), data.AccountID, "unknown-account")
+	workerID := firstNonEmpty(workerIDFromTopic(topic), stringValue(data.Message.Worker["id"]), "unknown-channel")
+	return "account:" + accountID + ":channel:" + workerID
+}
+
+func workerIDFromTopic(topic string) string {
+	parts := strings.Split(topic, ".")
+	if len(parts) >= 2 && parts[0] == "worker" {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
+}
+
+func phoneValidationQueueKey(raw []byte) string {
+	var data PhoneValidationRequest
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return workerSendSystemQueueKey
+	}
+	return firstNonEmpty(
+		"phone_validation:"+data.RequestID,
+		"phone_validation:"+data.AccountID+":"+data.PhoneDDI+":"+data.Phone,
+		workerSendSystemQueueKey,
+	)
+}
+
+func notificationQueueKey(raw []byte) string {
+	var data NotificationMessage
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return workerSendSystemQueueKey
+	}
+	destination := ""
+	if remoteJID := strings.TrimSpace(data.MessageKey.RemoteJID); remoteJID != "" {
+		destination = "jid:" + remoteJID
+	} else if phoneDDI := strings.TrimSpace(data.MessageKey.PhoneDDI); phoneDDI != "" {
+		if phoneNumber := strings.TrimSpace(data.MessageKey.PhoneNumber); phoneNumber != "" {
+			destination = "phone:" + phoneDDI + ":" + phoneNumber
+		}
+	}
+	if destination == "" {
+		return workerSendSystemQueueKey
+	}
+	accountID := firstNonEmpty(stringValue(data.Account["id"]), "unknown-account")
+	return "chat:" + accountID + ":" + destination
+}
+
+func webhookQueueKey(raw []byte) string {
+	var data map[string]any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return workerSendSystemQueueKey
+	}
+	return firstNonEmpty(
+		"webhook:"+stringValue(data["account_id"])+":"+stringValue(data["worker_id"])+":"+stringValue(data["phone_ddi"])+":"+stringValue(data["phone"]),
+		workerSendSystemQueueKey,
+	)
+}
+
+func markReadQueueKey(raw []byte) string {
+	var data MarkReadRequest
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return workerSendSystemQueueKey
+	}
+	jids := make([]string, 0, len(data.Keys))
+	for _, key := range data.Keys {
+		if remote := strings.TrimSpace(key.Remote()); remote != "" {
+			jids = append(jids, remote)
+		}
+	}
+	if len(jids) == 0 {
+		return firstNonEmpty("mark_read:"+data.AccountID+":"+data.WorkerID, workerSendSystemQueueKey)
+	}
+	return "mark_read:" + data.AccountID + ":" + data.WorkerID + ":" + strings.Join(jids, ",")
+}
+
+func workerConfigQueueKey(raw []byte) string {
+	var data WorkerConfigUpdateEvent
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return workerSendSystemQueueKey
+	}
+	return firstNonEmpty("worker_config:"+data.WorkerID, workerSendSystemQueueKey)
 }
 
 func chatMessageQueueChatID(data ChatMessage) string {

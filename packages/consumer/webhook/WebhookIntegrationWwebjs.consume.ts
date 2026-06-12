@@ -1,9 +1,6 @@
 import { singleton, inject } from 'tsyringe';
 import type { KafkaConsumer } from 'node-rdkafka';
 import { KafkaClient } from '@core/plugins/kafkaStreams';
-import { createConsumer } from '@core/common/functions/createConsumer';
-import { connectConsumer } from '@core/common/functions/connectConsumer';
-import { handleConsumerError } from '@core/common/functions/handleConsumerError';
 import { wwebjsEnvironment } from '@core/config/environments';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
 import { IWebhookIntegrationRequest } from '@core/common/interfaces/IWebhookIntegrationRequest';
@@ -13,9 +10,6 @@ import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.servi
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { v7 as uuidv7 } from 'uuid';
-import { startHeartbeat } from '@core/common/functions/startHeartbeat';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
-import { commitOffset } from '@core/common/functions/commitOffset';
 import { IContactValidationUpdate } from '@core/common/interfaces/IContactValidationUpdate';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
@@ -25,12 +19,13 @@ import {
   type IWebhookInteractionJids,
 } from '@core/common/functions/resolveWebhookInteractionJids';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 
 @singleton()
 export class WebhookIntegrationWwebjsConsume {
   private consumer: KafkaConsumer | null = null;
+  private runner: KafkaConsumerRunner<IWebhookIntegrationRequest> | null = null;
   private isRunning = false;
-  private partitionChains: Map<number, Promise<void>> = new Map();
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -53,91 +48,31 @@ export class WebhookIntegrationWwebjsConsume {
       wwebjsEnvironment.wwebjsWorkerId
     );
 
-    await ensureKafkaTopic(
-      this.kafka,
-      topic,
-      this.kafkaBaileysQueueService.getNumPartitions(),
-      this.kafkaBaileysQueueService.getReplicationFactor()
-    );
-
     const groupId = `group-underchat-webhook-integration-wwebjs-${wwebjsEnvironment.wwebjsWorkerId}`;
-    this.consumer = createConsumer(this.kafka, groupId);
 
-    this.consumer.on('data', async (message) => {
-      await this.handleMessage(topic, message);
+    this.runner = new KafkaConsumerRunner<IWebhookIntegrationRequest>({
+      kafka: this.kafka,
+      topic,
+      groupId,
+      parse: (message) => this.parseMessage(message.value),
+      resolveEntityKey: (data) => this.resolveWebhookEntityKey(data),
+      handle: (data) => this.processWebhookIntegration(data),
+      logger: console,
     });
 
-    this.consumer.on('event.error', (err) => {
-      handleConsumerError(err, topic);
-    });
-
-    const consumer = this.consumer;
-    if (!consumer) {
-      throw new Error('Consumer not initialized');
-    }
-
-    connectConsumer(consumer, topic, () => {
+    await this.runner.start(() => {
       this.isRunning = true;
     });
+    this.consumer = this.runner.consumer;
   }
 
   public async close(): Promise<void> {
-    await Promise.all(this.partitionChains.values());
-    this.partitionChains.clear();
-
-    if (this.consumer) {
-      this.consumer.disconnect();
-      this.consumer = null;
-    }
-
     this.isRunning = false;
-  }
-
-  private get consumerOrThrow(): KafkaConsumer {
-    if (!this.consumer) {
-      throw new Error('Consumer not initialized');
+    if (this.runner) {
+      await this.runner.close();
+      this.runner = null;
     }
-
-    return this.consumer;
-  }
-
-  private async handleMessage(
-    topic: string,
-    message: { value: Buffer | null; partition: number; offset: number }
-  ): Promise<void> {
-    const data = this.parseMessage(message.value);
-    if (!data) {
-      await commitOffset(
-        this.consumerOrThrow,
-        topic,
-        message.partition,
-        message.offset
-      );
-      return;
-    }
-
-    const partition = message.partition;
-    const offset = message.offset;
-    const previousChain =
-      this.partitionChains.get(partition) ?? Promise.resolve();
-
-    const currentChain = previousChain
-      .then(async () => {
-        const heartbeat = async () => {
-          this.consumer?.commit();
-        };
-        const stop = startHeartbeat(heartbeat);
-
-        try {
-          await this.processWebhookIntegration(data);
-        } finally {
-          stop();
-          await commitOffset(this.consumerOrThrow, topic, partition, offset);
-        }
-      })
-      .catch(() => {});
-
-    this.partitionChains.set(partition, currentChain);
+    this.consumer = null;
   }
 
   private parseMessage(
@@ -169,6 +104,14 @@ export class WebhookIntegrationWwebjsConsume {
     }
 
     await this.sendToMessageUpsert(upsertMessage);
+  }
+
+  private resolveWebhookEntityKey(data: IWebhookIntegrationRequest): string {
+    return [
+      data.account_id,
+      data.worker_id,
+      data.contact_id || data.phone || 'unknown-contact',
+    ].join(':');
   }
 
   private async validatePhone(

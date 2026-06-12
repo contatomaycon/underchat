@@ -125,7 +125,11 @@ export class WorkerProfileInfoUpserterUseCase {
 
     const topic = this.kafkaBaileysQueueService.workerSendMessage(workerId);
 
-    await this.streamProducerService.send(topic, profileInfoMessage);
+    await this.streamProducerService.send(
+      topic,
+      profileInfoMessage,
+      `profile_info:${workerId}:${accountId}`
+    );
 
     return result;
   }
