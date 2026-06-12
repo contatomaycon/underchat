@@ -50,6 +50,20 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         45_000
     )
   );
+  private static readonly LOCAL_REQUEST_MAX_ATTEMPTS = Math.max(
+    1,
+    Math.min(
+      4,
+      Number(process.env.CONNECTION_QRCODE_WWEBJS_LOCAL_MAX_ATTEMPTS) || 2
+    )
+  );
+  private static readonly LOCAL_REQUEST_RETRY_DELAY_MS = Math.max(
+    250,
+    Math.min(
+      30_000,
+      Number(process.env.CONNECTION_QRCODE_WWEBJS_LOCAL_RETRY_DELAY_MS) || 2_000
+    )
+  );
   private isRunning = false;
   private stopped = true;
   private loopPromise: Promise<void> | null = null;
@@ -239,15 +253,7 @@ export class WorkerConnectionQrCodeWwebjsConsume {
           stream_id: message.stream_id,
         }
       );
-      const state = await this.requestLocalConnectionWithTimeout({
-        worker_id: data.worker_id,
-        status: EWorkerStatus.online,
-        type: EBaileysConnectionType.qrcode,
-        connection_attempt_id: data.connection_attempt_id,
-        debug_trace_id: data.debug_trace_id,
-        runtime_generation: data.runtime_generation,
-        qr_pending: true,
-      });
+      const state = await this.requestLocalConnectionWithRetries(data, message);
 
       await this.cacheQrAttemptState(state, data);
       void this.connectionLifecycleDebugService.log(
@@ -336,6 +342,99 @@ export class WorkerConnectionQrCodeWwebjsConsume {
         reason: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private async requestLocalConnectionWithRetries(
+    data: IWorkerConnectionQrCodeQueueMessage,
+    message: WorkerConnectionQrCodeRedisStreamMessage
+  ): Promise<IBaileysConnectionState> {
+    let lastTerminalNoQrState: IBaileysConnectionState | null = null;
+
+    for (
+      let attempt = 1;
+      attempt <= WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_MAX_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        const state = await this.requestLocalConnectionWithTimeout({
+          worker_id: data.worker_id,
+          status: EWorkerStatus.online,
+          type: EBaileysConnectionType.qrcode,
+          connection_attempt_id: data.connection_attempt_id,
+          debug_trace_id: data.debug_trace_id,
+          runtime_generation: data.runtime_generation,
+          qr_pending: true,
+        });
+
+        if (!this.isTerminalNoQrState(state)) {
+          return state;
+        }
+
+        lastTerminalNoQrState = state;
+        if (
+          attempt >=
+          WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_MAX_ATTEMPTS
+        ) {
+          return state;
+        }
+
+        void this.connectionLifecycleDebugService.log(
+          'wwebjs.qr_stream.retry_after_terminal_no_qr',
+          {
+            trace_id: data.debug_trace_id,
+            layer: 'wwebjs',
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_type_id: data.worker_type_id,
+            connection_attempt_id: data.connection_attempt_id,
+            runtime_generation: data.runtime_generation,
+            stream_id: message.stream_id,
+            local_attempt: attempt,
+            next_local_attempt: attempt + 1,
+            max_local_attempts:
+              WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_MAX_ATTEMPTS,
+            reason: state.reason,
+          }
+        );
+      } catch (error) {
+        if (
+          !this.isLocalRequestTimeoutError(error) ||
+          attempt >=
+            WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_MAX_ATTEMPTS
+        ) {
+          throw error;
+        }
+
+        void this.connectionLifecycleDebugService.log(
+          'wwebjs.qr_stream.retry_after_local_timeout',
+          {
+            trace_id: data.debug_trace_id,
+            layer: 'wwebjs',
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_type_id: data.worker_type_id,
+            connection_attempt_id: data.connection_attempt_id,
+            runtime_generation: data.runtime_generation,
+            stream_id: message.stream_id,
+            local_attempt: attempt,
+            next_local_attempt: attempt + 1,
+            max_local_attempts:
+              WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_MAX_ATTEMPTS,
+            reason: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+
+      await this.delay(
+        WorkerConnectionQrCodeWwebjsConsume.LOCAL_REQUEST_RETRY_DELAY_MS
+      );
+    }
+
+    if (lastTerminalNoQrState) {
+      return lastTerminalNoQrState;
+    }
+
+    throw new Error('WWebJS local QR request did not return a state');
   }
 
   private requestLocalConnectionWithTimeout(

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { config as loadEnv } from 'dotenv';
 import Redis from 'ioredis';
+import jwt from 'jsonwebtoken';
 import pg from 'pg';
 
 loadEnv({ path: process.env.E2E_ENV_FILE ?? '.env' });
@@ -95,6 +96,9 @@ const multiAccountQrBurstSize = numberArg(
   '--multi-account-qr-burst-size',
   qrBurstSize
 );
+const multiAccountWorkerTypes = (
+  listArg('--multi-account-types') ?? WORKER_TYPES.map((type) => type.key)
+).map(workerTypeByKey);
 const readyTimeoutMs = numberArg('--ready-timeout-ms', 180_000);
 const qrTimeoutMs = numberArg('--qr-timeout-ms', 90_000);
 const apiTimeoutMs = numberArg('--api-timeout-ms', 35_000);
@@ -124,6 +128,7 @@ const report = {
   stress: null,
   multi_account_stress: null,
   account_contexts: [],
+  auth_fallbacks: [],
   remote_logs: {},
 };
 
@@ -732,7 +737,7 @@ async function runMultiAccountStressScenario() {
   report.multi_account_stress = {
     account_count: contexts.length,
     accounts: contexts.map(publicAuthContext),
-    worker_types: WORKER_TYPES.map((type) => type.key),
+    worker_types: multiAccountWorkerTypes.map((type) => type.key),
     workers_per_type_per_account: multiAccountWorkersPerType,
     qr_burst_size: multiAccountQrBurstSize,
     started_at: new Date().toISOString(),
@@ -742,7 +747,7 @@ async function runMultiAccountStressScenario() {
     const tasks = [];
 
     for (const context of contexts) {
-      for (const type of WORKER_TYPES) {
+      for (const type of multiAccountWorkerTypes) {
         for (let index = 1; index <= multiAccountWorkersPerType; index += 1) {
           tasks.push(
             createChannel(
@@ -778,7 +783,7 @@ async function runMultiAccountStressScenario() {
   }));
 
   const qrByType = {};
-  for (const type of WORKER_TYPES) {
+  for (const type of multiAccountWorkerTypes) {
     const workersForType = workers.filter(
       (worker) => worker.type.key === type.key
     );
@@ -823,7 +828,7 @@ async function runMultiAccountStressScenario() {
   report.multi_account_stress.recreates = recreates;
 
   const qrAfterRecreateByType = {};
-  for (const type of WORKER_TYPES) {
+  for (const type of multiAccountWorkerTypes) {
     const workersForType = workers.filter(
       (worker) => worker.type.key === type.key
     );
@@ -1099,7 +1104,7 @@ async function resolveStressAccountContexts() {
     listArg('--stress-account-ids') ??
     KNOWN_STRESS_ACCOUNTS.map((account) => account.account_id);
   const requestedIds = new Set(requestedAccountIds);
-  const accounts = await listAccessibleAccounts();
+  const accounts = await listStressAccountsFromDb([...requestedIds]);
   const accountById = new Map(
     accounts.map((account) => [account.account_id, account])
   );
@@ -1137,31 +1142,19 @@ async function resolveStressAccountContexts() {
   return contexts;
 }
 
-async function listAccessibleAccounts() {
-  let userAccountsError = null;
-  try {
-    const accounts = await api('GET', '/user/accounts', {
-      context: defaultAuthContext,
-      timeoutMs: apiTimeoutMs,
-    });
-    if (Array.isArray(accounts)) {
-      return accounts.map(normalizeAccount).filter(Boolean);
-    }
-  } catch (error) {
-    userAccountsError = errorMessage(error);
-  }
+async function listStressAccountsFromDb(accountIds) {
+  const result = await pool.query(
+    `
+      select account_id, name
+      from account
+      where account_id = any($1::uuid[])
+        and deleted_at is null
+      order by name asc
+    `,
+    [accountIds]
+  );
 
-  const accountList = await api('GET', '/account?current_page=1&per_page=100', {
-    context: defaultAuthContext,
-    timeoutMs: apiTimeoutMs,
-  });
-  if (userAccountsError) {
-    report.account_discovery = { user_accounts_error: userAccountsError };
-  }
-  const results = Array.isArray(accountList?.results)
-    ? accountList.results
-    : [];
-  return results.map(normalizeAccount).filter(Boolean);
+  return result.rows.map(normalizeAccount).filter(Boolean);
 }
 
 async function resolveAccountContext(account) {
@@ -1174,20 +1167,30 @@ async function resolveAccountContext(account) {
   }
 
   const user = await findSessionLoginUserForAccount(account);
-  const sessionData = await api(
-    'POST',
-    `/user/${encodeURIComponent(user.user_id)}/session-login`,
-    {
-      context: defaultAuthContext,
-      timeoutMs: apiTimeoutMs,
-    }
-  );
+  let sessionData;
+  let source = 'session-login';
+  try {
+    sessionData = await api(
+      'POST',
+      `/user/${encodeURIComponent(user.user_id)}/session-login`,
+      {
+        context: defaultAuthContext,
+        timeoutMs: apiTimeoutMs,
+      }
+    );
+  } catch (error) {
+    source = 'local-jwt';
+    report.auth_fallbacks.push({
+      account_id: account.account_id,
+      account_name: account.name,
+      account_key: accountKey(account.name),
+      source: 'session-login-fallback',
+      error: errorMessage(error),
+    });
+    sessionData = await createLocalJwtLoginData(account, user);
+  }
 
-  const context = buildAuthContextFromLogin(
-    sessionData,
-    'session-login',
-    account
-  );
+  const context = buildAuthContextFromLogin(sessionData, source, account);
 
   if (context.account_id !== account.account_id) {
     throw new Error(
@@ -1199,28 +1202,67 @@ async function resolveAccountContext(account) {
 }
 
 async function findSessionLoginUserForAccount(account) {
-  const query = new URLSearchParams({
-    account_id: account.account_id,
-    current_page: '1',
-    per_page: '20',
-  });
-  const data = await api('GET', `/user?${query.toString()}`, {
-    context: defaultAuthContext,
-    timeoutMs: apiTimeoutMs,
-  });
-  const users = Array.isArray(data?.results) ? data.results : [];
-  const user =
-    users.find(
-      (item) =>
-        item.account?.account_id === account.account_id &&
-        item.user_status?.name === 'active'
-    ) ?? users.find((item) => item.account?.account_id === account.account_id);
+  const result = await pool.query(
+    `
+      select
+        u.user_id,
+        u.account_id,
+        us.name as user_status
+      from "user" u
+      inner join user_status us on us.user_status_id = u.user_status_id
+      where u.account_id = $1
+        and u.deleted_at is null
+      order by
+        case when us.name = 'active' then 0 else 1 end,
+        u.created_at asc
+      limit 1
+    `,
+    [account.account_id]
+  );
+  const user = result.rows[0];
 
   if (!user?.user_id) {
     throw new Error(`No session-login user found for account ${account.name}`);
   }
 
   return user;
+}
+
+async function createLocalJwtLoginData(account, user) {
+  const sessionId = randomUUID();
+  const sessionPlatform = 'web';
+  const jwtSecret = requiredEnv('JWT_SECRET');
+  const expiresIn = process.env.JWT_SECRET_EXPIRES_IN || '720h';
+  const signedToken = jwt.sign(
+    {
+      user_id: user.user_id,
+      module: 'manager',
+      account_id: account.account_id,
+      session_id: sessionId,
+      session_platform: sessionPlatform,
+    },
+    jwtSecret,
+    {
+      expiresIn,
+    }
+  );
+
+  await redis.set(
+    jwtSessionKey(account.account_id, user.user_id, sessionPlatform),
+    sessionId
+  );
+  await redis.del(jwtSessionKey(account.account_id, user.user_id));
+
+  return {
+    token: signedToken,
+    user: {
+      user_id: user.user_id,
+      account_id: account.account_id,
+    },
+    layout: {
+      name: account.name,
+    },
+  };
 }
 
 function buildAuthContextFromLogin(data, source, accountFallback = null) {
@@ -1628,6 +1670,12 @@ async function writeReport() {
 
 function qrAttemptCacheKey(workerId, workerTypeId) {
   return `connection:qrcode:${workerTypeId}:${workerId}:attempt`;
+}
+
+function jwtSessionKey(accountId, userId, sessionPlatform = '') {
+  return ['jwtSession', accountId, userId, sessionPlatform]
+    .filter(Boolean)
+    .join(':');
 }
 
 function trace(prefix, label) {
