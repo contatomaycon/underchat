@@ -8,31 +8,18 @@ import {
   onBeforeUnmount,
   ref,
   shallowRef,
+  defineAsyncComponent,
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import { useDisplay, useTheme } from 'vuetify';
 import { themes } from '@/plugins/vuetify/theme';
-import ChatActiveChatUserProfileSidebarContent from '@/components/chat/ChatActiveChatUserProfileSidebarContent.vue';
 import ChatLeftSidebarContent from '@/components/chat/ChatLeftSidebarContent.vue';
 import ChatLog from '@/components/chat/ChatLog.vue';
 import ChatQuickMessagePreview from '@/components/chat/ChatQuickMessagePreview.vue';
-import ChatUserProfileSidebarContent from '@/components/chat/ChatUserProfileSidebarContent.vue';
-import ChatSearchSidebarContent from '@/components/chat/ChatSearchSidebarContent.vue';
-import ChatAttendanceHistorySidebarContent from '@/components/chat/ChatAttendanceHistorySidebarContent.vue';
-import AppContactPicker from '@/components/chat/AppContactPicker.vue';
-import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
-import AppEditContactChat from '@/components/chat/AppEditContactChat.vue';
-import ChatLocationPicker from '@/components/chat/ChatLocationPicker.vue';
-import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
-import ChatLabelModal from '@/components/chat/ChatLabelModal.vue';
 import ChatLinkPreview from '@/components/chat/ChatLinkPreview.vue';
-import ChatProtocolBadgeDialog from '@/components/chat/ChatProtocolBadgeDialog.vue';
 import ChatQueueStatusBanner from '@/components/chat/ChatQueueStatusBanner.vue';
-import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import ConversationOpeningDialog from '@/components/chat/ConversationOpeningDialog.vue';
-import AiReplyModal from '@/components/chat/AiReplyModal.vue';
-import TranscribeModal from '@/components/chat/TranscribeModal.vue';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EContactPermissions } from '@core/common/enums/EPermissions/contact';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
@@ -95,6 +82,49 @@ import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMe
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
+
+const ChatActiveChatUserProfileSidebarContent = defineAsyncComponent(
+  () => import('@/components/chat/ChatActiveChatUserProfileSidebarContent.vue')
+);
+const ChatUserProfileSidebarContent = defineAsyncComponent(
+  () => import('@/components/chat/ChatUserProfileSidebarContent.vue')
+);
+const ChatSearchSidebarContent = defineAsyncComponent(
+  () => import('@/components/chat/ChatSearchSidebarContent.vue')
+);
+const ChatAttendanceHistorySidebarContent = defineAsyncComponent(
+  () => import('@/components/chat/ChatAttendanceHistorySidebarContent.vue')
+);
+const AppContactPicker = defineAsyncComponent(
+  () => import('@/components/chat/AppContactPicker.vue')
+);
+const AppAddContactChat = defineAsyncComponent(
+  () => import('@/components/chat/AppAddContactChat.vue')
+);
+const AppEditContactChat = defineAsyncComponent(
+  () => import('@/components/chat/AppEditContactChat.vue')
+);
+const ChatLocationPicker = defineAsyncComponent(
+  () => import('@/components/chat/ChatLocationPicker.vue')
+);
+const ChatContactViewModal = defineAsyncComponent(
+  () => import('@/components/chat/ChatContactViewModal.vue')
+);
+const ChatLabelModal = defineAsyncComponent(
+  () => import('@/components/chat/ChatLabelModal.vue')
+);
+const ChatProtocolBadgeDialog = defineAsyncComponent(
+  () => import('@/components/chat/ChatProtocolBadgeDialog.vue')
+);
+const AiReplyModal = defineAsyncComponent(
+  () => import('@/components/chat/AiReplyModal.vue')
+);
+const TranscribeModal = defineAsyncComponent(
+  () => import('@/components/chat/TranscribeModal.vue')
+);
+const ChatMediaViewer = defineAsyncComponent(
+  () => import('@/components/chat/ChatMediaViewer.vue')
+);
 
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
 const MAX_IMAGE_SIZE_BYTES = 16 * 1024 * 1024;
@@ -3046,11 +3076,8 @@ const openChat = async (
 
   const requestSequence = ++openChatRequestSequence;
 
-  if (!isSameChat && openingChatId.value) {
-    return;
-  }
-
   if (!isSameChat) {
+    chatStore.cancelPendingChatMessagesRequests();
     openingChatId.value = chatId;
   }
 

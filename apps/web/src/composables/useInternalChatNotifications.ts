@@ -261,7 +261,7 @@ export const useInternalChatNotifications = () => {
     try {
       const registration = await navigator.serviceWorker.register(
         '/service-worker.js',
-        { scope: '/' }
+        { scope: '/', updateViaCache: 'none' }
       );
 
       serviceWorkerRegistration.value = registration;

@@ -285,6 +285,14 @@ const abortPreviousChatMessagesRequests = (
   }
 };
 
+const abortAllChatMessagesRequests = (): void => {
+  for (const [, requestState] of chatMessagesRequests) {
+    requestState.controller.abort();
+  }
+
+  chatMessagesRequests.clear();
+};
+
 const areMessageDeliverySummariesEqual = (
   first?: ListMessageResult['summary'] | IChatMessage['summary'] | null,
   second?: ListMessageResult['summary'] | IChatMessage['summary'] | null
@@ -4171,6 +4179,10 @@ export const useChatStore = defineStore('chat', {
       });
 
       return promise;
+    },
+
+    cancelPendingChatMessagesRequests(): void {
+      abortAllChatMessagesRequests();
     },
 
     async loadMoreMessages(): Promise<boolean> {

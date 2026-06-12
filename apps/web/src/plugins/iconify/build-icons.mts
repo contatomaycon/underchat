@@ -14,6 +14,25 @@ import { getIcons, getIconsCSS, stringToIcon } from '@iconify/utils';
 
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const appRoot = join(__dirname, '../../..');
+const sourceRoot = join(appRoot, 'src');
+const themeConfigFile = join(appRoot, 'themeConfig.ts');
+const sourceFileExtensions = new Set([
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.mts',
+  '.ts',
+  '.tsx',
+  '.vue',
+]);
+const ignoredSourceDirectories = new Set([
+  '.turbo',
+  'coverage',
+  'dist',
+  'node_modules',
+]);
+const dynamicFallbackTablerIcons = ['rocket'];
 
 interface BundleScriptCustomSVGConfig {
   dir: string;
@@ -137,6 +156,56 @@ async function processSources(
   if (sources.svg) await processSvgSources(sources.svg, allIcons);
 }
 
+function shouldScanSourceFile(filePath: string): boolean {
+  return sourceFileExtensions.has(filePath.slice(filePath.lastIndexOf('.')));
+}
+
+async function collectSourceFiles(target: string): Promise<string[]> {
+  const stat = await fs.stat(target).catch(() => null);
+  if (!stat) return [];
+  if (stat.isFile()) return shouldScanSourceFile(target) ? [target] : [];
+  if (!stat.isDirectory()) return [];
+
+  const files: string[] = [];
+  const entries = await fs.readdir(target, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (entry.isDirectory() && ignoredSourceDirectories.has(entry.name)) {
+      continue;
+    }
+
+    const entryPath = join(target, entry.name);
+    if (entryPath.includes('/plugins/iconify/')) {
+      continue;
+    }
+
+    files.push(...(await collectSourceFiles(entryPath)));
+  }
+
+  return files;
+}
+
+async function collectUsedTablerIconNames(): Promise<string[]> {
+  const icons = new Set(dynamicFallbackTablerIcons);
+  const files = [
+    ...(await collectSourceFiles(sourceRoot)),
+    ...(await collectSourceFiles(themeConfigFile)),
+  ];
+  const iconPattern = /(?<![\w-])tabler-([a-z0-9-]+)/g;
+
+  for (const file of files) {
+    const content = await fs.readFile(file, 'utf8');
+
+    for (const match of content.matchAll(iconPattern)) {
+      if (match[1]) {
+        icons.add(match[1]);
+      }
+    }
+  }
+
+  return [...icons].sort((first, second) => first.localeCompare(second));
+}
+
 async function generateCSS(target: string, allIcons: IconifyJSON[]) {
   const cssContent = allIcons
     .map((iconSet) =>
@@ -149,26 +218,32 @@ async function generateCSS(target: string, allIcons: IconifyJSON[]) {
   await fs.writeFile(target, cssContent, 'utf8');
 }
 
-const sources: BundleScriptConfig = {
-  svg: [],
-  icons: [],
-  json: [
-    require.resolve('@iconify-json/tabler/icons.json'),
-    {
-      filename: require.resolve('@iconify-json/mdi/icons.json'),
-      icons: ['close-circle', 'language-javascript', 'language-typescript'],
-    },
-    {
-      filename: require.resolve('@iconify-json/fa/icons.json'),
-      icons: ['circle'],
-    },
-  ],
-};
+async function createSources(): Promise<BundleScriptConfig> {
+  return {
+    svg: [],
+    icons: [],
+    json: [
+      {
+        filename: require.resolve('@iconify-json/tabler/icons.json'),
+        icons: await collectUsedTablerIconNames(),
+      },
+      {
+        filename: require.resolve('@iconify-json/mdi/icons.json'),
+        icons: ['close-circle', 'language-javascript', 'language-typescript'],
+      },
+      {
+        filename: require.resolve('@iconify-json/fa/icons.json'),
+        icons: ['circle'],
+      },
+    ],
+  };
+}
 
 const target = join(__dirname, 'icons.css');
 
 await fs.mkdir(dirname(target), { recursive: true });
 const allIcons: IconifyJSON[] = [];
+const sources = await createSources();
 if (sources.icons) {
   const sourcesJSON = sources.json || (sources.json = []);
   const organizedList = organizeIconsList(sources.icons);

@@ -474,6 +474,7 @@ export const useChatNotifications = () => {
         '/service-worker.js',
         {
           scope: '/',
+          updateViaCache: 'none',
         }
       );
 
@@ -837,7 +838,10 @@ export const useChatNotifications = () => {
     const contactPhoto = chat.photo || chat.contact?.photo;
 
     const title = t('chat_notification_transfer_title', {
-      operator: actorUserName || actorUserId || t('chat_notification_transfer_operator_fallback'),
+      operator:
+        actorUserName ||
+        actorUserId ||
+        t('chat_notification_transfer_operator_fallback'),
     });
     const body = formatNotificationBody(
       t('chat_notification_transfer_received', { contact: contactName })

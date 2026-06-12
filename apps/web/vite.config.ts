@@ -17,7 +17,60 @@ import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const isProduction = mode === 'production';
+  const chunkGroups = [
+    {
+      name: 'vendor-editor',
+      matches: ['/node_modules/@tiptap/', '/node_modules/prosemirror-'],
+    },
+    {
+      name: 'vendor-charts',
+      matches: [
+        '/node_modules/apexcharts/',
+        '/node_modules/chart.js/',
+        '/node_modules/vue3-apexcharts/',
+        '/node_modules/vue-chartjs/',
+      ],
+    },
+    {
+      name: 'vendor-maps',
+      matches: [
+        '/node_modules/mapbox-gl/',
+        '/node_modules/maplibre-gl/',
+        '/node_modules/vue-maplibre-gl/',
+      ],
+    },
+    {
+      name: 'vendor-chat-extras',
+      matches: [
+        '/node_modules/emoji-mart-vue-fast/',
+        '/node_modules/@emoji-mart/',
+        '/node_modules/lottie-web/',
+        '/node_modules/video.js/',
+        '/node_modules/@videojs-player/',
+      ],
+    },
+    {
+      name: 'vendor-icons',
+      matches: ['/node_modules/@iconify/'],
+    },
+  ];
+
+  const manualChunks = (id: string): string | undefined => {
+    const normalizedId = id.replaceAll('\\', '/');
+
+    if (!normalizedId.includes('/node_modules/')) {
+      return undefined;
+    }
+
+    const chunkGroup = chunkGroups.find((group) =>
+      group.matches.some((matcher) => normalizedId.includes(matcher))
+    );
+
+    return chunkGroup?.name ?? 'vendor';
+  };
+
   return {
     server: {
       fs: {
@@ -43,7 +96,7 @@ export default defineConfig(() => {
           },
         },
       }),
-      VueDevTools(),
+      ...(isProduction ? [] : [VueDevTools()]),
       vueJsx(),
       vuetify({
         styles: { configFile: 'src/assets/styles/variables/_vuetify.scss' },
@@ -110,7 +163,14 @@ export default defineConfig(() => {
         '@core/': fileURLToPath(new URL('../../packages/', import.meta.url)),
       },
     },
-    build: { chunkSizeWarningLimit: 5000 },
+    build: {
+      chunkSizeWarningLimit: 1500,
+      rollupOptions: {
+        output: {
+          manualChunks,
+        },
+      },
+    },
     optimizeDeps: { exclude: ['vuetify'], entries: ['./src/**/*.vue'] },
   };
 });
