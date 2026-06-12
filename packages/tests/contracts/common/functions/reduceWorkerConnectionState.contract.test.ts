@@ -63,6 +63,50 @@ describe('reduceWorkerConnectionState', () => {
     expect(result.state.connection_attempt_id).toBe('attempt-2');
   });
 
+  it('preserves QR against a disconnected terminal from another attempt', () => {
+    const current = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      qrcode: 'data:image/png;base64,qr',
+      connection_attempt_id: 'attempt-current',
+    };
+
+    const result = reduceWorkerConnectionState(current, {
+      status: EBaileysConnectionStatus.disconnected,
+      code: ECodeMessage.connectionClosed,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      connection_attempt_id: 'attempt-old',
+    });
+
+    expect(result.ignored).toBe(true);
+    expect(result.reason).toBe('attempt_mismatch_terminal_without_qr');
+    expect(result.state.qrcode).toBe(current.qrcode);
+    expect(result.state.connection_attempt_id).toBe('attempt-current');
+  });
+
+  it('accepts connected terminal from another attempt', () => {
+    const result = reduceWorkerConnectionState(
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        qrcode: 'data:image/png;base64,qr',
+        connection_attempt_id: 'attempt-current',
+      },
+      {
+        status: EBaileysConnectionStatus.connected,
+        code: ECodeMessage.connectionEstablished,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        connection_attempt_id: 'attempt-old',
+      }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.state.qrcode).toBeUndefined();
+    expect(result.state.connection_attempt_id).toBe('attempt-old');
+  });
+
   it('keeps an existing QR when a non-terminal event arrives without QR', () => {
     const current = {
       status: EBaileysConnectionStatus.connecting,

@@ -665,6 +665,28 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
   });
 
+  it('skips disconnected notifications without attempt while a QR attempt is active', async () => {
+    const deps = buildHandler();
+    seedActiveQrAttempt(deps.redisStore, {
+      connectionAttemptId: 'attempt-active',
+      runtimeGeneration: 1,
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.offline,
+      status: EBaileysConnectionStatus.disconnected,
+      code: ECodeMessage.connectionClosed,
+    });
+
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
+  });
+
   it('enqueues QR in Redis Streams and returns pending state', async () => {
     const deps = buildHandler();
 

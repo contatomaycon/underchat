@@ -1088,7 +1088,9 @@ export class WorkerCommandHandlerService {
     });
     const shouldPublishAsQrAttempt = this.isNotifyQrAttemptState(payload);
     const shouldResolveQrWorkerData =
-      shouldPublishAsQrAttempt || Boolean(payload.connection_attempt_id);
+      shouldPublishAsQrAttempt ||
+      Boolean(payload.connection_attempt_id) ||
+      this.isQrAttemptTerminalState(payload);
     const qrWorkerData = shouldResolveQrWorkerData
       ? await this.resolveWorkerDataForContainer(workerId, accountId).catch(
           () => {

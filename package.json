@@ -45,6 +45,8 @@
     "lint:fix": "pnpx eslint . --fix",
     "e2e:connections": "playwright test -c playwright.config.ts packages/tests/e2e/connections.spec.ts",
     "e2e:connections:headed": "playwright test -c playwright.config.ts packages/tests/e2e/connections.spec.ts --headed",
+    "e2e:frontend-connections": "playwright test -c playwright.config.ts packages/tests/e2e/channel-frontend-chaos.spec.ts",
+    "e2e:frontend-connections:headed": "playwright test -c playwright.config.ts packages/tests/e2e/channel-frontend-chaos.spec.ts --headed",
     "e2e:wwebjs-ad-message": "playwright test -c playwright.config.ts packages/tests/e2e/wwebjs-ad-message-edit.spec.ts",
     "e2e:wwebjs-ad-message:headed": "playwright test -c playwright.config.ts packages/tests/e2e/wwebjs-ad-message-edit.spec.ts --headed",
     "sonar": "sonar-scanner -X",

@@ -43,6 +43,15 @@ function shouldClearQr(state: Partial<IBaileysConnectionState>): boolean {
   );
 }
 
+function isSuccessfulTerminal(
+  state: Partial<IBaileysConnectionState>
+): boolean {
+  return (
+    state.status === EBaileysConnectionStatus.connected ||
+    state.code === ECodeMessage.connectionEstablished
+  );
+}
+
 function protectsUserAction(
   current: Partial<IBaileysConnectionState>
 ): boolean {
@@ -68,12 +77,14 @@ export function reduceWorkerConnectionState(
     attemptMismatch &&
     Boolean(current.qrcode) &&
     !incoming.qrcode &&
-    !shouldClearQr(incoming)
+    !isSuccessfulTerminal(incoming)
   ) {
     return {
       state: current,
       ignored: true,
-      reason: 'attempt_mismatch_without_qr',
+      reason: shouldClearQr(incoming)
+        ? 'attempt_mismatch_terminal_without_qr'
+        : 'attempt_mismatch_without_qr',
     };
   }
 

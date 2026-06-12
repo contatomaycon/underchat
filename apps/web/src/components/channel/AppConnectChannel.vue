@@ -437,6 +437,7 @@ function shouldIgnoreConnectionPayloadIdentity(
   options: { directResponse?: boolean } = {}
 ): boolean {
   let expectedWorkerTypeId = activeWorkerTypeId.value ?? channelType.value;
+  const hasConnectionCredential = Boolean(data.qrcode || data.pairing_code);
 
   if (
     options.directResponse &&
@@ -464,25 +465,16 @@ function shouldIgnoreConnectionPayloadIdentity(
     return true;
   }
 
-  if (data.qrcode && !data.worker_type_id) {
+  if (hasConnectionCredential && !data.worker_type_id) {
     return true;
   }
 
-  if (data.qrcode && !data.connection_attempt_id) {
-    return true;
-  }
-
-  if (
-    data.qrcode &&
-    connectionAttemptId.value &&
-    data.connection_attempt_id &&
-    data.connection_attempt_id !== connectionAttemptId.value
-  ) {
+  if (hasConnectionCredential && !data.connection_attempt_id) {
     return true;
   }
 
   if (
-    data.qrcode &&
+    hasConnectionCredential &&
     connectionRuntimeGeneration.value !== undefined &&
     data.runtime_generation === undefined
   ) {
