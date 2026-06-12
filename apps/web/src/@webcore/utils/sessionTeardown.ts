@@ -107,6 +107,38 @@ const resetRealtimeState = async (): Promise<void> => {
   }
 };
 
+const clearCacheStorage = async (): Promise<void> => {
+  if (!('caches' in globalThis)) {
+    return;
+  }
+
+  try {
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+  } catch {
+    // ignore
+  }
+};
+
+const unregisterServiceWorkers = async (): Promise<void> => {
+  if (!('serviceWorker' in navigator)) {
+    return;
+  }
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(
+      registrations.map((registration) => registration.unregister())
+    );
+  } catch {
+    // ignore
+  }
+};
+
+const clearBrowserManagedCaches = async (): Promise<void> => {
+  await Promise.all([clearCacheStorage(), unregisterServiceWorkers()]);
+};
+
 export const teardownClientSession = async (
   options: TeardownSessionOptions = {}
 ): Promise<void> => {
@@ -124,6 +156,7 @@ export const teardownClientSession = async (
 
   await shutdownAttendanceGuard();
   await resetRealtimeState();
+  await clearBrowserManagedCaches();
 
   clearAllData();
   ability.update([]);

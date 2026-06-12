@@ -3,19 +3,53 @@ import {
   AuthUserResponse,
   AccountInfoResponse,
 } from '@core/schema/auth/login/response.schema';
-import { IUserChannel } from '@core/common/interfaces/ITokenJwtData';
+import {
+  IUserChannel,
+  ITokenJwtData,
+} from '@core/common/interfaces/ITokenJwtData';
 import { normalizeUserChannels } from '@core/common/functions/extractUserChannelIds';
 
 const PLAN_STATUS_KEY = 'plan_is_active';
 const PLAN_PRODUCTS_KEY = 'plan_products';
+
+type AuthContext = Pick<ITokenJwtData, 'account_id' | 'user_id'>;
+
+const readJson = <T>(key: string, fallback: T): T => {
+  const value = localStorage.getItem(key);
+
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    localStorage.removeItem(key);
+    return fallback;
+  }
+};
+
+const decodeBase64Url = (value: string): string => {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+
+  return globalThis.atob(normalized + padding);
+};
+
+const hasAuthContext = (
+  value: Partial<ITokenJwtData>
+): value is AuthContext => {
+  return (
+    typeof value.account_id === 'string' && typeof value.user_id === 'string'
+  );
+};
 
 export const setSectors = (sectors: string[]): void => {
   localStorage.setItem('sectors', JSON.stringify(sectors));
 };
 
 export const getSectors = (): string[] => {
-  const sectors = localStorage.getItem('sectors');
-  return sectors ? JSON.parse(sectors) : [];
+  return readJson<string[]>('sectors', []);
 };
 
 export const setChannels = (channels: IUserChannel[]): void => {
@@ -52,9 +86,7 @@ export const setPermissions = (permissions: EPermissionsRoles[]): void => {
 };
 
 export const getPermissions = (): EPermissionsRoles[] => {
-  const permissions = localStorage.getItem('permissions');
-
-  return permissions ? JSON.parse(permissions) : [];
+  return readJson<EPermissionsRoles[]>('permissions', []);
 };
 
 export const setUser = (user: AuthUserResponse): void => {
@@ -62,9 +94,42 @@ export const setUser = (user: AuthUserResponse): void => {
 };
 
 export const getUser = (): AuthUserResponse | null => {
-  const user = localStorage.getItem('user');
+  return readJson<AuthUserResponse | null>('user', null);
+};
 
-  return user ? JSON.parse(user) : null;
+export const getTokenJwtData = (): AuthContext | null => {
+  const token = getToken();
+  const payload = token?.split('.')[1];
+
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(
+      decodeBase64Url(payload)
+    ) as Partial<ITokenJwtData>;
+
+    return hasAuthContext(parsed)
+      ? { account_id: parsed.account_id, user_id: parsed.user_id }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+export const isStoredAuthContextConsistent = (): boolean => {
+  const tokenData = getTokenJwtData();
+  const user = getUser();
+
+  if (!tokenData || !user) {
+    return false;
+  }
+
+  return (
+    tokenData.account_id === user.account_id &&
+    tokenData.user_id === user.user_id
+  );
 };
 
 export const setLayout = (layout: AccountInfoResponse | null): void => {
@@ -76,9 +141,7 @@ export const setLayout = (layout: AccountInfoResponse | null): void => {
 };
 
 export const getLayout = (): AccountInfoResponse | null => {
-  const layout = localStorage.getItem('layout');
-
-  return layout ? JSON.parse(layout) : null;
+  return readJson<AccountInfoResponse | null>('layout', null);
 };
 
 const setPlanStatusToStorage = (isActive: boolean): void => {
@@ -86,8 +149,7 @@ const setPlanStatusToStorage = (isActive: boolean): void => {
 };
 
 const getPlanStatusFromStorage = (): boolean => {
-  const value = localStorage.getItem(PLAN_STATUS_KEY);
-  return value ? JSON.parse(value) : false;
+  return readJson<boolean>(PLAN_STATUS_KEY, false);
 };
 
 export const initializePlanStatus = (): boolean => {
@@ -136,5 +198,16 @@ export const removeUserData = (): boolean => {
 };
 
 export const isLoggedIn = (): boolean => {
-  return !!getToken() && !!getUser();
+  const hasPersistedSession = !!getToken() && !!getUser();
+
+  if (!hasPersistedSession) {
+    return false;
+  }
+
+  if (isStoredAuthContextConsistent()) {
+    return true;
+  }
+
+  removeUserData();
+  return false;
 };

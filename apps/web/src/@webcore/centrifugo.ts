@@ -9,7 +9,7 @@ import {
 } from 'centrifuge';
 import { isAxiosError } from 'axios';
 import axios from '@webcore/axios';
-import { getUser } from './localStorage/user';
+import { getTokenJwtData, getUser } from './localStorage/user';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 
@@ -50,6 +50,11 @@ const clearCachedToken = (): void => {
 
 const getRealtimeAuthKey = (): string => {
   try {
+    const tokenData = getTokenJwtData();
+    if (tokenData) {
+      return `${tokenData.account_id}:${tokenData.user_id}`;
+    }
+
     const user = getUser();
     return `${user?.account_id ?? ''}:${user?.user_id ?? ''}`;
   } catch {
