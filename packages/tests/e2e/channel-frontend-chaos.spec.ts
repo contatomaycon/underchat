@@ -492,13 +492,95 @@ async function cleanupCreatedWorkers(
   request: APIRequestContext,
   ctx: RuntimeContext
 ): Promise<void> {
+  const cleanupLoginData = await login(request, ctx.config).catch(
+    () => ctx.loginData
+  );
+  const cleanupFailures: Array<Record<string, unknown>> = [];
+
   for (const worker of [...createdWorkers].reverse()) {
-    await request
-      .delete(`${ctx.config.apiUrl}/worker/${worker.workerId}`, {
-        headers: authHeaders(ctx.loginData.token),
-      })
-      .catch(() => undefined);
+    try {
+      const response = await request.delete(
+        `${ctx.config.apiUrl}/worker/${worker.workerId}`,
+        {
+          headers: authHeaders(cleanupLoginData.token),
+        }
+      );
+      const body = await response.text().catch(() => '');
+      if (!response.ok()) {
+        cleanupFailures.push({
+          workerId: worker.workerId,
+          status: response.status(),
+          body,
+        });
+      }
+    } catch (error) {
+      cleanupFailures.push({
+        workerId: worker.workerId,
+        error: String(error),
+      });
+    }
   }
+
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const remaining = await listNotDeletedWorkers(
+      ctx.pool,
+      createdWorkers.map((worker) => worker.workerId)
+    );
+    if (remaining.length === 0) {
+      return;
+    }
+    await delay(1_000);
+  }
+
+  const remaining = await listNotDeletedWorkers(
+    ctx.pool,
+    createdWorkers.map((worker) => worker.workerId)
+  );
+  if (cleanupFailures.length > 0 || remaining.length > 0) {
+    throw new Error(
+      `Failed to cleanup frontend E2E workers: ${JSON.stringify({
+        cleanupFailures,
+        remaining,
+      })}`
+    );
+  }
+}
+
+async function listNotDeletedWorkers(
+  pool: pg.Pool,
+  workerIds: string[]
+): Promise<WorkerDbRow[]> {
+  if (workerIds.length === 0) {
+    return [];
+  }
+
+  const result = await pool.query<WorkerDbRow>(
+    `
+      select
+        w.worker_id,
+        w.name,
+        w.worker_status_id,
+        ws.status as worker_status,
+        w.worker_type_id,
+        wt.type as worker_type,
+        w.account_id,
+        w.number,
+        w.container_id,
+        wr.runtime_generation,
+        w.deleted_at
+      from worker w
+      left join worker_status ws on ws.worker_status_id = w.worker_status_id
+      left join worker_type wt on wt.worker_type_id = w.worker_type_id
+      left join worker_runtime wr on wr.worker_id = w.worker_id
+      where w.worker_id = any($1)
+        and w.deleted_at is null
+      order by w.name
+    `,
+    [workerIds]
+  );
+
+  return result.rows;
 }
 
 async function fetchWorkersConnectionLogs(
