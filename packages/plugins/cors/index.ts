@@ -21,6 +21,7 @@ export default fp(
         'Referer',
         'User-Agent',
         'x-client-platform',
+        'x-connection-lifecycle-debug-trace-id',
       ],
       exposedHeaders: ['x-plan-active'],
       credentials: true,
