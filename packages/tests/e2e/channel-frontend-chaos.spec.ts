@@ -414,7 +414,7 @@ async function createStressWorkers(
           name,
           worker_type: type.id,
         },
-        headers: authHeaders(ctx.loginData.token),
+        headers: authHeaders(ctx.loginData.token, { json: true }),
       });
       const data = await assertApiResponse<CreateWorkerResponse>(
         response,
@@ -938,13 +938,21 @@ function createPool(): pg.Pool {
   });
 }
 
-function authHeaders(token: string): Record<string, string> {
-  return {
+function authHeaders(
+  token: string,
+  options: { json?: boolean } = {}
+): Record<string, string> {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     'Accept-Language': 'pt',
-    'Content-Type': 'application/json',
     'X-Client-Platform': 'web',
   };
+
+  if (options.json) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  return headers;
 }
 
 function sanitizePayload(value: unknown): unknown {
