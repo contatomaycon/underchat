@@ -33,6 +33,7 @@ import {
   IWarmWorkerCommandResponseProto,
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 const protoPath = resolveProtoPath('worker_command.proto');
 
@@ -56,6 +57,9 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
   const handler = container.resolve(WorkerCommandHandlerService);
+  const connectionLifecycleDebugService = container.resolve(
+    ConnectionLifecycleDebugService
+  );
   const grpcServer = new Server();
 
   const handleUnary = (
@@ -81,8 +85,28 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       return;
     }
 
+    void connectionLifecycleDebugService.log('service.command_grpc.received', {
+      trace_id: payload.debug_trace_id,
+      layer: 'service',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id,
+      lifecycle_operation_id: payload.lifecycle_operation_id,
+      action,
+    });
+
     const handleError = (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
+      void connectionLifecycleDebugService.log('service.command_grpc.error', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        lifecycle_operation_id: payload.lifecycle_operation_id,
+        action,
+        reason: msg,
+      });
       fastify.log.error({ err, action }, 'WorkerCommand gRPC handler error');
       return { code: status.INTERNAL, message: msg, details: msg };
     };
@@ -96,6 +120,15 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     handler
       .handle(payload)
       .then(() => {
+        void connectionLifecycleDebugService.log('service.command_grpc.done', {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: payload.worker_type_id,
+          lifecycle_operation_id: payload.lifecycle_operation_id,
+          action,
+        });
         callback(null, {});
       })
       .catch((err) => {
@@ -124,9 +157,34 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       return;
     }
 
+    void connectionLifecycleDebugService.log(
+      'service.command_grpc.change_connection_status_received',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: req.account_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+      }
+    );
+
     handler
       .handleChangeConnectionStatus(payload, req.account_id)
       .then(() => {
+        void connectionLifecycleDebugService.log(
+          'service.command_grpc.change_connection_status_done',
+          {
+            trace_id: payload.debug_trace_id,
+            layer: 'service',
+            worker_id: payload.worker_id,
+            account_id: req.account_id,
+            connection_attempt_id: payload.connection_attempt_id,
+            runtime_generation: payload.runtime_generation,
+            status: payload.status,
+          }
+        );
         callback(null, {});
       })
       .catch((err) => {
@@ -145,9 +203,40 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
   ) => {
     const req = call.request;
 
+    void connectionLifecycleDebugService.log(
+      'service.command_grpc.notify_status_received',
+      {
+        trace_id: req.debug_trace_id,
+        layer: 'service',
+        worker_id: req.worker_id,
+        account_id: req.account_id,
+        worker_type_id: req.worker_type_id,
+        connection_attempt_id: req.connection_attempt_id,
+        runtime_generation: req.runtime_generation,
+        status: req.status,
+        code: req.code,
+        qrcode: req.qrcode,
+        pairing_code: req.pairing_code,
+      }
+    );
+
     handler
       .notifyWorkerStatus(req)
       .then(() => {
+        void connectionLifecycleDebugService.log(
+          'service.command_grpc.notify_status_done',
+          {
+            trace_id: req.debug_trace_id,
+            layer: 'service',
+            worker_id: req.worker_id,
+            account_id: req.account_id,
+            worker_type_id: req.worker_type_id,
+            connection_attempt_id: req.connection_attempt_id,
+            runtime_generation: req.runtime_generation,
+            status: req.status,
+            code: req.code,
+          }
+        );
         callback(null, {});
       })
       .catch((err) => {

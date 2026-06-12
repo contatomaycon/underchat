@@ -30,6 +30,7 @@ export interface IActivateWarmWorkerRequestProto {
   remove_volume?: boolean;
   previous_worker_type_id?: string;
   previous_worker_status_id?: string;
+  debug_trace_id?: string;
 }
 
 export interface IWarmWorkerCommandResponseProto {

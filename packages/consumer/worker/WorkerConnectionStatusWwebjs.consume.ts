@@ -57,7 +57,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     }
 
     if (data.status === EWorkerStatus.recreating) {
-      return this.handleRecreating();
+      return this.handleRecreating(data);
     }
 
     if (data.status === EWorkerStatus.disponible) {
@@ -73,7 +73,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     this.stopConnectionRetry();
 
     if (this.wwebjsService.isConnected()) {
-      return this.publishConnectedStatus();
+      return this.publishConnectedStatus(data);
     }
 
     const currentCode = this.wwebjsService.getCode();
@@ -85,7 +85,7 @@ export class WorkerConnectionStatusWwebjsConsume {
     if (this.wwebjsService.hasSession() && !isSessionInvalid) {
       await this.waitForReconnection(3000, 500);
       if (this.wwebjsService.isConnected()) {
-        return this.publishConnectedStatus();
+        return this.publishConnectedStatus(data);
       }
 
       shouldResetStaleSessionForQr =
@@ -161,8 +161,13 @@ export class WorkerConnectionStatusWwebjsConsume {
     });
   }
 
-  private handleRecreating(): IBaileysConnectionState {
-    this.wwebjsService.reconnect({ initial_connection: true });
+  private handleRecreating(
+    data: StatusConnectionWorkerRequest
+  ): IBaileysConnectionState {
+    this.wwebjsService.reconnect({
+      initial_connection: true,
+      debug_trace_id: data.debug_trace_id,
+    });
     return this.currentState(ECodeMessage.awaitConnection);
   }
 
@@ -188,6 +193,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       code: ECodeMessage.connectionClosed,
       disconnected_user: true,
       worker_status_id: EWorkerStatus.disponible,
+      debug_trace_id: data.debug_trace_id,
     };
 
     await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
@@ -197,6 +203,7 @@ export class WorkerConnectionStatusWwebjsConsume {
         worker_id: workerId,
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
+        debug_trace_id: data.debug_trace_id,
       };
 
       await this.connectWithService(defaultConnectionRequest, {
@@ -229,6 +236,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       type: data.type as EBaileysConnectionType,
       phone_connection: data.phone_connection,
       connection_attempt_id: data.connection_attempt_id,
+      debug_trace_id: data.debug_trace_id,
     });
   }
 
@@ -266,6 +274,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       max_attempts: this.connectionRetryMinAttempts,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
+      debug_trace_id: this.activeConnectionRequest?.debug_trace_id,
     };
 
     void this.centrifugoService
@@ -282,7 +291,9 @@ export class WorkerConnectionStatusWwebjsConsume {
     );
   }
 
-  private async publishConnectedStatus(): Promise<IBaileysConnectionState> {
+  private async publishConnectedStatus(
+    request?: StatusConnectionWorkerRequest
+  ): Promise<IBaileysConnectionState> {
     const workerId = wwebjsEnvironment.wwebjsWorkerId;
     const accountId = wwebjsEnvironment.wwebjsAccountId;
 
@@ -294,7 +305,10 @@ export class WorkerConnectionStatusWwebjsConsume {
       phone: getPhoneNumber(this.wwebjsService.socket?.info?.wid?._serialized),
       worker_status_id: EWorkerStatus.online,
       connection_attempt_id:
+        request?.connection_attempt_id ??
         this.activeConnectionRequest?.connection_attempt_id,
+      debug_trace_id:
+        request?.debug_trace_id ?? this.activeConnectionRequest?.debug_trace_id,
     };
 
     await this.centrifugoService
@@ -312,6 +326,7 @@ export class WorkerConnectionStatusWwebjsConsume {
       account_id: wwebjsEnvironment.wwebjsAccountId,
       connection_attempt_id:
         this.activeConnectionRequest?.connection_attempt_id,
+      debug_trace_id: this.activeConnectionRequest?.debug_trace_id,
     };
   }
 
@@ -396,6 +411,7 @@ export class WorkerConnectionStatusWwebjsConsume {
         type: request.type as EBaileysConnectionType,
         phone_connection: request.phone_connection,
         connection_attempt_id: request.connection_attempt_id,
+        debug_trace_id: request.debug_trace_id,
       })
       .then((state) => {
         if (

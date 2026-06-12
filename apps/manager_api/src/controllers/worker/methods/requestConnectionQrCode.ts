@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WorkerConnectionQrCodeRequesterUseCase } from '@core/useCases/worker/WorkerConnectionQrCodeRequester.useCase';
 import { WorkerConnectionQrCodeRequest } from '@core/schema/worker/connectionQrCode/request.schema';
+import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
 
 export const requestConnectionQrCode = async (
   request: FastifyRequest<{
@@ -16,12 +17,17 @@ export const requestConnectionQrCode = async (
     WorkerConnectionQrCodeRequesterUseCase
   );
   const { t, tokenJwtData } = request;
+  const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>
+  );
 
   try {
     const response = await workerConnectionQrCodeRequesterUseCase.execute(
       t,
       tokenJwtData.account_id,
-      request.params.worker_id
+      request.params.worker_id,
+      'manager',
+      debugTraceId
     );
 
     return sendResponse(reply, {

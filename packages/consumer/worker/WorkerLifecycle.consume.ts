@@ -15,6 +15,7 @@ import { currentTime } from '@core/common/functions/currentTime';
 import { v7 as uuidv7 } from 'uuid';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 @singleton()
 export class WorkerLifecycleConsume {
@@ -34,7 +35,11 @@ export class WorkerLifecycleConsume {
     @inject(WorkerWarmPoolQueueService)
     private readonly workerWarmPoolQueueService: WorkerWarmPoolQueueService,
     @inject(WorkerWarmPoolSettingsService)
-    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService
+    private readonly workerWarmPoolSettingsService: WorkerWarmPoolSettingsService,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {}
 
   async execute(server: FastifyInstance): Promise<void> {
@@ -87,12 +92,52 @@ export class WorkerLifecycleConsume {
   private async processPayload(
     payload: IWorkerLifecycleQueueMessage
   ): Promise<void> {
+    void this.connectionLifecycleDebugService.log(
+      'service.lifecycle_queue.consumed',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        lifecycle_operation_id: payload.operation_id,
+        action: payload.action,
+        source: payload.source,
+      }
+    );
     const stale = await this.resolveStaleReason(payload);
     if (stale) {
+      void this.connectionLifecycleDebugService.log(
+        'service.lifecycle_queue.stale',
+        {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: payload.worker_type_id,
+          lifecycle_operation_id: payload.operation_id,
+          action: payload.action,
+          source: payload.source,
+          reason: stale,
+        }
+      );
       return;
     }
 
     if (payload.action === 'activate_warm') {
+      void this.connectionLifecycleDebugService.log(
+        'service.lifecycle_queue.dispatch_activate_warm',
+        {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: payload.worker_type_id,
+          lifecycle_operation_id: payload.operation_id,
+          server_id: payload.server_id,
+          warm_pool_id: payload.warm_pool_id,
+        }
+      );
       await this.activateWarmOrFallback(payload);
       return;
     }
@@ -108,14 +153,39 @@ export class WorkerLifecycleConsume {
       remove_session: payload.remove_session,
       remove_volume: payload.remove_volume,
       lifecycle_operation_id: payload.operation_id,
+      debug_trace_id: payload.debug_trace_id,
     };
 
     if (payload.action === 'create') {
+      void this.connectionLifecycleDebugService.log(
+        'service.lifecycle_queue.dispatch_create_grpc',
+        {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: payload.worker_type_id,
+          lifecycle_operation_id: payload.operation_id,
+          server_id: payload.server_id,
+        }
+      );
       await this.workerGrpcClientService.createWorker(workerPayload);
       return;
     }
 
     if (payload.action === 'recreate') {
+      void this.connectionLifecycleDebugService.log(
+        'service.lifecycle_queue.dispatch_recreate_grpc',
+        {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: payload.worker_type_id,
+          lifecycle_operation_id: payload.operation_id,
+          server_id: payload.server_id,
+        }
+      );
       await this.workerGrpcClientService.recreateWorker(workerPayload);
       return;
     }
@@ -147,6 +217,7 @@ export class WorkerLifecycleConsume {
           remove_volume: payload.remove_volume,
           previous_worker_type_id: payload.previous_worker_type_id,
           previous_worker_status_id: payload.previous_worker_status_id,
+          debug_trace_id: payload.debug_trace_id,
         },
         120_000
       );
@@ -161,6 +232,7 @@ export class WorkerLifecycleConsume {
         worker_type_id: payload.worker_type_id,
         worker_status_id: payload.worker_status_id,
         lifecycle_operation_id: payload.operation_id,
+        debug_trace_id: payload.debug_trace_id,
       });
 
       console.error('Failed to activate warm worker, fallback to create', {

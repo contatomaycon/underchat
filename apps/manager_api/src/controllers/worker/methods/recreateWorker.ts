@@ -6,6 +6,7 @@ import { container } from 'tsyringe';
 import { WorkerRecreatorUseCase } from '@core/useCases/worker/WorkerRecreator.useCase';
 import { RecreateWorkerRequest } from '@core/schema/worker/recreateWorker/request.schema';
 import { WorkerRecreateCooldownError } from '@core/common/exceptions/WorkerRecreateCooldownError';
+import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
 
 export const recreateWorker = async (
   request: FastifyRequest<{
@@ -15,6 +16,9 @@ export const recreateWorker = async (
 ) => {
   const workerRecreatorUseCase = container.resolve(WorkerRecreatorUseCase);
   const { t, tokenJwtData } = request;
+  const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>
+  );
 
   try {
     const response = await workerRecreatorUseCase.execute(
@@ -23,6 +27,7 @@ export const recreateWorker = async (
       request.params.worker_id,
       {
         enforce_recreate_cooldown: true,
+        debug_trace_id: debugTraceId,
       }
     );
 

@@ -24,6 +24,11 @@ import {
   channelsConfigCentrifugo,
   workerCentrifugoQueue,
 } from '@core/common/functions/centrifugoQueue';
+import {
+  ConnectionLifecycleDebugService,
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+} from '@core/services/connectionLifecycleDebug.service';
 
 type WorkerUpdateResult = boolean | IWorkerLifecycleAck;
 
@@ -51,7 +56,11 @@ export class WorkerUpdaterUseCase {
     @inject(WorkerWarmPoolQueueService)
     private readonly workerWarmPoolQueueService: WorkerWarmPoolQueueService,
     @inject(CentrifugoService)
-    private readonly centrifugoService: CentrifugoService
+    private readonly centrifugoService: CentrifugoService,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {}
 
   private async validate(
@@ -176,8 +185,9 @@ export class WorkerUpdaterUseCase {
     warmPoolId?: string;
     previousServerId?: string;
     previousWorkerTypeId?: EWorkerType;
+    debugTraceId?: string;
   }): IWorkerLifecycleQueueMessage {
-    return {
+    const message: IWorkerLifecycleQueueMessage = {
       request_id: uuidv7(),
       operation_id: input.operationId,
       action: input.action,
@@ -195,6 +205,13 @@ export class WorkerUpdaterUseCase {
       previous_worker_status_id: input.payload.previous_worker_status_id,
       requested_at: currentTime(),
     };
+
+    const debugTraceId = input.debugTraceId ?? input.payload.debug_trace_id;
+    if (debugTraceId) {
+      message.debug_trace_id = debugTraceId;
+    }
+
+    return message;
   }
 
   private async enqueueLifecycleOrMarkError(
@@ -231,8 +248,9 @@ export class WorkerUpdaterUseCase {
     workerType?: EWorkerType;
     operationId: string;
     reason: string;
+    debugTraceId?: string;
   }): IWorkerLifecycleAck {
-    return {
+    const ack: IWorkerLifecycleAck = {
       code: 202,
       status: 'queued',
       queued: true,
@@ -244,18 +262,51 @@ export class WorkerUpdaterUseCase {
       operation_id: input.operationId,
       reason: input.reason,
     };
+
+    if (input.debugTraceId) {
+      ack.debug_trace_id = input.debugTraceId;
+    }
+
+    return ack;
   }
 
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: EditWorkerRequest
+    input: EditWorkerRequest,
+    debugTraceIdInput?: string
   ): Promise<WorkerUpdateResult> {
+    const debugTraceId =
+      debugTraceIdInput ??
+      (isConnectionLifecycleDebugEnabled()
+        ? createConnectionLifecycleDebugTraceId('worker_update')
+        : undefined);
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.start',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        worker_type_id: input.worker_type,
+        has_server_id: Boolean(input.server_id),
+      }
+    );
+
     try {
       await this.validate(t, accountId);
     } catch (error) {
       throw error;
     }
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.validated',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+      }
+    );
 
     const currentWorkerType = await this.workerService.viewWorkerType(
       accountId,
@@ -269,6 +320,18 @@ export class WorkerUpdaterUseCase {
     const shouldRecreateOnTypeChange = this.shouldRecreateWorkerOnTypeChange(
       currentType,
       nextWorkerType
+    );
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.current_type_resolved',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        previous_worker_type_id: currentType,
+        worker_type_id: nextWorkerType,
+        should_recreate_on_type_change: shouldRecreateOnTypeChange,
+      }
     );
 
     let currentServerId: string | undefined;
@@ -304,6 +367,23 @@ export class WorkerUpdaterUseCase {
     const shouldRecreateWorker =
       shouldRecreateOnTypeChange || shouldRecreateOnServerChange;
     const lifecycleOperationId = shouldRecreateWorker ? uuidv7() : undefined;
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.recreate_decision',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        worker_type_id: nextWorkerType ?? currentType,
+        lifecycle_operation_id: lifecycleOperationId,
+        previous_worker_status_id: previousWorkerStatusId,
+        previous_server_id: currentServerId,
+        next_server_id: input.server_id,
+        should_recreate_on_type_change: shouldRecreateOnTypeChange,
+        should_recreate_on_server_change: shouldRecreateOnServerChange,
+        should_recreate_worker: shouldRecreateWorker,
+      }
+    );
 
     const inputUpdate: IUpdateWorker = {
       worker_id: input.worker_id,
@@ -336,12 +416,35 @@ export class WorkerUpdaterUseCase {
     if (!updateWorkerById) {
       throw new Error(t('error_updating_worker'));
     }
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.db_updated',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        worker_type_id: inputUpdate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+        status: inputUpdate.worker_status_id,
+      }
+    );
 
     await this.workerConfigService.refreshTypingSimulationCache(
       input.worker_id
     );
 
     if (!shouldRecreateWorker) {
+      void this.connectionLifecycleDebugService.log(
+        'manager.worker_update.response',
+        {
+          trace_id: debugTraceId,
+          layer: 'manager',
+          worker_id: input.worker_id,
+          account_id: accountId,
+          status: 'updated',
+          reason: 'no_recreate_required',
+        }
+      );
       return updateWorkerById;
     }
 
@@ -364,8 +467,23 @@ export class WorkerUpdaterUseCase {
       remove_session: true,
       remove_volume: true,
     };
+    if (debugTraceId) {
+      recreatePayload.debug_trace_id = debugTraceId;
+    }
 
     await this.publishRecreatingState(recreatePayload);
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.recreating_published',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        worker_type_id: targetWorkerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        status: EWorkerStatus.recreating,
+      }
+    );
 
     const warmReserved = await this.tryReserveWarmRuntimeForRecreate({
       accountId,
@@ -373,6 +491,19 @@ export class WorkerUpdaterUseCase {
       serverId: targetServerId,
       workerType: targetWorkerType,
     });
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.warm_reservation_checked',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        worker_type_id: targetWorkerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        warm_pool_id: warmReserved?.warm_pool_id,
+        warm_reserved: Boolean(warmReserved),
+      }
+    );
 
     const shouldCleanupPreviousRuntime =
       Boolean(currentServerId) &&
@@ -404,7 +535,20 @@ export class WorkerUpdaterUseCase {
           operationId: lifecycleOperationId,
           previousServerId: currentServerId,
           previousWorkerTypeId: currentType,
+          debugTraceId,
         })
+      );
+      void this.connectionLifecycleDebugService.log(
+        'manager.worker_update.cleanup_previous_enqueued',
+        {
+          trace_id: debugTraceId,
+          layer: 'manager',
+          worker_id: input.worker_id,
+          account_id: accountId,
+          worker_type_id: currentType,
+          lifecycle_operation_id: lifecycleOperationId,
+          previous_server_id: currentServerId,
+        }
       );
     }
 
@@ -418,7 +562,21 @@ export class WorkerUpdaterUseCase {
         warmPoolId: warmReserved?.warm_pool_id,
         previousServerId: currentServerId,
         previousWorkerTypeId: currentType,
+        debugTraceId,
       })
+    );
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.lifecycle_enqueued',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        worker_type_id: targetWorkerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        warm_pool_id: warmReserved?.warm_pool_id,
+        lifecycle_action: warmReserved ? 'activate_warm' : 'recreate',
+      }
     );
 
     const ack = this.buildAck({
@@ -428,7 +586,21 @@ export class WorkerUpdaterUseCase {
       workerType: targetWorkerType,
       operationId: lifecycleOperationId,
       reason: warmReserved ? 'warm_activation_queued' : 'recreate_queued',
+      debugTraceId,
     });
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_update.response',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: input.worker_id,
+        account_id: accountId,
+        worker_type_id: targetWorkerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        status: ack.status,
+        reason: ack.reason,
+      }
+    );
 
     return ack;
   }

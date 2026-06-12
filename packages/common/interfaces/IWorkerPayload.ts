@@ -16,4 +16,5 @@ export interface IWorkerPayload {
   remove_volume?: boolean;
   lifecycle_operation_id?: string;
   recreate_available_at?: string | null;
+  debug_trace_id?: string;
 }

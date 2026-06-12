@@ -23,6 +23,7 @@ import {
   IWarmWorkerCommandResponseProto,
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 const protoPath = resolveProtoPath('worker_command.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -46,7 +47,11 @@ const GRPC_DEADLINE_MS = 10_000;
 export class WorkerGrpcClientService {
   constructor(
     @inject(WorkerGrpcRegistryService)
-    private readonly workerGrpcRegistryService: WorkerGrpcRegistryService
+    private readonly workerGrpcRegistryService: WorkerGrpcRegistryService,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {}
 
   async createWorker(
@@ -112,6 +117,20 @@ export class WorkerGrpcClientService {
     const metadata = new Metadata();
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
 
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_command_grpc.change_connection_status_call',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: accountId,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        method: 'ChangeConnectionStatus',
+        grpc_address: address,
+      }
+    );
     await new Promise<void>((resolve, reject) => {
       (client as any).ChangeConnectionStatus(
         protoPayload,
@@ -127,6 +146,20 @@ export class WorkerGrpcClientService {
         }
       );
     });
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_command_grpc.change_connection_status_ok',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: accountId,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        method: 'ChangeConnectionStatus',
+        grpc_address: address,
+      }
+    );
   }
 
   private async call(
@@ -152,6 +185,19 @@ export class WorkerGrpcClientService {
     const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
     const options = deadline ? { deadline } : {};
 
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_command_grpc.call',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        lifecycle_operation_id: payload.lifecycle_operation_id,
+        method,
+        grpc_address: address,
+      }
+    );
     await new Promise<void>((resolve, reject) => {
       const callback = (err: ServiceError | null) => {
         client.close();
@@ -164,6 +210,19 @@ export class WorkerGrpcClientService {
 
       (client as any)[method](protoPayload, metadata, options, callback);
     });
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_command_grpc.ok',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        lifecycle_operation_id: payload.lifecycle_operation_id,
+        method,
+        grpc_address: address,
+      }
+    );
   }
 
   private async callWarm(
@@ -185,6 +244,29 @@ export class WorkerGrpcClientService {
     const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
     const metadata = new Metadata();
     const options = deadline ? { deadline } : {};
+    const debugTraceId = (payload as { debug_trace_id?: string })
+      .debug_trace_id;
+    const workerId = (payload as { worker_id?: string }).worker_id;
+    const accountId = (payload as { account_id?: string }).account_id;
+    const workerTypeId = (payload as { worker_type_id?: string })
+      .worker_type_id;
+    const lifecycleOperationId = (
+      payload as { lifecycle_operation_id?: string }
+    ).lifecycle_operation_id;
+
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_command_grpc.warm_call',
+      {
+        trace_id: debugTraceId,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerTypeId,
+        lifecycle_operation_id: lifecycleOperationId,
+        method,
+        grpc_address: address,
+      }
+    );
 
     return new Promise<IWarmWorkerCommandResponseProto>((resolve, reject) => {
       const callback = (
@@ -200,6 +282,21 @@ export class WorkerGrpcClientService {
       };
 
       (client as any)[method](payload, metadata, options, callback);
+    }).then((response) => {
+      void this.connectionLifecycleDebugService.log(
+        'service.worker_command_grpc.warm_ok',
+        {
+          trace_id: debugTraceId,
+          layer: 'service',
+          worker_id: workerId,
+          account_id: accountId,
+          worker_type_id: workerTypeId,
+          lifecycle_operation_id: lifecycleOperationId,
+          method,
+          grpc_address: address,
+        }
+      );
+      return response;
     });
   }
 

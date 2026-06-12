@@ -24,17 +24,23 @@ type WorkerConnectionGRPCServer struct {
 	server  *grpc.Server
 	addr    string
 	cfg     Config
+	debug   *ConnectionLifecycleDebugLogger
 }
 
-func NewWorkerConnectionGRPCServer(addr string, handler WorkerConnectionHandler, cfg Config) (*WorkerConnectionGRPCServer, error) {
+func NewWorkerConnectionGRPCServer(addr string, handler WorkerConnectionHandler, cfg Config, debugLoggers ...*ConnectionLifecycleDebugLogger) (*WorkerConnectionGRPCServer, error) {
 	if _, err := getDescriptors(); err != nil {
 		return nil, err
+	}
+	var debug *ConnectionLifecycleDebugLogger
+	if len(debugLoggers) > 0 {
+		debug = debugLoggers[0]
 	}
 	return &WorkerConnectionGRPCServer{
 		handler: handler,
 		server:  grpc.NewServer(),
 		addr:    addr,
 		cfg:     cfg,
+		debug:   debug,
 	}, nil
 }
 
@@ -74,7 +80,23 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
 		RuntimeGeneration:   int(dynamicInt32(msg, "runtime_generation")),
 		WarmPoolID:          dynamicString(msg, "warm_pool_id"),
+		DebugTraceID:        dynamicString(msg, "debug_trace_id"),
 	}
+	startedAt := time.Now()
+	s.debug.Log(ctx, "whatsmeow.grpc.request_connection.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             req.WorkerID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"runtime_generation":    req.RuntimeGeneration,
+		"status":                req.Status,
+		"type":                  req.Type,
+		"remove_session":        req.RemoveSession,
+		"phone_connection_set":  req.PhoneConnection != "",
+		"grpc_method":           "RequestConnection",
+		"warm_pool_id":          req.WarmPoolID,
+	})
 	log.Printf(
 		"grpc RequestConnection received worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
 		req.WorkerID,
@@ -85,12 +107,41 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 	)
 	resp, err := s.handler.RequestConnection(ctx, req)
 	if err != nil {
+		s.debug.Log(ctx, "whatsmeow.grpc.request_connection.error", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.grpc",
+			"worker_id":             req.WorkerID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"runtime_generation":    req.RuntimeGeneration,
+			"status":                req.Status,
+			"type":                  req.Type,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
 		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
 		return nil, err
 	}
 	if resp.ConnectionAttemptID == "" {
 		resp.ConnectionAttemptID = req.ConnectionAttemptID
 	}
+	if resp.DebugTraceID == "" {
+		resp.DebugTraceID = req.DebugTraceID
+	}
+	s.debug.Log(ctx, "whatsmeow.grpc.request_connection.completed", map[string]any{
+		"trace_id":              resp.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             resp.WorkerID,
+		"account_id":            resp.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": resp.ConnectionAttemptID,
+		"runtime_generation":    resp.RuntimeGeneration,
+		"status":                resp.Status,
+		"code":                  resp.Code,
+		"duration_ms":           time.Since(startedAt).Milliseconds(),
+		"qrcode":                resp.QRCode,
+		"pairing_code":          resp.PairingCode,
+	})
 	log.Printf("grpc RequestConnection completed worker_id=%s type=%s has_qr=%t", req.WorkerID, req.Type, resp.QRCode != "")
 	out := newDynamicMessage(descs.workerConnectionResponse)
 	setConnectionStateMessage(out, resp)
@@ -127,6 +178,7 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "proxy_error_code", state.ProxyErrorCode)
 	setDynamicString(out, "proxy_fallback", state.ProxyFallback)
 	setDynamicBool(out, "proxy_bypassed", state.ProxyBypassed)
+	setDynamicString(out, "debug_trace_id", state.DebugTraceID)
 }
 
 func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
@@ -343,11 +395,16 @@ func runtimeHealthHandler(srv any, ctx context.Context, dec func(any) error, int
 }
 
 type BalanceGRPCClient struct {
-	cfg Config
+	cfg   Config
+	debug *ConnectionLifecycleDebugLogger
 }
 
-func NewBalanceGRPCClient(cfg Config) *BalanceGRPCClient {
-	return &BalanceGRPCClient{cfg: cfg}
+func NewBalanceGRPCClient(cfg Config, debugLoggers ...*ConnectionLifecycleDebugLogger) *BalanceGRPCClient {
+	var debug *ConnectionLifecycleDebugLogger
+	if len(debugLoggers) > 0 {
+		debug = debugLoggers[0]
+	}
+	return &BalanceGRPCClient{cfg: cfg, debug: debug}
 }
 
 func (c *BalanceGRPCClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
@@ -362,10 +419,49 @@ func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state Connec
 	req := newDynamicMessage(descs.commandNotifyWorkerStatus)
 	setConnectionStateMessage(req, state)
 
+	startedAt := time.Now()
+	c.debug.Log(ctx, "whatsmeow.balance.notify_status.call", map[string]any{
+		"trace_id":              state.DebugTraceID,
+		"layer":                 "worker_whatsmeow.balance_grpc",
+		"worker_id":             state.WorkerID,
+		"account_id":            state.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": state.ConnectionAttemptID,
+		"runtime_generation":    state.RuntimeGeneration,
+		"status":                state.Status,
+		"code":                  state.Code,
+		"qrcode":                state.QRCode,
+		"pairing_code":          state.PairingCode,
+	})
 	err = c.invoke(ctx, "/worker_command.WorkerCommand/NotifyWorkerStatus", req, newDynamicMessage(descs.commandResponse))
 	if err != nil {
+		c.debug.Log(ctx, "whatsmeow.balance.notify_status.error", map[string]any{
+			"trace_id":              state.DebugTraceID,
+			"layer":                 "worker_whatsmeow.balance_grpc",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
 		return err
 	}
+	c.debug.Log(ctx, "whatsmeow.balance.notify_status.ok", map[string]any{
+		"trace_id":              state.DebugTraceID,
+		"layer":                 "worker_whatsmeow.balance_grpc",
+		"worker_id":             state.WorkerID,
+		"account_id":            state.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": state.ConnectionAttemptID,
+		"runtime_generation":    state.RuntimeGeneration,
+		"status":                state.Status,
+		"code":                  state.Code,
+		"duration_ms":           time.Since(startedAt).Milliseconds(),
+	})
 	return nil
 }
 

@@ -20,6 +20,7 @@ message StatusConnectionRequest {
   string connection_attempt_id = 6;
   int32 runtime_generation = 9;
   string warm_pool_id = 10;
+  string debug_trace_id = 11;
 }
 
 message WorkerConnectionResponse {
@@ -54,6 +55,7 @@ message WorkerConnectionResponse {
   string warm_pool_id = 28;
   string worker_type_id = 29;
   string expires_at = 30;
+  string debug_trace_id = 31;
 }
 
 message PhoneValidationRequest {

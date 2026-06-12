@@ -28,6 +28,7 @@ type Worker struct {
 	storage        *StorageClient
 	whatsapp       *WhatsAppManager
 	grpcServer     *WorkerConnectionGRPCServer
+	debug          *ConnectionLifecycleDebugLogger
 	httpServer     *http.Server
 	cancel         context.CancelFunc
 	shutdown       sync.Once
@@ -52,13 +53,14 @@ func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
 		Addr:     cfg.RedisHost + ":" + strconv.Itoa(cfg.RedisPort),
 		Password: cfg.RedisPassword,
 	})
+	debug := NewConnectionLifecycleDebugLogger(cfg.ConnectionLifecycleDebugEnabled, redisClient)
 	centrifugo := NewCentrifugoClient(cfg)
-	balance := NewBalanceGRPCClient(cfg)
+	balance := NewBalanceGRPCClient(cfg, debug)
 	storage, err := NewStorageClient(cfg, balance)
 	if err != nil {
 		return nil, err
 	}
-	whatsApp, err := NewWhatsAppManager(ctx, cfg, kafkaClient, centrifugo, balance, storage, redisClient)
+	whatsApp, err := NewWhatsAppManager(ctx, cfg, kafkaClient, centrifugo, balance, storage, redisClient, debug)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +72,9 @@ func NewWorker(ctx context.Context, cfg Config) (*Worker, error) {
 		balance:    balance,
 		storage:    storage,
 		whatsapp:   whatsApp,
+		debug:      debug,
 	}
-	grpcServer, err := NewWorkerConnectionGRPCServer(cfg.GRPCAddr, worker, cfg)
+	grpcServer, err := NewWorkerConnectionGRPCServer(cfg.GRPCAddr, worker, cfg, debug)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +274,7 @@ func (w *Worker) ActivateRuntime(ctx context.Context, req WorkerRuntimeActivatio
 	if runtimeCtx == nil {
 		runtimeCtx = context.Background()
 	}
-	balance := NewBalanceGRPCClient(nextCfg)
+	balance := NewBalanceGRPCClient(nextCfg, w.debug)
 	storage, err := NewStorageClient(nextCfg, balance)
 	if err != nil {
 		return WorkerRuntimeActivationResponse{
@@ -282,7 +285,7 @@ func (w *Worker) ActivateRuntime(ctx context.Context, req WorkerRuntimeActivatio
 			Error:      err.Error(),
 		}, err
 	}
-	whatsApp, err := NewWhatsAppManager(runtimeCtx, nextCfg, w.kafka, w.centrifugo, balance, storage, w.redis)
+	whatsApp, err := NewWhatsAppManager(runtimeCtx, nextCfg, w.kafka, w.centrifugo, balance, storage, w.redis, w.debug)
 	if err != nil {
 		return WorkerRuntimeActivationResponse{
 			Activated:  false,
@@ -435,8 +438,26 @@ func (w *Worker) startConnectionQRCodeRedisStream(ctx context.Context) error {
 
 	err := w.redis.XGroupCreateMkStream(ctx, streamKey, groupID, "0").Err()
 	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.group_ensure.error", map[string]any{
+			"layer":          "worker_whatsmeow.redis_qr",
+			"worker_id":      w.cfg.WorkerID,
+			"account_id":     w.cfg.AccountID,
+			"worker_type_id": WorkerTypeWhatsmeow,
+			"stream_key":     streamKey,
+			"group_id":       groupID,
+			"error":          err.Error(),
+		})
 		return err
 	}
+	w.debug.Log(ctx, "whatsmeow.redis_qr.group_ensured", map[string]any{
+		"layer":          "worker_whatsmeow.redis_qr",
+		"worker_id":      w.cfg.WorkerID,
+		"account_id":     w.cfg.AccountID,
+		"worker_type_id": WorkerTypeWhatsmeow,
+		"stream_key":     streamKey,
+		"group_id":       groupID,
+		"consumer":       consumerName,
+	})
 
 	go w.consumeConnectionQRCodeRedisStream(ctx, streamKey, groupID, consumerName)
 	return nil
@@ -504,8 +525,36 @@ func (w *Worker) processConnectionQRCodeRedisMessages(ctx context.Context, strea
 func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamKey, groupID, consumerName string, message redis.XMessage, reclaimed bool) (ack bool, err error) {
 	data, err := workerConnectionQRCodeQueueMessageFromRedis(message)
 	if err != nil {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.invalid_payload", map[string]any{
+			"layer":          "worker_whatsmeow.redis_qr",
+			"worker_id":      w.cfg.WorkerID,
+			"account_id":     w.cfg.AccountID,
+			"worker_type_id": WorkerTypeWhatsmeow,
+			"stream_key":     streamKey,
+			"group_id":       groupID,
+			"consumer":       consumerName,
+			"stream_id":      message.ID,
+			"error":          err.Error(),
+		})
 		return true, nil
 	}
+	w.debug.Log(ctx, "whatsmeow.redis_qr.received", map[string]any{
+		"trace_id":              data.DebugTraceID,
+		"layer":                 "worker_whatsmeow.redis_qr",
+		"worker_id":             data.WorkerID,
+		"account_id":            data.AccountID,
+		"worker_type_id":        data.WorkerTypeID,
+		"connection_attempt_id": data.ConnectionAttemptID,
+		"runtime_generation":    data.RuntimeGeneration,
+		"request_id":            data.RequestID,
+		"stream_key":            streamKey,
+		"group_id":              groupID,
+		"consumer":              consumerName,
+		"stream_id":             message.ID,
+		"reclaimed":             reclaimed,
+		"delivery_count":        w.connectionQRCodeRedisDeliveryCount(ctx, streamKey, groupID, message.ID),
+		"queue_latency_ms":      connectionQRCodeQueueLatencyMS(data.RequestedAt),
+	})
 
 	req := StatusConnectionRequest{
 		WorkerID:            data.WorkerID,
@@ -513,30 +562,136 @@ func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamK
 		Type:                "qrcode",
 		ConnectionAttemptID: data.ConnectionAttemptID,
 		RuntimeGeneration:   data.RuntimeGeneration,
+		DebugTraceID:        data.DebugTraceID,
 	}
 
 	if data.WorkerID != w.cfg.WorkerID || data.AccountID != w.cfg.AccountID || data.WorkerTypeID != WorkerTypeWhatsmeow {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.skipped_wrong_worker", map[string]any{
+			"trace_id":              data.DebugTraceID,
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             data.WorkerID,
+			"account_id":            data.AccountID,
+			"worker_type_id":        data.WorkerTypeID,
+			"connection_attempt_id": data.ConnectionAttemptID,
+			"runtime_generation":    data.RuntimeGeneration,
+			"expected_worker_id":    w.cfg.WorkerID,
+			"expected_account_id":   w.cfg.AccountID,
+			"expected_worker_type":  WorkerTypeWhatsmeow,
+		})
 		return true, nil
 	}
 
+	w.debug.Log(ctx, "whatsmeow.redis_qr.active_check.start", map[string]any{
+		"trace_id":              data.DebugTraceID,
+		"layer":                 "worker_whatsmeow.redis_qr",
+		"worker_id":             data.WorkerID,
+		"account_id":            data.AccountID,
+		"worker_type_id":        data.WorkerTypeID,
+		"connection_attempt_id": data.ConnectionAttemptID,
+		"runtime_generation":    data.RuntimeGeneration,
+	})
 	active, activeErr := w.isActiveConnectionQRCodeAttempt(ctx, data)
 	if activeErr != nil {
 		err = activeErr
+		w.debug.Log(ctx, "whatsmeow.redis_qr.active_check.error", map[string]any{
+			"trace_id":              data.DebugTraceID,
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             data.WorkerID,
+			"account_id":            data.AccountID,
+			"worker_type_id":        data.WorkerTypeID,
+			"connection_attempt_id": data.ConnectionAttemptID,
+			"runtime_generation":    data.RuntimeGeneration,
+			"error":                 activeErr.Error(),
+		})
 		return false, activeErr
 	}
 	if !active {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.skipped_inactive_attempt", map[string]any{
+			"trace_id":              data.DebugTraceID,
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             data.WorkerID,
+			"account_id":            data.AccountID,
+			"worker_type_id":        data.WorkerTypeID,
+			"connection_attempt_id": data.ConnectionAttemptID,
+			"runtime_generation":    data.RuntimeGeneration,
+		})
 		return true, nil
 	}
+	w.debug.Log(ctx, "whatsmeow.redis_qr.active_check.ok", map[string]any{
+		"trace_id":              data.DebugTraceID,
+		"layer":                 "worker_whatsmeow.redis_qr",
+		"worker_id":             data.WorkerID,
+		"account_id":            data.AccountID,
+		"worker_type_id":        data.WorkerTypeID,
+		"connection_attempt_id": data.ConnectionAttemptID,
+		"runtime_generation":    data.RuntimeGeneration,
+	})
 
+	startedAt := time.Now()
+	w.debug.Log(ctx, "whatsmeow.redis_qr.request_connection.start", map[string]any{
+		"trace_id":              data.DebugTraceID,
+		"layer":                 "worker_whatsmeow.redis_qr",
+		"worker_id":             data.WorkerID,
+		"account_id":            data.AccountID,
+		"worker_type_id":        data.WorkerTypeID,
+		"connection_attempt_id": data.ConnectionAttemptID,
+		"runtime_generation":    data.RuntimeGeneration,
+	})
 	state, err := w.RequestConnection(ctx, req)
 	if err != nil {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.request_connection.error", map[string]any{
+			"trace_id":              data.DebugTraceID,
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             data.WorkerID,
+			"account_id":            data.AccountID,
+			"worker_type_id":        data.WorkerTypeID,
+			"connection_attempt_id": data.ConnectionAttemptID,
+			"runtime_generation":    data.RuntimeGeneration,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
 		return false, err
 	}
+	w.debug.Log(ctx, "whatsmeow.redis_qr.request_connection.response", map[string]any{
+		"trace_id":              firstNonEmpty(state.DebugTraceID, data.DebugTraceID),
+		"layer":                 "worker_whatsmeow.redis_qr",
+		"worker_id":             state.WorkerID,
+		"account_id":            state.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": firstNonEmpty(state.ConnectionAttemptID, data.ConnectionAttemptID),
+		"runtime_generation":    firstNonZero(state.RuntimeGeneration, data.RuntimeGeneration),
+		"status":                state.Status,
+		"code":                  state.Code,
+		"duration_ms":           time.Since(startedAt).Milliseconds(),
+		"qrcode":                state.QRCode,
+		"pairing_code":          state.PairingCode,
+	})
 	w.cacheConnectionQRCodeAttemptState(ctx, state, data)
 	if !connectionQRCodeRequestComplete(state) {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.not_complete", map[string]any{
+			"trace_id":              firstNonEmpty(state.DebugTraceID, data.DebugTraceID),
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             data.WorkerID,
+			"account_id":            data.AccountID,
+			"worker_type_id":        data.WorkerTypeID,
+			"connection_attempt_id": data.ConnectionAttemptID,
+			"runtime_generation":    data.RuntimeGeneration,
+			"status":                state.Status,
+			"code":                  state.Code,
+		})
 		return false, nil
 	}
 	if err = w.markConnectionQRCodeAttemptProcessed(ctx, data); err != nil {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.mark_processed.error", map[string]any{
+			"trace_id":              data.DebugTraceID,
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             data.WorkerID,
+			"account_id":            data.AccountID,
+			"worker_type_id":        data.WorkerTypeID,
+			"connection_attempt_id": data.ConnectionAttemptID,
+			"runtime_generation":    data.RuntimeGeneration,
+			"error":                 err.Error(),
+		})
 		return false, err
 	}
 	return true, nil
@@ -563,6 +718,7 @@ func workerConnectionQRCodeQueueMessageFromRedis(message redis.XMessage) (Worker
 		Source:              redisStreamString(message.Values, "source"),
 		RequestedAt:         redisStreamString(message.Values, "requested_at"),
 		ExpiresAt:           redisStreamString(message.Values, "expires_at"),
+		DebugTraceID:        redisStreamString(message.Values, "debug_trace_id"),
 	}
 	if data.RequestID == "" || data.ConnectionAttemptID == "" || data.WorkerID == "" || data.AccountID == "" || data.WorkerTypeID == "" || data.RequestedAt == "" {
 		return data, fmt.Errorf("missing required redis stream fields")
@@ -623,11 +779,40 @@ func (w *Worker) ackDeleteConnectionQRCodeRedisMessage(ctx context.Context, stre
 	_, ackErr := w.redis.XAck(ctx, streamKey, groupID, streamID).Result()
 	_, deleteErr := w.redis.XDel(ctx, streamKey, streamID).Result()
 	if ackErr != nil || deleteErr != nil {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.ack_delete.error", map[string]any{
+			"layer":      "worker_whatsmeow.redis_qr",
+			"worker_id":  w.cfg.WorkerID,
+			"account_id": w.cfg.AccountID,
+			"stream_key": streamKey,
+			"group_id":   groupID,
+			"consumer":   consumerName,
+			"stream_id":  streamID,
+			"ack_error":  fmt.Sprint(ackErr),
+			"del_error":  fmt.Sprint(deleteErr),
+		})
 		return
 	}
+	w.debug.Log(ctx, "whatsmeow.redis_qr.ack_deleted", map[string]any{
+		"layer":      "worker_whatsmeow.redis_qr",
+		"worker_id":  w.cfg.WorkerID,
+		"account_id": w.cfg.AccountID,
+		"stream_key": streamKey,
+		"group_id":   groupID,
+		"consumer":   consumerName,
+		"stream_id":  streamID,
+	})
 }
 
 func (w *Worker) logConnectionQRCodeRedisReadError(ctx context.Context, streamKey, groupID, consumerName string, err error) {
+	w.debug.Log(ctx, "whatsmeow.redis_qr.read_error", map[string]any{
+		"layer":      "worker_whatsmeow.redis_qr",
+		"worker_id":  w.cfg.WorkerID,
+		"account_id": w.cfg.AccountID,
+		"stream_key": streamKey,
+		"group_id":   groupID,
+		"consumer":   consumerName,
+		"error":      err.Error(),
+	})
 }
 
 type activeConnectionQRCodeAttemptEnvelope struct {
@@ -709,6 +894,9 @@ func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state Co
 		normalized.AccountID = data.AccountID
 	}
 	normalized.WorkerTypeID = WorkerTypeWhatsmeow
+	if normalized.DebugTraceID == "" {
+		normalized.DebugTraceID = data.DebugTraceID
+	}
 	if normalized.RuntimeGeneration == 0 {
 		normalized.RuntimeGeneration = data.RuntimeGeneration
 	}
@@ -732,8 +920,34 @@ func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state Co
 	}
 
 	if err := w.redis.Set(ctx, w.connectionQRCodeAttemptCacheKey(normalized.WorkerID), string(payload), ttl).Err(); err != nil {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.cache_state.error", map[string]any{
+			"trace_id":              normalized.DebugTraceID,
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             normalized.WorkerID,
+			"account_id":            normalized.AccountID,
+			"worker_type_id":        normalized.WorkerTypeID,
+			"connection_attempt_id": normalized.ConnectionAttemptID,
+			"runtime_generation":    normalized.RuntimeGeneration,
+			"status":                normalized.Status,
+			"code":                  normalized.Code,
+			"error":                 err.Error(),
+		})
 		return
 	}
+	w.debug.Log(ctx, "whatsmeow.redis_qr.cache_state.saved", map[string]any{
+		"trace_id":              normalized.DebugTraceID,
+		"layer":                 "worker_whatsmeow.redis_qr",
+		"worker_id":             normalized.WorkerID,
+		"account_id":            normalized.AccountID,
+		"worker_type_id":        normalized.WorkerTypeID,
+		"connection_attempt_id": normalized.ConnectionAttemptID,
+		"runtime_generation":    normalized.RuntimeGeneration,
+		"status":                normalized.Status,
+		"code":                  normalized.Code,
+		"ttl_ms":                ttl.Milliseconds(),
+		"qrcode":                normalized.QRCode,
+		"pairing_code":          normalized.PairingCode,
+	})
 
 }
 
@@ -761,7 +975,19 @@ func (w *Worker) markConnectionQRCodeAttemptProcessed(ctx context.Context, data 
 	if w.redis == nil {
 		return nil
 	}
-	return w.redis.Set(ctx, w.processedConnectionQRCodeAttemptKey(data), "1", 5*time.Minute).Err()
+	err := w.redis.Set(ctx, w.processedConnectionQRCodeAttemptKey(data), "1", 5*time.Minute).Err()
+	if err == nil {
+		w.debug.Log(ctx, "whatsmeow.redis_qr.mark_processed.ok", map[string]any{
+			"trace_id":              data.DebugTraceID,
+			"layer":                 "worker_whatsmeow.redis_qr",
+			"worker_id":             data.WorkerID,
+			"account_id":            data.AccountID,
+			"worker_type_id":        data.WorkerTypeID,
+			"connection_attempt_id": data.ConnectionAttemptID,
+			"runtime_generation":    data.RuntimeGeneration,
+		})
+	}
+	return err
 }
 
 func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err error) {

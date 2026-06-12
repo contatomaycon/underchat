@@ -21,6 +21,11 @@ import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck
 import { IWorkerLifecycleQueueMessage } from '@core/common/interfaces/IWorkerLifecycleQueueMessage';
 import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import {
+  ConnectionLifecycleDebugService,
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+} from '@core/services/connectionLifecycleDebug.service';
 
 @injectable()
 export class ChannelRecreatorUseCase {
@@ -34,7 +39,11 @@ export class ChannelRecreatorUseCase {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(WorkerLifecycleQueueService)
-    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService
+    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {}
 
   private async validate(
@@ -93,6 +102,7 @@ export class ChannelRecreatorUseCase {
       worker_status_id: input.payload.worker_status_id,
       source: 'config_recreate',
       previous_worker_status_id: input.payload.previous_worker_status_id,
+      debug_trace_id: input.payload.debug_trace_id,
       requested_at: currentTime(),
     };
   }
@@ -111,8 +121,24 @@ export class ChannelRecreatorUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    channelId: string
+    channelId: string,
+    debugTraceIdInput?: string
   ): Promise<IWorkerLifecycleAck> {
+    const debugTraceId =
+      debugTraceIdInput ??
+      (isConnectionLifecycleDebugEnabled()
+        ? createConnectionLifecycleDebugTraceId('channel_recreate')
+        : undefined);
+
+    void this.connectionLifecycleDebugService.log(
+      'manager.channel_recreate.start',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: channelId,
+      }
+    );
+
     const viewWorkerBalancer =
       await this.configService.viewChannelBalancer(channelId);
 
@@ -135,6 +161,7 @@ export class ChannelRecreatorUseCase {
       worker_type_id: viewWorker?.type?.id as EWorkerType | undefined,
       worker_status_id: EWorkerStatus.recreating,
       lifecycle_operation_id: lifecycleOperationId,
+      debug_trace_id: debugTraceId,
       previous_worker_status_id: viewWorker?.status?.id as
         | EWorkerStatus
         | undefined,
@@ -149,6 +176,18 @@ export class ChannelRecreatorUseCase {
     await this.workerService.updateWorkerById(
       viewWorkerBalancer.account_id,
       inputUpdate
+    );
+    void this.connectionLifecycleDebugService.log(
+      'manager.channel_recreate.db_updated',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: channelId,
+        account_id: viewWorkerBalancer.account_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+        status: EWorkerStatus.recreating,
+      }
     );
 
     await Promise.all([
@@ -166,6 +205,17 @@ export class ChannelRecreatorUseCase {
         operationId: lifecycleOperationId,
       })
     );
+    void this.connectionLifecycleDebugService.log(
+      'manager.channel_recreate.lifecycle_enqueued',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: channelId,
+        account_id: viewWorkerBalancer.account_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+      }
+    );
 
     return {
       code: 202,
@@ -178,6 +228,7 @@ export class ChannelRecreatorUseCase {
       worker_status_id: EWorkerStatus.recreating,
       operation_id: lifecycleOperationId,
       reason: 'recreate_queued',
+      debug_trace_id: debugTraceId,
     };
   }
 }

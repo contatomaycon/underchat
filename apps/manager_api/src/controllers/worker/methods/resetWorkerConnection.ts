@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WorkerRecreatorUseCase } from '@core/useCases/worker/WorkerRecreator.useCase';
 import { ResetWorkerConnectionRequest } from '@core/schema/worker/resetWorkerConnection/request.schema';
+import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
 
 export const resetWorkerConnection = async (
   request: FastifyRequest<{
@@ -14,6 +15,9 @@ export const resetWorkerConnection = async (
 ) => {
   const workerRecreatorUseCase = container.resolve(WorkerRecreatorUseCase);
   const { t, tokenJwtData } = request;
+  const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>
+  );
 
   try {
     const response = await workerRecreatorUseCase.execute(
@@ -23,6 +27,7 @@ export const resetWorkerConnection = async (
       {
         remove_session: true,
         remove_volume: true,
+        debug_trace_id: debugTraceId,
       }
     );
 

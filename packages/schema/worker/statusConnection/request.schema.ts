@@ -9,6 +9,7 @@ export const statusConnectionWorkerRequestSchema = Type.Object({
   phone_connection: Type.Optional(Type.String()),
   remove_session: Type.Optional(Type.Boolean()),
   connection_attempt_id: Type.Optional(Type.String()),
+  debug_trace_id: Type.Optional(Type.String()),
   runtime_generation: Type.Optional(Type.Number()),
   warm_pool_id: Type.Optional(Type.String()),
   qr_pending: Type.Optional(Type.Boolean()),

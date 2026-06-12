@@ -34,6 +34,7 @@ import {
   IWorkerRuntimeHealthResponseProto,
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 const protoPath = resolveProtoPath('worker_connection.proto');
 
@@ -61,7 +62,8 @@ interface IStatusConnectionRequestProto {
   phone_connection?: string;
   remove_session?: boolean;
   connection_attempt_id?: string;
-  runtime_generation?: number;
+  debug_trace_id?: string;
+  runtime_generation?: number | string;
   warm_pool_id?: string;
 }
 
@@ -71,6 +73,19 @@ interface WorkerConnectionGrpcOptions {
     fastify: FastifyInstance,
     request: IWorkerRuntimeActivationRequestProto
   ) => Promise<{ alreadyActive?: boolean } | void>;
+}
+
+function optionalRuntimeGeneration(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value !== 0) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed !== 0 ? parsed : undefined;
+  }
+
+  return undefined;
 }
 
 const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
@@ -85,6 +100,9 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     module === ERouteModule.worker_wwebjs
       ? container.resolve(WwebjsService)
       : container.resolve(BaileysService);
+  const connectionLifecycleDebugService = container.resolve(
+    ConnectionLifecycleDebugService
+  );
   const grpcPort =
     module === ERouteModule.worker_wwebjs
       ? wwebjsEnvironment.grpcPort
@@ -142,7 +160,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       worker_id: request.worker_id ?? '',
       account_id: request.account_id ?? '',
       worker_type_id: request.worker_type_id,
-      runtime_generation: request.runtime_generation,
+      runtime_generation: optionalRuntimeGeneration(request.runtime_generation),
       warm_pool_id: request.warm_pool_id,
       session_volume_name: request.session_volume_name,
     };
@@ -175,13 +193,34 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     if (req.connection_attempt_id) {
       payload.connection_attempt_id = req.connection_attempt_id;
     }
-    if (req.runtime_generation) {
-      payload.runtime_generation = req.runtime_generation;
+    if (req.debug_trace_id) {
+      payload.debug_trace_id = req.debug_trace_id;
+    }
+    const requestRuntimeGeneration = optionalRuntimeGeneration(
+      req.runtime_generation
+    );
+    if (requestRuntimeGeneration !== undefined) {
+      payload.runtime_generation = requestRuntimeGeneration;
     }
     if (req.warm_pool_id) {
       payload.warm_pool_id = req.warm_pool_id;
     }
     const accountId = getAccountId();
+
+    void connectionLifecycleDebugService.log(
+      'worker.connection_grpc.request_received',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: module,
+        worker_id: payload.worker_id,
+        account_id: accountId,
+        worker_type_id: getWorkerTypeId(),
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        grpc_module: module,
+      }
+    );
 
     fastify.log.info(
       {
@@ -208,13 +247,33 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
           ...response,
           worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
           runtime_generation:
-            response.runtime_generation ?? payload.runtime_generation,
+            response.runtime_generation ?? requestRuntimeGeneration,
           warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
           connection_attempt_id:
             response.connection_attempt_id ?? payload.connection_attempt_id,
+          debug_trace_id: response.debug_trace_id ?? payload.debug_trace_id,
         };
         const responseWithAttempt: IWorkerConnectionStateProto =
           connectionStateToProto(responseState);
+        void connectionLifecycleDebugService.log(
+          'worker.connection_grpc.request_dispatched',
+          {
+            trace_id: payload.debug_trace_id,
+            layer: module,
+            worker_id: payload.worker_id,
+            account_id: accountId,
+            worker_type_id: responseState.worker_type_id,
+            connection_attempt_id: responseState.connection_attempt_id,
+            runtime_generation: responseState.runtime_generation,
+            status: responseState.status,
+            code: responseState.code,
+            reason: responseState.reason,
+            qrcode: responseState.qrcode,
+            pairing_code: responseState.pairing_code,
+            qr_pending: responseState.qr_pending === true,
+            grpc_module: module,
+          }
+        );
         fastify.log.info(
           {
             module,
@@ -230,7 +289,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             connection_attempt_id:
               response.connection_attempt_id ?? payload.connection_attempt_id,
             runtime_generation:
-              response.runtime_generation ?? payload.runtime_generation,
+              response.runtime_generation ?? requestRuntimeGeneration,
             warm_pool_id: response.warm_pool_id ?? payload.warm_pool_id,
             reason: response.reason,
             qr_pending: response.qr_pending === true,
@@ -241,6 +300,21 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
+        void connectionLifecycleDebugService.log(
+          'worker.connection_grpc.request_error',
+          {
+            trace_id: payload.debug_trace_id,
+            layer: module,
+            worker_id: payload.worker_id,
+            account_id: accountId,
+            worker_type_id: getWorkerTypeId(),
+            connection_attempt_id: payload.connection_attempt_id,
+            runtime_generation: payload.runtime_generation,
+            status: payload.status,
+            reason: msg,
+            grpc_module: module,
+          }
+        );
         fastify.log.error(
           {
             err,

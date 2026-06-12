@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { injectable, inject } from 'tsyringe';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -22,6 +22,7 @@ import {
   IWorkerRuntimeHealthResponseProto,
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 const protoPath = resolveProtoPath('worker_connection.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -44,6 +45,13 @@ const GRPC_READY_DEADLINE_MS = 10_000;
 
 @injectable()
 export class WorkerBaileysGrpcClientService {
+  constructor(
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
+  ) {}
+
   private buildConnectionProtoPayload(payload: StatusConnectionWorkerRequest): {
     worker_id: string;
     status: string;
@@ -51,6 +59,7 @@ export class WorkerBaileysGrpcClientService {
     phone_connection?: string;
     remove_session?: boolean;
     connection_attempt_id?: string;
+    debug_trace_id?: string;
     runtime_generation?: number;
     warm_pool_id?: string;
   } {
@@ -70,6 +79,10 @@ export class WorkerBaileysGrpcClientService {
       (
         protoPayload as { connection_attempt_id?: string }
       ).connection_attempt_id = payload.connection_attempt_id;
+    }
+    if (payload.debug_trace_id) {
+      (protoPayload as { debug_trace_id?: string }).debug_trace_id =
+        payload.debug_trace_id;
     }
     if (payload.runtime_generation) {
       (protoPayload as { runtime_generation?: number }).runtime_generation =
@@ -135,16 +148,32 @@ export class WorkerBaileysGrpcClientService {
       phone_connection?: string;
       remove_session?: boolean;
       connection_attempt_id?: string;
+      debug_trace_id?: string;
       runtime_generation?: number;
       warm_pool_id?: string;
     }
   ): Promise<IBaileysConnectionState> {
+    const startedAt = Date.now();
     const client = new WorkerConnectionClient(
       address,
       credentials.createInsecure()
     );
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
     const metadata = new Metadata();
+
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_connection_grpc.request_connection_call',
+      {
+        trace_id: protoPayload.debug_trace_id,
+        layer: 'service',
+        worker_id: protoPayload.worker_id,
+        connection_attempt_id: protoPayload.connection_attempt_id,
+        runtime_generation: protoPayload.runtime_generation,
+        status: protoPayload.status,
+        method: 'RequestConnection',
+        grpc_address: address,
+      }
+    );
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
       (client as any).RequestConnection(
@@ -164,7 +193,53 @@ export class WorkerBaileysGrpcClientService {
           resolve(state);
         }
       );
-    });
+    })
+      .then((state) => {
+        void this.connectionLifecycleDebugService.log(
+          'service.worker_connection_grpc.request_connection_ok',
+          {
+            trace_id: protoPayload.debug_trace_id,
+            layer: 'service',
+            worker_id: protoPayload.worker_id,
+            account_id: state.account_id,
+            worker_type_id: state.worker_type_id,
+            connection_attempt_id:
+              state.connection_attempt_id ?? protoPayload.connection_attempt_id,
+            runtime_generation:
+              state.runtime_generation ?? protoPayload.runtime_generation,
+            status: state.status,
+            code: state.code,
+            reason: state.reason,
+            duration_ms: Date.now() - startedAt,
+            qrcode: state.qrcode,
+            pairing_code: state.pairing_code,
+            method: 'RequestConnection',
+            grpc_address: address,
+          }
+        );
+        return {
+          ...state,
+          debug_trace_id: state.debug_trace_id ?? protoPayload.debug_trace_id,
+        };
+      })
+      .catch((error) => {
+        void this.connectionLifecycleDebugService.log(
+          'service.worker_connection_grpc.request_connection_error',
+          {
+            trace_id: protoPayload.debug_trace_id,
+            layer: 'service',
+            worker_id: protoPayload.worker_id,
+            connection_attempt_id: protoPayload.connection_attempt_id,
+            runtime_generation: protoPayload.runtime_generation,
+            status: protoPayload.status,
+            reason: error instanceof Error ? error.message : String(error),
+            duration_ms: Date.now() - startedAt,
+            method: 'RequestConnection',
+            grpc_address: address,
+          }
+        );
+        throw error;
+      });
   }
 
   private async validatePhoneByAddress(

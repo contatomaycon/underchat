@@ -9,6 +9,7 @@ import {
   EditWorkerBody,
 } from '@core/schema/worker/editWorker/request.schema';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
 
 function isLifecycleAck(value: unknown): value is IWorkerLifecycleAck {
   return (
@@ -28,6 +29,9 @@ export const updateWorker = async (
 ) => {
   const workerUpdaterUseCase = container.resolve(WorkerUpdaterUseCase);
   const { t, tokenJwtData } = request;
+  const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>
+  );
 
   const input: EditWorkerParams & EditWorkerBody = {
     ...request.params,
@@ -36,11 +40,14 @@ export const updateWorker = async (
   };
 
   try {
-    const response = await workerUpdaterUseCase.execute(
-      t,
-      tokenJwtData.account_id,
-      input
-    );
+    const response = debugTraceId
+      ? await workerUpdaterUseCase.execute(
+          t,
+          tokenJwtData.account_id,
+          input,
+          debugTraceId
+        )
+      : await workerUpdaterUseCase.execute(t, tokenJwtData.account_id, input);
 
     if (response) {
       if (isLifecycleAck(response)) {

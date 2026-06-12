@@ -11,4 +11,5 @@ export interface IWorkerPayloadProto {
   remove_session?: boolean;
   remove_volume?: boolean;
   lifecycle_operation_id?: string;
+  debug_trace_id?: string;
 }

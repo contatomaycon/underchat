@@ -49,6 +49,9 @@ export function protoToWorkerPayload(
   if (proto.lifecycle_operation_id) {
     payload.lifecycle_operation_id = proto.lifecycle_operation_id;
   }
+  if (proto.debug_trace_id) {
+    payload.debug_trace_id = proto.debug_trace_id;
+  }
 
   return payload;
 }
@@ -86,6 +89,9 @@ export function workerPayloadToProto(
   if (payload.lifecycle_operation_id) {
     proto.lifecycle_operation_id = payload.lifecycle_operation_id;
   }
+  if (payload.debug_trace_id) {
+    proto.debug_trace_id = payload.debug_trace_id;
+  }
   return proto;
 }
 
@@ -110,6 +116,9 @@ export function protoToStatusConnectionRequest(
   }
   if (proto.connection_attempt_id) {
     payload.connection_attempt_id = proto.connection_attempt_id;
+  }
+  if (proto.debug_trace_id) {
+    payload.debug_trace_id = proto.debug_trace_id;
   }
   if (proto.runtime_generation) {
     payload.runtime_generation = Number(proto.runtime_generation);
@@ -155,6 +164,9 @@ export function statusConnectionRequestToProto(
   }
   if (payload.connection_attempt_id) {
     proto.connection_attempt_id = payload.connection_attempt_id;
+  }
+  if (payload.debug_trace_id) {
+    proto.debug_trace_id = payload.debug_trace_id;
   }
   if (payload.runtime_generation) {
     proto.runtime_generation = payload.runtime_generation;

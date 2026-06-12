@@ -62,6 +62,7 @@ type Config struct {
 	KafkaConsumerMaxInFlight             int
 	SendQueueTimeout                     time.Duration
 	ConnectionHealthFailOnKafkaUnhealthy bool
+	ConnectionLifecycleDebugEnabled      bool
 
 	KafkaSendConsumerIdleRecreateInterval time.Duration
 	KafkaHandlerErrorBackoff              time.Duration
@@ -131,6 +132,7 @@ func LoadConfig() (Config, error) {
 		KafkaConsumerMaxInFlight:              envIntDefault("WORKER_KAFKA_MAX_IN_FLIGHT", 32),
 		SendQueueTimeout:                      envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
 		ConnectionHealthFailOnKafkaUnhealthy:  envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
+		ConnectionLifecycleDebugEnabled:       envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
 		KafkaSendConsumerIdleRecreateInterval: envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
 		KafkaHandlerErrorBackoff:              envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
 		KafkaConsumerStallTimeout:             kafkaConsumerStallTimeout,

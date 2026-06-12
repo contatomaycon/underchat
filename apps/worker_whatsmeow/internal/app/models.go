@@ -80,6 +80,7 @@ type ConnectionState struct {
 	ProxyErrorCode          string `json:"proxy_error_code,omitempty"`
 	ProxyFallback           string `json:"proxy_fallback,omitempty"`
 	ProxyBypassed           bool   `json:"proxy_bypassed,omitempty"`
+	DebugTraceID            string `json:"debug_trace_id,omitempty"`
 }
 
 type StatusConnectionRequest struct {
@@ -91,6 +92,7 @@ type StatusConnectionRequest struct {
 	ConnectionAttemptID string `json:"connection_attempt_id"`
 	RuntimeGeneration   int    `json:"runtime_generation"`
 	WarmPoolID          string `json:"warm_pool_id"`
+	DebugTraceID        string `json:"debug_trace_id"`
 }
 
 type WorkerConnectionQRCodeQueueMessage struct {
@@ -103,6 +105,7 @@ type WorkerConnectionQRCodeQueueMessage struct {
 	Source              string `json:"source"`
 	RequestedAt         string `json:"requested_at"`
 	ExpiresAt           string `json:"expires_at,omitempty"`
+	DebugTraceID        string `json:"debug_trace_id,omitempty"`
 }
 
 type PhoneValidationRequest struct {
@@ -201,6 +204,15 @@ func (k MessageKey) FromMeValue() bool {
 		return *k.FromMeC
 	}
 	return false
+}
+
+func firstNonZero(values ...int) int {
+	for _, value := range values {
+		if value != 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 type ChatMessage struct {

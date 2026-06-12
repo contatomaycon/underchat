@@ -36,6 +36,7 @@ type WhatsAppManager struct {
 	balance    *BalanceGRPCClient
 	storage    *StorageClient
 	redis      *redis.Client
+	debug      *ConnectionLifecycleDebugLogger
 	runtimeCtx context.Context
 
 	mu          sync.RWMutex
@@ -59,6 +60,7 @@ type WhatsAppManager struct {
 	currentQRCode       string
 	currentPairingCode  string
 	connectionAttemptID string
+	debugTraceID        string
 	qrGenerationCount   int
 	qrReadSessionLocked bool
 	qrHash              string
@@ -91,7 +93,11 @@ type historySyncCandidate struct {
 
 var ErrWhatsAppNotReady = errors.New("whatsmeow connection is not ready")
 
-func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient, redisClient *redis.Client) (*WhatsAppManager, error) {
+func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient, redisClient *redis.Client, debugLoggers ...*ConnectionLifecycleDebugLogger) (*WhatsAppManager, error) {
+	var debug *ConnectionLifecycleDebugLogger
+	if len(debugLoggers) > 0 {
+		debug = debugLoggers[0]
+	}
 	manager := &WhatsAppManager{
 		cfg:        cfg,
 		kafka:      kafka,
@@ -99,6 +105,7 @@ func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, cen
 		balance:    balance,
 		storage:    storage,
 		redis:      redisClient,
+		debug:      debug,
 		runtimeCtx: ctx,
 		status:     "initial",
 		code:       CodeInfo,
@@ -491,11 +498,15 @@ func (m *WhatsAppManager) currentConnectionState() ConnectionState {
 		QRCode:              m.currentQRCode,
 		PairingCode:         m.currentPairingCode,
 		ConnectionAttemptID: m.connectionAttemptID,
+		DebugTraceID:        m.debugTraceID,
+		RuntimeGeneration:   m.cfg.RuntimeGeneration,
+		WarmPoolID:          m.cfg.WarmPoolID,
 		Time:                time.Now().Unix(),
 	}
 }
 
 func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConnectionRequest) (state ConnectionState, err error) {
+	startedAt := time.Now()
 	if req.ConnectionAttemptID != "" {
 		m.setConnectionAttemptID(req.ConnectionAttemptID)
 		defer func() {
@@ -504,6 +515,49 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 			}
 		}()
 	}
+	if req.DebugTraceID != "" {
+		m.setDebugTraceID(req.DebugTraceID)
+		defer func() {
+			if state.DebugTraceID == "" {
+				state.DebugTraceID = req.DebugTraceID
+			}
+		}()
+	}
+	m.debug.Log(ctx, "whatsmeow.provider.request_connection.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.provider",
+		"worker_id":             firstNonEmpty(req.WorkerID, m.cfg.WorkerID),
+		"account_id":            m.cfg.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"runtime_generation":    req.RuntimeGeneration,
+		"status":                req.Status,
+		"type":                  req.Type,
+		"remove_session":        req.RemoveSession,
+		"phone_connection_set":  req.PhoneConnection != "",
+	})
+	defer func() {
+		fields := map[string]any{
+			"trace_id":              firstNonEmpty(state.DebugTraceID, req.DebugTraceID),
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             firstNonEmpty(state.WorkerID, req.WorkerID, m.cfg.WorkerID),
+			"account_id":            firstNonEmpty(state.AccountID, m.cfg.AccountID),
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": firstNonEmpty(state.ConnectionAttemptID, req.ConnectionAttemptID),
+			"runtime_generation":    firstNonZero(state.RuntimeGeneration, req.RuntimeGeneration),
+			"status":                state.Status,
+			"code":                  state.Code,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"qrcode":                state.QRCode,
+			"pairing_code":          state.PairingCode,
+		}
+		if err != nil {
+			fields["error"] = err.Error()
+			m.debug.Log(ctx, "whatsmeow.provider.request_connection.error", fields)
+			return
+		}
+		m.debug.Log(ctx, "whatsmeow.provider.request_connection.response", fields)
+	}()
 
 	log.Printf(
 		"whatsmeow RequestConnection worker_id=%s status=%s type=%s remove_session=%t phone_connection_set=%t",
@@ -523,18 +577,30 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 	}
 
 	if req.RemoveSession || req.Status == WorkerStatusDisponible {
+		m.debug.Log(ctx, "whatsmeow.provider.remove_session.start", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"runtime_generation":    req.RuntimeGeneration,
+		})
 		if err := m.removeSession(ctx); err != nil {
 			return ConnectionState{}, err
 		}
 		state = ConnectionState{
-			Code:             CodeConnectionClosed,
-			Status:           "disconnected",
-			WorkerID:         m.cfg.WorkerID,
-			AccountID:        m.cfg.AccountID,
-			WorkerTypeID:     WorkerTypeWhatsmeow,
-			DisconnectedUser: true,
-			Time:             time.Now().Unix(),
-			WorkerStatusID:   WorkerStatusDisponible,
+			Code:              CodeConnectionClosed,
+			Status:            "disconnected",
+			WorkerID:          m.cfg.WorkerID,
+			AccountID:         m.cfg.AccountID,
+			WorkerTypeID:      WorkerTypeWhatsmeow,
+			DisconnectedUser:  true,
+			Time:              time.Now().Unix(),
+			WorkerStatusID:    WorkerStatusDisponible,
+			DebugTraceID:      req.DebugTraceID,
+			RuntimeGeneration: req.RuntimeGeneration,
+			WarmPoolID:        req.WarmPoolID,
 		}
 		return state, nil
 	}
@@ -797,6 +863,24 @@ func (m *WhatsAppManager) clearConnectionAttemptID() {
 	m.mu.Unlock()
 }
 
+func (m *WhatsAppManager) setDebugTraceID(debugTraceID string) {
+	m.mu.Lock()
+	m.debugTraceID = debugTraceID
+	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) getDebugTraceID() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.debugTraceID
+}
+
+func (m *WhatsAppManager) clearDebugTraceID() {
+	m.mu.Lock()
+	m.debugTraceID = ""
+	m.mu.Unlock()
+}
+
 func (m *WhatsAppManager) resetQRCodeReadSession(clearQRCode bool) {
 	m.mu.Lock()
 	m.qrGenerationCount = 0
@@ -917,13 +1001,46 @@ func (m *WhatsAppManager) connectWithQRCode(ctx context.Context) (ConnectionStat
 }
 
 func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDeletedStoreRetry bool) (ConnectionState, error) {
+	traceID := m.getDebugTraceID()
+	startedAt := time.Now()
+	m.debug.Log(ctx, "whatsmeow.provider.qrcode.connect_start", map[string]any{
+		"trace_id":              traceID,
+		"layer":                 "worker_whatsmeow.provider",
+		"worker_id":             m.cfg.WorkerID,
+		"account_id":            m.cfg.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": m.getConnectionAttemptID(),
+		"runtime_generation":    m.cfg.RuntimeGeneration,
+		"allow_deleted_retry":   allowDeletedStoreRetry,
+	})
 	client, err := m.ensureUsableClientForLogin(ctx, "qrcode-request")
 	if err != nil {
+		m.debug.Log(ctx, "whatsmeow.provider.qrcode.ensure_client.error", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
 		m.publishState(ctx, "disconnected", CodeConnectionLost, WorkerStatusDisponible, "", "", false)
 		return ConnectionState{}, err
 	}
 	connectCtx := m.connectionContext()
 	if m.isAuthenticated(client) {
+		m.debug.Log(ctx, "whatsmeow.provider.qrcode.already_authenticated", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+		})
 		log.Printf("whatsmeow qrcode request already authenticated worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
@@ -935,14 +1052,41 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 	m.resetQRCodeReadSession(true)
 	if client.IsConnected() {
 		if client.Store.ID != nil {
+			m.debug.Log(ctx, "whatsmeow.provider.qrcode.authentication_in_progress", map[string]any{
+				"trace_id":              traceID,
+				"layer":                 "worker_whatsmeow.provider",
+				"worker_id":             m.cfg.WorkerID,
+				"account_id":            m.cfg.AccountID,
+				"worker_type_id":        WorkerTypeWhatsmeow,
+				"connection_attempt_id": m.getConnectionAttemptID(),
+				"runtime_generation":    m.cfg.RuntimeGeneration,
+			})
 			log.Printf("whatsmeow qrcode request authentication in progress worker_id=%s", m.cfg.WorkerID)
 			return m.currentConnectionState(), nil
 		}
+		m.debug.Log(ctx, "whatsmeow.provider.qrcode.restart_active_scan", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+		})
 		log.Printf("whatsmeow qrcode request restarting active scan worker_id=%s", m.cfg.WorkerID)
 		client.Disconnect()
 		m.clearLoginArtifacts()
 	}
 	if client.Store.ID != nil {
+		m.debug.Log(ctx, "whatsmeow.provider.qrcode.stored_session", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+		})
 		log.Printf("whatsmeow qrcode request using stored session worker_id=%s", m.cfg.WorkerID)
 		m.armFreshLoginFallback(freshLoginRequest{Type: "qrcode"})
 		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
@@ -953,11 +1097,31 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 	}
 
 	log.Printf("whatsmeow qrcode request starting new login worker_id=%s", m.cfg.WorkerID)
+	m.debug.Log(ctx, "whatsmeow.provider.qrcode.new_login_start", map[string]any{
+		"trace_id":              traceID,
+		"layer":                 "worker_whatsmeow.provider",
+		"worker_id":             m.cfg.WorkerID,
+		"account_id":            m.cfg.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": m.getConnectionAttemptID(),
+		"runtime_generation":    m.cfg.RuntimeGeneration,
+	})
 	m.clearFreshLoginFallback()
 	m.clearLoginArtifacts()
 	m.resetQRCodeReadSession(true)
 	qrChan, err := client.GetQRChannel(connectCtx)
 	if err != nil {
+		m.debug.Log(ctx, "whatsmeow.provider.qrcode.channel_error", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
 		log.Printf("whatsmeow GetQRChannel failed worker_id=%s error=%v", m.cfg.WorkerID, err)
 		if err := m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry); err != nil {
 			return ConnectionState{}, err
@@ -966,6 +1130,17 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 	}
 	m.publishState(ctx, "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", "", true)
 	if err := m.connectClient(connectCtx, client, "qrcode-new-login"); err != nil {
+		m.debug.Log(ctx, "whatsmeow.provider.qrcode.connect_error", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
 		if err := m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "qrcode"}, err, allowDeletedStoreRetry); err != nil {
 			return ConnectionState{}, err
 		}
@@ -986,86 +1161,178 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			switch evt.Event {
 			case "code":
 				attempt, allowed, duplicate := m.recordQRCodeGeneration(evt.Code)
+				m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.event", map[string]any{
+					"trace_id":              traceID,
+					"layer":                 "worker_whatsmeow.provider",
+					"worker_id":             m.cfg.WorkerID,
+					"account_id":            m.cfg.AccountID,
+					"worker_type_id":        WorkerTypeWhatsmeow,
+					"connection_attempt_id": m.getConnectionAttemptID(),
+					"runtime_generation":    m.cfg.RuntimeGeneration,
+					"event":                 evt.Event,
+					"attempt":               attempt,
+					"max_attempts":          maxQRCodeGenerations,
+					"duplicate":             duplicate,
+					"allowed":               allowed,
+					"timeout":               evt.Timeout.String(),
+					"has_qr":                evt.Code != "",
+					"qr_length":             len(evt.Code),
+				})
 				if duplicate {
 					continue
 				}
 				if !allowed {
+					m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.limit_reached", map[string]any{
+						"trace_id":              traceID,
+						"layer":                 "worker_whatsmeow.provider",
+						"worker_id":             m.cfg.WorkerID,
+						"account_id":            m.cfg.AccountID,
+						"worker_type_id":        WorkerTypeWhatsmeow,
+						"connection_attempt_id": m.getConnectionAttemptID(),
+						"runtime_generation":    m.cfg.RuntimeGeneration,
+						"attempt":               attempt,
+						"max_attempts":          maxQRCodeGenerations,
+					})
 					log.Printf("whatsmeow qr generation limit reached worker_id=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, attempt, maxQRCodeGenerations)
 					client.Disconnect()
 					m.publishStateWithAttempts(context.Background(), "disconnected", CodeConnectionClosed, WorkerStatusDisponible, "", "", true, attempt, maxQRCodeGenerations)
 					sendResult(ConnectionState{
-						Code:           CodeConnectionClosed,
-						Status:         "disconnected",
-						WorkerID:       m.cfg.WorkerID,
-						AccountID:      m.cfg.AccountID,
-						WorkerTypeID:   WorkerTypeWhatsmeow,
-						IsNewLogin:     true,
-						Time:           time.Now().Unix(),
-						WorkerStatusID: WorkerStatusDisponible,
-						Attempt:        attempt,
-						MaxAttempts:    maxQRCodeGenerations,
+						Code:              CodeConnectionClosed,
+						Status:            "disconnected",
+						WorkerID:          m.cfg.WorkerID,
+						AccountID:         m.cfg.AccountID,
+						WorkerTypeID:      WorkerTypeWhatsmeow,
+						IsNewLogin:        true,
+						Time:              time.Now().Unix(),
+						WorkerStatusID:    WorkerStatusDisponible,
+						Attempt:           attempt,
+						MaxAttempts:       maxQRCodeGenerations,
+						DebugTraceID:      traceID,
+						RuntimeGeneration: m.cfg.RuntimeGeneration,
+						WarmPoolID:        m.cfg.WarmPoolID,
 					})
 					return
 				}
 				qrImage := qrCodeDataURL(evt.Code)
+				m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.dataurl_generated", map[string]any{
+					"trace_id":              traceID,
+					"layer":                 "worker_whatsmeow.provider",
+					"worker_id":             m.cfg.WorkerID,
+					"account_id":            m.cfg.AccountID,
+					"worker_type_id":        WorkerTypeWhatsmeow,
+					"connection_attempt_id": m.getConnectionAttemptID(),
+					"runtime_generation":    m.cfg.RuntimeGeneration,
+					"attempt":               attempt,
+					"max_attempts":          maxQRCodeGenerations,
+					"qrcode":                qrImage,
+				})
 				m.setCurrentQRCode(qrImage)
 				qrGeneratedAt := time.Now().UTC().Format(time.RFC3339Nano)
 				timeToFirstQRMS := int(time.Since(qrWaitStartedAt).Milliseconds())
 				log.Printf("whatsmeow qr code received worker_id=%s timeout=%s attempt=%d max_attempts=%d", m.cfg.WorkerID, evt.Timeout, attempt, maxQRCodeGenerations)
 				m.publishStateWithAttemptMetadata(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", qrImage, true, attempt, maxQRCodeGenerations, qrGeneratedAt, timeToFirstQRMS)
 				sendResult(ConnectionState{
-					Code:            CodeAwaitingReadQRCode,
-					Status:          "connecting",
-					WorkerID:        m.cfg.WorkerID,
-					AccountID:       m.cfg.AccountID,
-					WorkerTypeID:    WorkerTypeWhatsmeow,
-					QRCode:          qrImage,
-					IsNewLogin:      true,
-					Time:            time.Now().Unix(),
-					WorkerStatusID:  WorkerStatusDisponible,
-					Attempt:         attempt,
-					MaxAttempts:     maxQRCodeGenerations,
-					QRGeneratedAt:   qrGeneratedAt,
-					TimeToFirstQRMS: timeToFirstQRMS,
+					Code:              CodeAwaitingReadQRCode,
+					Status:            "connecting",
+					WorkerID:          m.cfg.WorkerID,
+					AccountID:         m.cfg.AccountID,
+					WorkerTypeID:      WorkerTypeWhatsmeow,
+					QRCode:            qrImage,
+					IsNewLogin:        true,
+					Time:              time.Now().Unix(),
+					WorkerStatusID:    WorkerStatusDisponible,
+					Attempt:           attempt,
+					MaxAttempts:       maxQRCodeGenerations,
+					QRGeneratedAt:     qrGeneratedAt,
+					TimeToFirstQRMS:   timeToFirstQRMS,
+					DebugTraceID:      traceID,
+					RuntimeGeneration: m.cfg.RuntimeGeneration,
+					WarmPoolID:        m.cfg.WarmPoolID,
 				})
 			case "success":
 				m.clearLoginArtifacts()
 				m.resetQRCodeReadSession(true)
+				m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.scanned", map[string]any{
+					"trace_id":              traceID,
+					"layer":                 "worker_whatsmeow.provider",
+					"worker_id":             m.cfg.WorkerID,
+					"account_id":            m.cfg.AccountID,
+					"worker_type_id":        WorkerTypeWhatsmeow,
+					"connection_attempt_id": m.getConnectionAttemptID(),
+					"runtime_generation":    m.cfg.RuntimeGeneration,
+				})
 				log.Printf("whatsmeow qr scanned, pairing in progress worker_id=%s", m.cfg.WorkerID)
 				m.publishState(context.Background(), "connecting", CodePairingInProgress, WorkerStatusDisponible, "", "", true)
 				sendResult(ConnectionState{
-					Code:           CodePairingInProgress,
-					Status:         "connecting",
-					WorkerID:       m.cfg.WorkerID,
-					AccountID:      m.cfg.AccountID,
-					WorkerTypeID:   WorkerTypeWhatsmeow,
-					IsNewLogin:     true,
-					Time:           time.Now().Unix(),
-					WorkerStatusID: WorkerStatusDisponible,
+					Code:              CodePairingInProgress,
+					Status:            "connecting",
+					WorkerID:          m.cfg.WorkerID,
+					AccountID:         m.cfg.AccountID,
+					WorkerTypeID:      WorkerTypeWhatsmeow,
+					IsNewLogin:        true,
+					Time:              time.Now().Unix(),
+					WorkerStatusID:    WorkerStatusDisponible,
+					DebugTraceID:      traceID,
+					RuntimeGeneration: m.cfg.RuntimeGeneration,
+					WarmPoolID:        m.cfg.WarmPoolID,
 				})
 			case "timeout":
 				m.clearLoginArtifacts()
 				m.resetQRCodeReadSession(true)
+				m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.timeout", map[string]any{
+					"trace_id":              traceID,
+					"layer":                 "worker_whatsmeow.provider",
+					"worker_id":             m.cfg.WorkerID,
+					"account_id":            m.cfg.AccountID,
+					"worker_type_id":        WorkerTypeWhatsmeow,
+					"connection_attempt_id": m.getConnectionAttemptID(),
+					"runtime_generation":    m.cfg.RuntimeGeneration,
+				})
 				log.Printf("whatsmeow qr timeout worker_id=%s", m.cfg.WorkerID)
 				m.publishState(context.Background(), "disconnected", CodeConnectionClosed, WorkerStatusDisponible, "", "", true)
 				sendResult(ConnectionState{
-					Code:           CodeConnectionClosed,
-					Status:         "disconnected",
-					WorkerID:       m.cfg.WorkerID,
-					AccountID:      m.cfg.AccountID,
-					WorkerTypeID:   WorkerTypeWhatsmeow,
-					IsNewLogin:     true,
-					Time:           time.Now().Unix(),
-					WorkerStatusID: WorkerStatusDisponible,
+					Code:              CodeConnectionClosed,
+					Status:            "disconnected",
+					WorkerID:          m.cfg.WorkerID,
+					AccountID:         m.cfg.AccountID,
+					WorkerTypeID:      WorkerTypeWhatsmeow,
+					IsNewLogin:        true,
+					Time:              time.Now().Unix(),
+					WorkerStatusID:    WorkerStatusDisponible,
+					DebugTraceID:      traceID,
+					RuntimeGeneration: m.cfg.RuntimeGeneration,
+					WarmPoolID:        m.cfg.WarmPoolID,
 				})
 			default:
+				fields := map[string]any{
+					"trace_id":              traceID,
+					"layer":                 "worker_whatsmeow.provider",
+					"worker_id":             m.cfg.WorkerID,
+					"account_id":            m.cfg.AccountID,
+					"worker_type_id":        WorkerTypeWhatsmeow,
+					"connection_attempt_id": m.getConnectionAttemptID(),
+					"runtime_generation":    m.cfg.RuntimeGeneration,
+					"event":                 evt.Event,
+				}
 				if evt.Error != nil {
+					fields["error"] = evt.Error.Error()
+					m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.event_error", fields)
 					log.Printf("qr event error: %v", evt.Error)
 				} else {
+					m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.unexpected_event", fields)
 					log.Printf("whatsmeow qr unexpected event worker_id=%s event=%s", m.cfg.WorkerID, evt.Event)
 				}
 			}
 		}
+		m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.channel_closed", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+		})
 		log.Printf("whatsmeow qr channel closed worker_id=%s", m.cfg.WorkerID)
 	}()
 
@@ -1089,7 +1356,21 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 			Reason:              "first_qr_timeout",
 			TimeToFirstQRMS:     elapsedMS,
 			ConnectionAttemptID: m.connectionAttemptID,
+			DebugTraceID:        traceID,
+			RuntimeGeneration:   m.cfg.RuntimeGeneration,
+			WarmPoolID:          m.cfg.WarmPoolID,
 		}
+		m.debug.Log(context.Background(), "whatsmeow.provider.qrcode.first_qr_timeout", map[string]any{
+			"trace_id":              traceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": m.getConnectionAttemptID(),
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+			"duration_ms":           elapsedMS,
+			"reason":                "first_qr_timeout",
+		})
 		m.publishState(context.Background(), "connecting", CodeAwaitingReadQRCode, WorkerStatusDisponible, "", "", true)
 		return state, nil
 	}
@@ -1150,6 +1431,16 @@ func (m *WhatsAppManager) connectWithPhonePairingInternal(ctx context.Context, p
 		return m.handleFreshLoginConnectError(ctx, freshLoginRequest{Type: "phone", Phone: phone}, err, allowDeletedStoreRetry)
 	}
 	m.setCurrentPairingCode(pairingCode)
+	m.debug.Log(ctx, "whatsmeow.provider.phone_pairing.generated", map[string]any{
+		"trace_id":              m.getDebugTraceID(),
+		"layer":                 "worker_whatsmeow.provider",
+		"worker_id":             m.cfg.WorkerID,
+		"account_id":            m.cfg.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": m.getConnectionAttemptID(),
+		"runtime_generation":    m.cfg.RuntimeGeneration,
+		"pairing_code":          pairingCode,
+	})
 	log.Printf("whatsmeow phone pairing code generated worker_id=%s", m.cfg.WorkerID)
 	m.publishState(ctx, "connecting", CodeAwaitingPairingCode, WorkerStatusDisponible, "", pairingCode, true)
 	return nil
@@ -1450,6 +1741,9 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		Phone:               phone,
 		WorkerStatusID:      workerStatusID,
 		ConnectionAttemptID: m.getConnectionAttemptID(),
+		DebugTraceID:        m.getDebugTraceID(),
+		RuntimeGeneration:   m.cfg.RuntimeGeneration,
+		WarmPoolID:          m.cfg.WarmPoolID,
 		QRGeneratedAt:       qrGeneratedAt,
 		TimeToFirstQRMS:     timeToFirstQRMS,
 	}
@@ -1479,8 +1773,35 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		state.ConnectionAttemptID,
 	)
 	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.error", map[string]any{
+			"trace_id":              state.DebugTraceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"qrcode":                state.QRCode,
+			"pairing_code":          state.PairingCode,
+			"error":                 err.Error(),
+		})
 		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
 	} else {
+		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.ok", map[string]any{
+			"trace_id":              state.DebugTraceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"qrcode":                state.QRCode,
+			"pairing_code":          state.PairingCode,
+		})
 	}
 	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
@@ -1489,6 +1810,7 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 	}
 	if code == CodeConnectionEstablished || code == CodeLoggedOut || code == CodeConnectionClosed {
 		m.clearConnectionAttemptID()
+		m.clearDebugTraceID()
 	}
 }
 
@@ -1503,6 +1825,9 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		Time:                time.Now().Unix(),
 		WorkerStatusID:      workerStatusID,
 		ConnectionAttemptID: m.getConnectionAttemptID(),
+		DebugTraceID:        m.getDebugTraceID(),
+		RuntimeGeneration:   m.cfg.RuntimeGeneration,
+		WarmPoolID:          m.cfg.WarmPoolID,
 	}
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false connection_attempt_id=%s",
@@ -1513,8 +1838,31 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		state.ConnectionAttemptID,
 	)
 	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.error", map[string]any{
+			"trace_id":              state.DebugTraceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"disconnected_user":     true,
+			"error":                 err.Error(),
+		})
 		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, state.Status, code, err)
 	} else {
+		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.ok", map[string]any{
+			"trace_id":              state.DebugTraceID,
+			"layer":                 "worker_whatsmeow.provider",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"disconnected_user":     true,
+		})
 	}
 	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
@@ -1522,6 +1870,7 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		}
 	}
 	m.clearConnectionAttemptID()
+	m.clearDebugTraceID()
 }
 
 func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events.Message) {

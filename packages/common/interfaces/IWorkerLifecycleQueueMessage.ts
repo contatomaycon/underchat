@@ -31,6 +31,7 @@ export interface IWorkerLifecycleQueueMessage {
   previous_server_id?: string;
   previous_worker_type_id?: EWorkerType;
   previous_worker_status_id?: EWorkerStatus;
+  debug_trace_id?: string;
   requested_at: string;
 }
 

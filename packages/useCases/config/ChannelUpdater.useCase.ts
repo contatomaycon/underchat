@@ -16,7 +16,8 @@ export class ChannelUpdaterUseCase {
 
   async execute(
     t: TFunction<'translation', undefined>,
-    input: UpdateChannelRequest
+    input: UpdateChannelRequest,
+    debugTraceId?: string
   ): Promise<boolean | IWorkerLifecycleAck> {
     const viewWorkerBalancer = await this.configService.viewChannelBalancer(
       input.channel_id
@@ -26,11 +27,26 @@ export class ChannelUpdaterUseCase {
       throw new Error(t('channel_not_found'));
     }
 
-    return this.workerUpdaterUseCase.execute(t, viewWorkerBalancer.account_id, {
+    const workerInput = {
       worker_id: input.channel_id,
       name: input.name,
       worker_type: input.worker_type,
       server_id: input.server_id,
-    });
+    };
+
+    if (debugTraceId) {
+      return this.workerUpdaterUseCase.execute(
+        t,
+        viewWorkerBalancer.account_id,
+        workerInput,
+        debugTraceId
+      );
+    }
+
+    return this.workerUpdaterUseCase.execute(
+      t,
+      viewWorkerBalancer.account_id,
+      workerInput
+    );
   }
 }

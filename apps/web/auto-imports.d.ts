@@ -29,9 +29,11 @@ declare global {
   const computedInject: typeof import('@vueuse/core').computedInject
   const computedWithControl: typeof import('@vueuse/core').computedWithControl
   const confirmedValidator: typeof import('./src/@webcore/utils/validators').confirmedValidator
+  const connectionLifecycleDebugHeaders: typeof import('./src/@webcore/utils/connectionLifecycleDebug').connectionLifecycleDebugHeaders
   const controlledComputed: typeof import('@vueuse/core').controlledComputed
   const controlledRef: typeof import('@vueuse/core').controlledRef
   const createApp: typeof import('vue').createApp
+  const createConnectionLifecycleDebugTraceId: typeof import('./src/@webcore/utils/connectionLifecycleDebug').createConnectionLifecycleDebugTraceId
   const createEventHook: typeof import('@vueuse/core').createEventHook
   const createGenericProjection: typeof import('@vueuse/math').createGenericProjection
   const createGlobalState: typeof import('@vueuse/core').createGlobalState
@@ -78,6 +80,7 @@ declare global {
   const injectLocal: typeof import('@vueuse/core').injectLocal
   const integerValidator: typeof import('./src/@webcore/utils/validators').integerValidator
   const ipMask: typeof import('./src/@webcore/utils/masks').ipMask
+  const isConnectionLifecycleDebugEnabled: typeof import('./src/@webcore/utils/connectionLifecycleDebug').isConnectionLifecycleDebugEnabled
   const isDarkPreferred: (typeof import('./src/@webcore/composable/useThemeConfig'))['isDarkPreferred']
   const isDefined: typeof import('@vueuse/core').isDefined
   const isEmpty: typeof import('./src/@webcore/utils/helpers').isEmpty
@@ -93,6 +96,7 @@ declare global {
   const isValidIP: typeof import('./src/@webcore/utils/validators').isValidIP
   const kFormatter: typeof import('./src/@webcore/utils/formatters').kFormatter
   const lengthValidator: typeof import('./src/@webcore/utils/validators').lengthValidator
+  const logConnectionLifecycleDebug: typeof import('./src/@webcore/utils/connectionLifecycleDebug').logConnectionLifecycleDebug
   const logicAnd: typeof import('@vueuse/math').logicAnd
   const logicNot: typeof import('@vueuse/math').logicNot
   const logicOr: typeof import('@vueuse/math').logicOr
@@ -420,6 +424,9 @@ declare global {
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
   // @ts-ignore
+  export type { ConnectionLifecycleDebugContext } from './src/@webcore/utils/connectionLifecycleDebug'
+  import('./src/@webcore/utils/connectionLifecycleDebug')
+  // @ts-ignore
   export type { EPasswordStrength, IPasswordStrength } from './src/@webcore/utils/passwordStrength'
   import('./src/@webcore/utils/passwordStrength')
   // @ts-ignore
@@ -459,9 +466,11 @@ declare module 'vue' {
     readonly computedInject: UnwrapRef<typeof import('@vueuse/core')['computedInject']>
     readonly computedWithControl: UnwrapRef<typeof import('@vueuse/core')['computedWithControl']>
     readonly confirmedValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['confirmedValidator']>
+    readonly connectionLifecycleDebugHeaders: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['connectionLifecycleDebugHeaders']>
     readonly controlledComputed: UnwrapRef<typeof import('@vueuse/core')['controlledComputed']>
     readonly controlledRef: UnwrapRef<typeof import('@vueuse/core')['controlledRef']>
     readonly createApp: UnwrapRef<typeof import('vue')['createApp']>
+    readonly createConnectionLifecycleDebugTraceId: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['createConnectionLifecycleDebugTraceId']>
     readonly createEventHook: UnwrapRef<typeof import('@vueuse/core')['createEventHook']>
     readonly createGenericProjection: UnwrapRef<typeof import('@vueuse/math')['createGenericProjection']>
     readonly createGlobalState: UnwrapRef<typeof import('@vueuse/core')['createGlobalState']>
@@ -504,6 +513,7 @@ declare module 'vue' {
     readonly injectLocal: UnwrapRef<typeof import('@vueuse/core')['injectLocal']>
     readonly integerValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['integerValidator']>
     readonly ipMask: UnwrapRef<typeof import('./src/@webcore/utils/masks')['ipMask']>
+    readonly isConnectionLifecycleDebugEnabled: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['isConnectionLifecycleDebugEnabled']>
     readonly isDefined: UnwrapRef<typeof import('@vueuse/core')['isDefined']>
     readonly isEmpty: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isEmpty']>
     readonly isEmptyArray: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isEmptyArray']>
@@ -518,6 +528,7 @@ declare module 'vue' {
     readonly isValidIP: UnwrapRef<typeof import('./src/@webcore/utils/validators')['isValidIP']>
     readonly kFormatter: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['kFormatter']>
     readonly lengthValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['lengthValidator']>
+    readonly logConnectionLifecycleDebug: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['logConnectionLifecycleDebug']>
     readonly logicAnd: UnwrapRef<typeof import('@vueuse/math')['logicAnd']>
     readonly logicNot: UnwrapRef<typeof import('@vueuse/math')['logicNot']>
     readonly logicOr: UnwrapRef<typeof import('@vueuse/math')['logicOr']>

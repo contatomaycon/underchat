@@ -12,14 +12,15 @@ import {
   WorkerConnectionQrCodeRedisQueueService,
   WorkerConnectionQrCodeRedisStreamMessage,
 } from '@core/services/workerConnectionQrCodeRedisQueue.service';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 interface ActiveQrAttemptEnvelope {
   worker_type_id?: string;
-  runtime_generation?: number;
+  runtime_generation?: number | string;
   ack?: {
     connection_attempt_id?: string;
     worker_type_id?: string;
-    runtime_generation?: number;
+    runtime_generation?: number | string;
   };
 }
 
@@ -49,7 +50,11 @@ export class WorkerConnectionQrCodeConsume {
     private readonly redisQueueService: WorkerConnectionQrCodeRedisQueueService,
     @inject(WorkerConnectionStatusConsume)
     private readonly workerConnectionStatusConsume: WorkerConnectionStatusConsume,
-    @inject('Redis') private readonly redis: Redis
+    @inject('Redis') private readonly redis: Redis,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {}
 
   public async execute(): Promise<void> {
@@ -64,6 +69,16 @@ export class WorkerConnectionQrCodeConsume {
     );
 
     await this.redisQueueService.ensureGroup(workerId, EWorkerType.baileys);
+    void this.connectionLifecycleDebugService.log(
+      'baileys.qr_stream.consumer_started',
+      {
+        layer: 'baileys',
+        worker_id: workerId,
+        account_id: baileysEnvironment.baileysAccountId,
+        worker_type_id: EWorkerType.baileys,
+        consumer_name: consumerName,
+      }
+    );
     this.stopped = false;
     this.isRunning = true;
 
@@ -116,6 +131,14 @@ export class WorkerConnectionQrCodeConsume {
   ): Promise<void> {
     const data = message.payload;
     if (!data) {
+      void this.connectionLifecycleDebugService.log(
+        'baileys.qr_stream.invalid_payload',
+        {
+          layer: 'baileys',
+          stream_id: message.stream_id,
+          stream_key: message.stream_key,
+        }
+      );
       await this.ackAndDelete(message);
       return;
     }
@@ -142,28 +165,105 @@ export class WorkerConnectionQrCodeConsume {
       return;
     }
 
+    void this.connectionLifecycleDebugService.log(
+      'baileys.qr_stream.received',
+      {
+        trace_id: data.debug_trace_id,
+        layer: 'baileys',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type_id: data.worker_type_id,
+        connection_attempt_id: data.connection_attempt_id,
+        runtime_generation: data.runtime_generation,
+        stream_id: message.stream_id,
+        reclaimed: message.reclaimed,
+        delivery_count: message.delivery_count,
+        queue_latency_ms: message.queue_latency_ms,
+      }
+    );
+
     if (!this.isMessageForThisWorker(data)) {
+      void this.connectionLifecycleDebugService.log(
+        'baileys.qr_stream.skipped_wrong_worker',
+        {
+          trace_id: data.debug_trace_id,
+          layer: 'baileys',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: data.worker_type_id,
+          connection_attempt_id: data.connection_attempt_id,
+          runtime_generation: data.runtime_generation,
+          stream_id: message.stream_id,
+        }
+      );
       await this.ackAndDelete(message);
       return;
     }
 
     const active = await this.isActiveAttempt(data);
     if (!active) {
+      void this.connectionLifecycleDebugService.log(
+        'baileys.qr_stream.skipped_inactive_attempt',
+        {
+          trace_id: data.debug_trace_id,
+          layer: 'baileys',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: data.worker_type_id,
+          connection_attempt_id: data.connection_attempt_id,
+          runtime_generation: data.runtime_generation,
+          stream_id: message.stream_id,
+        }
+      );
       await this.ackAndDelete(message);
       return;
     }
 
     try {
+      void this.connectionLifecycleDebugService.log(
+        'baileys.qr_stream.request_connection',
+        {
+          trace_id: data.debug_trace_id,
+          layer: 'baileys',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: data.worker_type_id,
+          connection_attempt_id: data.connection_attempt_id,
+          runtime_generation: data.runtime_generation,
+          stream_id: message.stream_id,
+        }
+      );
       const state = await this.workerConnectionStatusConsume.requestConnection({
         worker_id: data.worker_id,
         status: EWorkerStatus.online,
         type: EBaileysConnectionType.qrcode,
         connection_attempt_id: data.connection_attempt_id,
+        debug_trace_id: data.debug_trace_id,
         runtime_generation: data.runtime_generation,
         qr_pending: true,
       });
 
       await this.cacheQrAttemptState(state, data);
+      void this.connectionLifecycleDebugService.log(
+        'baileys.qr_stream.connection_response',
+        {
+          trace_id: data.debug_trace_id,
+          layer: 'baileys',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: state.worker_type_id ?? data.worker_type_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? data.connection_attempt_id,
+          runtime_generation:
+            state.runtime_generation ?? data.runtime_generation,
+          status: state.status,
+          code: state.code,
+          reason: state.reason,
+          qrcode: state.qrcode,
+          pairing_code: state.pairing_code,
+          stream_id: message.stream_id,
+        }
+      );
 
       if (!this.shouldCompleteQrRequest(state)) {
         return;
@@ -172,7 +272,32 @@ export class WorkerConnectionQrCodeConsume {
       await this.redisQueueService.markProcessed(data);
 
       await this.ackAndDelete(message);
-    } catch {}
+      void this.connectionLifecycleDebugService.log(
+        'baileys.qr_stream.completed',
+        {
+          trace_id: data.debug_trace_id,
+          layer: 'baileys',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: data.worker_type_id,
+          connection_attempt_id: data.connection_attempt_id,
+          runtime_generation: data.runtime_generation,
+          stream_id: message.stream_id,
+        }
+      );
+    } catch (error) {
+      void this.connectionLifecycleDebugService.log('baileys.qr_stream.error', {
+        trace_id: data.debug_trace_id,
+        layer: 'baileys',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type_id: data.worker_type_id,
+        connection_attempt_id: data.connection_attempt_id,
+        runtime_generation: data.runtime_generation,
+        stream_id: message.stream_id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
@@ -282,6 +407,7 @@ export class WorkerConnectionQrCodeConsume {
       worker_type_id: EWorkerType.baileys,
       connection_attempt_id:
         state.connection_attempt_id || data.connection_attempt_id,
+      debug_trace_id: state.debug_trace_id ?? data.debug_trace_id,
       runtime_generation: state.runtime_generation ?? data.runtime_generation,
       qr_pending: false,
       qr_generated_at: state.qr_generated_at || new Date().toISOString(),

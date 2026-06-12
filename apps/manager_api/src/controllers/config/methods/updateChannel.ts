@@ -9,6 +9,7 @@ import {
   UpdateChannelParams,
 } from '@core/schema/config/updateChannel/request.schema';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
 
 function isLifecycleAck(value: unknown): value is IWorkerLifecycleAck {
   return (
@@ -28,14 +29,20 @@ export const updateChannel = async (
 ) => {
   const channelUpdaterUseCase = container.resolve(ChannelUpdaterUseCase);
   const { t } = request;
+  const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>
+  );
 
   try {
-    const response = await channelUpdaterUseCase.execute(t, {
+    const input = {
       channel_id: request.params.channel_id,
       name: request.body.name,
       worker_type: request.body.worker_type,
       server_id: request.body.server_id,
-    });
+    };
+    const response = debugTraceId
+      ? await channelUpdaterUseCase.execute(t, input, debugTraceId)
+      : await channelUpdaterUseCase.execute(t, input);
 
     if (response) {
       if (isLifecycleAck(response)) {

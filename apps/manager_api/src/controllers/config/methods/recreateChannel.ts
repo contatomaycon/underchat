@@ -5,6 +5,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { ChannelRecreatorUseCase } from '@core/useCases/config/ChannelRecreator.useCase';
 import { RecreateChannelRequest } from '@core/schema/config/recreateChannel/request.schema';
+import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
 
 export const recreateChannel = async (
   request: FastifyRequest<{
@@ -14,11 +15,15 @@ export const recreateChannel = async (
 ) => {
   const channelRecreatorUseCase = container.resolve(ChannelRecreatorUseCase);
   const { t } = request;
+  const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>
+  );
 
   try {
     const response = await channelRecreatorUseCase.execute(
       t,
-      request.params.channel_id
+      request.params.channel_id,
+      debugTraceId
     );
 
     if (response) {

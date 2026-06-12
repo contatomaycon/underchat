@@ -46,6 +46,9 @@ export function protoToConnectionState(
   if (proto.connection_attempt_id) {
     state.connection_attempt_id = proto.connection_attempt_id;
   }
+  if (proto.debug_trace_id) {
+    state.debug_trace_id = proto.debug_trace_id;
+  }
   if (proto.qr_pending === true) {
     state.qr_pending = true;
   }
@@ -127,6 +130,7 @@ export function connectionStateToProto(
     attempt: state.attempt ?? 0,
     max_attempts: state.max_attempts ?? 0,
     connection_attempt_id: state.connection_attempt_id ?? '',
+    debug_trace_id: state.debug_trace_id ?? '',
     qr_pending: state.qr_pending ?? false,
     qr_generated_at: state.qr_generated_at ?? '',
     expires_at: state.expires_at ?? '',

@@ -38,6 +38,11 @@ import { BaileysHealthCheckService } from './healthCheck.service';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import {
+  ConnectionLifecycleDebugContext,
+  ConnectionLifecycleDebugService,
+  isConnectionLifecycleDebugEnabled,
+} from '@core/services/connectionLifecycleDebug.service';
 
 function readBoundedIntEnv(
   key: string,
@@ -377,6 +382,7 @@ export class BaileysConnectionService {
     EBaileysConnectionType.qrcode;
   private phoneConnection?: string = undefined;
   private connectionAttemptId?: string = undefined;
+  private debugTraceId?: string = undefined;
   private connectionAttemptStartedAtMs = 0;
 
   private connecting = false;
@@ -402,9 +408,20 @@ export class BaileysConnectionService {
     @inject(BaileysIncomingMessageService)
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
     @inject(BaileysHealthCheckService)
-    private readonly healthCheckService: BaileysHealthCheckService
+    private readonly healthCheckService: BaileysHealthCheckService,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {
     this.configureHealthCheck();
+  }
+
+  private logDebug(
+    event: string,
+    context: ConnectionLifecycleDebugContext
+  ): void {
+    void this.connectionLifecycleDebugService.log(event, context);
   }
 
   private configureHealthCheck(): void {
@@ -502,6 +519,7 @@ export class BaileysConnectionService {
         requested_by_user: false,
         type: this.typeConnection,
         phone_connection: this.phoneConnection,
+        debug_trace_id: this.debugTraceId,
       }).catch(() => {
         this.saveLogWppConnection({
           worker_id: getWorker(),
@@ -538,6 +556,7 @@ export class BaileysConnectionService {
       max_attempts: this.maxRetries,
       seconds_until_next_attempt: Math.ceil(delayMs / 1000),
       connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
     this.publishSub(retryPayload, true);
   }
@@ -558,6 +577,7 @@ export class BaileysConnectionService {
         account_id: getAccount(),
         code: ECodeMessage.awaitConnection,
         connection_attempt_id: this.connectionAttemptId,
+        debug_trace_id: this.debugTraceId,
       },
       true
     );
@@ -571,6 +591,8 @@ export class BaileysConnectionService {
       is_new_login: true,
       code: ECodeMessage.pairingInProgress,
       worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
 
     this.publishSub(payload, true);
@@ -586,6 +608,8 @@ export class BaileysConnectionService {
         account_id: getAccount(),
         code: ECodeMessage.logoutInProgress,
         disconnected_user: true,
+        connection_attempt_id: this.connectionAttemptId,
+        debug_trace_id: this.debugTraceId,
       },
       true
     );
@@ -681,7 +705,27 @@ export class BaileysConnectionService {
       requested_by_user: requestedByUser = false,
       from_disconnect_restart: fromDisconnectRestart = false,
       connection_attempt_id: connectionAttemptId,
+      debug_trace_id: debugTraceId,
     } = input;
+
+    this.debugTraceId = debugTraceId ?? this.debugTraceId;
+    this.logDebug('baileys.provider.connect_start', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      requested_by_user: requestedByUser,
+      force_new: forceNew,
+      allow_restore: allowRestore,
+      from_disconnect_restart: fromDisconnectRestart,
+      has_session: this.hasSession(),
+      connected: this.connected,
+      connecting: this.connecting,
+    });
 
     if (typeConnection === EBaileysConnectionType.phone) {
       throw new Error('Phone connection is disabled. Use QR Code.');
@@ -783,7 +827,28 @@ export class BaileysConnectionService {
     let socket: WASocket;
     try {
       ({ socket } = await this.createSocket());
+      this.logDebug('baileys.provider.socket_created', {
+        trace_id: this.debugTraceId,
+        layer: 'baileys',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.baileys,
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+      });
     } catch (error) {
+      this.logDebug('baileys.provider.socket_create_error', {
+        trace_id: this.debugTraceId,
+        layer: 'baileys',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.baileys,
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+        reason: this.errorMessage(error),
+      });
       return this.handleSocketCreateFailure(error);
     }
 
@@ -804,7 +869,9 @@ export class BaileysConnectionService {
       disconnected_user: disconnectedUser = false,
       preserve_session: preserveSession = true,
       remove_session: removeSession = false,
+      debug_trace_id: debugTraceId,
     } = input;
+    this.debugTraceId = debugTraceId ?? this.debugTraceId;
     const shouldRemoveSession = removeSession || !preserveSession;
 
     this.initialConnection = initialConnection;
@@ -866,6 +933,7 @@ export class BaileysConnectionService {
   reconnect(input: IBaileysConnection): void {
     const { initial_connection: initialConnection = true } = input;
     this.initialConnection = initialConnection;
+    this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
 
     if (
       initialConnection &&
@@ -879,6 +947,7 @@ export class BaileysConnectionService {
 
     this.connect({
       initial_connection: initialConnection,
+      debug_trace_id: this.debugTraceId,
     }).catch(() => {
       this.saveLogWppConnection({
         worker_id: getWorker(),
@@ -1177,6 +1246,21 @@ export class BaileysConnectionService {
         ? Date.now() - this.connectionAttemptStartedAtMs
         : undefined;
 
+    this.logDebug('baileys.provider.qr_event', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      qrcode: qr,
+      attempt: this.qrGenerationCount,
+      max_attempts: this.maxQrGenerations,
+      time_to_first_qr_ms: timeToFirstQrMs,
+    });
+
     await this.printQrInConsole(qr);
     let img: string;
     try {
@@ -1185,6 +1269,19 @@ export class BaileysConnectionService {
         QR_DATA_URL_GENERATION_TIMEOUT_MS,
         'qr_dataurl_generation_timeout'
       );
+      this.logDebug('baileys.provider.qr_dataurl_generated', {
+        trace_id: this.debugTraceId,
+        layer: 'baileys',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.baileys,
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+        qrcode: img,
+        duration_ms: Date.now() - Date.parse(qrGeneratedAt),
+        time_to_first_qr_ms: timeToFirstQrMs,
+      });
     } catch (error) {
       const errorMessage = this.errorMessage(error);
       try {
@@ -1196,6 +1293,19 @@ export class BaileysConnectionService {
           error: errorMessage,
           time_to_first_qr_ms: timeToFirstQrMs,
           worker_status_id: EWorkerStatus.disponible,
+          debug_trace_id: this.debugTraceId,
+        });
+        this.logDebug('baileys.provider.qr_dataurl_failed', {
+          trace_id: this.debugTraceId,
+          layer: 'baileys',
+          worker_id: getWorker(),
+          account_id: getAccount(),
+          worker_type_id: EWorkerType.baileys,
+          connection_attempt_id: this.connectionAttemptId,
+          status: this.status,
+          code: this.code,
+          reason: errorMessage,
+          time_to_first_qr_ms: timeToFirstQrMs,
         });
         this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(
@@ -1221,6 +1331,7 @@ export class BaileysConnectionService {
       max_attempts: this.maxQrGenerations,
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
       qr_generated_at: qrGeneratedAt,
       time_to_first_qr_ms: timeToFirstQrMs,
     };
@@ -1246,7 +1357,7 @@ export class BaileysConnectionService {
   }
 
   private async printQrInConsole(qr: string): Promise<void> {
-    if (!SHOULD_PRINT_QR_IN_TERMINAL) {
+    if (!SHOULD_PRINT_QR_IN_TERMINAL || isConnectionLifecycleDebugEnabled()) {
       return;
     }
 
@@ -1286,6 +1397,8 @@ export class BaileysConnectionService {
       code: this.code,
       phone: getPhoneNumber(this.socket?.user?.id),
       worker_status_id: EWorkerStatus.online,
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
 
     this.publishSub(payload);
@@ -1675,6 +1788,22 @@ export class BaileysConnectionService {
 
   private publishSub(payload: IBaileysConnectionState, force = false): void {
     const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
+    this.logDebug('baileys.provider.centrifugo_publish', {
+      trace_id: payloadWithConnectionMetadata.debug_trace_id,
+      layer: 'baileys',
+      worker_id: payloadWithConnectionMetadata.worker_id,
+      account_id: payloadWithConnectionMetadata.account_id,
+      worker_type_id: payloadWithConnectionMetadata.worker_type_id,
+      connection_attempt_id:
+        payloadWithConnectionMetadata.connection_attempt_id,
+      runtime_generation: payloadWithConnectionMetadata.runtime_generation,
+      status: payloadWithConnectionMetadata.status,
+      code: payloadWithConnectionMetadata.code,
+      reason: payloadWithConnectionMetadata.reason,
+      qrcode: payloadWithConnectionMetadata.qrcode,
+      pairing_code: payloadWithConnectionMetadata.pairing_code,
+      force,
+    });
     if (!this.initialConnection && !force) {
       return;
     }
@@ -1707,6 +1836,21 @@ export class BaileysConnectionService {
   ): Promise<void> {
     const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     try {
+      this.logDebug('baileys.provider.notify_status', {
+        trace_id: payloadWithConnectionMetadata.debug_trace_id,
+        layer: 'baileys',
+        worker_id: payloadWithConnectionMetadata.worker_id,
+        account_id: payloadWithConnectionMetadata.account_id,
+        worker_type_id: payloadWithConnectionMetadata.worker_type_id,
+        connection_attempt_id:
+          payloadWithConnectionMetadata.connection_attempt_id,
+        runtime_generation: payloadWithConnectionMetadata.runtime_generation,
+        status: payloadWithConnectionMetadata.status,
+        code: payloadWithConnectionMetadata.code,
+        reason: context,
+        qrcode: payloadWithConnectionMetadata.qrcode,
+        pairing_code: payloadWithConnectionMetadata.pairing_code,
+      });
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         payloadWithConnectionMetadata
       );
@@ -1906,6 +2050,7 @@ export class BaileysConnectionService {
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
       ...extras,
     };
     if (qr && qrGeneratedAt) {
@@ -1923,9 +2068,11 @@ export class BaileysConnectionService {
   ): IBaileysConnectionState {
     const connectionAttemptId =
       payload.connection_attempt_id ?? this.connectionAttemptId;
+    const debugTraceId = payload.debug_trace_id ?? this.debugTraceId;
     if (
       payload.connection_attempt_id === connectionAttemptId &&
-      payload.worker_type_id === EWorkerType.baileys
+      payload.worker_type_id === EWorkerType.baileys &&
+      payload.debug_trace_id === debugTraceId
     ) {
       return payload;
     }
@@ -1934,6 +2081,7 @@ export class BaileysConnectionService {
       ...payload,
       worker_type_id: EWorkerType.baileys,
       connection_attempt_id: connectionAttemptId,
+      debug_trace_id: debugTraceId,
     };
   }
 

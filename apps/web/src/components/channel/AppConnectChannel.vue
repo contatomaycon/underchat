@@ -25,6 +25,11 @@ import {
   type WorkerConnectionModalState,
 } from '@core/common/functions/normalizeWorkerConnectionModalState';
 import { reduceWorkerConnectionState } from '@core/common/functions/reduceWorkerConnectionState';
+import {
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+  logConnectionLifecycleDebug,
+} from '@/@webcore/utils/connectionLifecycleDebug';
 
 const channelStore = useChannelsStore();
 
@@ -35,6 +40,7 @@ const props = defineProps<{
   accountId: string | null;
   initialStatusId?: string | null;
   initialPhone?: string | null;
+  debugTraceId?: string | null;
 }>();
 
 const emit = defineEmits<(e: 'update:modelValue', v: boolean) => void>();
@@ -48,6 +54,9 @@ const channelId = toRef(props, 'channelId');
 const channelType = toRef(props, 'channelType');
 const accountId = toRef(props, 'accountId');
 const activeWorkerTypeId = shallowRef<string | null>(props.channelType ?? null);
+const activeDebugTraceId = shallowRef<string | undefined>(
+  props.debugTraceId ?? undefined
+);
 const workerConnectionChannel = computed(() =>
   accountId.value ? workerCentrifugoQueue(accountId.value) : ''
 );
@@ -110,6 +119,7 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   max_attempts: qrMaxAttempts.value || undefined,
   phone: phoneNumber.value ?? undefined,
   disconnected_user: disconnectedByUser.value,
+  debug_trace_id: activeDebugTraceId.value,
 }));
 
 const modalState = computed<WorkerConnectionModalState>(() =>
@@ -334,6 +344,19 @@ function resetQrAttempts() {
   qrMaxAttempts.value = 0;
 }
 
+function ensureDebugTraceId(prefix = 'web_connect_modal'): string | undefined {
+  if (activeDebugTraceId.value) {
+    return activeDebugTraceId.value;
+  }
+
+  if (!isConnectionLifecycleDebugEnabled()) {
+    return undefined;
+  }
+
+  activeDebugTraceId.value = createConnectionLifecycleDebugTraceId(prefix);
+  return activeDebugTraceId.value;
+}
+
 function hasExceededQrAttempts(data: Partial<IBaileysConnectionState>) {
   return (
     typeof data.attempt === 'number' &&
@@ -499,14 +522,40 @@ async function recoverQrFromRecentHistory(reason: string): Promise<number> {
   }
 
   try {
+    logConnectionLifecycleDebug('web.qr_history_recovery.start', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value ?? undefined,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: connectionAttemptId.value,
+      reason,
+    });
     const processed = await fetchRecentHistoryAndProcess(
       workerConnectionChannel.value,
       handleWorkerConnectionMessage,
       QR_HISTORY_RECOVERY_LIMIT
     );
+    logConnectionLifecycleDebug('web.qr_history_recovery.done', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value ?? undefined,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: connectionAttemptId.value,
+      reason,
+      processed,
+    });
 
     return processed;
   } catch (error) {
+    logConnectionLifecycleDebug('web.qr_history_recovery.error', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value ?? undefined,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: connectionAttemptId.value,
+      reason,
+      error,
+    });
     return 0;
   }
 }
@@ -520,8 +569,17 @@ async function recoverQrFromCachedRequest(reason: string): Promise<boolean> {
   const startedAt = Date.now();
 
   try {
+    logConnectionLifecycleDebug('web.qr_cache_recovery.request', {
+      trace_id: ensureDebugTraceId('web_qr_cache_recovery'),
+      layer: 'web',
+      worker_id: channelId.value,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: currentConnectionAttemptId,
+      reason,
+    });
     const state = await channelStore.requestConnectionQrCode(channelId.value, {
       silent: true,
+      debugTraceId: activeDebugTraceId.value,
     });
 
     if (state) {
@@ -532,8 +590,35 @@ async function recoverQrFromCachedRequest(reason: string): Promise<boolean> {
       scheduleQrHistoryRecovery('cache_recovery_pending');
     }
 
+    logConnectionLifecycleDebug('web.qr_cache_recovery.response', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id:
+        state?.connection_attempt_id ?? currentConnectionAttemptId,
+      runtime_generation: state?.runtime_generation,
+      status: state?.status,
+      code: state?.code,
+      reason: state?.reason ?? reason,
+      duration_ms: Date.now() - startedAt,
+      qrcode: state?.qrcode,
+      pairing_code: state?.pairing_code,
+      qr_pending: state?.qr_pending === true,
+    });
+
     return Boolean(qrcode.value);
   } catch (error) {
+    logConnectionLifecycleDebug('web.qr_cache_recovery.error', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: currentConnectionAttemptId,
+      reason,
+      duration_ms: Date.now() - startedAt,
+      error,
+    });
     return false;
   }
 }
@@ -551,6 +636,14 @@ function scheduleQrHistoryRecovery(reason = 'pending_ack') {
 
   clearQrHistoryRecovery();
   qrHistoryRecoveryAttemptId = attemptId;
+  logConnectionLifecycleDebug('web.qr_history_recovery.scheduled', {
+    trace_id: activeDebugTraceId.value,
+    layer: 'web',
+    worker_id: channelId.value ?? undefined,
+    account_id: accountId.value ?? undefined,
+    connection_attempt_id: attemptId,
+    reason,
+  });
 
   for (const delayMs of QR_HISTORY_RECOVERY_DELAYS_MS) {
     const timeoutId = window.setTimeout(() => {
@@ -677,13 +770,26 @@ async function requestQrCodeIfReady(
   }
 
   isRequestingQr.value = true;
+  const debugTraceId = ensureDebugTraceId('web_qr_request_modal');
+  logConnectionLifecycleDebug('web.qr_request_modal.start', {
+    trace_id: debugTraceId,
+    layer: 'web',
+    worker_id: channelId.value,
+    account_id: accountId.value ?? undefined,
+    worker_type_id: activeWorkerTypeId.value ?? channelType.value ?? undefined,
+    force: options.force === true,
+    preserve_qr: options.preserveQr === true,
+    silent: options.silent === true,
+  });
   prepareConnectionStart({ preserveQr: options.preserveQr });
 
   try {
     const state = await channelStore.requestConnectionQrCode(channelId.value, {
       silent: options.silent,
+      debugTraceId,
     });
     if (state) {
+      activeDebugTraceId.value = state.debug_trace_id ?? debugTraceId;
       applyDirectConnectionResponse(state);
 
       if (!qrcode.value && state.qr_pending === true) {
@@ -691,6 +797,16 @@ async function requestQrCodeIfReady(
       }
     }
   } finally {
+    logConnectionLifecycleDebug('web.qr_request_modal.finish', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: connectionAttemptId.value,
+      runtime_generation: connectionRuntimeGeneration.value,
+      has_qr: Boolean(qrcode.value),
+      qr_pending: qrPending.value,
+    });
     isRequestingQr.value = false;
   }
 }
@@ -720,13 +836,29 @@ async function recreateChannelWithFullCleanup() {
   clearConnectedStateDelay();
   pairingStartedAt.value = null;
 
-  const reseted = await channelStore.resetConnectionChannel(channelId.value);
+  const debugTraceId = ensureDebugTraceId('web_reset_recreate_modal');
+  logConnectionLifecycleDebug('web.connection_reset.submit', {
+    trace_id: debugTraceId,
+    layer: 'web',
+    worker_id: channelId.value,
+    account_id: accountId.value ?? undefined,
+  });
+
+  const reseted = await channelStore.resetConnectionChannel(channelId.value, {
+    debugTraceId,
+  });
 
   if (!reseted) {
     statusConnection.value = EBaileysConnectionStatus.disconnected;
     statusCode.value = ECodeMessage.connectionClosed;
     return;
   }
+  logConnectionLifecycleDebug('web.connection_reset.accepted', {
+    trace_id: activeDebugTraceId.value,
+    layer: 'web',
+    worker_id: channelId.value,
+    account_id: accountId.value ?? undefined,
+  });
 
   isResetting.value = true;
   statusConnection.value = EBaileysConnectionStatus.connecting;
@@ -798,8 +930,24 @@ function applyReducedConnectionState(
   }
 
   if (shouldIgnoreConnectionPayloadIdentity(data, options)) {
+    logConnectionLifecycleDebug('web.connection_state.identity_ignored', {
+      trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      status: data.status,
+      code: data.code,
+      reason: data.reason,
+      qrcode: data.qrcode,
+      pairing_code: data.pairing_code,
+    });
     return;
   }
+
+  activeDebugTraceId.value = data.debug_trace_id ?? activeDebugTraceId.value;
 
   if (data.worker_type_id) {
     activeWorkerTypeId.value = data.worker_type_id;
@@ -815,6 +963,18 @@ function applyReducedConnectionState(
 
   const reduced = reduceWorkerConnectionState(connectionState.value, data);
   if (reduced.ignored) {
+    logConnectionLifecycleDebug('web.connection_state.reduced_ignored', {
+      trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      status: data.status,
+      code: data.code,
+      reason: data.reason,
+    });
     return;
   }
 
@@ -905,6 +1065,23 @@ function applyReducedConnectionState(
     secondsNextAttempt.value = next.seconds_until_next_attempt;
     startNextAttemptCountdown();
   }
+
+  logConnectionLifecycleDebug('web.connection_state.applied', {
+    trace_id: activeDebugTraceId.value,
+    layer: 'web',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    connection_attempt_id: connectionAttemptId.value,
+    runtime_generation: connectionRuntimeGeneration.value,
+    status: statusConnection.value,
+    code: statusCode.value,
+    reason: data.reason,
+    qrcode: data.qrcode,
+    pairing_code: data.pairing_code,
+    qr_pending: qrPending.value,
+    modal_state: modalState.value,
+  });
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
@@ -950,6 +1127,23 @@ function handleWorkerConnectionMessage(
   if (!channelId.value || data.worker_id !== channelId.value) {
     return;
   }
+
+  activeDebugTraceId.value = data.debug_trace_id ?? activeDebugTraceId.value;
+  logConnectionLifecycleDebug('web.centrifugo.connection_message', {
+    trace_id: activeDebugTraceId.value,
+    layer: 'web',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    connection_attempt_id: data.connection_attempt_id,
+    runtime_generation: data.runtime_generation,
+    status: data.status,
+    code: data.code,
+    reason: data.reason,
+    qrcode: data.qrcode,
+    pairing_code: data.pairing_code,
+    offset: ctx?.offset,
+  });
 
   if (shouldIgnoreConnectionPayloadIdentity(data)) {
     return;
@@ -1004,6 +1198,15 @@ onMounted(async () => {
     return;
   }
 
+  ensureDebugTraceId('web_connection_modal_mount');
+  logConnectionLifecycleDebug('web.connection_modal.mounted', {
+    trace_id: activeDebugTraceId.value,
+    layer: 'web',
+    worker_id: channelId.value,
+    account_id: accountId.value,
+    worker_type_id: activeWorkerTypeId.value ?? channelType.value ?? undefined,
+    status: props.initialStatusId ?? undefined,
+  });
   prepareInitialModalState();
   await loadExternalConnectionLink();
 
@@ -1023,14 +1226,38 @@ onMounted(async () => {
 
 watch(isVisible, (visible) => {
   if (!visible) {
+    logConnectionLifecycleDebug('web.connection_modal.closed', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: channelId.value ?? undefined,
+      account_id: accountId.value ?? undefined,
+      connection_attempt_id: connectionAttemptId.value,
+      runtime_generation: connectionRuntimeGeneration.value,
+      status: statusConnection.value,
+      code: statusCode.value,
+    });
     clearQrHistoryRecovery();
     return;
   }
 
+  ensureDebugTraceId('web_connection_modal_visible');
+  logConnectionLifecycleDebug('web.connection_modal.visible', {
+    trace_id: activeDebugTraceId.value,
+    layer: 'web',
+    worker_id: channelId.value ?? undefined,
+    account_id: accountId.value ?? undefined,
+  });
   void loadExternalConnectionLink();
   void recoverQrFromRecentHistory('dialog_visible');
   void requestQrCodeIfReady({ silent: true });
 });
+
+watch(
+  () => props.debugTraceId,
+  (debugTraceId) => {
+    activeDebugTraceId.value = debugTraceId ?? activeDebugTraceId.value;
+  }
+);
 
 watch(
   () => props.channelType,

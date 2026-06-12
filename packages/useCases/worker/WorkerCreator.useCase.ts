@@ -22,6 +22,11 @@ import { WorkerLifecycleQueueService } from '@core/services/workerLifecycleQueue
 import { IWorkerLifecycleQueueMessage } from '@core/common/interfaces/IWorkerLifecycleQueueMessage';
 import { IWorkerWarmPool } from '@core/common/interfaces/IWorkerWarmPool';
 import { getWorkerRecreateAvailableAt } from '@core/common/functions/workerRecreateCooldown';
+import {
+  ConnectionLifecycleDebugService,
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+} from '@core/services/connectionLifecycleDebug.service';
 
 @injectable()
 export class WorkerCreatorUseCase {
@@ -41,7 +46,11 @@ export class WorkerCreatorUseCase {
     @inject(WorkerLifecycleQueueService)
     private readonly workerLifecycleQueueService: WorkerLifecycleQueueService,
     @inject(WorkerWarmPoolRepository)
-    private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never
+    private readonly workerWarmPoolRepository: WorkerWarmPoolRepository = undefined as never,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {}
 
   private async validate(
@@ -154,6 +163,7 @@ export class WorkerCreatorUseCase {
       worker_status_id: input.payload.worker_status_id,
       source: 'worker_create',
       warm_pool_id: input.warmPoolId,
+      debug_trace_id: input.payload.debug_trace_id,
       requested_at: currentTime(),
     };
   }
@@ -173,14 +183,44 @@ export class WorkerCreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
-    input: CreateWorkerRequest
+    input: CreateWorkerRequest,
+    debugTraceIdInput?: string
   ): Promise<ICreateWorkerResponse> {
+    const debugTraceId =
+      debugTraceIdInput ??
+      (isConnectionLifecycleDebugEnabled()
+        ? createConnectionLifecycleDebugTraceId('worker_create')
+        : undefined);
     const workerId = uuidv7();
     const lifecycleOperationId = uuidv7();
     const requestedWorkerType =
       (input.worker_type as EWorkerType) ?? EWorkerType.baileys;
 
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_create.start',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: requestedWorkerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        has_server_id: Boolean(input.server_id),
+      }
+    );
+
     await this.validate(t, accountId);
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_create.validated',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: requestedWorkerType,
+        lifecycle_operation_id: lifecycleOperationId,
+      }
+    );
 
     let serverId: string;
 
@@ -232,6 +272,18 @@ export class WorkerCreatorUseCase {
     if (!isCreated) {
       throw new Error(t('worker_creation_failed'));
     }
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_create.db_created',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        server_id: serverId,
+      }
+    );
 
     const lifecycleMarked = await this.workerService.updateWorkerById(
       accountId,
@@ -244,6 +296,17 @@ export class WorkerCreatorUseCase {
     if (!lifecycleMarked) {
       throw new Error(t('worker_creation_failed'));
     }
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_create.lifecycle_marked',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerType,
+        lifecycle_operation_id: lifecycleOperationId,
+      }
+    );
 
     await Promise.all([
       this.workerConfigService.ensureTypingSimulationDefault(workerId),
@@ -260,6 +323,7 @@ export class WorkerCreatorUseCase {
       name: input.name.trim(),
       lifecycle_operation_id: lifecycleOperationId,
       recreate_available_at: recreateAvailableAt,
+      debug_trace_id: debugTraceId,
     };
 
     await this.centrifugoService.publishSub(
@@ -278,6 +342,20 @@ export class WorkerCreatorUseCase {
       operationId: lifecycleOperationId,
       warmPoolId: warmReserved?.warm_pool_id,
     });
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_create.lifecycle_enqueue',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        action: lifecycleMessage.action,
+        server_id: serverId,
+        warm_pool_id: warmReserved?.warm_pool_id,
+      }
+    );
     await this.enqueueLifecycleOrMarkError(payloadCreate, lifecycleMessage);
 
     const response: ICreateWorkerResponse = {
@@ -295,7 +373,22 @@ export class WorkerCreatorUseCase {
       warm_pool_claimed: Boolean(warmReserved),
       warm_pool_id: warmReserved?.warm_pool_id,
       fallback_created: !warmReserved && warmSettings.warmup_enabled,
+      debug_trace_id: debugTraceId,
     };
+
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_create.response',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerType,
+        lifecycle_operation_id: lifecycleOperationId,
+        status: response.status,
+        reason: response.reason,
+      }
+    );
 
     return response;
   }

@@ -29,6 +29,11 @@ import { WwebjsIncomingMessageService } from './incoming.service';
 import { WwebjsHealthCheckService } from './healthCheck.service';
 import { IChatTyping } from '@core/common/interfaces/IChatTyping';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import {
+  ConnectionLifecycleDebugContext,
+  ConnectionLifecycleDebugService,
+  isConnectionLifecycleDebugEnabled,
+} from '@core/services/connectionLifecycleDebug.service';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const RETRY_DELAY = 60_000;
@@ -243,6 +248,7 @@ export class WwebjsConnectionService {
     EBaileysConnectionType.qrcode;
   private phoneConnection: string | undefined;
   private connectionAttemptId: string | undefined;
+  private debugTraceId: string | undefined;
   private connectionAttemptStartedAtMs = 0;
 
   constructor(
@@ -255,9 +261,20 @@ export class WwebjsConnectionService {
     @inject(WwebjsIncomingMessageService)
     private readonly incomingMessageService: WwebjsIncomingMessageService,
     @inject(WwebjsHealthCheckService)
-    private readonly healthCheckService: WwebjsHealthCheckService
+    private readonly healthCheckService: WwebjsHealthCheckService,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {
     this.configureHealthCheck();
+  }
+
+  private logDebug(
+    event: string,
+    context: ConnectionLifecycleDebugContext
+  ): void {
+    void this.connectionLifecycleDebugService.log(event, context);
   }
 
   private configureHealthCheck(): void {
@@ -340,6 +357,7 @@ export class WwebjsConnectionService {
       requested_by_user: requestedByUser = false,
       from_disconnect_restart: fromDisconnectRestart = false,
       connection_attempt_id: connectionAttemptId,
+      debug_trace_id: debugTraceId,
     } = input;
     const normalizedPhoneConnection =
       this.normalizePhoneConnection(phoneConnection);
@@ -351,6 +369,25 @@ export class WwebjsConnectionService {
     if (typeConnection === EBaileysConnectionType.phone) {
       throw new Error('Phone connection is disabled. Use QR Code.');
     }
+
+    this.debugTraceId = debugTraceId ?? this.debugTraceId;
+    this.logDebug('wwebjs.provider.connect_start', {
+      trace_id: this.debugTraceId,
+      layer: 'wwebjs',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.wwebjs,
+      connection_attempt_id: connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      requested_by_user: requestedByUser,
+      force_new: forceNew,
+      allow_restore: allowRestore,
+      from_disconnect_restart: fromDisconnectRestart,
+      has_session: this.hasSession(),
+      connected: this.connected,
+      connecting: this.connecting,
+    });
 
     if (requestedByUser) {
       this.userRequestedDisconnect = false;
@@ -427,7 +464,9 @@ export class WwebjsConnectionService {
       disconnected_user: disconnectedUser = false,
       preserve_session: preserveSession = true,
       remove_session: removeSession = false,
+      debug_trace_id: debugTraceId,
     } = input;
+    this.debugTraceId = debugTraceId ?? this.debugTraceId;
     const shouldRemoveSession = removeSession || !preserveSession;
 
     this.initialConnection = initialConnection;
@@ -472,6 +511,8 @@ export class WwebjsConnectionService {
       code: this.code,
       disconnected_user: disconnectedUser,
       worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
 
     this.publishSub(payload, true);
@@ -489,6 +530,7 @@ export class WwebjsConnectionService {
   reconnect(input: IBaileysConnection): void {
     const { initial_connection: initialConnection = true } = input;
     this.initialConnection = initialConnection;
+    this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
 
     if (
       initialConnection &&
@@ -502,6 +544,7 @@ export class WwebjsConnectionService {
 
     this.connect({
       initial_connection: initialConnection,
+      debug_trace_id: input.debug_trace_id ?? this.debugTraceId,
     }).catch(() => {
       this.saveLogWppConnection({
         worker_id: getWorker(),
@@ -550,6 +593,17 @@ export class WwebjsConnectionService {
     this.connecting = true;
     this.connectionAttemptStartedAtMs = Date.now();
     this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+    this.logDebug('wwebjs.provider.connection_starting', {
+      trace_id: this.debugTraceId,
+      layer: 'wwebjs',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.wwebjs,
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      from_disconnect_restart: fromDisconnectRestart,
+    });
     this.publishConnectionStarting();
     this.activeConnectionAttemptId = attemptId;
     if (!fromDisconnectRestart) {
@@ -780,6 +834,7 @@ export class WwebjsConnectionService {
       max_attempts: MAX_RETRIES,
       seconds_until_next_attempt: Math.ceil(delayMs / 1000),
       connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
 
     this.publishSub(retryPayload, true);
@@ -801,6 +856,7 @@ export class WwebjsConnectionService {
         account_id: getAccount(),
         code: ECodeMessage.awaitConnection,
         connection_attempt_id: this.connectionAttemptId,
+        debug_trace_id: this.debugTraceId,
       },
       true
     );
@@ -815,6 +871,8 @@ export class WwebjsConnectionService {
         account_id: getAccount(),
         code: ECodeMessage.logoutInProgress,
         disconnected_user: true,
+        connection_attempt_id: this.connectionAttemptId,
+        debug_trace_id: this.debugTraceId,
       },
       true
     );
@@ -857,6 +915,7 @@ export class WwebjsConnectionService {
         phone_connection: this.phoneConnection,
         requested_by_user: false,
         from_disconnect_restart: true,
+        debug_trace_id: this.debugTraceId,
       }).catch(() => {
         this.scheduleNextReconnectAttempt(forceNew);
       });
@@ -868,7 +927,7 @@ export class WwebjsConnectionService {
   }
 
   private async printQrInConsole(qr: string): Promise<void> {
-    if (!SHOULD_PRINT_QR_IN_TERMINAL) {
+    if (!SHOULD_PRINT_QR_IN_TERMINAL || isConnectionLifecycleDebugEnabled()) {
       return;
     }
 
@@ -1164,6 +1223,8 @@ export class WwebjsConnectionService {
           worker_id: getWorker(),
           account_id: getAccount(),
           worker_status_id: EWorkerStatus.disponible,
+          connection_attempt_id: this.connectionAttemptId,
+          debug_trace_id: this.debugTraceId,
         };
 
         this.publishSub(payload, true);
@@ -1204,6 +1265,21 @@ export class WwebjsConnectionService {
             ? Date.now() - this.connectionAttemptStartedAtMs
             : undefined;
 
+        this.logDebug('wwebjs.provider.qr_event', {
+          trace_id: this.debugTraceId,
+          layer: 'wwebjs',
+          worker_id: getWorker(),
+          account_id: getAccount(),
+          worker_type_id: EWorkerType.wwebjs,
+          connection_attempt_id: this.connectionAttemptId,
+          status: this.status,
+          code: this.code,
+          qrcode: qr,
+          attempt: this.qrGenerationCount,
+          max_attempts: MAX_QR_GENERATIONS,
+          time_to_first_qr_ms: timeToFirstQrMs,
+        });
+
         await this.printQrInConsole(qr);
         let img: string;
         try {
@@ -1212,6 +1288,19 @@ export class WwebjsConnectionService {
             QR_DATA_URL_GENERATION_TIMEOUT_MS,
             `QR data URL generation timeout after ${QR_DATA_URL_GENERATION_TIMEOUT_MS}ms`
           );
+          this.logDebug('wwebjs.provider.qr_dataurl_generated', {
+            trace_id: this.debugTraceId,
+            layer: 'wwebjs',
+            worker_id: getWorker(),
+            account_id: getAccount(),
+            worker_type_id: EWorkerType.wwebjs,
+            connection_attempt_id: this.connectionAttemptId,
+            status: this.status,
+            code: this.code,
+            qrcode: img,
+            duration_ms: Date.now() - Date.parse(qrGeneratedAt),
+            time_to_first_qr_ms: timeToFirstQrMs,
+          });
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : String(error);
@@ -1224,6 +1313,19 @@ export class WwebjsConnectionService {
               error: errorMessage,
               time_to_first_qr_ms: timeToFirstQrMs,
               worker_status_id: EWorkerStatus.disponible,
+              debug_trace_id: this.debugTraceId,
+            });
+            this.logDebug('wwebjs.provider.qr_dataurl_failed', {
+              trace_id: this.debugTraceId,
+              layer: 'wwebjs',
+              worker_id: getWorker(),
+              account_id: getAccount(),
+              worker_type_id: EWorkerType.wwebjs,
+              connection_attempt_id: this.connectionAttemptId,
+              status: this.status,
+              code: this.code,
+              reason: errorMessage,
+              time_to_first_qr_ms: timeToFirstQrMs,
             });
             this.publishSub(payload, true);
             void this.notifyWorkerStatusSafely(
@@ -1249,6 +1351,7 @@ export class WwebjsConnectionService {
           max_attempts: MAX_QR_GENERATIONS,
           worker_status_id: EWorkerStatus.disponible,
           connection_attempt_id: this.connectionAttemptId,
+          debug_trace_id: this.debugTraceId,
           qr_generated_at: qrGeneratedAt,
           time_to_first_qr_ms: timeToFirstQrMs,
         };
@@ -1300,6 +1403,8 @@ export class WwebjsConnectionService {
           account_id: getAccount(),
           is_new_login: true,
           worker_status_id: EWorkerStatus.disponible,
+          connection_attempt_id: this.connectionAttemptId,
+          debug_trace_id: this.debugTraceId,
         };
 
         this.publishSub(payload, true);
@@ -1343,6 +1448,8 @@ export class WwebjsConnectionService {
           account_id: getAccount(),
           code: statusCode,
           worker_status_id: workerStatusId,
+          connection_attempt_id: this.connectionAttemptId,
+          debug_trace_id: this.debugTraceId,
         };
 
         this.publishSub(payload, true);
@@ -1369,6 +1476,8 @@ export class WwebjsConnectionService {
             disconnected_user: true,
             account_id: getAccount(),
             worker_status_id: EWorkerStatus.mismatched,
+            connection_attempt_id: this.connectionAttemptId,
+            debug_trace_id: this.debugTraceId,
           };
 
           this.publishSub(logoutPayload, true);
@@ -1422,6 +1531,8 @@ export class WwebjsConnectionService {
           account_id: getAccount(),
           code: this.code,
           worker_status_id: EWorkerStatus.mismatched,
+          connection_attempt_id: this.connectionAttemptId,
+          debug_trace_id: this.debugTraceId,
         };
         this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'auth_failure');
@@ -1797,6 +1908,8 @@ export class WwebjsConnectionService {
       code: this.code,
       phone,
       worker_status_id: EWorkerStatus.online,
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
 
     this.publishSub(payload, true);
@@ -2002,6 +2115,8 @@ export class WwebjsConnectionService {
       attempt: MAX_QR_GENERATIONS + 1,
       max_attempts: MAX_QR_GENERATIONS,
       worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
 
     this.publishSub(payload, true);
@@ -2133,6 +2248,7 @@ export class WwebjsConnectionService {
       qrcode: qr,
       code: this.code,
       connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
       ...extras,
     };
     if (qr && qrGeneratedAt) {
@@ -2150,9 +2266,11 @@ export class WwebjsConnectionService {
   ): IBaileysConnectionState {
     const connectionAttemptId =
       payload.connection_attempt_id ?? this.connectionAttemptId;
+    const debugTraceId = payload.debug_trace_id ?? this.debugTraceId;
     if (
       payload.connection_attempt_id === connectionAttemptId &&
-      payload.worker_type_id === EWorkerType.wwebjs
+      payload.worker_type_id === EWorkerType.wwebjs &&
+      payload.debug_trace_id === debugTraceId
     ) {
       return payload;
     }
@@ -2161,11 +2279,28 @@ export class WwebjsConnectionService {
       ...payload,
       worker_type_id: EWorkerType.wwebjs,
       connection_attempt_id: connectionAttemptId,
+      debug_trace_id: debugTraceId,
     };
   }
 
   private publishSub(payload: IBaileysConnectionState, force = false): void {
     const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
+    this.logDebug('wwebjs.provider.centrifugo_publish', {
+      trace_id: payloadWithConnectionMetadata.debug_trace_id,
+      layer: 'wwebjs',
+      worker_id: payloadWithConnectionMetadata.worker_id,
+      account_id: payloadWithConnectionMetadata.account_id,
+      worker_type_id: payloadWithConnectionMetadata.worker_type_id,
+      connection_attempt_id:
+        payloadWithConnectionMetadata.connection_attempt_id,
+      runtime_generation: payloadWithConnectionMetadata.runtime_generation,
+      status: payloadWithConnectionMetadata.status,
+      code: payloadWithConnectionMetadata.code,
+      reason: payloadWithConnectionMetadata.reason,
+      qrcode: payloadWithConnectionMetadata.qrcode,
+      pairing_code: payloadWithConnectionMetadata.pairing_code,
+      force,
+    });
     if (!this.initialConnection && !force) {
       return;
     }
@@ -2198,6 +2333,21 @@ export class WwebjsConnectionService {
   ): Promise<void> {
     const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     try {
+      this.logDebug('wwebjs.provider.notify_status', {
+        trace_id: payloadWithConnectionMetadata.debug_trace_id,
+        layer: 'wwebjs',
+        worker_id: payloadWithConnectionMetadata.worker_id,
+        account_id: payloadWithConnectionMetadata.account_id,
+        worker_type_id: payloadWithConnectionMetadata.worker_type_id,
+        connection_attempt_id:
+          payloadWithConnectionMetadata.connection_attempt_id,
+        runtime_generation: payloadWithConnectionMetadata.runtime_generation,
+        status: payloadWithConnectionMetadata.status,
+        code: payloadWithConnectionMetadata.code,
+        reason: context,
+        qrcode: payloadWithConnectionMetadata.qrcode,
+        pairing_code: payloadWithConnectionMetadata.pairing_code,
+      });
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         payloadWithConnectionMetadata
       );
@@ -2221,6 +2371,8 @@ export class WwebjsConnectionService {
       worker_id: getWorker(),
       account_id: getAccount(),
       worker_status_id: EWorkerStatus.mismatched,
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
     };
 
     this.publishSub(payload);

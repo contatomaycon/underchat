@@ -49,10 +49,50 @@ import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/extern
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import {
+  connectionLifecycleDebugHeaders,
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+  logConnectionLifecycleDebug,
+} from '@webcore/utils/connectionLifecycleDebug';
 
 type WorkerRecreateCooldownConflictResponse = IApiResponse<{
   recreate_available_at: string | null;
 }>;
+
+type ConnectionLifecycleDebugRequestOptions = {
+  debugTraceId?: string;
+};
+
+type ChannelUpdateResult = boolean | IWorkerLifecycleAck;
+
+const isWorkerLifecycleAck = (value: unknown): value is IWorkerLifecycleAck =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as { queued?: unknown }).queued === true;
+
+const buildConnectionLifecycleDebugConfig = (
+  debugTraceId: string | undefined,
+  config: AxiosRequestConfig = {}
+): AxiosRequestConfig => {
+  const headers = connectionLifecycleDebugHeaders(debugTraceId);
+  if (!headers) {
+    return config;
+  }
+
+  return {
+    ...config,
+    headers: {
+      ...((config.headers ?? {}) as Record<string, string>),
+      ...headers,
+    },
+  };
+};
+
+const createWebTraceId = (prefix: string): string | undefined =>
+  isConnectionLifecycleDebugEnabled()
+    ? createConnectionLifecycleDebugTraceId(prefix)
+    : undefined;
 
 const workerConfigForChatPendingModule: Record<
   string,
@@ -181,14 +221,25 @@ export const useChannelsStore = defineStore('channels', {
     },
 
     async addChannel(
-      payload: CreateWorkerRequest
+      payload: CreateWorkerRequest,
+      options: ConnectionLifecycleDebugRequestOptions = {}
     ): Promise<ICreateWorkerResponse | null> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_add_channel');
       try {
         this.loading = true;
 
+        logConnectionLifecycleDebug('web.channel_add.submit', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_type_id: payload.worker_type,
+          has_server_id: Boolean(payload.server_id),
+        });
+
         const response = await axios.post<IApiResponse<ICreateWorkerResponse>>(
           `/worker`,
-          payload
+          payload,
+          buildConnectionLifecycleDebugConfig(debugTraceId)
         );
 
         this.loading = false;
@@ -209,7 +260,25 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return data.data;
+        const result = data.data
+          ? {
+              ...data.data,
+              debug_trace_id: data.data.debug_trace_id ?? debugTraceId,
+            }
+          : data.data;
+
+        logConnectionLifecycleDebug('web.channel_add.response', {
+          trace_id: result?.debug_trace_id ?? debugTraceId,
+          layer: 'web',
+          worker_id: result?.worker_id,
+          account_id: result?.account_id,
+          worker_type_id: result?.worker_type_id,
+          lifecycle_operation_id: result?.operation_id,
+          status: result?.status,
+          reason: result?.reason,
+        });
+
+        return result;
       } catch (error) {
         let errorMessage = this.i18n.global.t('channel_add_error');
         if (error instanceof AxiosError) {
@@ -217,6 +286,12 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+        logConnectionLifecycleDebug('web.channel_add.error', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_type_id: payload.worker_type,
+          reason: errorMessage,
+        });
 
         this.loading = false;
 
@@ -224,13 +299,27 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async updateChannel(payload: EditWorkerRequest): Promise<boolean> {
+    async updateChannel(
+      payload: EditWorkerRequest,
+      options: ConnectionLifecycleDebugRequestOptions = {}
+    ): Promise<ChannelUpdateResult> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_edit_channel');
       try {
         this.loading = true;
+        logConnectionLifecycleDebug('web.channel_edit.submit', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: payload.worker_id,
+          worker_type_id: payload.worker_type,
+        });
 
-        const response = await axios.patch<IApiResponse<boolean>>(
+        const response = await axios.patch<
+          IApiResponse<boolean | IWorkerLifecycleAck>
+        >(
           `/worker/${payload.worker_id}/${payload.name}`,
-          { worker_type: payload.worker_type }
+          { worker_type: payload.worker_type },
+          buildConnectionLifecycleDebugConfig(debugTraceId)
         );
 
         this.loading = false;
@@ -251,7 +340,34 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
-        return true;
+        const result = isWorkerLifecycleAck(data.data)
+          ? {
+              ...data.data,
+              debug_trace_id: data.data.debug_trace_id ?? debugTraceId,
+            }
+          : true;
+
+        logConnectionLifecycleDebug('web.channel_edit.response', {
+          trace_id:
+            typeof result === 'object'
+              ? (result.debug_trace_id ?? debugTraceId)
+              : debugTraceId,
+          layer: 'web',
+          worker_id: payload.worker_id,
+          account_id:
+            typeof result === 'object' ? result.account_id : undefined,
+          worker_type_id:
+            typeof result === 'object'
+              ? result.worker_type_id
+              : payload.worker_type,
+          lifecycle_operation_id:
+            typeof result === 'object' ? result.operation_id : undefined,
+          status: typeof result === 'object' ? result.status : 'updated',
+          reason:
+            typeof result === 'object' ? result.reason : 'no_recreate_required',
+        });
+
+        return result;
       } catch (error) {
         let errorMessage = this.i18n.global.t('channel_edit_error');
         if (error instanceof AxiosError) {
@@ -259,6 +375,13 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+        logConnectionLifecycleDebug('web.channel_edit.error', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: payload.worker_id,
+          worker_type_id: payload.worker_type,
+          reason: errorMessage,
+        });
 
         this.loading = false;
 
@@ -365,16 +488,31 @@ export const useChannelsStore = defineStore('channels', {
 
     async requestConnectionQrCode(
       workerId: string,
-      options: { silent?: boolean; timeoutMs?: number } = {}
+      options: {
+        silent?: boolean;
+        timeoutMs?: number;
+        debugTraceId?: string;
+      } = {}
     ): Promise<IBaileysConnectionState | null> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_qr_request');
       try {
         if (!options.silent) {
           this.loading = true;
         }
 
-        const config: AxiosRequestConfig | undefined = options.timeoutMs
-          ? { timeout: options.timeoutMs }
-          : undefined;
+        const config = buildConnectionLifecycleDebugConfig(
+          debugTraceId,
+          options.timeoutMs ? { timeout: options.timeoutMs } : {}
+        );
+
+        logConnectionLifecycleDebug('web.qr_request.submit', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+          silent: options.silent === true,
+          timeout_ms: options.timeoutMs,
+        });
 
         const response = await axios.post<
           IApiResponse<IBaileysConnectionState>
@@ -397,7 +535,30 @@ export const useChannelsStore = defineStore('channels', {
           return null;
         }
 
-        return data.data;
+        const result = data.data
+          ? {
+              ...data.data,
+              debug_trace_id: data.data.debug_trace_id ?? debugTraceId,
+            }
+          : data.data;
+
+        logConnectionLifecycleDebug('web.qr_request.response', {
+          trace_id: result?.debug_trace_id ?? debugTraceId,
+          layer: 'web',
+          worker_id: result?.worker_id ?? workerId,
+          account_id: result?.account_id,
+          worker_type_id: result?.worker_type_id,
+          connection_attempt_id: result?.connection_attempt_id,
+          runtime_generation: result?.runtime_generation,
+          status: result?.status,
+          code: result?.code,
+          reason: result?.reason,
+          qrcode: result?.qrcode,
+          pairing_code: result?.pairing_code,
+          qr_pending: result?.qr_pending === true,
+        });
+
+        return result;
       } catch (error) {
         let errorMessage = this.i18n.global.t('worker_status_update_error');
         if (error instanceof AxiosError) {
@@ -407,6 +568,12 @@ export const useChannelsStore = defineStore('channels', {
         if (!options.silent) {
           this.showSnackbar(errorMessage, EColor.error);
         }
+        logConnectionLifecycleDebug('web.qr_request.error', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+          reason: errorMessage,
+        });
 
         if (!options.silent) {
           this.loading = false;
@@ -416,12 +583,24 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async resetConnectionChannel(workerId: string): Promise<boolean> {
+    async resetConnectionChannel(
+      workerId: string,
+      options: ConnectionLifecycleDebugRequestOptions = {}
+    ): Promise<boolean> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_reset_channel');
       try {
         this.loading = true;
+        logConnectionLifecycleDebug('web.channel_reset.submit', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+        });
 
         const response = await axios.post<IApiResponse<boolean>>(
-          `/worker/${workerId}/connection/reset`
+          `/worker/${workerId}/connection/reset`,
+          {},
+          buildConnectionLifecycleDebugConfig(debugTraceId)
         );
 
         this.loading = false;
@@ -444,6 +623,13 @@ export const useChannelsStore = defineStore('channels', {
           EColor.success
         );
 
+        logConnectionLifecycleDebug('web.channel_reset.response', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+          status: 'accepted',
+        });
+
         return true;
       } catch (error) {
         let errorMessage = this.i18n.global.t('worker_connection_reset_error');
@@ -452,6 +638,12 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+        logConnectionLifecycleDebug('web.channel_reset.error', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+          reason: errorMessage,
+        });
 
         this.loading = false;
 
@@ -582,12 +774,24 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    async recreateChannel(workerId: string): Promise<boolean> {
+    async recreateChannel(
+      workerId: string,
+      options: ConnectionLifecycleDebugRequestOptions = {}
+    ): Promise<boolean> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_recreate_channel');
       try {
         this.loading = true;
+        logConnectionLifecycleDebug('web.channel_recreate.submit', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+        });
 
         const response = await axios.patch<IApiResponse<IWorkerLifecycleAck>>(
-          `/worker/${workerId}`
+          `/worker/${workerId}`,
+          undefined,
+          buildConnectionLifecycleDebugConfig(debugTraceId)
         );
 
         this.loading = false;
@@ -615,6 +819,17 @@ export const useChannelsStore = defineStore('channels', {
             data.data.recreate_available_at ?? null
           );
         }
+
+        logConnectionLifecycleDebug('web.channel_recreate.response', {
+          trace_id: data.data?.debug_trace_id ?? debugTraceId,
+          layer: 'web',
+          worker_id: data.data?.worker_id ?? workerId,
+          account_id: data.data?.account_id,
+          worker_type_id: data.data?.worker_type_id,
+          lifecycle_operation_id: data.data?.operation_id,
+          status: data.data?.status,
+          reason: data.data?.reason,
+        });
 
         this.showSnackbar(
           this.i18n.global.t('worker_recreate_success'),
@@ -646,6 +861,12 @@ export const useChannelsStore = defineStore('channels', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+        logConnectionLifecycleDebug('web.channel_recreate.error', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+          reason: errorMessage,
+        });
 
         this.loading = false;
 

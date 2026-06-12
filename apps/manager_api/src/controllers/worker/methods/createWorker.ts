@@ -6,6 +6,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WorkerCreatorUseCase } from '@core/useCases/worker/WorkerCreator.useCase';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
+import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
 
 export const createWorker = async (
   request: FastifyRequest<{
@@ -18,6 +19,9 @@ export const createWorker = async (
 
   const canChooseServer = hasFullAccess(tokenJwtData.actions);
   const body: CreateWorkerRequest = { ...request.body };
+  const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
+    request.headers as Record<string, string | string[] | undefined>
+  );
 
   if (!canChooseServer && body.server_id) {
     delete body.server_id;
@@ -27,7 +31,8 @@ export const createWorker = async (
     const response = await workerCreatorUseCase.execute(
       t,
       tokenJwtData.account_id,
-      body
+      body,
+      debugTraceId
     );
 
     return sendResponse(reply, {

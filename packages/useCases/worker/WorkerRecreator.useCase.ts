@@ -22,6 +22,11 @@ import { currentTime } from '@core/common/functions/currentTime';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerRecreateCooldownError } from '@core/common/exceptions/WorkerRecreateCooldownError';
 import { getWorkerRecreateAvailableAt } from '@core/common/functions/workerRecreateCooldown';
+import {
+  ConnectionLifecycleDebugService,
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+} from '@core/services/connectionLifecycleDebug.service';
 
 const RECREATE_STATUS_PUBLISH_TIMEOUT_MS = Math.max(
   500,
@@ -41,7 +46,11 @@ export class WorkerRecreatorUseCase {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(WorkerLifecycleQueueService)
-    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService
+    private readonly workerLifecycleQueueService: WorkerLifecycleQueueService,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
   ) {}
 
   private async validate(
@@ -123,6 +132,7 @@ export class WorkerRecreatorUseCase {
       remove_session: input.payload.remove_session,
       remove_volume: input.payload.remove_volume,
       previous_worker_status_id: input.payload.previous_worker_status_id,
+      debug_trace_id: input.payload.debug_trace_id,
       requested_at: currentTime(),
     };
   }
@@ -185,9 +195,28 @@ export class WorkerRecreatorUseCase {
       enforce_recreate_cooldown?: boolean;
       lifecycle_operation_id?: string;
       previous_worker_status_id?: EWorkerStatus;
+      debug_trace_id?: string;
     }
   ): Promise<IWorkerLifecycleAck> {
     const lifecycleOperationId = options?.lifecycle_operation_id ?? uuidv7();
+    const debugTraceId =
+      options?.debug_trace_id ??
+      (isConnectionLifecycleDebugEnabled()
+        ? createConnectionLifecycleDebugTraceId('worker_recreate')
+        : undefined);
+
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_recreate.start',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: accountId,
+        lifecycle_operation_id: lifecycleOperationId,
+        remove_session: options?.remove_session === true,
+        remove_volume: options?.remove_volume === true,
+      }
+    );
 
     await this.validate(t, accountId);
 
@@ -208,6 +237,7 @@ export class WorkerRecreatorUseCase {
       worker_type_id: viewWorker?.type?.id as EWorkerType | undefined,
       worker_status_id: EWorkerStatus.recreating,
       lifecycle_operation_id: lifecycleOperationId,
+      debug_trace_id: debugTraceId,
       previous_worker_status_id:
         options?.previous_worker_status_id ??
         (viewWorker?.status?.id as EWorkerStatus | undefined),
@@ -248,6 +278,20 @@ export class WorkerRecreatorUseCase {
         )
       : await this.workerService.updateWorkerById(accountId, inputUpdate);
 
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_recreate.db_updated',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: viewWorkerBalancer.account_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+        status: EWorkerStatus.recreating,
+        worker_updated: workerUpdated,
+      }
+    );
+
     if (!workerUpdated && shouldApplyCooldown) {
       const currentWorker = await this.workerService.viewWorker(
         accountId,
@@ -269,6 +313,17 @@ export class WorkerRecreatorUseCase {
         operationId: lifecycleOperationId,
       })
     );
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_recreate.lifecycle_enqueued',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: viewWorkerBalancer.account_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+      }
+    );
     this.publishRecreatingStatusBestEffort(inputRecreate);
 
     const ack: IWorkerLifecycleAck = {
@@ -284,7 +339,22 @@ export class WorkerRecreatorUseCase {
       reason:
         options?.remove_session === true ? 'reset_queued' : 'recreate_queued',
       recreate_available_at: recreateAvailableAt,
+      debug_trace_id: debugTraceId,
     };
+
+    void this.connectionLifecycleDebugService.log(
+      'manager.worker_recreate.response',
+      {
+        trace_id: debugTraceId,
+        layer: 'manager',
+        worker_id: workerId,
+        account_id: viewWorkerBalancer.account_id,
+        worker_type_id: inputRecreate.worker_type_id,
+        lifecycle_operation_id: lifecycleOperationId,
+        status: ack.status,
+        reason: ack.reason,
+      }
+    );
 
     return ack;
   }

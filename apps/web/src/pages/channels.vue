@@ -25,6 +25,11 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { useChannelRecreateCooldown } from '@/composables/useChannelRecreateCooldown';
+import {
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+  logConnectionLifecycleDebug,
+} from '@/@webcore/utils/connectionLifecycleDebug';
 
 definePage({
   meta: {
@@ -128,6 +133,7 @@ const channelConnectionChannel = ref<string | null>(null);
 const channelConnectionType = ref<string | null>(null);
 const channelConnectionStatus = ref<string | null>(null);
 const channelConnectionPhone = ref<string | null>(null);
+const channelConnectionDebugTraceId = ref<string | null>(null);
 const isDialogConnectionChannelShow = ref(false);
 const workerStatusOffsets = new Map<string, number>();
 
@@ -291,10 +297,21 @@ const openEditDialog = (id: string) => {
 };
 
 const openConnectionDialog = (channel: ListWorkerResponse) => {
+  const debugTraceId = isConnectionLifecycleDebugEnabled()
+    ? createConnectionLifecycleDebugTraceId('web_connection_dialog')
+    : undefined;
   channelConnectionChannel.value = channel.id;
   channelConnectionType.value = channel.type?.id ?? null;
   channelConnectionStatus.value = channel.status?.id ?? null;
   channelConnectionPhone.value = channel.number ?? null;
+  channelConnectionDebugTraceId.value = debugTraceId ?? null;
+  logConnectionLifecycleDebug('web.connection_dialog.open', {
+    trace_id: debugTraceId,
+    layer: 'web',
+    worker_id: channel.id,
+    worker_type_id: channel.type?.id,
+    status: channel.status?.id,
+  });
   isDialogConnectionChannelShow.value = true;
 };
 
@@ -325,7 +342,13 @@ const handleDelete = async () => {
 const handleRecreate = async () => {
   if (!channelToRecreate.value) return;
 
-  await channelsStore.recreateChannel(channelToRecreate.value);
+  const debugTraceId = isConnectionLifecycleDebugEnabled()
+    ? createConnectionLifecycleDebugTraceId('web_recreate_confirm')
+    : undefined;
+
+  await channelsStore.recreateChannel(channelToRecreate.value, {
+    debugTraceId,
+  });
 
   channelToRecreate.value = null;
 };
@@ -344,12 +367,25 @@ const handleChannelCreated = async (data: ICreateWorkerResponse) => {
     data.worker_status_id ??
     EWorkerStatus.creating;
   channelConnectionPhone.value = currentChannel?.number ?? null;
+  channelConnectionDebugTraceId.value = data.debug_trace_id ?? null;
+  logConnectionLifecycleDebug('web.connection_dialog.open_after_create', {
+    trace_id: data.debug_trace_id,
+    layer: 'web',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    lifecycle_operation_id: data.operation_id,
+    status: channelConnectionStatus.value ?? undefined,
+  });
   isDialogConnectionChannelShow.value = true;
 };
 
 const handleChannelUpdated = async (data: {
   worker_id: string;
   worker_type?: EWorkerType;
+  account_id?: string;
+  lifecycle_operation_id?: string;
+  debug_trace_id?: string;
 }) => {
   await channelsStore.listChannels(query.value);
 
@@ -361,6 +397,20 @@ const handleChannelUpdated = async (data: {
   channelConnectionType.value = data.worker_type;
   channelConnectionStatus.value = EWorkerStatus.recreating;
   channelConnectionPhone.value = null;
+  channelConnectionDebugTraceId.value =
+    data.debug_trace_id ??
+    (isConnectionLifecycleDebugEnabled()
+      ? createConnectionLifecycleDebugTraceId('web_channel_updated')
+      : null);
+  logConnectionLifecycleDebug('web.connection_dialog.open_after_update', {
+    trace_id: channelConnectionDebugTraceId.value ?? undefined,
+    layer: 'web',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type,
+    lifecycle_operation_id: data.lifecycle_operation_id,
+    status: channelConnectionStatus.value ?? undefined,
+  });
   isDialogConnectionChannelShow.value = true;
 };
 
@@ -385,6 +435,7 @@ watch(isDialogConnectionChannelShow, (isOpen) => {
     channelConnectionType.value = null;
     channelConnectionStatus.value = null;
     channelConnectionPhone.value = null;
+    channelConnectionDebugTraceId.value = null;
   }
 });
 
@@ -409,7 +460,30 @@ const workerStatusHandler = (
   data: IBaileysConnectionState,
   ctx?: { offset?: number }
 ) => {
+  logConnectionLifecycleDebug('web.centrifugo.worker_status_received', {
+    trace_id:
+      data.debug_trace_id ?? channelConnectionDebugTraceId.value ?? undefined,
+    layer: 'web',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    connection_attempt_id: data.connection_attempt_id,
+    runtime_generation: data.runtime_generation,
+    status: data.status,
+    code: data.code,
+    reason: data.reason,
+    qrcode: data.qrcode,
+    pairing_code: data.pairing_code,
+    offset: ctx?.offset,
+  });
   if (!shouldProcessWorkerStatusEvent(data, ctx)) {
+    logConnectionLifecycleDebug('web.centrifugo.worker_status_skipped_offset', {
+      trace_id:
+        data.debug_trace_id ?? channelConnectionDebugTraceId.value ?? undefined,
+      layer: 'web',
+      worker_id: data.worker_id,
+      offset: ctx?.offset,
+    });
     return;
   }
 
@@ -750,6 +824,7 @@ onUnmounted(async () => {
         :account-id="user.account_id"
         :initial-status-id="currentConnectionChannelStatus"
         :initial-phone="currentConnectionChannelPhone"
+        :debug-trace-id="channelConnectionDebugTraceId"
       />
 
       <AppLogsChannel

@@ -1,4 +1,4 @@
-import { injectable } from 'tsyringe';
+import { inject, injectable } from 'tsyringe';
 import { loadSync } from '@grpc/proto-loader';
 import {
   loadPackageDefinition,
@@ -16,6 +16,7 @@ import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/
 import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
 import { normalizeTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 const protoPath = resolveProtoPath('worker_command.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -37,6 +38,13 @@ const GRPC_DEADLINE_MS = 10000;
 
 @injectable()
 export class BalanceWorkerStatusGrpcClientService {
+  constructor(
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
+  ) {}
+
   private createClient(): any {
     const address = `${balanceEnvironment.grpcHost}:${balanceEnvironment.grpcPort}`;
     return new WorkerCommandClient(address, credentials.createInsecure());
@@ -65,6 +73,23 @@ export class BalanceWorkerStatusGrpcClientService {
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
     const metadata = new Metadata();
 
+    void this.connectionLifecycleDebugService.log(
+      'worker.notify_status_grpc.call',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: payload.worker_type_id ?? 'worker',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        code: payload.code,
+        reason: payload.reason,
+        qrcode: payload.qrcode,
+        pairing_code: payload.pairing_code,
+      }
+    );
     await new Promise<void>((resolve, reject) => {
       (client as any).NotifyWorkerStatus(
         protoPayload,
@@ -80,6 +105,21 @@ export class BalanceWorkerStatusGrpcClientService {
         }
       );
     });
+    void this.connectionLifecycleDebugService.log(
+      'worker.notify_status_grpc.ok',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: payload.worker_type_id ?? 'worker',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        code: payload.code,
+        reason: payload.reason,
+      }
+    );
   }
 
   async registerS3BackupFallbackUpload(

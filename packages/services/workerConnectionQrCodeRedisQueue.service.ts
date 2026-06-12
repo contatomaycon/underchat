@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { getErrorMessage } from '@core/common/functions/toError';
+import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 
 type RedisStreamValue = string | number;
 type RedisStreamClient = Redis & {
@@ -26,6 +27,7 @@ export interface WorkerConnectionQrCodeRedisStateInvalidationOptions {
   recreateReason?: string;
   source?: string;
   runtimeGeneration?: number;
+  debugTraceId?: string;
 }
 
 export interface WorkerConnectionQrCodeRedisStateInvalidationResult {
@@ -97,7 +99,13 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
   private streamReadRedis: Redis | null = null;
 
-  constructor(@inject('Redis') private readonly redis: Redis) {}
+  constructor(
+    @inject('Redis') private readonly redis: Redis,
+    @inject(ConnectionLifecycleDebugService)
+    private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
+      log: async () => undefined,
+    } as unknown as ConnectionLifecycleDebugService
+  ) {}
 
   streamKey(workerId: string, workerTypeId: string): string {
     return `connection:qrcode:${workerTypeId}:${workerId}:requests`;
@@ -148,6 +156,19 @@ export class WorkerConnectionQrCodeRedisQueueService {
     options: WorkerConnectionQrCodeRedisStateInvalidationOptions
   ): Promise<WorkerConnectionQrCodeRedisStateInvalidationResult> {
     const startedAt = Date.now();
+    void this.connectionLifecycleDebugService.log(
+      'redis.qr_stream.invalidate_start',
+      {
+        trace_id: options.debugTraceId,
+        layer: 'redis',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type_id: options.workerTypeId,
+        runtime_generation: options.runtimeGeneration,
+        reason: options.reason,
+        recreate_reason: options.recreateReason,
+      }
+    );
     const workerTypes = this.workerTypesForInvalidation(options);
     const keys = new Set<string>([
       this.legacyStreamKey(workerId),
@@ -192,7 +213,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
       ? await this.deleteKeysWithTimeout(keyList)
       : 0;
 
-    return {
+    const result = {
       deleted_keys: deletedKeys,
       scanned_processed_keys: processedKeys.length,
       keys: keyList,
@@ -201,11 +222,38 @@ export class WorkerConnectionQrCodeRedisQueueService {
       group_destroy_timeout_count: groupDestroyTimeoutCount,
       scan_timeout_count: scanTimeoutCount,
     };
+    void this.connectionLifecycleDebugService.log(
+      'redis.qr_stream.invalidate_done',
+      {
+        trace_id: options.debugTraceId,
+        layer: 'redis',
+        worker_id: workerId,
+        account_id: options.accountId,
+        worker_type_id: options.workerTypeId,
+        runtime_generation: options.runtimeGeneration,
+        reason: options.reason,
+        duration_ms: result.duration_ms,
+        deleted_keys: result.deleted_keys,
+        scanned_processed_keys: result.scanned_processed_keys,
+      }
+    );
+    return result;
   }
 
   async enqueue(payload: IWorkerConnectionQrCodeQueueMessage): Promise<string> {
     const streamKey = this.streamKey(payload.worker_id, payload.worker_type_id);
     const fields = this.payloadToFields(payload);
+    void this.connectionLifecycleDebugService.log('redis.qr_stream.enqueue', {
+      trace_id: payload.debug_trace_id,
+      layer: 'redis',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+      stream_key: streamKey,
+      source: payload.source,
+    });
     const streamId = await this.client().xadd(
       streamKey,
       'MAXLEN',
@@ -219,6 +267,18 @@ export class WorkerConnectionQrCodeRedisQueueService {
       throw new Error('Redis stream XADD did not return a stream id');
     }
 
+    void this.connectionLifecycleDebugService.log('redis.qr_stream.enqueued', {
+      trace_id: payload.debug_trace_id,
+      layer: 'redis',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+      stream_key: streamKey,
+      stream_id: streamId,
+      source: payload.source,
+    });
     return streamId;
   }
 
@@ -327,6 +387,18 @@ export class WorkerConnectionQrCodeRedisQueueService {
       '1',
       'EX',
       WorkerConnectionQrCodeRedisQueueService.PROCESSED_TTL_SECONDS
+    );
+    void this.connectionLifecycleDebugService.log(
+      'redis.qr_stream.mark_processed',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'redis',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+      }
     );
   }
 
@@ -449,6 +521,10 @@ export class WorkerConnectionQrCodeRedisQueueService {
 
     if (payload.runtime_generation !== undefined) {
       fields.push('runtime_generation', payload.runtime_generation);
+    }
+
+    if (payload.debug_trace_id) {
+      fields.push('debug_trace_id', payload.debug_trace_id);
     }
 
     if (payload.expires_at) {
@@ -584,6 +660,7 @@ export class WorkerConnectionQrCodeRedisQueueService {
       account_id: fields.account_id,
       worker_type_id: fields.worker_type_id,
       runtime_generation: this.optionalNumber(fields.runtime_generation),
+      debug_trace_id: fields.debug_trace_id,
       source: fields.source,
       requested_at: fields.requested_at,
       expires_at: fields.expires_at,

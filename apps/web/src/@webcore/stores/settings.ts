@@ -30,6 +30,41 @@ import { UpdateCreditCardFeeResponse } from '@core/schema/config/updateCreditCar
 import { ListMethodPaymentsResponse } from '@core/schema/config/listMethodPayments/response.schema';
 import { UpdateMethodPaymentRequest } from '@core/schema/config/updateMethodPayment/request.schema';
 import { UpdateMethodPaymentResponse } from '@core/schema/config/updateMethodPayment/response.schema';
+import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import {
+  connectionLifecycleDebugHeaders,
+  createConnectionLifecycleDebugTraceId,
+  isConnectionLifecycleDebugEnabled,
+  logConnectionLifecycleDebug,
+} from '@webcore/utils/connectionLifecycleDebug';
+
+const buildConnectionLifecycleDebugConfig = (
+  debugTraceId: string | undefined,
+  config: AxiosRequestConfig = {}
+): AxiosRequestConfig => {
+  const headers = connectionLifecycleDebugHeaders(debugTraceId);
+  if (!headers) {
+    return config;
+  }
+
+  return {
+    ...config,
+    headers: {
+      ...((config.headers ?? {}) as Record<string, string>),
+      ...headers,
+    },
+  };
+};
+
+const createWebTraceId = (prefix: string): string | undefined =>
+  isConnectionLifecycleDebugEnabled()
+    ? createConnectionLifecycleDebugTraceId(prefix)
+    : undefined;
+
+const isWorkerLifecycleAck = (value: unknown): value is IWorkerLifecycleAck =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as { queued?: unknown }).queued === true;
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -623,16 +658,27 @@ export const useSettingsStore = defineStore('settings', {
       }
     },
     async updateChannel(input: UpdateChannelRequest): Promise<boolean> {
+      const debugTraceId = createWebTraceId('web_config_channel_edit');
       try {
         this.loading = true;
+        logConnectionLifecycleDebug('web.config_channel_edit.submit', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: input.channel_id,
+          worker_type_id: input.worker_type,
+          has_server_id: Boolean(input.server_id),
+        });
 
-        const response = await axios.patch<IApiResponse<null>>(
+        const response = await axios.patch<
+          IApiResponse<null | IWorkerLifecycleAck>
+        >(
           `/config/channels/${input.channel_id}`,
           {
             name: input.name,
             worker_type: input.worker_type,
             server_id: input.server_id,
-          }
+          },
+          buildConnectionLifecycleDebugConfig(debugTraceId)
         );
 
         this.loading = false;
@@ -652,6 +698,28 @@ export const useSettingsStore = defineStore('settings', {
           data.message ?? this.i18n.global.t('channel_edit_success'),
           EColor.success
         );
+        logConnectionLifecycleDebug('web.config_channel_edit.response', {
+          trace_id: isWorkerLifecycleAck(data.data)
+            ? (data.data.debug_trace_id ?? debugTraceId)
+            : debugTraceId,
+          layer: 'web',
+          worker_id: input.channel_id,
+          account_id: isWorkerLifecycleAck(data.data)
+            ? data.data.account_id
+            : undefined,
+          worker_type_id: isWorkerLifecycleAck(data.data)
+            ? data.data.worker_type_id
+            : input.worker_type,
+          lifecycle_operation_id: isWorkerLifecycleAck(data.data)
+            ? data.data.operation_id
+            : undefined,
+          status: isWorkerLifecycleAck(data.data)
+            ? data.data.status
+            : 'updated',
+          reason: isWorkerLifecycleAck(data.data)
+            ? data.data.reason
+            : 'no_recreate_required',
+        });
 
         return true;
       } catch (error) {
@@ -662,6 +730,13 @@ export const useSettingsStore = defineStore('settings', {
         }
 
         this.showSnackbar(errorMessage, EColor.error);
+        logConnectionLifecycleDebug('web.config_channel_edit.error', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: input.channel_id,
+          worker_type_id: input.worker_type,
+          reason: errorMessage,
+        });
 
         return false;
       }

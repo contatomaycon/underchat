@@ -4,6 +4,7 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
 import AppChannelConnectionTypeInfo from './AppChannelConnectionTypeInfo.vue';
+import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
 
 const channelStore = useChannelsStore();
 const { t } = useI18n();
@@ -15,7 +16,16 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', visible: boolean): void;
-  (e: 'updated', data: { worker_id: string; worker_type?: EWorkerType }): void;
+  (
+    e: 'updated',
+    data: {
+      worker_id: string;
+      worker_type?: EWorkerType;
+      account_id?: string;
+      lifecycle_operation_id?: string;
+      debug_trace_id?: string;
+    }
+  ): void;
 }>();
 
 const isVisible = computed({
@@ -37,6 +47,11 @@ const itemsType = ref([
 const refFormEditChannel = ref<VForm>();
 const isInitializingModal = ref(false);
 
+const isLifecycleAck = (value: unknown): value is IWorkerLifecycleAck =>
+  typeof value === 'object' &&
+  value !== null &&
+  (value as { queued?: unknown }).queued === true;
+
 const updateServer = async () => {
   const validateForm = await refFormEditChannel?.value?.validate();
   if (!validateForm?.valid) return;
@@ -55,10 +70,19 @@ const updateServer = async () => {
 
   if (result) {
     isVisible.value = false;
-    if (payload.worker_type && payload.worker_type !== initialType.value) {
+    const lifecycleAck = isLifecycleAck(result) ? result : null;
+    if (
+      lifecycleAck ||
+      (payload.worker_type && payload.worker_type !== initialType.value)
+    ) {
       emit('updated', {
         worker_id: payload.worker_id,
-        worker_type: payload.worker_type as EWorkerType,
+        worker_type:
+          (lifecycleAck?.worker_type_id as EWorkerType | undefined) ??
+          (payload.worker_type as EWorkerType | undefined),
+        account_id: lifecycleAck?.account_id,
+        lifecycle_operation_id: lifecycleAck?.operation_id,
+        debug_trace_id: lifecycleAck?.debug_trace_id,
       });
     }
 
