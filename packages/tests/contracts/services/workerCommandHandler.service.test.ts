@@ -125,6 +125,15 @@ const buildConnectedState = () => ({
   worker_status_id: EWorkerStatus.online,
 });
 
+const buildConnectingState = () => ({
+  status: EBaileysConnectionStatus.connecting,
+  code: ECodeMessage.awaitConnection,
+  worker_id: 'worker-1',
+  account_id: 'account-1',
+  phone: '',
+  worker_status_id: EWorkerStatus.disponible,
+});
+
 function buildHandler(
   overrides: {
     cleanupError?: unknown;
@@ -1263,6 +1272,95 @@ describe('WorkerCommandHandlerService connection', () => {
     ).toHaveBeenCalledWith('worker-1', 'warm-1');
   });
 
+  it('increments runtime generation when warm activation replaces a reset runtime', async () => {
+    const workerRuntimeRepository = {
+      viewByWorkerId: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        container_id: 'container-old',
+        container_name: 'worker-1',
+        session_volume_name: 'old-volume',
+        runtime_generation: 7,
+      })),
+      upsert: jest.fn(async (input: unknown) => input),
+      deleteByWorkerId: jest.fn(async () => true),
+    };
+    const deps = buildHandler({ workerRuntimeRepository });
+    deps.workerService.inspectContainerWorkerById
+      .mockResolvedValueOnce(
+        buildWorkerContainerInspection({
+          container_id: 'warm-container-id',
+          container_name: 'warm-container',
+          container_image: 'under-worker-baileys:latest',
+          container_labels: {
+            'underchat.server_id': 'server-1',
+            'underchat.warm_pool_id': 'warm-1',
+            'underchat.warm_standby': 'true',
+            'underchat.worker_type_id': EWorkerType.baileys,
+            'underchat.worker_image': 'under-worker-baileys:latest',
+            'underchat.worker_grpc_port': '50052',
+          },
+          container_env: {
+            WARM_STANDBY: 'true',
+            WARM_POOL_ID: 'warm-1',
+            WORKER_TYPE_ID: EWorkerType.baileys,
+            WORKER_IMAGE: 'under-worker-baileys:latest',
+            WORKER_GRPC_PORT: '50052',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        buildWorkerContainerInspection({
+          exists: false,
+          container_name: 'worker-1',
+          running: false,
+        })
+      )
+      .mockResolvedValueOnce(
+        buildWorkerContainerInspection({
+          container_id: 'activated-container',
+          container_name: 'worker-1',
+          container_image: 'under-worker-baileys:latest',
+          container_labels: {
+            'underchat.worker_id': 'worker-1',
+            'underchat.account_id': 'account-1',
+            'underchat.session_volume_name': 'warm-volume',
+            'underchat.worker_type_id': EWorkerType.baileys,
+            'underchat.worker_image': 'under-worker-baileys:latest',
+            'underchat.worker_grpc_port': '50052',
+          },
+          container_env: {
+            WORKER_ID: 'worker-1',
+            ACCOUNT_ID: 'account-1',
+            SESSION_VOLUME_NAME: 'warm-volume',
+            WORKER_TYPE_ID: EWorkerType.baileys,
+            WORKER_IMAGE: 'under-worker-baileys:latest',
+            WORKER_GRPC_PORT: '50052',
+          },
+        })
+      );
+
+    await deps.handler.activateWarmWorker({
+      warm_pool_id: 'warm-1',
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.baileys,
+      previous_worker_type_id: EWorkerType.whatsmeow,
+      remove_session: true,
+      remove_volume: true,
+    });
+
+    expect(workerRuntimeRepository.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        container_id: 'activated-container',
+        container_name: 'worker-1',
+        session_volume_name: 'warm-volume',
+        runtime_generation: 8,
+      })
+    );
+  });
+
   it('does not recreate a proxied container from the QR request', async () => {
     const deps = buildHandler();
     const proxyConfig = new Map<
@@ -1804,6 +1902,46 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(deps.workerService.createContainerWorker).toHaveBeenCalled();
   });
 
+  it('increments runtime generation when recreate resets the session volume', async () => {
+    const workerRuntimeRepository = {
+      viewByWorkerId: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        container_id: 'container-old',
+        container_name: 'worker-1',
+        session_volume_name: 'old-volume',
+        runtime_generation: 4,
+      })),
+      upsert: jest.fn(async (input: unknown) => input),
+      deleteByWorkerId: jest.fn(async () => true),
+    };
+    const deps = buildHandler({ workerRuntimeRepository });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      remove_session: true,
+      remove_volume: true,
+    });
+
+    expect(
+      deps.workerService.removeContainerByNameAndVolume
+    ).toHaveBeenCalledWith('worker-1', 'old-volume', true);
+    expect(workerRuntimeRepository.deleteByWorkerId).toHaveBeenCalledWith(
+      'worker-1'
+    );
+    expect(workerRuntimeRepository.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        container_id: 'container-1',
+        container_name: 'worker-1',
+        session_volume_name: 'worker-1',
+        runtime_generation: 5,
+      })
+    );
+  });
+
   it('keeps a previously online worker online after recreate when the worker reconnects', async () => {
     const deps = buildHandler();
 
@@ -1842,6 +1980,106 @@ describe('WorkerCommandHandlerService connection', () => {
         code: ECodeMessage.connectionEstablished,
         worker_id: 'worker-1',
         account_id: 'account-1',
+        worker_status_id: EWorkerStatus.online,
+      })
+    );
+  });
+
+  it('waits briefly for runtime health before downgrading an online worker after recreate', async () => {
+    const deps = buildHandler();
+    (deps.handler as any).recreateOnlineReconciliationWaitMs = 25;
+    (deps.handler as any).recreateOnlineReconciliationPollIntervalMs = 1;
+    deps.workerBaileysGrpcClientService.requestConnection.mockResolvedValueOnce(
+      buildConnectingState()
+    );
+    deps.workerBaileysGrpcClientService.runtimeHealth
+      .mockResolvedValueOnce({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        activated: true,
+        ready: true,
+        standby: false,
+        has_session: false,
+        runtime_state: 'active',
+        qr_stream_ready: true,
+      })
+      .mockResolvedValueOnce({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        activated: true,
+        ready: true,
+        standby: false,
+        has_session: true,
+        runtime_state: 'active',
+        qr_stream_ready: true,
+      });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      previous_worker_status_id: EWorkerStatus.online,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      { worker_id: 'worker-1' },
+      EWorkerType.wwebjs
+    );
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        container_id: 'container-1',
+      })
+    );
+  });
+
+  it('does not mark a recreated worker online without a connected response or health confirmation', async () => {
+    const deps = buildHandler();
+    (deps.handler as any).recreateOnlineReconciliationWaitMs = 1;
+    (deps.handler as any).recreateOnlineReconciliationPollIntervalMs = 0;
+    deps.workerBaileysGrpcClientService.requestConnection.mockResolvedValueOnce(
+      buildConnectingState()
+    );
+    deps.workerBaileysGrpcClientService.runtimeHealth.mockResolvedValue({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      activated: true,
+      ready: true,
+      standby: false,
+      has_session: false,
+      runtime_state: 'active',
+      qr_stream_ready: true,
+    });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      previous_worker_status_id: EWorkerStatus.online,
+    });
+
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.disponible,
+        container_id: 'container-1',
+      })
+    );
+    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
         worker_status_id: EWorkerStatus.online,
       })
     );

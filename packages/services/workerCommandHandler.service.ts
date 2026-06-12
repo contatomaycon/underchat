@@ -120,6 +120,7 @@ interface ActiveQrAttempt {
 
 interface RecreateSessionVolumeResolution {
   sessionVolumeName?: string;
+  runtimeGeneration?: number;
   source:
     | 'worker_runtime'
     | 'container_label'
@@ -148,6 +149,8 @@ export class WorkerCommandHandlerService {
   private readonly retryIntervalMs = 30 * 1000;
   private readonly connectionRequestRetryIntervalMs = 15_000;
   private readonly connectionRequestMinAttempts = 10;
+  private readonly recreateOnlineReconciliationWaitMs = 10_000;
+  private readonly recreateOnlineReconciliationPollIntervalMs = 500;
   private readonly qrAttemptTtlSeconds = 180;
   private readonly qrCacheTtlSeconds = 115;
   private readonly qrMaxAgeMs = 120_000;
@@ -499,6 +502,10 @@ export class WorkerCommandHandlerService {
 
     await this.kafkaBaileysQueueService.ensure(data.worker_id);
 
+    const nextRuntimeGeneration = await this.resolveNextRuntimeGeneration(
+      data.worker_id
+    );
+
     await this.removeExistingRuntimeBeforeWarmActivation(
       data,
       sourceContainerName
@@ -535,6 +542,7 @@ export class WorkerCommandHandlerService {
       container_id: activatedInspection.container_id ?? warm.container_id,
       container_name: data.worker_id,
       session_volume_name: sessionVolumeName,
+      runtime_generation: nextRuntimeGeneration,
       warm_pool_id: data.warm_pool_id,
       activated_at: currentTime(),
     });
@@ -3344,16 +3352,18 @@ export class WorkerCommandHandlerService {
     data: IWorkerPayload,
     shouldRemoveVolume: boolean
   ): Promise<RecreateSessionVolumeResolution> {
+    const runtimeBeforeRemove =
+      (await this.workerRuntimeRepository?.viewByWorkerId(data.worker_id)) ??
+      null;
+
     if (shouldRemoveVolume) {
       return {
+        runtimeGeneration: runtimeBeforeRemove?.runtime_generation,
         source: 'reset',
         runtimeWasBackfilled: false,
       };
     }
 
-    const runtimeBeforeRemove =
-      (await this.workerRuntimeRepository?.viewByWorkerId(data.worker_id)) ??
-      null;
     const runtimeVolume = this.optionalNonEmpty(
       runtimeBeforeRemove?.session_volume_name
     );
@@ -3361,6 +3371,7 @@ export class WorkerCommandHandlerService {
     if (runtimeVolume) {
       return {
         sessionVolumeName: runtimeVolume,
+        runtimeGeneration: runtimeBeforeRemove?.runtime_generation,
         source: 'worker_runtime',
         runtimeWasBackfilled: false,
       };
@@ -3374,23 +3385,26 @@ export class WorkerCommandHandlerService {
       containerVolume.sessionVolumeName ?? data.worker_id;
     const source = containerVolume.source ?? 'legacy_worker_id';
 
+    let runtimeGeneration: number | undefined;
     if (inspection.exists && this.workerRuntimeRepository) {
       const volumeExists =
         await this.workerService.existsVolumeByName(sessionVolumeName);
 
       if (volumeExists) {
-        await this.workerRuntimeRepository.upsert({
+        const runtime = await this.workerRuntimeRepository.upsert({
           worker_id: data.worker_id,
           container_id: inspection.container_id,
           container_name: inspection.container_name ?? data.worker_id,
           session_volume_name: sessionVolumeName,
           activated_at: currentTime(),
         });
+        runtimeGeneration = runtime?.runtime_generation;
       }
     }
 
     return {
       sessionVolumeName,
+      runtimeGeneration,
       source,
       runtimeWasBackfilled: inspection.exists,
     };
@@ -3471,6 +3485,9 @@ export class WorkerCommandHandlerService {
     const sessionVolumeResolution = await this.resolveRecreateSessionVolume(
       data,
       shouldRemoveVolume
+    );
+    const nextRuntimeGeneration = this.incrementRuntimeGeneration(
+      sessionVolumeResolution.runtimeGeneration
     );
     const preservedSessionVolumeName =
       sessionVolumeResolution.sessionVolumeName;
@@ -3709,6 +3726,7 @@ export class WorkerCommandHandlerService {
       container_id: containerId,
       container_name: data.worker_id,
       session_volume_name: preservedSessionVolumeName ?? data.worker_id,
+      runtime_generation: nextRuntimeGeneration,
       activated_at: currentTime(),
     });
     await this.cleanupAssignedWarmPoolReferences(data.worker_id);
@@ -3862,6 +3880,13 @@ export class WorkerCommandHandlerService {
         current?.worker_status_id === EWorkerStatus.online;
 
       if (!connected) {
+        const delayedConnection =
+          await this.waitForRecreatedWorkerOnlineConfirmation(data, workerType);
+
+        if (delayedConnection) {
+          return delayedConnection;
+        }
+
         return { workerStatusId: EWorkerStatus.disponible };
       }
 
@@ -3883,6 +3908,49 @@ export class WorkerCommandHandlerService {
     } catch {
       return { workerStatusId: EWorkerStatus.disponible };
     }
+  }
+
+  private async waitForRecreatedWorkerOnlineConfirmation(
+    data: IWorkerPayload,
+    workerType: EWorkerType
+  ): Promise<RecreateConnectionReconciliation | null> {
+    const deadline = Date.now() + this.recreateOnlineReconciliationWaitMs;
+
+    while (Date.now() <= deadline) {
+      const healthReconciliation = await this.probeRecreatedWorkerRuntimeHealth(
+        data,
+        workerType
+      );
+
+      if (healthReconciliation) {
+        return healthReconciliation;
+      }
+
+      const current = await this.workerService.viewWorkerForMonitor(
+        data.worker_id
+      );
+
+      if (current?.worker_status_id === EWorkerStatus.online) {
+        return {
+          workerStatusId: EWorkerStatus.online,
+          connectionState: {
+            code: ECodeMessage.connectionEstablished,
+            status: EBaileysConnectionStatus.connected,
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_status_id: EWorkerStatus.online,
+          },
+        };
+      }
+
+      if (Date.now() > deadline) {
+        break;
+      }
+
+      await this.sleep(this.recreateOnlineReconciliationPollIntervalMs);
+    }
+
+    return null;
   }
 
   private buildRecreateFinalWorkerUpdate(
@@ -3967,6 +4035,24 @@ export class WorkerCommandHandlerService {
     }
 
     return removed;
+  }
+
+  private async resolveNextRuntimeGeneration(
+    workerId: string
+  ): Promise<number | undefined> {
+    const runtime =
+      await this.workerRuntimeRepository?.viewByWorkerId(workerId);
+    return this.incrementRuntimeGeneration(runtime?.runtime_generation);
+  }
+
+  private incrementRuntimeGeneration(
+    runtimeGeneration?: number | null
+  ): number | undefined {
+    if (!runtimeGeneration) {
+      return undefined;
+    }
+
+    return runtimeGeneration + 1;
   }
 
   private async cleanupWorker(data: IWorkerPayload): Promise<void> {
