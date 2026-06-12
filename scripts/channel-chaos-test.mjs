@@ -1503,6 +1503,7 @@ async function collectRemoteLogsForCreatedWorkers() {
     return;
   }
 
+  const targetsByWorkerId = new Map();
   for (const created of report.created_workers) {
     const worker = await readWorker(created.worker_id);
     const target = worker?.container_name || worker?.container_id;
@@ -1513,13 +1514,28 @@ async function collectRemoteLogsForCreatedWorkers() {
       continue;
     }
 
-    try {
-      report.remote_logs[created.worker_id] = {
+    targetsByWorkerId.set(created.worker_id, target);
+  }
+
+  if (targetsByWorkerId.size === 0) {
+    return;
+  }
+
+  try {
+    const logsByTarget = remoteDockerLogsBatch(
+      [...new Set(targetsByWorkerId.values())],
+      '45m'
+    );
+
+    for (const [workerId, target] of targetsByWorkerId.entries()) {
+      report.remote_logs[workerId] = {
         target,
-        tail: remoteDockerLogs(target, '45m'),
+        tail: logsByTarget.get(target) ?? '',
       };
-    } catch (error) {
-      report.remote_logs[created.worker_id] = {
+    }
+  } catch (error) {
+    for (const [workerId, target] of targetsByWorkerId.entries()) {
+      report.remote_logs[workerId] = {
         target,
         error: errorMessage(error),
       };
@@ -1626,6 +1642,61 @@ function remoteDockerLogs(container, since) {
     ],
     { encoding: 'utf8', maxBuffer: 1024 * 1024 * 4 }
   );
+}
+
+function remoteDockerLogsBatch(containers, since) {
+  const host = requiredEnv('CHANNEL_WORKER_SSH_HOST');
+  const user = process.env.CHANNEL_WORKER_SSH_USER ?? 'root';
+  const port = process.env.CHANNEL_WORKER_SSH_PORT ?? '22';
+  const password = requiredEnv('CHANNEL_WORKER_SSH_PASSWORD');
+  const command = containers
+    .map(
+      (container) => `
+printf '\\n__CHANNEL_CHAOS_LOG_START__ ${shellEscapeForPrintf(container)}\\n'
+docker logs --since=${shellQuote(since)} ${shellQuote(container)} 2>&1 | tail -240 || true
+printf '\\n__CHANNEL_CHAOS_LOG_END__ ${shellEscapeForPrintf(container)}\\n'
+`
+    )
+    .join('\n');
+
+  const output = execFileSync(
+    'sshpass',
+    [
+      '-p',
+      password,
+      'ssh',
+      '-p',
+      port,
+      '-o',
+      'StrictHostKeyChecking=no',
+      '-o',
+      'UserKnownHostsFile=/dev/null',
+      '-o',
+      'ConnectTimeout=20',
+      `${user}@${host}`,
+      command,
+    ],
+    { encoding: 'utf8', maxBuffer: 1024 * 1024 * 16 }
+  );
+
+  const logsByTarget = new Map();
+  for (const container of containers) {
+    const start = `__CHANNEL_CHAOS_LOG_START__ ${container}`;
+    const end = `__CHANNEL_CHAOS_LOG_END__ ${container}`;
+    const startIndex = output.indexOf(start);
+    const endIndex = output.indexOf(end, startIndex + start.length);
+    if (startIndex === -1 || endIndex === -1) {
+      logsByTarget.set(container, '');
+      continue;
+    }
+
+    logsByTarget.set(
+      container,
+      output.slice(startIndex + start.length, endIndex).trim()
+    );
+  }
+
+  return logsByTarget;
 }
 
 async function cleanupAndExit(code) {
@@ -1775,4 +1846,8 @@ function errorMessage(error) {
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function shellEscapeForPrintf(value) {
+  return String(value).replaceAll('\\', '\\\\').replaceAll("'", "'\\''");
 }
