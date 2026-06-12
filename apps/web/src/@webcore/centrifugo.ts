@@ -9,16 +9,28 @@ import {
 } from 'centrifuge';
 import { isAxiosError } from 'axios';
 import axios from '@webcore/axios';
+import { getUser } from './localStorage/user';
 import { IApiResponse } from '@core/common/interfaces/IApiResponse';
 import { AuthTokenResponse } from '@core/schema/centrifugo/token/response.schema';
 
 export type { Subscription };
 
 let centrifugeClient: Centrifuge | null = null;
-let connectionPromise: Promise<Centrifuge> | null = null;
-let tokenGenerationPromise: Promise<AuthTokenResponse> | null = null;
-let cachedToken: { token: string; url: string; expiresAt: number } | null =
-  null;
+let connectionAuthKey: string | null = null;
+let connectionPromise: {
+  authKey: string;
+  promise: Promise<Centrifuge>;
+} | null = null;
+let tokenGenerationPromise: {
+  authKey: string;
+  promise: Promise<AuthTokenResponse>;
+} | null = null;
+let cachedToken: {
+  token: string;
+  url: string;
+  expiresAt: number;
+  authKey: string;
+} | null = null;
 const TOKEN_CACHE_MARGIN_MS = 5 * 60 * 1000;
 const channelHandlers = new Map<
   string,
@@ -36,6 +48,15 @@ const clearCachedToken = (): void => {
   tokenGenerationPromise = null;
 };
 
+const getRealtimeAuthKey = (): string => {
+  try {
+    const user = getUser();
+    return `${user?.account_id ?? ''}:${user?.user_id ?? ''}`;
+  } catch {
+    return ':';
+  }
+};
+
 const isTokenExpiredSignal = (code: number, reason: string): boolean => {
   if (code === 109 || code === 3501) {
     return true;
@@ -46,46 +67,59 @@ const isTokenExpiredSignal = (code: number, reason: string): boolean => {
 
 const generateTokenAndUrl = async (): Promise<AuthTokenResponse> => {
   const now = Date.now();
+  const authKey = getRealtimeAuthKey();
 
-  if (cachedToken && cachedToken.expiresAt > now + TOKEN_CACHE_MARGIN_MS) {
+  if (
+    cachedToken &&
+    cachedToken.authKey === authKey &&
+    cachedToken.expiresAt > now + TOKEN_CACHE_MARGIN_MS
+  ) {
     return { token: cachedToken.token, url: cachedToken.url };
   }
 
-  if (tokenGenerationPromise) {
-    return tokenGenerationPromise;
+  if (tokenGenerationPromise?.authKey === authKey) {
+    return tokenGenerationPromise.promise;
   }
 
-  tokenGenerationPromise = (async () => {
-    try {
-      const response = await axios.post<IApiResponse<AuthTokenResponse>>(
-        `/centrifugo/auth/token`
-      );
+  tokenGenerationPromise = {
+    authKey,
+    promise: (async () => {
+      try {
+        const response = await axios.post<IApiResponse<AuthTokenResponse>>(
+          `/centrifugo/auth/token`
+        );
 
-      const data = response?.data;
+        const data = response?.data;
 
-      if (!data?.status) {
-        throw new Error(data?.message ?? 'Failed to generate Centrifugo token');
+        if (!data?.status) {
+          throw new Error(
+            data?.message ?? 'Failed to generate Centrifugo token'
+          );
+        }
+
+        cachedToken = {
+          token: data.data.token,
+          url: data.data.url,
+          expiresAt: now + 24 * 60 * 60 * 1000,
+          authKey,
+        };
+
+        return data.data;
+      } catch (error) {
+        if (isAxiosError(error) && error.response?.status === 401) {
+          clearCachedToken();
+        }
+
+        throw error;
+      } finally {
+        if (tokenGenerationPromise?.authKey === authKey) {
+          tokenGenerationPromise = null;
+        }
       }
+    })(),
+  };
 
-      cachedToken = {
-        token: data.data.token,
-        url: data.data.url,
-        expiresAt: now + 24 * 60 * 60 * 1000,
-      };
-
-      return data.data;
-    } catch (error) {
-      if (isAxiosError(error) && error.response?.status === 401) {
-        clearCachedToken();
-      }
-
-      throw error;
-    } finally {
-      tokenGenerationPromise = null;
-    }
-  })();
-
-  return tokenGenerationPromise;
+  return tokenGenerationPromise.promise;
 };
 
 const generateToken = async (): Promise<string> => {
@@ -311,8 +345,35 @@ const resubscribeActiveChannels = (client: Centrifuge): void => {
   }
 };
 
+const disconnectClient = (client: Centrifuge): void => {
+  try {
+    client.disconnect();
+  } catch {}
+};
+
+const clearActiveConnection = (
+  client: Centrifuge | null = centrifugeClient
+): void => {
+  if (client) {
+    disconnectClient(client);
+  }
+
+  if (!client || centrifugeClient === client) {
+    centrifugeClient = null;
+    connectionAuthKey = null;
+  }
+
+  channelSubscriptions.clear();
+};
+
 const createConnection = async (): Promise<Centrifuge> => {
+  const authKey = getRealtimeAuthKey();
   const { token, url: wsUrl } = await generateTokenAndUrl();
+
+  if (authKey !== getRealtimeAuthKey()) {
+    throw new Error('Centrifugo auth context changed');
+  }
+
   const client = new Centrifuge(`${wsUrl}/connection/websocket`, {
     websocket: WebSocket,
     token,
@@ -330,6 +391,7 @@ const createConnection = async (): Promise<Centrifuge> => {
   });
 
   centrifugeClient = client;
+  connectionAuthKey = authKey;
 
   client.on('connected', () => {});
 
@@ -373,15 +435,15 @@ const createConnection = async (): Promise<Centrifuge> => {
   try {
     await waitForConnected(client);
   } catch (error) {
-    try {
-      client.disconnect();
-    } catch {}
-
-    if (centrifugeClient === client) {
-      centrifugeClient = null;
-    }
+    clearActiveConnection(client);
 
     throw error;
+  }
+
+  if (authKey !== getRealtimeAuthKey()) {
+    clearActiveConnection(client);
+
+    throw new Error('Centrifugo auth context changed');
   }
 
   resubscribeActiveChannels(client);
@@ -389,42 +451,49 @@ const createConnection = async (): Promise<Centrifuge> => {
   return client;
 };
 
+const getOrCreateConnection = (authKey: string): Promise<Centrifuge> => {
+  if (!connectionPromise || connectionPromise.authKey !== authKey) {
+    connectionPromise = {
+      authKey,
+      promise: createConnection().finally(() => {
+        if (connectionPromise?.authKey === authKey) {
+          connectionPromise = null;
+        }
+      }),
+    };
+  }
+
+  return connectionPromise.promise;
+};
+
 const getConnection = async (): Promise<Centrifuge> => {
-  if (centrifugeClient) {
-    const state = centrifugeClient.state;
+  const authKey = getRealtimeAuthKey();
 
-    if (state === State.Connected) {
-      return centrifugeClient;
-    }
-
-    if (state === State.Disconnected) {
-      try {
-        centrifugeClient.disconnect();
-      } catch {}
-      centrifugeClient = null;
-
-      channelSubscriptions.clear();
-    } else {
-      try {
-        await waitForConnected(centrifugeClient);
-        return centrifugeClient;
-      } catch {
-        try {
-          centrifugeClient.disconnect();
-        } catch {}
-        centrifugeClient = null;
-        channelSubscriptions.clear();
-      }
-    }
+  if (!centrifugeClient) {
+    return getOrCreateConnection(authKey);
   }
 
-  if (!connectionPromise) {
-    connectionPromise = createConnection().finally(() => {
-      connectionPromise = null;
-    });
+  if (connectionAuthKey !== authKey) {
+    clearActiveConnection();
+    return getOrCreateConnection(authKey);
   }
 
-  return connectionPromise;
+  if (centrifugeClient.state === State.Connected) {
+    return centrifugeClient;
+  }
+
+  if (centrifugeClient.state === State.Disconnected) {
+    clearActiveConnection();
+    return getOrCreateConnection(authKey);
+  }
+
+  try {
+    await waitForConnected(centrifugeClient);
+    return centrifugeClient;
+  } catch {
+    clearActiveConnection();
+    return getOrCreateConnection(authKey);
+  }
 };
 
 export const onMessage = async (
@@ -541,6 +610,7 @@ export const resetConnection = (): void => {
     } catch {}
     centrifugeClient = null;
   }
+  connectionAuthKey = null;
   connectionPromise = null;
   tokenGenerationPromise = null;
   cachedToken = null;
