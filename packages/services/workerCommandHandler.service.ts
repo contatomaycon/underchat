@@ -1087,7 +1087,9 @@ export class WorkerCommandHandlerService {
       worker_status_id: workerStatusId,
     });
     const shouldPublishAsQrAttempt = this.isNotifyQrAttemptState(payload);
-    const qrWorkerData = shouldPublishAsQrAttempt
+    const shouldResolveQrWorkerData =
+      shouldPublishAsQrAttempt || Boolean(payload.connection_attempt_id);
+    const qrWorkerData = shouldResolveQrWorkerData
       ? await this.resolveWorkerDataForContainer(workerId, accountId).catch(
           () => {
             return null;
@@ -1142,6 +1144,26 @@ export class WorkerCommandHandlerService {
         workerStatusId
       )
     ) {
+      return;
+    }
+
+    const staleQrAttemptStatus = await this.shouldIgnoreQrAttemptState(payload);
+    if (staleQrAttemptStatus.ignored) {
+      this.logDebug('service.notify_status.stale_qr_attempt_skipped', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        code: payload.code,
+        reason: staleQrAttemptStatus.reason,
+        qrcode: payload.qrcode,
+        pairing_code: payload.pairing_code,
+        worker_status_id: workerStatusId,
+      });
       return;
     }
 
@@ -1810,6 +1832,16 @@ export class WorkerCommandHandlerService {
     );
   }
 
+  private isQrAttemptSuccessfulTerminalState(
+    state: Partial<IBaileysConnectionState>
+  ): boolean {
+    return (
+      state.status === EBaileysConnectionStatus.connected ||
+      state.worker_status_id === EWorkerStatus.online ||
+      state.code === ECodeMessage.connectionEstablished
+    );
+  }
+
   private isActiveQrAttemptState(
     state: IBaileysConnectionState | undefined
   ): state is IBaileysConnectionState {
@@ -2220,16 +2252,22 @@ export class WorkerCommandHandlerService {
   private async shouldIgnoreQrAttemptState(
     state: IBaileysConnectionState
   ): Promise<{ ignored: boolean; reason?: string }> {
-    if (this.isQrAttemptTerminalState(state)) {
+    const isTerminal = this.isQrAttemptTerminalState(state);
+    const isQrAttemptState = this.isNotifyQrAttemptState(state);
+    const hasQrCredential = Boolean(state.qrcode || state.pairing_code);
+    const allowAttemptMismatch =
+      hasQrCredential || this.isQrAttemptSuccessfulTerminalState(state);
+
+    if (state.disconnected_user === true) {
       return { ignored: false };
     }
 
-    if (!this.isNotifyQrAttemptState(state)) {
+    if (!isTerminal && !isQrAttemptState) {
       return { ignored: false };
     }
 
     if (
-      state.qrcode &&
+      hasQrCredential &&
       (!state.connection_attempt_id || !state.worker_type_id)
     ) {
       return {
@@ -2262,6 +2300,7 @@ export class WorkerCommandHandlerService {
       }
 
       if (
+        !isTerminal &&
         state.runtime_generation !== undefined &&
         activeRuntimeGeneration === undefined
       ) {
@@ -2272,14 +2311,17 @@ export class WorkerCommandHandlerService {
       }
 
       if (activeRuntimeGeneration !== undefined) {
-        if (state.runtime_generation === undefined) {
+        if (!isTerminal && state.runtime_generation === undefined) {
           return {
             ignored: true,
             reason: 'incoming_runtime_generation_missing',
           };
         }
 
-        if (activeRuntimeGeneration !== state.runtime_generation) {
+        if (
+          state.runtime_generation !== undefined &&
+          activeRuntimeGeneration !== state.runtime_generation
+        ) {
           return {
             ignored: true,
             reason: 'active_runtime_generation_mismatch',
@@ -2287,7 +2329,7 @@ export class WorkerCommandHandlerService {
         }
       }
 
-      if (!incomingAttempt) {
+      if (!isTerminal && !incomingAttempt) {
         return {
           ignored: true,
           reason: 'incoming_connection_attempt_missing',
@@ -2295,6 +2337,10 @@ export class WorkerCommandHandlerService {
       }
 
       if (activeAttempt && activeAttempt !== incomingAttempt) {
+        if (allowAttemptMismatch) {
+          return { ignored: false };
+        }
+
         return {
           ignored: true,
           reason: 'active_attempt_mismatch',
@@ -2355,6 +2401,10 @@ export class WorkerCommandHandlerService {
     }
 
     if (cachedAttempt && incomingAttempt && cachedAttempt !== incomingAttempt) {
+      if (allowAttemptMismatch) {
+        return { ignored: false };
+      }
+
       return {
         ignored: true,
         reason: 'active_attempt_mismatch',

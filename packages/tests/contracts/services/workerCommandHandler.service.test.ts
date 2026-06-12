@@ -377,6 +377,40 @@ const flushPromises = async (): Promise<void> => {
   await new Promise((resolve) => setImmediate(resolve));
 };
 
+const seedActiveQrAttempt = (
+  redisStore: Map<string, string>,
+  {
+    workerId = 'worker-1',
+    workerTypeId = EWorkerType.wwebjs,
+    connectionAttemptId,
+    runtimeGeneration = 1,
+  }: {
+    workerId?: string;
+    workerTypeId?: EWorkerType;
+    connectionAttemptId: string;
+    runtimeGeneration?: number;
+  }
+): void => {
+  redisStore.set(
+    `connection:qrcode:${workerTypeId}:${workerId}:active_attempt`,
+    JSON.stringify({
+      ack: {
+        worker_id: workerId,
+        account_id: 'account-1',
+        worker_type_id: workerTypeId,
+        connection_attempt_id: connectionAttemptId,
+        runtime_generation: runtimeGeneration,
+      },
+      queued_at: new Date().toISOString(),
+      stream_key: `connection:qrcode:${workerTypeId}:${workerId}:requests`,
+      consumer_group: `connection:qrcode:${workerTypeId}:${workerId}:group`,
+      source: 'manager',
+      worker_type_id: workerTypeId,
+      runtime_generation: runtimeGeneration,
+    })
+  );
+};
+
 describe('WorkerCommandHandlerService connection', () => {
   afterEach(() => {
     jest.restoreAllMocks();
@@ -564,6 +598,71 @@ describe('WorkerCommandHandlerService connection', () => {
         qr_pending: false,
       })
     );
+  });
+
+  it('keeps a QR notification when a newer active request raced ahead', async () => {
+    const deps = buildHandler();
+    seedActiveQrAttempt(deps.redisStore, {
+      connectionAttemptId: 'attempt-newer',
+      runtimeGeneration: 1,
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.disponible,
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      qrcode: 'data:image/png;base64,first-valid-qr',
+      connection_attempt_id: 'attempt-first',
+      runtime_generation: 1,
+      qr_generated_at: new Date().toISOString(),
+    });
+
+    expect(deps.redis.setex).toHaveBeenCalledWith(
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
+      expect.any(Number),
+      expect.stringContaining('"connection_attempt_id":"attempt-first"')
+    );
+    expect(deps.redis.setex).toHaveBeenCalledWith(
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
+      expect.any(Number),
+      expect.stringContaining('"qrcode":"data:image/png;base64,first-valid-qr"')
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        qrcode: 'data:image/png;base64,first-valid-qr',
+        connection_attempt_id: 'attempt-first',
+        qr_pending: false,
+      })
+    );
+  });
+
+  it('skips stale disconnected notifications from a superseded QR attempt', async () => {
+    const deps = buildHandler();
+    seedActiveQrAttempt(deps.redisStore, {
+      connectionAttemptId: 'attempt-newer',
+      runtimeGeneration: 1,
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.disponible,
+      status: EBaileysConnectionStatus.disconnected,
+      code: ECodeMessage.connectionClosed,
+      connection_attempt_id: 'attempt-first',
+      runtime_generation: 1,
+    });
+
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
   });
 
   it('enqueues QR in Redis Streams and returns pending state', async () => {
