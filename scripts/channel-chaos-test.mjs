@@ -60,6 +60,19 @@ const KNOWN_CONNECTED_BAILEYS_TARGET = {
   number: '556192037138',
 };
 
+const KNOWN_STRESS_ACCOUNTS = [
+  {
+    key: 'teste',
+    account_id: '019d01bc-8355-7058-bfe1-7bce42a78dc6',
+    name: 'Teste',
+  },
+  {
+    key: 'underchat',
+    account_id: '019a930d-c6f4-75ad-88ff-8d2fcd5839e1',
+    name: 'Underchat',
+  },
+];
+
 const args = new Set(process.argv.slice(2));
 const keepChannels = args.has('--keep');
 const includeTargetChannel =
@@ -71,6 +84,17 @@ const stressWorkers = numberArg(
   args.has('--stress') ? 6 : 0
 );
 const qrBurstSize = numberArg('--qr-burst-size', 6);
+const includeMultiAccountStress =
+  !args.has('--skip-multi-account-stress') &&
+  (args.has('--multi-account-stress') || stressWorkers > 0);
+const multiAccountWorkersPerType = numberArg(
+  '--multi-account-workers-per-type',
+  args.has('--stress') ? 2 : 1
+);
+const multiAccountQrBurstSize = numberArg(
+  '--multi-account-qr-burst-size',
+  qrBurstSize
+);
 const readyTimeoutMs = numberArg('--ready-timeout-ms', 180_000);
 const qrTimeoutMs = numberArg('--qr-timeout-ms', 90_000);
 const apiTimeoutMs = numberArg('--api-timeout-ms', 35_000);
@@ -98,11 +122,15 @@ const report = {
   failures: [],
   target_channel: null,
   stress: null,
+  multi_account_stress: null,
+  account_contexts: [],
   remote_logs: {},
 };
 
 let token = '';
 let loginData = null;
+let defaultAuthContext = null;
+const workerAuthContexts = new Map();
 
 const pool = new Pool({
   host: requiredDbEnv('HOST'),
@@ -132,6 +160,7 @@ process.on('SIGINT', async () => {
 await main().catch(async (error) => {
   report.failures.push({ step: 'main', error: errorMessage(error) });
   console.error(`FAIL ${errorMessage(error)}`);
+  await collectFailureContext();
   await cleanupAndExit(1);
 });
 
@@ -139,6 +168,8 @@ async function main() {
   await redis.connect();
   loginData = await login();
   token = loginData.token;
+  defaultAuthContext = buildAuthContextFromLogin(loginData, 'login');
+  report.account_contexts.push(publicAuthContext(defaultAuthContext));
 
   await step('preflight', async () => {
     let servers = null;
@@ -218,6 +249,10 @@ async function main() {
 
   if (stressWorkers > 0) {
     await runStressScenario(stressWorkers);
+  }
+
+  if (includeMultiAccountStress) {
+    await runMultiAccountStressScenario();
   }
 
   await collectRemoteLogsForCreatedWorkers();
@@ -368,12 +403,22 @@ async function runTargetChannelScenario() {
   await collectTargetRemoteLogs(workerId, targetStartedAt);
 }
 
-async function createChannelAndQr(type, name) {
-  const response = await createChannel(type, name, `create:${type.key}`);
-  await requestQrAndWait(response.worker_id, type, `create:${type.key}`);
+async function createChannelAndQr(type, name, context = defaultAuthContext) {
+  const response = await createChannel(
+    type,
+    name,
+    `create:${type.key}`,
+    context
+  );
+  await requestQrAndWait(
+    response.worker_id,
+    type,
+    `create:${type.key}`,
+    context
+  );
 }
 
-async function createChannel(type, name, label) {
+async function createChannel(type, name, label, context = defaultAuthContext) {
   const traceId = trace('create', type.key);
   return step(label, async () => {
     const startedAt = Date.now();
@@ -383,14 +428,18 @@ async function createChannel(type, name, label) {
         worker_type: type.id,
       },
       traceId,
+      context,
       timeoutMs: apiTimeoutMs,
     });
     const workerId = data.worker_id;
+    workerAuthContexts.set(workerId, context);
     report.created_workers.push({
       worker_id: workerId,
       name,
       type: type.key,
       type_id: type.id,
+      account_id: context?.account_id,
+      account_name: context?.account_name,
       debug_trace_id: data.debug_trace_id ?? traceId,
     });
 
@@ -399,6 +448,8 @@ async function createChannel(type, name, label) {
       worker_id: workerId,
       name,
       type: type.key,
+      account_id: context?.account_id,
+      account_name: context?.account_name,
       ack_reason: data.reason,
       warm_pool_claimed: data.warm_pool_claimed === true,
       fallback_created: data.fallback_created === true,
@@ -410,7 +461,13 @@ async function createChannel(type, name, label) {
   });
 }
 
-async function recreateAndQr(workerId, name, typeKey, options) {
+async function recreateAndQr(
+  workerId,
+  name,
+  typeKey,
+  options,
+  context = defaultAuthContext
+) {
   const current = await readWorker(workerId);
   const type = WORKER_TYPES.find((item) => item.id === current?.worker_type_id);
   if (!type) {
@@ -426,6 +483,7 @@ async function recreateAndQr(workerId, name, typeKey, options) {
       if (options.route === 'worker-cooldown') {
         data = await api('PATCH', `/worker/${encodeURIComponent(workerId)}`, {
           traceId,
+          context,
           timeoutMs: apiTimeoutMs,
           allowHttpStatuses: [202, 409],
         });
@@ -447,12 +505,14 @@ async function recreateAndQr(workerId, name, typeKey, options) {
           {
             body: {},
             traceId,
+            context,
             timeoutMs: apiTimeoutMs,
           }
         );
       } else {
         data = await api('PATCH', `/worker/${encodeURIComponent(workerId)}`, {
           traceId,
+          context,
           timeoutMs: apiTimeoutMs,
         });
       }
@@ -462,6 +522,8 @@ async function recreateAndQr(workerId, name, typeKey, options) {
         worker_id: workerId,
         name,
         type: type.key,
+        account_id: context?.account_id,
+        account_name: context?.account_name,
         route: options.route,
         operation_id: data.operation_id,
         debug_trace_id: data.debug_trace_id ?? traceId,
@@ -474,12 +536,19 @@ async function recreateAndQr(workerId, name, typeKey, options) {
   const qr = await requestQrAndWait(
     workerId,
     type,
-    `recreate:${options.index}`
+    `recreate:${options.index}`,
+    context
   );
   return { ...recreateResult, qr };
 }
 
-async function switchTypeAndQr(workerId, name, type, index) {
+async function switchTypeAndQr(
+  workerId,
+  name,
+  type,
+  index,
+  context = defaultAuthContext
+) {
   const traceId = trace('switch', `${index}-${type.key}`);
   const switchResult = await step(`switch:${index}:${type.key}`, async () => {
     const startedAt = Date.now();
@@ -489,6 +558,7 @@ async function switchTypeAndQr(workerId, name, type, index) {
       {
         body: { worker_type: type.id },
         traceId,
+        context,
         timeoutMs: apiTimeoutMs,
       }
     );
@@ -497,6 +567,8 @@ async function switchTypeAndQr(workerId, name, type, index) {
       worker_id: workerId,
       name,
       type: type.key,
+      account_id: context?.account_id,
+      account_name: context?.account_name,
       operation_id: data?.operation_id,
       lifecycle_queued: data?.queued === true,
       debug_trace_id: data?.debug_trace_id ?? traceId,
@@ -508,12 +580,18 @@ async function switchTypeAndQr(workerId, name, type, index) {
   const qr = await requestQrAndWait(
     workerId,
     type,
-    `switch:${index}:${type.key}`
+    `switch:${index}:${type.key}`,
+    context
   );
   return { ...switchResult, qr };
 }
 
-async function requestQrAndWait(workerId, type, label) {
+async function requestQrAndWait(
+  workerId,
+  type,
+  label,
+  context = defaultAuthContext
+) {
   const traceId = trace('qr', `${label}-${type.key}`.replaceAll(':', '-'));
   return step(`qr:${label}`, async () => {
     const before = await readWorker(workerId);
@@ -528,6 +606,7 @@ async function requestQrAndWait(workerId, type, label) {
       {
         body: {},
         traceId,
+        context,
         timeoutMs: apiTimeoutMs,
       }
     );
@@ -546,6 +625,8 @@ async function requestQrAndWait(workerId, type, label) {
     return {
       worker_id: workerId,
       type: type.key,
+      account_id: context?.account_id,
+      account_name: context?.account_name,
       ack_status: ack.status,
       ack_code: ack.code,
       ack_reason: ack.reason,
@@ -642,7 +723,138 @@ async function runStressScenario(count) {
   report.stress.finished_at = new Date().toISOString();
 }
 
-async function qrBurst(workerId, type, label, count) {
+async function runMultiAccountStressScenario() {
+  const contexts = await resolveStressAccountContexts();
+  const contextsByAccountId = new Map(
+    contexts.map((context) => [context.account_id, context])
+  );
+
+  report.multi_account_stress = {
+    account_count: contexts.length,
+    accounts: contexts.map(publicAuthContext),
+    worker_types: WORKER_TYPES.map((type) => type.key),
+    workers_per_type_per_account: multiAccountWorkersPerType,
+    qr_burst_size: multiAccountQrBurstSize,
+    started_at: new Date().toISOString(),
+  };
+
+  const created = await step('multi-account:create:concurrent', async () => {
+    const tasks = [];
+
+    for (const context of contexts) {
+      for (const type of WORKER_TYPES) {
+        for (let index = 1; index <= multiAccountWorkersPerType; index += 1) {
+          tasks.push(
+            createChannel(
+              type,
+              `${baseName}-${context.account_key}-${type.key}-${index}`,
+              `multi-account:create:${context.account_key}:${type.key}:${index}`,
+              context
+            )
+          );
+        }
+      }
+    }
+
+    const results = await settleOrThrow(tasks, 'multi-account create');
+    return results.map((item) => ({
+      worker_id: item.worker_id,
+      name: item.name,
+      type: item.type,
+      account_id: item.account_id,
+      account_name: item.account_name,
+      ready_ms: item.ready_ms,
+      warm_pool_claimed: item.warm_pool_claimed,
+      fallback_created: item.fallback_created,
+    }));
+  });
+
+  report.multi_account_stress.created = created;
+
+  const workers = created.map((item) => ({
+    ...item,
+    type: workerTypeByKey(item.type),
+    context: contextsByAccountId.get(item.account_id) ?? defaultAuthContext,
+  }));
+
+  const qrByType = {};
+  for (const type of WORKER_TYPES) {
+    const workersForType = workers.filter(
+      (worker) => worker.type.key === type.key
+    );
+    qrByType[type.key] = await step(
+      `multi-account:qr-open:${type.key}:concurrent`,
+      async () =>
+        settleOrThrow(
+          workersForType.map((worker, index) =>
+            qrBurst(
+              worker.worker_id,
+              worker.type,
+              `multi-account:${type.key}:${index + 1}:${worker.account_name}`,
+              multiAccountQrBurstSize,
+              worker.context
+            )
+          ),
+          `multi-account ${type.key} QR burst`
+        )
+    );
+  }
+  report.multi_account_stress.qr_by_type = qrByType;
+
+  const recreates = await step(
+    'multi-account:reset-recreate:concurrent',
+    async () =>
+      settleOrThrow(
+        workers.map((worker, index) =>
+          recreateAndQr(
+            worker.worker_id,
+            worker.name,
+            worker.type.key,
+            {
+              index: `multi-account-${index + 1}`,
+              route: 'reset',
+            },
+            worker.context
+          )
+        ),
+        'multi-account reset recreate'
+      )
+  );
+  report.multi_account_stress.recreates = recreates;
+
+  const qrAfterRecreateByType = {};
+  for (const type of WORKER_TYPES) {
+    const workersForType = workers.filter(
+      (worker) => worker.type.key === type.key
+    );
+    qrAfterRecreateByType[type.key] = await step(
+      `multi-account:qr-after-recreate:${type.key}:concurrent`,
+      async () =>
+        settleOrThrow(
+          workersForType.map((worker, index) =>
+            qrBurst(
+              worker.worker_id,
+              worker.type,
+              `multi-account-after-recreate:${type.key}:${index + 1}:${worker.account_name}`,
+              multiAccountQrBurstSize,
+              worker.context
+            )
+          ),
+          `multi-account ${type.key} QR after recreate`
+        )
+    );
+  }
+  report.multi_account_stress.qr_after_recreate_by_type = qrAfterRecreateByType;
+  report.multi_account_stress.finished_at = new Date().toISOString();
+}
+
+async function qrBurst(
+  workerId,
+  type,
+  label,
+  count,
+  context = defaultAuthContext
+) {
   const traceId = trace('qr-burst', label.replaceAll(':', '-'));
   const startedAt = Date.now();
   const responses = await Promise.all(
@@ -650,6 +862,7 @@ async function qrBurst(workerId, type, label, count) {
       api('POST', `/worker/${encodeURIComponent(workerId)}/connection/qrcode`, {
         body: {},
         traceId,
+        context,
         timeoutMs: apiTimeoutMs,
       })
     )
@@ -683,6 +896,8 @@ async function qrBurst(workerId, type, label, count) {
   return {
     worker_id: workerId,
     type: type.key,
+    account_id: context?.account_id,
+    account_name: context?.account_name,
     request_count: count,
     unique_attempt_count: uniqueAttempts.length,
     connection_attempt_id: uniqueAttempts[0],
@@ -879,6 +1094,203 @@ async function login() {
   return data;
 }
 
+async function resolveStressAccountContexts() {
+  const requestedAccountIds =
+    listArg('--stress-account-ids') ??
+    KNOWN_STRESS_ACCOUNTS.map((account) => account.account_id);
+  const requestedIds = new Set(requestedAccountIds);
+  const accounts = await listAccessibleAccounts();
+  const accountById = new Map(
+    accounts.map((account) => [account.account_id, account])
+  );
+
+  if (defaultAuthContext?.account_id) {
+    requestedIds.add(defaultAuthContext.account_id);
+    if (!accountById.has(defaultAuthContext.account_id)) {
+      accountById.set(defaultAuthContext.account_id, {
+        account_id: defaultAuthContext.account_id,
+        name: defaultAuthContext.account_name,
+      });
+    }
+  }
+
+  const contexts = [];
+  for (const accountId of requestedIds) {
+    const known =
+      accountById.get(accountId) ??
+      KNOWN_STRESS_ACCOUNTS.find((account) => account.account_id === accountId);
+    if (!known) {
+      throw new Error(`Stress account ${accountId} was not found`);
+    }
+
+    const context = await resolveAccountContext(known);
+    contexts.push(context);
+    recordAuthContext(context);
+  }
+
+  if (contexts.length < 2) {
+    throw new Error(
+      `Multi-account stress requires at least 2 account contexts, got ${contexts.length}`
+    );
+  }
+
+  return contexts;
+}
+
+async function listAccessibleAccounts() {
+  let userAccountsError = null;
+  try {
+    const accounts = await api('GET', '/user/accounts', {
+      context: defaultAuthContext,
+      timeoutMs: apiTimeoutMs,
+    });
+    if (Array.isArray(accounts)) {
+      return accounts.map(normalizeAccount).filter(Boolean);
+    }
+  } catch (error) {
+    userAccountsError = errorMessage(error);
+  }
+
+  const accountList = await api('GET', '/account?current_page=1&per_page=100', {
+    context: defaultAuthContext,
+    timeoutMs: apiTimeoutMs,
+  });
+  if (userAccountsError) {
+    report.account_discovery = { user_accounts_error: userAccountsError };
+  }
+  const results = Array.isArray(accountList?.results)
+    ? accountList.results
+    : [];
+  return results.map(normalizeAccount).filter(Boolean);
+}
+
+async function resolveAccountContext(account) {
+  if (account.account_id === defaultAuthContext?.account_id) {
+    return {
+      ...defaultAuthContext,
+      account_name: account.name ?? defaultAuthContext.account_name,
+      account_key: accountKey(account.name ?? defaultAuthContext.account_name),
+    };
+  }
+
+  const user = await findSessionLoginUserForAccount(account);
+  const sessionData = await api(
+    'POST',
+    `/user/${encodeURIComponent(user.user_id)}/session-login`,
+    {
+      context: defaultAuthContext,
+      timeoutMs: apiTimeoutMs,
+    }
+  );
+
+  const context = buildAuthContextFromLogin(
+    sessionData,
+    'session-login',
+    account
+  );
+
+  if (context.account_id !== account.account_id) {
+    throw new Error(
+      `Session login for ${account.name} returned account ${context.account_id}`
+    );
+  }
+
+  return context;
+}
+
+async function findSessionLoginUserForAccount(account) {
+  const query = new URLSearchParams({
+    account_id: account.account_id,
+    current_page: '1',
+    per_page: '20',
+  });
+  const data = await api('GET', `/user?${query.toString()}`, {
+    context: defaultAuthContext,
+    timeoutMs: apiTimeoutMs,
+  });
+  const users = Array.isArray(data?.results) ? data.results : [];
+  const user =
+    users.find(
+      (item) =>
+        item.account?.account_id === account.account_id &&
+        item.user_status?.name === 'active'
+    ) ?? users.find((item) => item.account?.account_id === account.account_id);
+
+  if (!user?.user_id) {
+    throw new Error(`No session-login user found for account ${account.name}`);
+  }
+
+  return user;
+}
+
+function buildAuthContextFromLogin(data, source, accountFallback = null) {
+  const accountName =
+    data?.layout?.name ??
+    accountFallback?.name ??
+    data?.user?.account?.name ??
+    data?.user?.account_name ??
+    data?.user?.account_id ??
+    'account';
+
+  return {
+    token: data.token,
+    source,
+    user_id: data?.user?.user_id,
+    account_id: data?.user?.account_id ?? accountFallback?.account_id,
+    account_name: accountName,
+    account_key: accountKey(accountName),
+  };
+}
+
+function publicAuthContext(context) {
+  if (!context) {
+    return null;
+  }
+
+  return {
+    source: context.source,
+    user_id: context.user_id,
+    account_id: context.account_id,
+    account_name: context.account_name,
+    account_key: context.account_key,
+  };
+}
+
+function recordAuthContext(context) {
+  if (!context?.account_id) {
+    return;
+  }
+
+  const alreadyRecorded = report.account_contexts.some(
+    (item) => item?.account_id === context.account_id
+  );
+  if (!alreadyRecorded) {
+    report.account_contexts.push(publicAuthContext(context));
+  }
+}
+
+function normalizeAccount(account) {
+  if (!account?.account_id) {
+    return null;
+  }
+
+  return {
+    account_id: account.account_id,
+    name: account.name ?? account.account?.name ?? account.account_id,
+  };
+}
+
+function accountKey(name) {
+  const normalized = String(name ?? 'account')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || 'account';
+}
+
 async function api(method, route, options = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(
@@ -896,8 +1308,9 @@ async function api(method, route, options = {}) {
       headers['Content-Type'] = 'application/json';
     }
 
-    if (!options.anonymous) {
-      headers.Authorization = `Bearer ${token}`;
+    const requestToken = options.context?.token ?? options.token ?? token;
+    if (!options.anonymous && requestToken) {
+      headers.Authorization = `Bearer ${requestToken}`;
     }
 
     if (options.traceId) {
@@ -1072,6 +1485,30 @@ async function collectRemoteLogsForCreatedWorkers() {
   }
 }
 
+async function collectFailureContext() {
+  if (!process.env.CHANNEL_WORKER_SSH_HOST) {
+    return;
+  }
+
+  try {
+    report.remote_logs.balance = {
+      target: 'under-balance-api',
+      tail: remoteDockerLogs('under-balance-api', '45m'),
+    };
+  } catch (error) {
+    report.remote_logs.balance = {
+      target: 'under-balance-api',
+      error: errorMessage(error),
+    };
+  }
+
+  try {
+    await collectRemoteLogsForCreatedWorkers();
+  } catch (error) {
+    report.remote_logs.created_workers_error = errorMessage(error);
+  }
+}
+
 async function collectTargetRemoteLogs(workerId, since) {
   if (!process.env.CHANNEL_WORKER_SSH_HOST) {
     return;
@@ -1153,10 +1590,13 @@ async function cleanupAndExit(code) {
   if (!keepChannels && token) {
     for (const created of [...report.created_workers].reverse()) {
       try {
+        const context =
+          workerAuthContexts.get(created.worker_id) ?? defaultAuthContext;
         await api(
           'DELETE',
           `/worker/${encodeURIComponent(created.worker_id)}`,
           {
+            context,
             timeoutMs: apiTimeoutMs,
           }
         );
@@ -1195,6 +1635,10 @@ function trace(prefix, label) {
 }
 
 function redactQr(value) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
   if (Array.isArray(value)) {
     return value.map(redactQr);
   }
@@ -1257,6 +1701,18 @@ function numberArg(name, fallback) {
     throw new Error(`${name} must be a positive integer`);
   }
   return parsed;
+}
+
+function listArg(name) {
+  const raw = valueArg(name);
+  if (!raw) {
+    return undefined;
+  }
+
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function valueArg(name) {
