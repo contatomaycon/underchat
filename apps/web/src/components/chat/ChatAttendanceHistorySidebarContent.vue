@@ -3,24 +3,14 @@ import { useChatStore } from '@/@webcore/stores/chat';
 import { computed, watch, onUnmounted, nextTick, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
-import { formatDate } from '@core/common/functions/formatDate';
-import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { EColor } from '@core/common/enums/EColor';
-import { SearchChatsQuery } from '@core/schema/chat/searchChats/request.schema';
-import { EChatStatus } from '@core/common/enums/EChatStatus';
-import {
-  getPermissions,
-  getSectors,
-  getUser,
-} from '@/@webcore/localStorage/user';
-import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
-import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
 import ChatLogViewer from '@/components/chat/ChatLogViewer.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import ChatContactViewModal from '@/components/chat/ChatContactViewModal.vue';
 import { ViewChatContactResponse } from '@core/schema/chat/viewContact/response.schema';
+import { useChatAttendanceHistory } from '@/composables/useChatAttendanceHistory';
 
 const props = defineProps<{
   isOpen?: boolean;
@@ -33,12 +23,6 @@ const emit = defineEmits<{
 const chatStore = useChatStore();
 const { t } = useI18n();
 
-const attendanceHistory = ref<ListChatsResult[]>([]);
-const isLoading = ref(false);
-const isLoadingMore = ref(false);
-const currentPage = ref(1);
-const totalPages = ref(0);
-const perPage = 20;
 const attendanceHistoryContainer = ref<HTMLElement | null>(null);
 
 const isConversationModalOpen = ref(false);
@@ -51,198 +35,19 @@ const activePhone = computed(() => {
   return chatStore.activeChat?.phone ?? '';
 });
 
-const canListAllChats = computed(() => {
-  const permissions = getPermissions();
-  if (!permissions) return false;
-
-  return permissions.some(
-    (perm) =>
-      perm === EGeneralPermissions.full_access ||
-      perm === EGeneralPermissions.full_access_group ||
-      perm === EChatPermissions.chat_group ||
-      perm === EChatPermissions.list_all_chats_in_sector ||
-      perm === EChatPermissions.list_all_chats_without_sector_limit
-  );
-});
-
-const formatAttendanceDate = (
-  dateString: string | null | undefined
-): string => {
-  if (!dateString) return '-';
-
-  const date = new Date(dateString);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === today.toDateString()) {
-    return t('today');
-  }
-
-  if (date.toDateString() === yesterday.toDateString()) {
-    return t('yesterday');
-  }
-
-  return formatDate(dateString);
-};
-
-const formatLastInteractionDate = (
-  dateString: string | null | undefined
-): string => {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === today.toDateString()) {
-    return (
-      formatDateTime(dateString).split(' às ')[1] || formatDate(dateString)
-    );
-  }
-
-  if (date.toDateString() === yesterday.toDateString()) {
-    return `${t('yesterday')} ${formatDateTime(dateString).split(' às ')[1] || ''}`.trim();
-  }
-
-  return formatDateTime(dateString);
-};
-
-const calculateAttendanceTime = (
-  startDate: string | null | undefined,
-  endDate: string | null | undefined
-): string => {
-  if (!startDate || !endDate) {
-    return '-';
-  }
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return '-';
-  }
-
-  const diffMs = end.getTime() - start.getTime();
-  if (diffMs < 0) {
-    return '-';
-  }
-
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffDays > 0) {
-    const hours = diffHours % 24;
-    const minutes = diffMinutes % 60;
-    if (hours > 0 && minutes > 0) {
-      return `${diffDays}d ${hours}h ${minutes}min`;
-    }
-    if (hours > 0) {
-      return `${diffDays}d ${hours}h`;
-    }
-    return `${diffDays}d ${minutes}min`;
-  }
-
-  if (diffHours > 0) {
-    const minutes = diffMinutes % 60;
-    if (minutes > 0) {
-      return `${diffHours}h ${minutes}min`;
-    }
-    return `${diffHours}h`;
-  }
-
-  if (diffMinutes > 0) {
-    const seconds = diffSeconds % 60;
-    if (seconds > 0) {
-      return `${diffMinutes}min ${seconds}s`;
-    }
-    return `${diffMinutes}min`;
-  }
-
-  return `${diffSeconds}s`;
-};
-
-const loadAttendanceHistory = async (reset: boolean = true) => {
-  if (!activePhone.value) {
-    attendanceHistory.value = [];
-    currentPage.value = 1;
-    totalPages.value = 0;
-    return;
-  }
-
-  if (reset) {
-    currentPage.value = 1;
-    isLoading.value = true;
-  } else {
-    isLoadingMore.value = true;
-  }
-
-  try {
-    const user = getUser();
-    const userId = user?.user_id;
-    const sectors = getSectors();
-
-    const query: SearchChatsQuery = {
-      current_page: currentPage.value,
-      per_page: perPage,
-      search: '',
-      status: EChatStatus.closed,
-      filter_phone: activePhone.value,
-      sort_field: 'closed_at',
-      sort_order: 'desc',
-    };
-
-    if (!canListAllChats.value && userId) {
-      query.filter_user_id = userId;
-    }
-
-    if (!canListAllChats.value && sectors && sectors.length > 0) {
-      if (sectors.length === 1) {
-        query.filter_sector_id = sectors[0];
-      }
-    }
-
-    const response = await chatStore.searchChats(query);
-
-    if (response) {
-      if (reset) {
-        attendanceHistory.value = response.results;
-      } else {
-        attendanceHistory.value.push(...response.results);
-      }
-
-      currentPage.value = response.pagings.current_page;
-      totalPages.value = response.pagings.total_pages;
-    }
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error
-        ? error.message
-        : t('attendance_history_load_error') || 'Erro ao carregar histórico';
-    chatStore.showSnackbar(errorMessage, EColor.error);
-    if (reset) {
-      attendanceHistory.value = [];
-    }
-  } finally {
-    isLoading.value = false;
-    isLoadingMore.value = false;
-  }
-};
-
-const loadMoreResults = async () => {
-  if (
-    isLoadingMore.value ||
-    currentPage.value >= totalPages.value ||
-    !activePhone.value
-  ) {
-    return;
-  }
-
-  currentPage.value += 1;
-  await loadAttendanceHistory(false);
-};
+const {
+  attendanceHistory,
+  isLoading,
+  isLoadingMore,
+  currentPage,
+  totalPages,
+  loadAttendanceHistory,
+  loadMoreResults,
+  resetAttendanceHistory,
+  formatAttendanceDate,
+  formatLastInteractionDate,
+  calculateAttendanceTime,
+} = useChatAttendanceHistory({ activePhone });
 
 const handleScroll = () => {
   const container = attendanceHistoryContainer.value;
@@ -263,9 +68,7 @@ watch(
       await loadAttendanceHistory(true);
     }
     if (!isOpen) {
-      attendanceHistory.value = [];
-      currentPage.value = 1;
-      totalPages.value = 0;
+      resetAttendanceHistory();
     }
   }
 );
@@ -274,9 +77,7 @@ watch(
   () => chatStore.activeChat?.chat_id,
   () => {
     if (!props.isOpen) {
-      attendanceHistory.value = [];
-      currentPage.value = 1;
-      totalPages.value = 0;
+      resetAttendanceHistory();
       return;
     }
     if (activePhone.value) {

@@ -19,6 +19,7 @@ import {
   VideoMessageChat,
   AudioMessageChat,
 } from '@core/schema/chat/listMessageChats/response.schema';
+import type { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EColor } from '@core/common/enums/EColor';
@@ -42,6 +43,8 @@ import type { TransferWorker } from '@core/schema/chat/listTransferOptions/respo
 import LottieSticker from '@/components/chat/LottieSticker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import UploadProgressBadge from '@/components/chat/UploadProgressBadge.vue';
+import ChatInlineAttendanceHistoryMarker from '@/components/chat/ChatInlineAttendanceHistoryMarker.vue';
+import { useChatAttendanceHistory } from '@/composables/useChatAttendanceHistory';
 import {
   buildImageGalleryLookup,
   isGhostEmptyTextMessage,
@@ -232,6 +235,89 @@ const shouldBlurMessageContent = computed(() => {
     chatStatus === EChatStatus.ura_webhook;
   return isQueueOrUra && !canViewChatContent();
 });
+
+const activePhone = computed(() => activeChat.value?.phone ?? '');
+const activeChatId = computed(() => activeChat.value?.chat_id ?? null);
+const canViewAttendanceHistory = computed(() => {
+  return can([
+    EGeneralPermissions.full_access,
+    EGeneralPermissions.full_access_group,
+    EChatPermissions.chat_group,
+    EChatPermissions.attendance_history,
+  ]);
+});
+
+const {
+  attendanceHistory: inlineAttendanceHistory,
+  isLoading: isInlineAttendanceHistoryLoading,
+  isLoadingMore: isInlineAttendanceHistoryLoadingMore,
+  hasLoaded: hasInlineAttendanceHistoryLoaded,
+  hasMore: hasMoreInlineAttendanceHistory,
+  loadAttendanceHistory: loadInlineAttendanceHistory,
+  loadMoreResults: loadMoreInlineAttendanceHistory,
+  resetAttendanceHistory: resetInlineAttendanceHistory,
+  formatAttendanceDate: formatInlineAttendanceDate,
+  formatLastInteractionDate: formatInlineLastInteractionDate,
+  calculateAttendanceTime: calculateInlineAttendanceTime,
+} = useChatAttendanceHistory({
+  activePhone,
+  enabled: canViewAttendanceHistory,
+  excludeChatId: activeChatId,
+});
+
+const inlineAttendanceMessagesByChatId = ref<
+  Record<string, ListMessageResult[]>
+>({});
+const loadingInlineAttendanceMessageChatIds = ref<Set<string>>(new Set());
+const expandedInlineAttendanceChatIds = ref<Set<string>>(new Set());
+
+const sortedInlineAttendanceHistory = computed(() => {
+  return [...inlineAttendanceHistory.value].reverse();
+});
+
+const markInlineAttendanceMessagesLoading = (
+  chatId: string,
+  loading: boolean
+) => {
+  const next = new Set(loadingInlineAttendanceMessageChatIds.value);
+  if (loading) {
+    next.add(chatId);
+  } else {
+    next.delete(chatId);
+  }
+  loadingInlineAttendanceMessageChatIds.value = next;
+};
+
+const isInlineAttendanceMessagesLoading = (chatId: string): boolean => {
+  return loadingInlineAttendanceMessageChatIds.value.has(chatId);
+};
+
+const isInlineAttendanceMessagesLoaded = (chatId: string): boolean => {
+  return Object.prototype.hasOwnProperty.call(
+    inlineAttendanceMessagesByChatId.value,
+    chatId
+  );
+};
+
+const isInlineAttendanceExpanded = (chatId: string): boolean => {
+  return expandedInlineAttendanceChatIds.value.has(chatId);
+};
+
+const setInlineAttendanceExpanded = (chatId: string, expanded: boolean) => {
+  const next = new Set(expandedInlineAttendanceChatIds.value);
+  if (expanded) {
+    next.add(chatId);
+  } else {
+    next.delete(chatId);
+  }
+  expandedInlineAttendanceChatIds.value = next;
+};
+
+const resetInlineAttendanceMessages = () => {
+  inlineAttendanceMessagesByChatId.value = {};
+  loadingInlineAttendanceMessageChatIds.value = new Set();
+  expandedInlineAttendanceChatIds.value = new Set();
+};
 
 const resolveFeedbackIcon = (
   message: ListMessageResult
@@ -2199,6 +2285,98 @@ const visibleMessages = computed(() => {
   return sourceVisibleMessages.value;
 });
 
+const loadInlineAttendanceMessages = async (chat: ListChatsResult) => {
+  if (!chat.chat_id) return;
+  if (isInlineAttendanceMessagesLoaded(chat.chat_id)) {
+    setInlineAttendanceExpanded(
+      chat.chat_id,
+      !isInlineAttendanceExpanded(chat.chat_id)
+    );
+    return;
+  }
+  if (isInlineAttendanceMessagesLoading(chat.chat_id)) return;
+
+  markInlineAttendanceMessagesLoading(chat.chat_id, true);
+
+  try {
+    const allMessages: ListMessageResult[] = [];
+    let page = 1;
+    let totalPages = 1;
+
+    do {
+      const response = await chatStore.getChatMessagesById(chat.chat_id, {
+        current_page: page,
+        per_page: 100,
+      });
+
+      if (!response) {
+        return;
+      }
+
+      allMessages.push(...response.results);
+      totalPages = response.pagings.total_pages || 1;
+      page += 1;
+    } while (page <= totalPages);
+
+    const sortedMessages = allMessages
+      .filter((message) => message.chat_id === chat.chat_id)
+      .sort((first, second) => {
+        return (
+          new Date(first.date).getTime() - new Date(second.date).getTime()
+        );
+      });
+
+    inlineAttendanceMessagesByChatId.value = {
+      ...inlineAttendanceMessagesByChatId.value,
+      [chat.chat_id]: sortedMessages,
+    };
+    setInlineAttendanceExpanded(chat.chat_id, true);
+  } finally {
+    markInlineAttendanceMessagesLoading(chat.chat_id, false);
+  }
+};
+
+const ensureInlineAttendanceHistoryLoaded = async () => {
+  if (!canViewAttendanceHistory.value || !activePhone.value) return;
+
+  if (!hasInlineAttendanceHistoryLoaded.value) {
+    await loadInlineAttendanceHistory(true);
+    return;
+  }
+
+  if (hasMoreInlineAttendanceHistory.value) {
+    await loadMoreInlineAttendanceHistory();
+  }
+};
+
+const ensureInitialInlineAttendanceHistoryVisible = async () => {
+  if (!canViewAttendanceHistory.value || !activePhone.value) return;
+  if (hasInlineAttendanceHistoryLoaded.value) return;
+  if (
+    isInlineAttendanceHistoryLoading.value ||
+    isInlineAttendanceHistoryLoadingMore.value ||
+    chatStore.loading ||
+    chatStore.loadingMoreMessages
+  ) {
+    return;
+  }
+  if (chatStore.currentPage < chatStore.totalPages) return;
+
+  await nextTick();
+
+  const scrollElement = scrollElementRef.value;
+  if (!scrollElement) return;
+
+  const threshold = 200;
+  const hasScrollableOverflow =
+    scrollElement.scrollHeight > scrollElement.clientHeight + 8;
+  const isNearTop = scrollElement.scrollTop < threshold;
+
+  if (!hasScrollableOverflow || isNearTop) {
+    await loadInlineAttendanceHistory(true);
+  }
+};
+
 const showSkeleton = computed(
   () => chatStore.loading && visibleMessages.value.length === 0
 );
@@ -2561,6 +2739,25 @@ const handleScroll = async (e: Event) => {
       target.scrollTop = previousScrollTop + scrollDifference;
       checkIfShouldShowScrollButton(target);
     }
+  } else if (
+    scrollTop < threshold &&
+    !chatStore.loadingMoreMessages &&
+    chatStore.currentPage >= chatStore.totalPages &&
+    !isInlineAttendanceHistoryLoading.value &&
+    !isInlineAttendanceHistoryLoadingMore.value
+  ) {
+    const previousScrollHeight = target.scrollHeight;
+    const previousScrollTop = target.scrollTop;
+
+    await ensureInlineAttendanceHistoryLoaded();
+
+    await nextTick();
+    const newScrollHeight = target.scrollHeight;
+    const scrollDifference = newScrollHeight - previousScrollHeight;
+    if (scrollDifference > 0) {
+      target.scrollTop = previousScrollTop + scrollDifference;
+      checkIfShouldShowScrollButton(target);
+    }
   }
 };
 
@@ -2625,6 +2822,8 @@ watch(
       if (scrollElementRef.value) {
         checkIfShouldShowScrollButton(scrollElementRef.value);
       }
+
+      ensureInitialInlineAttendanceHistoryVisible();
     });
   },
   { deep: true, immediate: true }
@@ -2637,6 +2836,8 @@ watch(
       if (scrollElementRef.value) {
         checkIfShouldShowScrollButton(scrollElementRef.value);
       }
+
+      ensureInitialInlineAttendanceHistoryVisible();
     });
   }
 );
@@ -2652,6 +2853,11 @@ watch(
     scrollToBottom();
   }
 );
+
+watch(activeChatId, () => {
+  resetInlineAttendanceHistory();
+  resetInlineAttendanceMessages();
+});
 
 watch(locationModalOpen, async (isOpen) => {
   if (isOpen && locationData.value) {
@@ -2769,22 +2975,80 @@ const isSameDay = (date1: string, date2: string): boolean => {
   );
 };
 
+type TimelineSourceEntry =
+  | {
+      type: 'history-marker';
+      chat: ListChatsResult;
+    }
+  | {
+      type: 'message';
+      message: ListMessageResult;
+      readonly: boolean;
+    };
+
 type MessageWithSeparator = {
-  type: 'message' | 'separator';
+  type: 'message' | 'separator' | 'history-marker';
   message?: ListMessageResult;
+  readonly?: boolean;
+  chat?: ListChatsResult;
   separatorDate?: string;
   separatorLabel?: string;
 };
 
+const timelineSourceEntries = computed<TimelineSourceEntry[]>(() => {
+  const entries: TimelineSourceEntry[] = [];
+
+  if (canViewAttendanceHistory.value) {
+    for (const chat of sortedInlineAttendanceHistory.value) {
+      entries.push({
+        type: 'history-marker',
+        chat,
+      });
+
+      const messages = isInlineAttendanceExpanded(chat.chat_id)
+        ? inlineAttendanceMessagesByChatId.value[chat.chat_id]
+        : null;
+      if (messages?.length) {
+        for (const message of messages) {
+          entries.push({
+            type: 'message',
+            message,
+            readonly: true,
+          });
+        }
+      }
+    }
+  }
+
+  for (const message of visibleMessages.value) {
+    entries.push({
+      type: 'message',
+      message,
+      readonly: false,
+    });
+  }
+
+  return entries;
+});
+
 const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
-  const messages = visibleMessages.value;
-  if (messages.length === 0) return [];
+  const timelineEntries = timelineSourceEntries.value;
+  if (timelineEntries.length === 0) return [];
 
   const result: MessageWithSeparator[] = [];
   let lastDate: string | null = null;
 
-  for (const message of messages) {
-    const messageDate = message.date;
+  for (const entry of timelineEntries) {
+    if (entry.type === 'history-marker') {
+      result.push({
+        type: 'history-marker',
+        chat: entry.chat,
+      });
+      lastDate = null;
+      continue;
+    }
+
+    const messageDate = entry.message.date;
 
     if (!lastDate || !isSameDay(messageDate, lastDate)) {
       result.push({
@@ -2797,7 +3061,8 @@ const messagesWithSeparators = computed<MessageWithSeparator[]>(() => {
 
     result.push({
       type: 'message',
-      message,
+      message: entry.message,
+      readonly: entry.readonly,
     });
   }
 
@@ -2823,6 +3088,7 @@ onMounted(() => {
 
       setTimeout(() => {
         checkIfShouldShowScrollButton(scrollElement);
+        ensureInitialInlineAttendanceHistoryVisible();
       }, 100);
     }
 
@@ -2932,11 +3198,31 @@ onUnmounted(() => {
         :key="
           item.type === 'separator'
             ? `separator-${activeChat?.chat_id ?? 'no-chat'}-${item.separatorDate}`
-            : `msg-${activeChat?.chat_id ?? 'no-chat'}-${getMessageRenderKey(item.message)}`
+            : item.type === 'history-marker'
+              ? `history-marker-${item.chat?.chat_id ?? index}`
+              : `msg-${item.readonly ? 'history' : (activeChat?.chat_id ?? 'no-chat')}-${getMessageRenderKey(item.message)}`
         "
       >
+        <ChatInlineAttendanceHistoryMarker
+          v-if="item.type === 'history-marker' && item.chat"
+          :chat="item.chat"
+          :date-label="formatInlineAttendanceDate(item.chat.date)"
+          :last-interaction-label="
+            formatInlineLastInteractionDate(item.chat.summary?.last_date)
+          "
+          :attendance-time-label="
+            calculateInlineAttendanceTime(
+              item.chat.started_at ?? null,
+              item.chat.closed_at ?? null
+            )
+          "
+          :loading="isInlineAttendanceMessagesLoading(item.chat.chat_id)"
+          :loaded="isInlineAttendanceMessagesLoaded(item.chat.chat_id)"
+          :expanded="isInlineAttendanceExpanded(item.chat.chat_id)"
+          @toggle="loadInlineAttendanceMessages"
+        />
         <div
-          v-if="item.type === 'separator'"
+          v-else-if="item.type === 'separator'"
           class="d-flex justify-center align-center my-4 date-separator-wrapper"
           style="width: 100%; gap: 8px"
           :data-separator-date="item.separatorDate"
@@ -2996,7 +3282,7 @@ onUnmounted(() => {
                 messagesWithSeparators[index + 1]?.type === 'message',
             },
           ]"
-          @mouseenter="onMouseEnter(item.message)"
+          @mouseenter="!item.readonly && onMouseEnter(item.message)"
           @mouseleave="onMouseLeave"
         >
           <div
@@ -3049,6 +3335,7 @@ onUnmounted(() => {
               <div
                 v-if="
                   hoveredMessageId === item.message.message_id &&
+                  !item.readonly &&
                   canInteractWithMessage(item.message) &&
                   showReactionPicker !== item.message.message_id &&
                   !isQueueStatus &&
@@ -3076,7 +3363,7 @@ onUnmounted(() => {
               </div>
 
               <div
-                v-if="isMessageUploadError(item.message)"
+                v-if="!item.readonly && isMessageUploadError(item.message)"
                 :class="[
                   'retry-trigger-container',
                   !isTypeUser(item.message)
@@ -3107,7 +3394,7 @@ onUnmounted(() => {
                       : 'chat-right',
                   {
                     'is-deleted': item.message.deleted,
-                    'has-actions': !item.message.deleted,
+                    'has-actions': !item.message.deleted && !item.readonly,
                     'has-contact-card':
                       item.message.content?.type ===
                         EMessageType.contact_card ||
@@ -3134,6 +3421,7 @@ onUnmounted(() => {
                     (canInteractWithMessage(item.message) ||
                       (item.message.deleted &&
                         hasMessageVersions(item.message))) &&
+                    !item.readonly &&
                     !isQueueStatus &&
                     item.message.content?.type !== EMessageType.annotation &&
                     item.message.content?.type !== EMessageType.system
@@ -3306,9 +3594,9 @@ onUnmounted(() => {
                     class="quoted-block"
                     :class="{
                       'is-right': !isTypeUser(item.message),
-                      'is-clickable': !item.message.deleted,
+                      'is-clickable': !item.message.deleted && !item.readonly,
                     }"
-                    @click="goToQuoted(item.message)"
+                    @click="!item.readonly && goToQuoted(item.message)"
                   >
                     <div class="quoted-name">
                       {{ resolveQuotedName(item.message) }}
@@ -4376,6 +4664,7 @@ onUnmounted(() => {
                         formatDate(item.message.date, {
                           hour: '2-digit',
                           minute: '2-digit',
+                          second: '2-digit',
                           hour12: false,
                         })
                       "
@@ -4456,6 +4745,7 @@ onUnmounted(() => {
                         formatDate(item.message.date, {
                           hour: '2-digit',
                           minute: '2-digit',
+                          second: '2-digit',
                           hour12: false,
                         })
                       "
@@ -4937,6 +5227,7 @@ onUnmounted(() => {
                             formatDate(item.message.date, {
                               hour: '2-digit',
                               minute: '2-digit',
+                              second: '2-digit',
                               hour12: false,
                             })
                           }}
@@ -5315,6 +5606,7 @@ onUnmounted(() => {
                   formatDate(item.date, {
                     hour: '2-digit',
                     minute: '2-digit',
+                    second: '2-digit',
                     hour12: false,
                   })
                 }}

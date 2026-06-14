@@ -2690,6 +2690,7 @@ const handleContactClick = (message: ListMessageResult) => {
                         formatDate(item.message.date, {
                           hour: '2-digit',
                           minute: '2-digit',
+                          second: '2-digit',
                           hour12: false,
                         })
                       "
@@ -2750,6 +2751,7 @@ const handleContactClick = (message: ListMessageResult) => {
                         formatDate(item.message.date, {
                           hour: '2-digit',
                           minute: '2-digit',
+                          second: '2-digit',
                           hour12: false,
                         })
                       "
@@ -3187,6 +3189,7 @@ const handleContactClick = (message: ListMessageResult) => {
                             formatDate(item.message.date, {
                               hour: '2-digit',
                               minute: '2-digit',
+                              second: '2-digit',
                               hour12: false,
                             })
                           }}
@@ -3361,6 +3364,7 @@ const handleContactClick = (message: ListMessageResult) => {
                   formatDate(item.date, {
                     hour: '2-digit',
                     minute: '2-digit',
+                    second: '2-digit',
                     hour12: false,
                   })
                 }}

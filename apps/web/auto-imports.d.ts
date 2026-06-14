@@ -227,6 +227,7 @@ declare global {
   const useCached: typeof import('@vueuse/core').useCached
   const useCeil: typeof import('@vueuse/math').useCeil
   const useChannelRecreateCooldown: typeof import('./src/composables/useChannelRecreateCooldown').useChannelRecreateCooldown
+  const useChatAttendanceHistory: typeof import('./src/composables/useChatAttendanceHistory').useChatAttendanceHistory
   const useChatNotificationToast: typeof import('./src/composables/useChatNotificationToast').useChatNotificationToast
   const useChatNotifications: typeof import('./src/composables/useChatNotifications').useChatNotifications
   const useChatSocket: typeof import('./src/composables/useChatSocket').useChatSocket
