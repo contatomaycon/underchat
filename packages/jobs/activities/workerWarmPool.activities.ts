@@ -74,6 +74,16 @@ export class WorkerWarmPoolActivity {
             server.server_id,
             workerTypeId
           );
+
+        if (activeCount > target) {
+          await this.trimReadyExcessWarmPool(
+            server.server_id,
+            workerTypeId,
+            activeCount - target
+          );
+          continue;
+        }
+
         const missing = Math.max(0, target - activeCount);
 
         for (let index = 0; index < missing; index++) {
@@ -226,6 +236,45 @@ export class WorkerWarmPoolActivity {
     }
 
     return false;
+  }
+
+  private async trimReadyExcessWarmPool(
+    serverId: string,
+    workerTypeId: EWorkerType,
+    excessCount: number
+  ): Promise<number> {
+    const entries =
+      await this.workerWarmPoolRepository.markReadyExcessAsDeleting({
+        serverId,
+        workerTypeId,
+        limit: excessCount,
+      });
+
+    for (const entry of entries) {
+      const reference = this.getWarmPoolReference(entry);
+
+      try {
+        await this.workerWarmPoolQueueService.publishDelete({
+          request_id: uuidv7(),
+          warm_pool_id: entry.warm_pool_id,
+          server_id: entry.server_id,
+          worker_type_id: entry.worker_type_id,
+          container_id: entry.container_id,
+          container_name: reference.containerName,
+          session_volume_name: entry.session_volume_name,
+          remove_volume: true,
+          reason: 'pool_excess',
+          requested_at: currentTime(),
+        });
+      } catch (error) {
+        await this.workerWarmPoolRepository.restoreDeletingToReady(
+          entry.warm_pool_id
+        );
+        throw error;
+      }
+    }
+
+    return entries.length;
   }
 
   private async reconcileServerWarmPool(

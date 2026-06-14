@@ -47,6 +47,12 @@ export interface UpdateWorkerWarmPoolRuntimeInput {
   last_error?: string | null;
 }
 
+export interface MarkReadyWarmPoolExcessInput {
+  serverId: string;
+  workerTypeId: string;
+  limit: number;
+}
+
 type WarmChannelFilters = Omit<
   ListWarmChannelsRequest,
   'current_page' | 'per_page' | 'sort_by'
@@ -378,6 +384,57 @@ export class WorkerWarmPoolRepository {
     }));
   }
 
+  async markReadyExcessAsDeleting(
+    input: MarkReadyWarmPoolExcessInput
+  ): Promise<IWorkerWarmPool[]> {
+    const parsedLimit = Number(input.limit);
+    const limit = Number.isFinite(parsedLimit)
+      ? Math.max(0, Math.floor(parsedLimit))
+      : 0;
+    if (limit === 0) {
+      return [];
+    }
+
+    const now = currentTime();
+    const result = await this.dbRw.execute(sql`
+      WITH selected AS (
+        SELECT "warm_pool_id"
+        FROM "worker_warm_pool"
+        WHERE "server_id" = ${input.serverId}
+          AND "worker_type_id" = ${input.workerTypeId}
+          AND "state" = ${EWorkerWarmPoolState.ready}
+        ORDER BY "last_health_at" ASC NULLS FIRST, "created_at" ASC, "warm_pool_id" ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE "worker_warm_pool"
+      SET
+        "state" = ${EWorkerWarmPoolState.deleting},
+        "last_error" = 'warm_pool_excess',
+        "updated_at" = ${now}
+      FROM selected
+      WHERE "worker_warm_pool"."warm_pool_id" = selected."warm_pool_id"
+        AND "worker_warm_pool"."state" = ${EWorkerWarmPoolState.ready}
+      RETURNING
+        "worker_warm_pool"."warm_pool_id",
+        "worker_warm_pool"."server_id",
+        "worker_warm_pool"."worker_type_id",
+        "worker_warm_pool"."container_id",
+        "worker_warm_pool"."container_name",
+        "worker_warm_pool"."session_volume_name",
+        "worker_warm_pool"."state",
+        "worker_warm_pool"."reserved_by_worker_id",
+        "worker_warm_pool"."reservation_expires_at",
+        "worker_warm_pool"."last_health_at",
+        "worker_warm_pool"."last_error",
+        "worker_warm_pool"."created_at",
+        "worker_warm_pool"."updated_at"
+    `);
+
+    const rows = (result as unknown as { rows?: IWorkerWarmPool[] }).rows;
+    return rows ?? [];
+  }
+
   async reserveReady(
     serverId: string,
     workerTypeId: string,
@@ -468,6 +525,27 @@ export class WorkerWarmPoolRepository {
       .update(workerWarmPool)
       .set(updateInput)
       .where(eq(workerWarmPool.warm_pool_id, input.warm_pool_id))
+      .execute();
+
+    return result.rowCount === 1;
+  }
+
+  async restoreDeletingToReady(warmPoolId: string): Promise<boolean> {
+    const result = await this.dbRw
+      .update(workerWarmPool)
+      .set({
+        state: EWorkerWarmPoolState.ready,
+        reserved_by_worker_id: null,
+        reservation_expires_at: null,
+        last_error: null,
+        updated_at: currentTime(),
+      })
+      .where(
+        and(
+          eq(workerWarmPool.warm_pool_id, warmPoolId),
+          eq(workerWarmPool.state, EWorkerWarmPoolState.deleting)
+        )
+      )
       .execute();
 
     return result.rowCount === 1;

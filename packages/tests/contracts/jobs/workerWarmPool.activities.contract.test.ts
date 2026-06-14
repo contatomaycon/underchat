@@ -84,6 +84,8 @@ function makeActivity(
     activeEntries?: IWorkerWarmPool[];
     dockerOutput?: string;
     activeCounts?: Partial<Record<EWorkerType, number>>;
+    readyExcessEntries?: Partial<Record<EWorkerType, IWorkerWarmPool[]>>;
+    publishDeleteReject?: boolean;
     settings?: Partial<IWorkerWarmPoolSettings>;
     shouldRunScan?: boolean;
   } = {}
@@ -93,6 +95,8 @@ function makeActivity(
     releaseExpiredReservations: jest.Mock;
     listActiveByServer: jest.Mock;
     countActiveByServerAndType: jest.Mock;
+    markReadyExcessAsDeleting: jest.Mock;
+    restoreDeletingToReady: jest.Mock;
     markRuntime: jest.Mock;
   };
   workerWarmPoolQueueService: {
@@ -116,12 +120,22 @@ function makeActivity(
       async (_serverId: string, workerTypeId: EWorkerType) =>
         overrides.activeCounts?.[workerTypeId] ?? 2
     ),
+    markReadyExcessAsDeleting: jest.fn(
+      async (input: { workerTypeId: EWorkerType }) =>
+        overrides.readyExcessEntries?.[input.workerTypeId] ?? []
+    ),
+    restoreDeletingToReady: jest.fn(async () => true),
     markRuntime: jest.fn(async () => true),
   };
   const workerWarmPoolQueueService = {
     ensure: jest.fn(async () => undefined),
     publishReplenish: jest.fn(async () => undefined),
-    publishDelete: jest.fn(async () => undefined),
+    publishDelete: jest.fn(async () => {
+      if (overrides.publishDeleteReject) {
+        throw new Error('publish failed');
+      }
+      return undefined;
+    }),
   };
   const workerWarmPoolSettingsService = {
     view: jest.fn(async () => makeSettings(overrides.settings)),
@@ -309,5 +323,131 @@ describe('WorkerWarmPoolActivity', () => {
         reason: 'scheduled_scan',
       })
     );
+  });
+
+  it('marks ready warm channels above the target as deleting and publishes delete requests', async () => {
+    const excessEntries = [
+      makeWarmPool({
+        warm_pool_id: 'excess-1',
+        container_id: 'container-excess-1',
+        container_name: 'warm-excess-1',
+        session_volume_name: 'warm-excess-1',
+        worker_type_id: EWorkerType.baileys,
+      }),
+      makeWarmPool({
+        warm_pool_id: 'excess-2',
+        container_id: 'container-excess-2',
+        container_name: 'warm-excess-2',
+        session_volume_name: 'warm-excess-2',
+        worker_type_id: EWorkerType.baileys,
+      }),
+      makeWarmPool({
+        warm_pool_id: 'excess-3',
+        container_id: 'container-excess-3',
+        container_name: 'warm-excess-3',
+        session_volume_name: 'warm-excess-3',
+        worker_type_id: EWorkerType.baileys,
+      }),
+    ];
+    const deps = makeActivity({
+      activeCounts: {
+        [EWorkerType.baileys]: 5,
+        [EWorkerType.wwebjs]: 2,
+        [EWorkerType.whatsmeow]: 2,
+      },
+      readyExcessEntries: {
+        [EWorkerType.baileys]: excessEntries,
+      },
+    });
+
+    await deps.activity.scan();
+
+    expect(
+      deps.workerWarmPoolRepository.markReadyExcessAsDeleting
+    ).toHaveBeenCalledWith({
+      serverId: 'server-1',
+      workerTypeId: EWorkerType.baileys,
+      limit: 3,
+    });
+    expect(deps.workerWarmPoolQueueService.publishDelete).toHaveBeenCalledTimes(
+      3
+    );
+    expect(deps.workerWarmPoolQueueService.publishDelete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        warm_pool_id: 'excess-1',
+        server_id: 'server-1',
+        worker_type_id: EWorkerType.baileys,
+        container_id: 'container-excess-1',
+        container_name: 'warm-excess-1',
+        session_volume_name: 'warm-excess-1',
+        remove_volume: true,
+        reason: 'pool_excess',
+      })
+    );
+    expect(
+      deps.workerWarmPoolQueueService.publishReplenish
+    ).not.toHaveBeenCalled();
+  });
+
+  it('trims all ready warm channels for a type when the target is zero', async () => {
+    const deps = makeActivity({
+      settings: {
+        target_ready_baileys: 0,
+        target_ready_wwebjs: 0,
+        target_ready_whatsmeow: 0,
+      },
+      activeCounts: {
+        [EWorkerType.baileys]: 2,
+        [EWorkerType.wwebjs]: 0,
+        [EWorkerType.whatsmeow]: 0,
+      },
+      readyExcessEntries: {
+        [EWorkerType.baileys]: [
+          makeWarmPool({ warm_pool_id: 'excess-1' }),
+          makeWarmPool({ warm_pool_id: 'excess-2' }),
+        ],
+      },
+    });
+
+    await deps.activity.scan();
+
+    expect(
+      deps.workerWarmPoolRepository.markReadyExcessAsDeleting
+    ).toHaveBeenCalledWith({
+      serverId: 'server-1',
+      workerTypeId: EWorkerType.baileys,
+      limit: 2,
+    });
+    expect(deps.workerWarmPoolQueueService.publishDelete).toHaveBeenCalledTimes(
+      2
+    );
+    expect(
+      deps.workerWarmPoolQueueService.publishReplenish
+    ).not.toHaveBeenCalled();
+  });
+
+  it('rolls back an excess warm channel when publishing the delete request fails', async () => {
+    const deps = makeActivity({
+      activeCounts: {
+        [EWorkerType.baileys]: 3,
+        [EWorkerType.wwebjs]: 2,
+        [EWorkerType.whatsmeow]: 2,
+      },
+      readyExcessEntries: {
+        [EWorkerType.baileys]: [
+          makeWarmPool({
+            warm_pool_id: 'excess-rollback',
+            worker_type_id: EWorkerType.baileys,
+          }),
+        ],
+      },
+      publishDeleteReject: true,
+    });
+
+    await expect(deps.activity.scan()).rejects.toThrow('publish failed');
+
+    expect(
+      deps.workerWarmPoolRepository.restoreDeletingToReady
+    ).toHaveBeenCalledWith('excess-rollback');
   });
 });

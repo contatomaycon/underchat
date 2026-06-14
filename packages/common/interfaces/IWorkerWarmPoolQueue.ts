@@ -19,6 +19,7 @@ export interface IWorkerWarmDeleteRequest {
   reason:
     | 'assigned_old_runtime'
     | 'expired_reservation'
+    | 'pool_excess'
     | 'pool_reconcile'
     | 'worker_delete'
     | 'worker_type_change'

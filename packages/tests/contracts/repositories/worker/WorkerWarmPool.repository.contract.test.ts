@@ -51,6 +51,20 @@ function createDeleteChain(rowCount: number) {
   return { queryBuilder, deleteFn };
 }
 
+function createUpdateChain(rowCount: number) {
+  const queryBuilder = {
+    set: jest.fn(),
+    where: jest.fn(),
+    execute: jest.fn(async () => ({ rowCount })),
+  } as any;
+  queryBuilder.set.mockReturnValue(queryBuilder);
+  queryBuilder.where.mockReturnValue(queryBuilder);
+
+  const updateFn = jest.fn(() => queryBuilder);
+
+  return { queryBuilder, updateFn };
+}
+
 function collectSqlParts(value: unknown): string[] {
   if (!value) {
     return [];
@@ -266,5 +280,93 @@ describe('WorkerWarmPoolRepository warm channels', () => {
     expect(whereSql).toContain(EWorkerWarmPoolState.assigned);
     expect(whereSql).toContain('worker-1');
     expect(whereSql).toContain('warm-current');
+  });
+
+  it('atomically marks ready excess rows as deleting with row locks', async () => {
+    const rows = [
+      {
+        warm_pool_id: 'warm-excess-1',
+        server_id: 'srv-1',
+        worker_type_id: EWorkerType.baileys,
+        container_id: 'container-1',
+        container_name: 'warm-excess-1',
+        session_volume_name: 'warm-excess-1',
+        state: EWorkerWarmPoolState.deleting,
+      },
+      {
+        warm_pool_id: 'warm-excess-2',
+        server_id: 'srv-1',
+        worker_type_id: EWorkerType.baileys,
+        container_id: 'container-2',
+        container_name: 'warm-excess-2',
+        session_volume_name: 'warm-excess-2',
+        state: EWorkerWarmPoolState.deleting,
+      },
+    ];
+    const dbRw = {
+      execute: jest.fn(async (_query: unknown) => ({ rows })),
+    };
+    const repository = new WorkerWarmPoolRepository(dbRw as never, {} as never);
+
+    await expect(
+      repository.markReadyExcessAsDeleting({
+        serverId: 'srv-1',
+        workerTypeId: EWorkerType.baileys,
+        limit: 2,
+      })
+    ).resolves.toEqual(rows);
+
+    const querySql = collectSqlParts(dbRw.execute.mock.calls[0][0]).join(' ');
+
+    expect(querySql).toContain('FOR UPDATE SKIP LOCKED');
+    expect(querySql).toContain('LIMIT');
+    expect(querySql).toContain('last_health_at');
+    expect(querySql).toContain('srv-1');
+    expect(querySql).toContain(EWorkerType.baileys);
+    expect(querySql).toContain(EWorkerWarmPoolState.ready);
+    expect(querySql).toContain(EWorkerWarmPoolState.deleting);
+  });
+
+  it('does not execute excess deletion when the limit is zero', async () => {
+    const dbRw = {
+      execute: jest.fn(),
+    };
+    const repository = new WorkerWarmPoolRepository(dbRw as never, {} as never);
+
+    await expect(
+      repository.markReadyExcessAsDeleting({
+        serverId: 'srv-1',
+        workerTypeId: EWorkerType.baileys,
+        limit: 0,
+      })
+    ).resolves.toEqual([]);
+
+    expect(dbRw.execute).not.toHaveBeenCalled();
+  });
+
+  it('restores an excess deletion only while the warm row is still deleting', async () => {
+    const chain = createUpdateChain(1);
+    const repository = new WorkerWarmPoolRepository(
+      { update: chain.updateFn } as never,
+      {} as never
+    );
+
+    await expect(
+      repository.restoreDeletingToReady('warm-excess-1')
+    ).resolves.toBe(true);
+
+    const setInput = chain.queryBuilder.set.mock.calls[0][0];
+    const whereSql = collectSqlParts(
+      chain.queryBuilder.where.mock.calls[0][0]
+    ).join(' ');
+
+    expect(setInput).toMatchObject({
+      state: EWorkerWarmPoolState.ready,
+      reserved_by_worker_id: null,
+      reservation_expires_at: null,
+      last_error: null,
+    });
+    expect(whereSql).toContain('warm-excess-1');
+    expect(whereSql).toContain(EWorkerWarmPoolState.deleting);
   });
 });
