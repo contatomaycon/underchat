@@ -455,6 +455,11 @@ describe('MessageUpsertConsume edit fallback', () => {
         name: 'Support Sector',
         color: '#0055ff',
       })),
+      listSectorUsersForTransfer: jest.fn(async () => [
+        { id: 'sector-user-1' },
+        { id: 'sector-user-2' },
+        { id: 'sector-user-without-channel' },
+      ]),
     };
     const pushNotificationService = {
       sendNotificationForChatMessage: jest.fn(async () => undefined),
@@ -1071,9 +1076,14 @@ describe('MessageUpsertConsume edit fallback', () => {
     );
   });
 
-  it('sends a transfer push to channel users when message upsert transfers only to a sector', async () => {
-    const { consumer, chat, userService, pushNotificationService } =
-      makeConsumer();
+  it('sends a transfer push to sector users with channel access when message upsert transfers only to a sector', async () => {
+    const {
+      consumer,
+      chat,
+      userService,
+      sectorService,
+      pushNotificationService,
+    } = makeConsumer();
 
     await (consumer as any).transferToSector(jest.fn(), chat, {
       ...makeTextUpsert(),
@@ -1083,6 +1093,10 @@ describe('MessageUpsertConsume edit fallback', () => {
     expect(userService.listUserIdsWithAccessToChannel).toHaveBeenCalledWith(
       'account-1',
       'worker-1'
+    );
+    expect(sectorService.listSectorUsersForTransfer).toHaveBeenCalledWith(
+      'account-1',
+      'sector-2'
     );
     expect(
       pushNotificationService.sendNotificationForChatTransfer
@@ -1100,7 +1114,7 @@ describe('MessageUpsertConsume edit fallback', () => {
     );
   });
 
-  it('sends a status push when a new queue chat is created from message upsert', async () => {
+  it('does not send a generic status push when a new queue chat is created from message upsert', async () => {
     const { consumer, chatService, pushNotificationService } = makeConsumer();
     const createdChat = {
       ...makeChat(),
@@ -1117,7 +1131,7 @@ describe('MessageUpsertConsume edit fallback', () => {
 
     expect(
       pushNotificationService.sendNotificationForChatStatusChange
-    ).toHaveBeenCalledWith(createdChat);
+    ).not.toHaveBeenCalled();
   });
 
   it('does not send a status push for historical message sync chat creation', async () => {

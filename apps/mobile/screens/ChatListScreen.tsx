@@ -196,10 +196,6 @@ const DEFAULT_CHAT_NOTIFICATION_SETTINGS: ChatNotificationSettings = {
   notifications_toast: true,
   notifications_browser: true,
   notifications_push: true,
-  notifications_status_update: true,
-  notifications_status_queue: false,
-  notifications_status_in_chat: true,
-  notifications_status_chatbot: false,
   notifications_message_queue: false,
   notifications_message_in_chat: true,
   notifications_message_chatbot: false,
@@ -260,18 +256,6 @@ function readChatNotificationSettingsFromUser(
       chatUser.notifications_browser
     ),
     notifications_push: readBooleanDefaultTrue(chatUser.notifications_push),
-    notifications_status_update: readBooleanDefaultTrue(
-      chatUser.notifications_status_update
-    ),
-    notifications_status_queue: readBooleanDefaultFalse(
-      chatUser.notifications_status_queue
-    ),
-    notifications_status_in_chat: readBooleanDefaultTrue(
-      chatUser.notifications_status_in_chat
-    ),
-    notifications_status_chatbot: readBooleanDefaultFalse(
-      chatUser.notifications_status_chatbot
-    ),
     notifications_message_queue: readBooleanDefaultFalse(
       chatUser.notifications_message_queue
     ),
@@ -380,8 +364,6 @@ function ChatNotificationSettingsSheet({
 
   const childOptionsDisabled =
     saving || loading || draft.notifications === false;
-  const movementOptionsDisabled =
-    childOptionsDisabled || draft.notifications_status_update === false;
 
   return (
     <BottomSheetModal
@@ -451,34 +433,6 @@ function ChatNotificationSettingsSheet({
           )}
 
           <Text style={styles.notificationSectionTitle}>Movimentações</Text>
-          {renderOption(
-            'notifications_status_update',
-            'Atualizações de atendimento',
-            'Controla avisos quando conversas mudam de etapa.',
-            'git-compare-outline',
-            childOptionsDisabled
-          )}
-          {renderOption(
-            'notifications_status_queue',
-            'Recebimento na fila',
-            'Avisar quando um atendimento entrar na fila.',
-            'time-outline',
-            movementOptionsDisabled
-          )}
-          {renderOption(
-            'notifications_status_in_chat',
-            'Entrada em atendimento',
-            'Avisar quando um atendimento for assumido ou enviado ao atendimento.',
-            'checkmark-circle-outline',
-            movementOptionsDisabled
-          )}
-          {renderOption(
-            'notifications_status_chatbot',
-            'Movimentações no chatbot',
-            'Avisar quando uma conversa entrar ou circular pelo chatbot.',
-            'chatbox-ellipses-outline',
-            movementOptionsDisabled
-          )}
           {renderOption(
             'notifications_transfer',
             'Transferência',

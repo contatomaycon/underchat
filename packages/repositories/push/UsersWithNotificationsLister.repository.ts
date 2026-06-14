@@ -9,23 +9,24 @@ import { EInternalChatConversationType } from '@core/common/enums/internalChat/E
 export type ChatNotificationPreferences = {
   notifications?: boolean | null;
   notifications_push?: boolean | null;
-  notifications_status_update?: boolean | null;
-  notifications_status_queue?: boolean | null;
-  notifications_status_in_chat?: boolean | null;
-  notifications_status_chatbot?: boolean | null;
+  notifications_sound?: boolean | null;
   notifications_message_queue?: boolean | null;
   notifications_message_in_chat?: boolean | null;
   notifications_message_chatbot?: boolean | null;
   notifications_transfer?: boolean | null;
 };
 
-export type ChatNotificationScope = 'message' | 'status';
-
 export type InternalChatNotificationPreferences = {
   notifications_internal_chat?: boolean | null;
   notifications_internal_chat_push?: boolean | null;
+  notifications_internal_chat_sound?: boolean | null;
   notifications_internal_chat_direct?: boolean | null;
   notifications_internal_chat_group?: boolean | null;
+};
+
+export type PushNotificationRecipient = {
+  user_id: string;
+  notifications_sound: boolean;
 };
 
 export function isChatbotNotificationStatus(status?: EChatStatus): boolean {
@@ -37,10 +38,9 @@ export function isChatbotNotificationStatus(status?: EChatStatus): boolean {
   );
 }
 
-export function canReceivePushForChatStatus(
+export function canReceivePushForChatMessage(
   preferences: ChatNotificationPreferences,
-  status?: EChatStatus,
-  scope: ChatNotificationScope = 'message'
+  status?: EChatStatus
 ): boolean {
   if (preferences.notifications !== true) {
     return false;
@@ -48,26 +48,6 @@ export function canReceivePushForChatStatus(
 
   if (preferences.notifications_push !== true) {
     return false;
-  }
-
-  if (scope === 'status') {
-    if (preferences.notifications_status_update !== true) {
-      return false;
-    }
-
-    if (status === EChatStatus.queue) {
-      return preferences.notifications_status_queue === true;
-    }
-
-    if (status === EChatStatus.in_chat) {
-      return preferences.notifications_status_in_chat === true;
-    }
-
-    if (isChatbotNotificationStatus(status)) {
-      return preferences.notifications_status_chatbot === true;
-    }
-
-    return true;
   }
 
   if (status === EChatStatus.queue) {
@@ -85,6 +65,16 @@ export function canReceivePushForChatStatus(
   return true;
 }
 
+export function canReceivePushForChatTransfer(
+  preferences: ChatNotificationPreferences
+): boolean {
+  return (
+    preferences.notifications === true &&
+    preferences.notifications_push === true &&
+    preferences.notifications_transfer === true
+  );
+}
+
 @injectable()
 export class UsersWithNotificationsListerRepository {
   constructor(
@@ -94,16 +84,11 @@ export class UsersWithNotificationsListerRepository {
   listUsersWithNotifications = async (
     accountId: string,
     status?: EChatStatus,
-    scopeOrRequireStatusUpdateToggle:
-      | ChatNotificationScope
-      | boolean = 'message'
-  ): Promise<string[]> => {
-    const scope: ChatNotificationScope =
-      scopeOrRequireStatusUpdateToggle === true
-        ? 'status'
-        : scopeOrRequireStatusUpdateToggle === false
-          ? 'message'
-          : scopeOrRequireStatusUpdateToggle;
+    candidateUserIds?: string[]
+  ): Promise<PushNotificationRecipient[]> => {
+    if (candidateUserIds && candidateUserIds.length === 0) {
+      return [];
+    }
 
     let whereClause = and(
       eq(user.account_id, accountId),
@@ -112,42 +97,35 @@ export class UsersWithNotificationsListerRepository {
       isNull(user.deleted_at)
     );
 
+    if (candidateUserIds) {
+      whereClause = and(whereClause, inArray(user.user_id, candidateUserIds));
+    }
+
     if (status === EChatStatus.queue) {
-      whereClause =
-        scope === 'status'
-          ? and(
-              whereClause,
-              eq(chatUser.notifications_status_update, true),
-              eq(chatUser.notifications_status_queue, true)
-            )
-          : and(whereClause, eq(chatUser.notifications_message_queue, true));
+      whereClause = and(
+        whereClause,
+        eq(chatUser.notifications_message_queue, true)
+      );
     }
 
     if (status === EChatStatus.in_chat) {
-      whereClause =
-        scope === 'status'
-          ? and(
-              whereClause,
-              eq(chatUser.notifications_status_update, true),
-              eq(chatUser.notifications_status_in_chat, true)
-            )
-          : and(whereClause, eq(chatUser.notifications_message_in_chat, true));
+      whereClause = and(
+        whereClause,
+        eq(chatUser.notifications_message_in_chat, true)
+      );
     }
 
     if (isChatbotNotificationStatus(status)) {
-      whereClause =
-        scope === 'status'
-          ? and(
-              whereClause,
-              eq(chatUser.notifications_status_update, true),
-              eq(chatUser.notifications_status_chatbot, true)
-            )
-          : and(whereClause, eq(chatUser.notifications_message_chatbot, true));
+      whereClause = and(
+        whereClause,
+        eq(chatUser.notifications_message_chatbot, true)
+      );
     }
 
     const result = await this.dbRo
       .select({
         user_id: user.user_id,
+        notifications_sound: chatUser.notifications_sound,
       })
       .from(user)
       .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
@@ -158,13 +136,16 @@ export class UsersWithNotificationsListerRepository {
       return [];
     }
 
-    return result.map((row) => row.user_id);
+    return result.map((row) => ({
+      user_id: row.user_id,
+      notifications_sound: row.notifications_sound !== false,
+    }));
   };
 
   listUsersWithTransferNotifications = async (
     accountId: string,
     candidateUserIds: string[]
-  ): Promise<string[]> => {
+  ): Promise<PushNotificationRecipient[]> => {
     if (candidateUserIds.length === 0) {
       return [];
     }
@@ -172,6 +153,7 @@ export class UsersWithNotificationsListerRepository {
     const result = await this.dbRo
       .select({
         user_id: user.user_id,
+        notifications_sound: chatUser.notifications_sound,
       })
       .from(user)
       .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
@@ -187,14 +169,17 @@ export class UsersWithNotificationsListerRepository {
       )
       .execute();
 
-    return result.map((row) => row.user_id);
+    return result.map((row) => ({
+      user_id: row.user_id,
+      notifications_sound: row.notifications_sound !== false,
+    }));
   };
 
   listInternalChatUsersWithNotifications = async (
     accountId: string,
     participantUserIds: string[],
     conversationType: EInternalChatConversationType
-  ): Promise<string[]> => {
+  ): Promise<PushNotificationRecipient[]> => {
     if (participantUserIds.length === 0) {
       return [];
     }
@@ -207,6 +192,7 @@ export class UsersWithNotificationsListerRepository {
     const result = await this.dbRo
       .select({
         user_id: user.user_id,
+        notifications_sound: chatUser.notifications_internal_chat_sound,
       })
       .from(user)
       .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
@@ -222,6 +208,9 @@ export class UsersWithNotificationsListerRepository {
       )
       .execute();
 
-    return result.map((row) => row.user_id);
+    return result.map((row) => ({
+      user_id: row.user_id,
+      notifications_sound: row.notifications_sound !== false,
+    }));
   };
 }

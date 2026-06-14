@@ -17,10 +17,6 @@ export const DEFAULT_MOBILE_CHAT_NOTIFICATION_SETTINGS: ChatNotificationSettings
     notifications_toast: true,
     notifications_browser: true,
     notifications_push: true,
-    notifications_status_update: true,
-    notifications_status_queue: false,
-    notifications_status_in_chat: true,
-    notifications_status_chatbot: false,
     notifications_message_queue: false,
     notifications_message_in_chat: true,
     notifications_message_chatbot: false,
@@ -90,18 +86,6 @@ export function normalizeMobileChatNotificationSettings(
     notifications_toast: readBooleanDefaultTrue(input.notifications_toast),
     notifications_browser: readBooleanDefaultTrue(input.notifications_browser),
     notifications_push: readBooleanDefaultTrue(input.notifications_push),
-    notifications_status_update: readBooleanDefaultTrue(
-      input.notifications_status_update
-    ),
-    notifications_status_queue: readBooleanDefaultFalse(
-      input.notifications_status_queue
-    ),
-    notifications_status_in_chat: readBooleanDefaultTrue(
-      input.notifications_status_in_chat
-    ),
-    notifications_status_chatbot: readBooleanDefaultFalse(
-      input.notifications_status_chatbot
-    ),
     notifications_message_queue: readBooleanDefaultFalse(
       input.notifications_message_queue
     ),
@@ -132,18 +116,6 @@ export function readMobileChatNotificationSettingsFromUser(
       | boolean
       | undefined,
     notifications_push: chatUser.notifications_push as boolean | undefined,
-    notifications_status_update: chatUser.notifications_status_update as
-      | boolean
-      | undefined,
-    notifications_status_queue: chatUser.notifications_status_queue as
-      | boolean
-      | undefined,
-    notifications_status_in_chat: chatUser.notifications_status_in_chat as
-      | boolean
-      | undefined,
-    notifications_status_chatbot: chatUser.notifications_status_chatbot as
-      | boolean
-      | undefined,
     notifications_message_queue: chatUser.notifications_message_queue as
       | boolean
       | undefined,
@@ -188,33 +160,6 @@ export function shouldNotifyChatMessage(
 
   if (isChatbotNotificationStatus(status)) {
     return normalized.notifications_message_chatbot === true;
-  }
-
-  return false;
-}
-
-export function shouldNotifyChatStatusChange(
-  settings: ChatNotificationSettingsPayload | null | undefined,
-  status: EChatStatus
-): boolean {
-  const normalized = normalizeMobileChatNotificationSettings(settings);
-  if (
-    normalized.notifications === false ||
-    normalized.notifications_status_update === false
-  ) {
-    return false;
-  }
-
-  if (status === 'queue') {
-    return normalized.notifications_status_queue === true;
-  }
-
-  if (status === 'in_chat') {
-    return normalized.notifications_status_in_chat !== false;
-  }
-
-  if (isChatbotNotificationStatus(status)) {
-    return normalized.notifications_status_chatbot === true;
   }
 
   return false;

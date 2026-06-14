@@ -64,7 +64,7 @@ export class PushApnsProviderService {
           title: job.payload.title,
           body: job.payload.body,
         },
-        sound: 'default',
+        ...(job.payload.sound !== false ? { sound: 'default' } : {}),
         ...(job.payload.tag ? { 'thread-id': job.payload.tag } : {}),
       },
     });

@@ -159,7 +159,7 @@ describe('StartChatWithContactUseCase push notifications', () => {
     };
   };
 
-  it('sends a status push when creating a new in-chat attendance', async () => {
+  it('does not send a generic status push when creating a new in-chat attendance', async () => {
     const { useCase, pushNotificationService } = makeUseCase();
 
     const chat = await useCase.execute(
@@ -175,15 +175,10 @@ describe('StartChatWithContactUseCase push notifications', () => {
     expect(chat.status).toBe(EChatStatus.in_chat);
     expect(
       pushNotificationService.sendNotificationForChatStatusChange
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        chat_id: 'chat-new-1',
-        status: EChatStatus.in_chat,
-      })
-    );
+    ).not.toHaveBeenCalled();
   });
 
-  it('sends a status push when moving an existing queue chat to in-chat', async () => {
+  it('does not send a generic status push when moving an existing queue chat to in-chat', async () => {
     const existingChat = makeExistingChat(EChatStatus.queue);
     const { useCase, pushNotificationService } = makeUseCase(existingChat);
 
@@ -200,11 +195,6 @@ describe('StartChatWithContactUseCase push notifications', () => {
     expect(chat.status).toBe(EChatStatus.in_chat);
     expect(
       pushNotificationService.sendNotificationForChatStatusChange
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        chat_id: 'chat-1',
-        status: EChatStatus.in_chat,
-      })
-    );
+    ).not.toHaveBeenCalled();
   });
 });

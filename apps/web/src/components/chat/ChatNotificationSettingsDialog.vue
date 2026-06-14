@@ -38,10 +38,6 @@ const draft = reactive<Required<ChatNotificationSettingsRequest>>({
   notifications_toast: true,
   notifications_browser: true,
   notifications_push: true,
-  notifications_status_update: true,
-  notifications_status_queue: false,
-  notifications_status_in_chat: true,
-  notifications_status_chatbot: false,
   notifications_message_queue: false,
   notifications_message_in_chat: true,
   notifications_message_chatbot: false,
@@ -51,9 +47,6 @@ const draft = reactive<Required<ChatNotificationSettingsRequest>>({
 const isDisabled = computed(() => props.loading || props.saving);
 const childOptionsDisabled = computed(
   () => isDisabled.value || !draft.notifications
-);
-const movementOptionsDisabled = computed(
-  () => childOptionsDisabled.value || !draft.notifications_status_update
 );
 
 const messageOptions = computed<NotificationOption[]>(() => [
@@ -78,24 +71,6 @@ const messageOptions = computed<NotificationOption[]>(() => [
 ]);
 
 const movementOptions = computed<NotificationOption[]>(() => [
-  {
-    key: 'notifications_status_queue',
-    icon: 'tabler-inbox',
-    title: t('chat_notification_status_queue_toggle'),
-    subtitle: t('chat_notification_status_queue_description'),
-  },
-  {
-    key: 'notifications_status_in_chat',
-    icon: 'tabler-message-circle-check',
-    title: t('chat_notification_status_in_chat_toggle'),
-    subtitle: t('chat_notification_status_in_chat_description'),
-  },
-  {
-    key: 'notifications_status_chatbot',
-    icon: 'tabler-message-chatbot',
-    title: t('chat_notification_status_chatbot_toggle'),
-    subtitle: t('chat_notification_status_chatbot_description'),
-  },
   {
     key: 'notifications_transfer',
     icon: 'tabler-transfer',
@@ -139,14 +114,6 @@ function syncDraft() {
   draft.notifications_toast = settings?.notifications_toast !== false;
   draft.notifications_browser = settings?.notifications_browser !== false;
   draft.notifications_push = settings?.notifications_push !== false;
-  draft.notifications_status_update =
-    settings?.notifications_status_update !== false;
-  draft.notifications_status_queue =
-    settings?.notifications_status_queue === true;
-  draft.notifications_status_in_chat =
-    settings?.notifications_status_in_chat !== false;
-  draft.notifications_status_chatbot =
-    settings?.notifications_status_chatbot === true;
   draft.notifications_message_queue =
     settings?.notifications_message_queue === true;
   draft.notifications_message_in_chat =
@@ -259,27 +226,6 @@ watch(
               {{ t('chat_notification_movements') }}
             </span>
 
-            <div class="chat-notification-option">
-              <div class="chat-notification-option-icon">
-                <VIcon size="20">tabler-refresh</VIcon>
-              </div>
-              <div class="chat-notification-option-text">
-                <p class="chat-notification-option-title">
-                  {{ t('chat_notification_status_parent') }}
-                </p>
-                <p class="chat-notification-option-subtitle">
-                  {{ t('chat_notification_status_parent_description') }}
-                </p>
-              </div>
-              <VSwitch
-                v-model="draft.notifications_status_update"
-                color="primary"
-                hide-details
-                inset
-                :disabled="childOptionsDisabled"
-              />
-            </div>
-
             <div
               v-for="option in movementOptions"
               :key="option.key"
@@ -301,11 +247,7 @@ watch(
                 color="primary"
                 hide-details
                 inset
-                :disabled="
-                  option.key === 'notifications_transfer'
-                    ? childOptionsDisabled
-                    : movementOptionsDisabled
-                "
+                :disabled="childOptionsDisabled"
               />
             </div>
           </div>

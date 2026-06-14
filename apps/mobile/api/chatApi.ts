@@ -72,10 +72,6 @@ export type UpdateChatUserPayload = {
   notifications_toast?: boolean;
   notifications_browser?: boolean;
   notifications_push?: boolean;
-  notifications_status_update?: boolean;
-  notifications_status_queue?: boolean;
-  notifications_status_in_chat?: boolean;
-  notifications_status_chatbot?: boolean;
   notifications_message_queue?: boolean;
   notifications_message_in_chat?: boolean;
   notifications_message_chatbot?: boolean;
@@ -211,10 +207,6 @@ export interface ChatNotificationSettings {
   notifications_toast: boolean;
   notifications_browser: boolean;
   notifications_push: boolean;
-  notifications_status_update: boolean;
-  notifications_status_queue: boolean;
-  notifications_status_in_chat: boolean;
-  notifications_status_chatbot: boolean;
   notifications_message_queue: boolean;
   notifications_message_in_chat: boolean;
   notifications_message_chatbot: boolean;

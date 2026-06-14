@@ -2,6 +2,7 @@ import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '@/@webcore/stores/chat';
+import { getChannels, getSectors } from '@/@webcore/localStorage/user';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IChat } from '@core/common/interfaces/IChat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
@@ -170,11 +171,84 @@ function canReceiveMessageNotification(
   chat: IChat,
   chatStore: ReturnType<typeof useChatStore>
 ): boolean {
-  if (!chatStore.user?.account_id) {
+  const currentUserId = chatStore.user?.user_id;
+  if (!chatStore.user?.account_id || !currentUserId) {
     return false;
   }
 
-  return chatStore.canViewChat(chat);
+  if (!chatStore.canViewChat(chat)) {
+    return false;
+  }
+
+  if (chat.status === EChatStatus.in_chat) {
+    return chatStore.isCurrentUserParticipant(chat);
+  }
+
+  if (chat.status === EChatStatus.queue) {
+    if (chat.user?.id) {
+      return chat.user.id === currentUserId;
+    }
+
+    if (chat.sector?.id) {
+      return hasCurrentUserSector(chat) && hasCurrentUserChannel(chat);
+    }
+
+    return hasCurrentUserChannel(chat);
+  }
+
+  if (isChatbotStatus(chat.status)) {
+    if (chatStore.hasAnyParticipants(chat)) {
+      return chatStore.isCurrentUserParticipant(chat);
+    }
+
+    if (chat.sector?.id) {
+      return hasCurrentUserSector(chat) && hasCurrentUserChannel(chat);
+    }
+
+    return hasCurrentUserChannel(chat);
+  }
+
+  return false;
+}
+
+function canReceiveTransferNotification(
+  chat: IChat,
+  chatStore: ReturnType<typeof useChatStore>
+): boolean {
+  if (!chatStore.user?.user_id) {
+    return false;
+  }
+
+  if (!chatStore.canViewChat(chat)) {
+    return false;
+  }
+
+  if (chatStore.hasAnyParticipants(chat)) {
+    return chatStore.isCurrentUserParticipant(chat);
+  }
+
+  if (chat.sector?.id) {
+    return hasCurrentUserSector(chat) && hasCurrentUserChannel(chat);
+  }
+
+  return hasCurrentUserChannel(chat);
+}
+
+function hasCurrentUserChannel(chat: IChat): boolean {
+  const channels = getChannels();
+  if (channels.length === 0) {
+    return true;
+  }
+
+  return channels.some((channel) => channel.id === chat.worker?.id);
+}
+
+function hasCurrentUserSector(chat: IChat): boolean {
+  if (!chat.sector?.id) {
+    return false;
+  }
+
+  return getSectors().includes(chat.sector.id);
 }
 
 export const useChatNotifications = () => {
@@ -182,8 +256,7 @@ export const useChatNotifications = () => {
   const router = useRouter();
   const { t } = useI18n();
   const chatStore = useChatStore();
-  const { showMessageToast, showStatusToast, showTransferToast } =
-    useChatNotificationToast();
+  const { showMessageToast, showTransferToast } = useChatNotificationToast();
   const isPageVisible = ref(true);
   const processingMessages = ref(new Set<string>());
   const serviceWorkerRegistration = ref<ServiceWorkerRegistration | null>(null);
@@ -225,38 +298,6 @@ export const useChatNotifications = () => {
     }
 
     return chatStore.user?.chat_user?.notifications_push !== false;
-  };
-
-  const isStatusNotificationsEnabled = () => {
-    if (!isMasterNotificationsEnabled()) {
-      return false;
-    }
-
-    return chatStore.user?.chat_user?.notifications_status_update !== false;
-  };
-
-  const isQueueStatusNotificationsEnabled = () => {
-    if (!isMasterNotificationsEnabled()) {
-      return false;
-    }
-
-    return chatStore.user?.chat_user?.notifications_status_queue === true;
-  };
-
-  const isInChatStatusNotificationsEnabled = () => {
-    if (!isMasterNotificationsEnabled()) {
-      return false;
-    }
-
-    return chatStore.user?.chat_user?.notifications_status_in_chat !== false;
-  };
-
-  const isChatbotStatusNotificationsEnabled = () => {
-    if (!isMasterNotificationsEnabled()) {
-      return false;
-    }
-
-    return chatStore.user?.chat_user?.notifications_status_chatbot === true;
   };
 
   const isQueueNotificationsEnabled = () => {
@@ -315,6 +356,18 @@ export const useChatNotifications = () => {
     }
 
     return chatStore.activeChat?.chat_id === chatId;
+  };
+
+  const postNotificationClientState = () => {
+    if (!('serviceWorker' in navigator)) {
+      return;
+    }
+
+    navigator.serviceWorker.controller?.postMessage({
+      type: 'notificationClientState',
+      chatId: chatStore.activeChat?.chat_id ?? null,
+      isVisible: !document.hidden,
+    });
   };
 
   const showBrowserNotification = (
@@ -824,7 +877,7 @@ export const useChatNotifications = () => {
       return true;
     }
 
-    if (!canReceiveMessageNotification(chat, chatStore)) {
+    if (!canReceiveTransferNotification(chat, chatStore)) {
       return true;
     }
 
@@ -879,72 +932,13 @@ export const useChatNotifications = () => {
     chat: IChat,
     previousStatus: string | null = null
   ): void {
-    if (
-      chat.status !== EChatStatus.in_chat &&
-      chat.status !== EChatStatus.queue &&
-      !isChatbotStatus(chat.status)
-    ) {
-      return;
-    }
-
-    if (previousStatus === chat.status) {
-      return;
-    }
-
-    const shouldNotifyQueueStatus =
-      isStatusNotificationsEnabled() && isQueueStatusNotificationsEnabled();
-    const shouldNotifyInChatStatus =
-      isStatusNotificationsEnabled() && isInChatStatusNotificationsEnabled();
-    const shouldNotifyChatbotStatus =
-      isStatusNotificationsEnabled() && isChatbotStatusNotificationsEnabled();
-
-    if (chat.status === EChatStatus.queue && !shouldNotifyQueueStatus) {
-      return;
-    }
-
-    if (chat.status === EChatStatus.in_chat && !shouldNotifyInChatStatus) {
-      return;
-    }
-
-    if (isChatbotStatus(chat.status) && !shouldNotifyChatbotStatus) {
-      return;
-    }
-
-    if (!canReceiveMessageNotification(chat, chatStore)) {
-      return;
-    }
-
-    if (isViewingChatConversation(chat.chat_id)) {
-      return;
-    }
-
-    const statusBody =
-      chat.status === EChatStatus.in_chat
-        ? t('chat_notification_status_in_chat')
-        : chat.status === EChatStatus.queue
-          ? t('chat_notification_status_queue')
-          : t('chat_notification_status_chatbot');
-
-    if (isSoundNotificationsEnabled()) {
-      playAlertSound();
-    }
-
-    if (isToastNotificationsEnabled() && isPageVisible.value) {
-      showStatusToast(chat);
-    }
-
-    if (isBrowserNotificationsEnabled() && !isPageVisible.value) {
-      showBrowserNotification(
-        getChatTitle(chat, t('chat_notification_status_update')),
-        statusBody,
-        chat.chat_id,
-        `chat-status-browser-${chat.chat_id}`
-      );
-    }
+    void chat;
+    void previousStatus;
   }
 
   function handleVisibilityChange() {
     isPageVisible.value = !document.hidden;
+    postNotificationClientState();
   }
 
   async function syncNotificationSettings(): Promise<void> {
@@ -1010,6 +1004,7 @@ export const useChatNotifications = () => {
   onMounted(async () => {
     isPageVisible.value = !document.hidden;
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    postNotificationClientState();
 
     if ('serviceWorker' in navigator) {
       if (isPushNotificationsEnabled()) {
@@ -1056,10 +1051,6 @@ export const useChatNotifications = () => {
       () => chatStore.user?.chat_user?.notifications_toast,
       () => chatStore.user?.chat_user?.notifications_push,
       () => chatStore.user?.chat_user?.notifications_browser,
-      () => chatStore.user?.chat_user?.notifications_status_update,
-      () => chatStore.user?.chat_user?.notifications_status_queue,
-      () => chatStore.user?.chat_user?.notifications_status_in_chat,
-      () => chatStore.user?.chat_user?.notifications_status_chatbot,
       () => chatStore.user?.chat_user?.notifications_message_queue,
       () => chatStore.user?.chat_user?.notifications_message_in_chat,
       () => chatStore.user?.chat_user?.notifications_message_chatbot,
@@ -1069,6 +1060,14 @@ export const useChatNotifications = () => {
     ],
     async () => {
       await runNotificationSettingsSync();
+    },
+    { immediate: true }
+  );
+
+  watch(
+    () => chatStore.activeChat?.chat_id,
+    () => {
+      postNotificationClientState();
     },
     { immediate: true }
   );

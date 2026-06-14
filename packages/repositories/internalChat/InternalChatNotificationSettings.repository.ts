@@ -91,6 +91,15 @@ export class InternalChatNotificationSettingsRepository {
         input.notifications_internal_chat_push;
     }
 
+    if (input.notifications_internal_chat === false) {
+      updateInput.notifications_internal_chat_direct = false;
+      updateInput.notifications_internal_chat_group = false;
+      updateInput.notifications_internal_chat_sound = false;
+      updateInput.notifications_internal_chat_toast = false;
+      updateInput.notifications_internal_chat_browser = false;
+      updateInput.notifications_internal_chat_push = false;
+    }
+
     return updateInput;
   }
 
@@ -195,10 +204,6 @@ export class InternalChatNotificationSettingsRepository {
         notifications_toast: true,
         notifications_browser: true,
         notifications_push: true,
-        notifications_status_update: true,
-        notifications_status_queue: false,
-        notifications_status_in_chat: true,
-        notifications_status_chatbot: false,
         notifications_message_queue: false,
         notifications_message_in_chat: true,
         notifications_message_chatbot: false,

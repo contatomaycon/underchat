@@ -36,10 +36,6 @@ export class ChatNotificationSettingsRepository {
         notifications_toast: chatUser.notifications_toast,
         notifications_browser: chatUser.notifications_browser,
         notifications_push: chatUser.notifications_push,
-        notifications_status_update: chatUser.notifications_status_update,
-        notifications_status_queue: chatUser.notifications_status_queue,
-        notifications_status_in_chat: chatUser.notifications_status_in_chat,
-        notifications_status_chatbot: chatUser.notifications_status_chatbot,
         notifications_message_queue: chatUser.notifications_message_queue,
         notifications_message_in_chat: chatUser.notifications_message_in_chat,
         notifications_message_chatbot: chatUser.notifications_message_chatbot,
@@ -61,10 +57,6 @@ export class ChatNotificationSettingsRepository {
       'notifications_toast',
       'notifications_browser',
       'notifications_push',
-      'notifications_status_update',
-      'notifications_status_queue',
-      'notifications_status_in_chat',
-      'notifications_status_chatbot',
       'notifications_message_queue',
       'notifications_message_in_chat',
       'notifications_message_chatbot',
@@ -75,6 +67,17 @@ export class ChatNotificationSettingsRepository {
       if (input[key] !== undefined) {
         updateInput[key] = input[key];
       }
+    }
+
+    if (input.notifications === false) {
+      updateInput.notifications_sound = false;
+      updateInput.notifications_toast = false;
+      updateInput.notifications_browser = false;
+      updateInput.notifications_push = false;
+      updateInput.notifications_message_queue = false;
+      updateInput.notifications_message_in_chat = false;
+      updateInput.notifications_message_chatbot = false;
+      updateInput.notifications_transfer = false;
     }
 
     return updateInput;
@@ -94,10 +97,6 @@ export class ChatNotificationSettingsRepository {
       notifications_toast: row.notifications_toast !== false,
       notifications_browser: row.notifications_browser !== false,
       notifications_push: row.notifications_push !== false,
-      notifications_status_update: row.notifications_status_update !== false,
-      notifications_status_queue: row.notifications_status_queue === true,
-      notifications_status_in_chat: row.notifications_status_in_chat !== false,
-      notifications_status_chatbot: row.notifications_status_chatbot === true,
       notifications_message_queue: row.notifications_message_queue === true,
       notifications_message_in_chat:
         row.notifications_message_in_chat !== false,
@@ -180,10 +179,6 @@ export class ChatNotificationSettingsRepository {
         notifications_toast: true,
         notifications_browser: true,
         notifications_push: true,
-        notifications_status_update: true,
-        notifications_status_queue: false,
-        notifications_status_in_chat: true,
-        notifications_status_chatbot: false,
         notifications_message_queue: false,
         notifications_message_in_chat: true,
         notifications_message_chatbot: false,

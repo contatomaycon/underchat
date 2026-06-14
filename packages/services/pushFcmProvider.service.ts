@@ -69,7 +69,7 @@ export class PushFcmProviderService {
                 notification: {
                   channel_id: CHAT_NOTIFICATION_ANDROID_CHANNEL,
                   tag: job.payload.tag,
-                  sound: 'default',
+                  ...(job.payload.sound !== false ? { sound: 'default' } : {}),
                 },
               },
               data: this.stringifyData(job.payload.data),

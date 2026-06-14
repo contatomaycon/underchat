@@ -72,7 +72,7 @@ export class StartChatWithContactUseCase {
     @inject(AttendanceInactivityService)
     private readonly attendanceInactivityService: AttendanceInactivityService,
     @inject(PushNotificationService)
-    private readonly pushNotificationService: PushNotificationService,
+    _pushNotificationService: PushNotificationService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -463,11 +463,6 @@ export class StartChatWithContactUseCase {
     }
 
     await this.publishChatUpdate(updatedChat);
-    if (existingChat.status !== EChatStatus.in_chat) {
-      await this.pushNotificationService
-        .sendNotificationForChatStatusChange(updatedChat)
-        .catch(() => {});
-    }
 
     return updatedChat;
   }
@@ -644,9 +639,6 @@ export class StartChatWithContactUseCase {
     );
 
     await this.publishChatUpdate(chatWithProtocol);
-    await this.pushNotificationService
-      .sendNotificationForChatStatusChange(chatWithProtocol)
-      .catch(() => {});
 
     return chatWithProtocol;
   }

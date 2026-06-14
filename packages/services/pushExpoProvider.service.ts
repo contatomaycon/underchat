@@ -35,7 +35,7 @@ export class PushExpoProviderService {
       to: job.endpoint,
       title: job.payload.title,
       body: job.payload.body,
-      sound: 'default',
+      ...(job.payload.sound !== false ? { sound: 'default' } : {}),
       priority: 'high',
       channelId: CHAT_NOTIFICATION_ANDROID_CHANNEL,
       data: job.payload.data ?? {},

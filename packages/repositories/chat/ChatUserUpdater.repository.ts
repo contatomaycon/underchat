@@ -45,25 +45,6 @@ export class ChatUserUpdaterRepository {
       inputUpdate.notifications_push = input.notifications_push;
     }
 
-    if (input.notifications_status_update !== undefined) {
-      inputUpdate.notifications_status_update =
-        input.notifications_status_update;
-    }
-
-    if (input.notifications_status_queue !== undefined) {
-      inputUpdate.notifications_status_queue = input.notifications_status_queue;
-    }
-
-    if (input.notifications_status_in_chat !== undefined) {
-      inputUpdate.notifications_status_in_chat =
-        input.notifications_status_in_chat;
-    }
-
-    if (input.notifications_status_chatbot !== undefined) {
-      inputUpdate.notifications_status_chatbot =
-        input.notifications_status_chatbot;
-    }
-
     if (input.notifications_message_queue !== undefined) {
       inputUpdate.notifications_message_queue =
         input.notifications_message_queue;
@@ -81,6 +62,17 @@ export class ChatUserUpdaterRepository {
 
     if (input.notifications_transfer !== undefined) {
       inputUpdate.notifications_transfer = input.notifications_transfer;
+    }
+
+    if (input.notifications === false) {
+      inputUpdate.notifications_sound = false;
+      inputUpdate.notifications_toast = false;
+      inputUpdate.notifications_browser = false;
+      inputUpdate.notifications_push = false;
+      inputUpdate.notifications_message_queue = false;
+      inputUpdate.notifications_message_in_chat = false;
+      inputUpdate.notifications_message_chatbot = false;
+      inputUpdate.notifications_transfer = false;
     }
 
     if (input.notifications_internal_chat !== undefined) {
@@ -116,6 +108,15 @@ export class ChatUserUpdaterRepository {
     if (input.notifications_internal_chat_push !== undefined) {
       inputUpdate.notifications_internal_chat_push =
         input.notifications_internal_chat_push;
+    }
+
+    if (input.notifications_internal_chat === false) {
+      inputUpdate.notifications_internal_chat_direct = false;
+      inputUpdate.notifications_internal_chat_group = false;
+      inputUpdate.notifications_internal_chat_sound = false;
+      inputUpdate.notifications_internal_chat_toast = false;
+      inputUpdate.notifications_internal_chat_browser = false;
+      inputUpdate.notifications_internal_chat_push = false;
     }
 
     if (input.sort_by_chat_order !== undefined) {

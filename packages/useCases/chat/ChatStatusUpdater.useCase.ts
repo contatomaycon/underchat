@@ -62,7 +62,7 @@ export class ChatStatusUpdaterUseCase {
     @inject(ChatbotFlowRunnerService)
     private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     @inject(PushNotificationService)
-    private readonly pushNotificationService: PushNotificationService,
+    _pushNotificationService: PushNotificationService,
     @inject(ChatClosureCommentCreatorRepository)
     private readonly chatClosureCommentCreatorRepository: ChatClosureCommentCreatorRepository,
     @inject(AttendanceInactivityService)
@@ -947,22 +947,6 @@ export class ChatStatusUpdaterUseCase {
     }
 
     await this.publishChatUpdate(chatWithProtocol, accountId);
-
-    const hasStatusTransition = chat.status !== chatWithProtocol.status;
-
-    if (
-      hasStatusTransition &&
-      (chatWithProtocol.status === EChatStatus.queue ||
-        chatWithProtocol.status === EChatStatus.in_chat ||
-        chatWithProtocol.status === EChatStatus.ura ||
-        chatWithProtocol.status === EChatStatus.ura_output ||
-        chatWithProtocol.status === EChatStatus.ura_schedule ||
-        chatWithProtocol.status === EChatStatus.ura_webhook)
-    ) {
-      await this.pushNotificationService
-        .sendNotificationForChatStatusChange(chatWithProtocol)
-        .catch(() => {});
-    }
 
     return chatWithProtocol;
   }

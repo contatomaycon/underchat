@@ -37,4 +37,31 @@ export class UserSectorsListerRepository {
 
     return result.map((item) => item.sector_id);
   };
+
+  listUserIdsBySector = async (
+    accountId: string,
+    sectorId: string
+  ): Promise<string[]> => {
+    const result = await this.dbRo
+      .select({
+        user_id: sectorUser.user_id,
+      })
+      .from(sectorUser)
+      .innerJoin(sector, eq(sectorUser.sector_id, sector.sector_id))
+      .where(
+        and(
+          eq(sector.account_id, accountId),
+          eq(sector.sector_id, sectorId),
+          isNull(sectorUser.deleted_at),
+          isNull(sector.deleted_at)
+        )
+      )
+      .execute();
+
+    if (!result?.length) {
+      return [];
+    }
+
+    return result.map((item) => item.user_id);
+  };
 }

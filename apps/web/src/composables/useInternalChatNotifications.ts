@@ -174,6 +174,19 @@ export const useInternalChatNotifications = () => {
     );
   };
 
+  const postNotificationClientState = () => {
+    if (!('serviceWorker' in navigator)) {
+      return;
+    }
+
+    navigator.serviceWorker.controller?.postMessage({
+      type: 'notificationClientState',
+      internalChatConversationId:
+        internalChatStore.activeConversation?.conversation_id ?? null,
+      isVisible: !document.hidden,
+    });
+  };
+
   const getMessagePreview = (message: InternalMessage): string => {
     if (message.content.type === EMessageType.text && message.content.message) {
       return message.content.message;
@@ -415,6 +428,7 @@ export const useInternalChatNotifications = () => {
 
   function handleVisibilityChange() {
     isPageVisible.value = !document.hidden;
+    postNotificationClientState();
   }
 
   async function syncNotificationSettings(): Promise<void> {
@@ -468,6 +482,7 @@ export const useInternalChatNotifications = () => {
       void handleNewMessage(message);
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    postNotificationClientState();
 
     if ('serviceWorker' in navigator) {
       if (isPushNotificationsEnabled()) {
@@ -522,6 +537,14 @@ export const useInternalChatNotifications = () => {
     ],
     async () => {
       await runNotificationSettingsSync();
+    },
+    { immediate: true }
+  );
+
+  watch(
+    () => internalChatStore.activeConversation?.conversation_id,
+    () => {
+      postNotificationClientState();
     },
     { immediate: true }
   );

@@ -296,22 +296,6 @@ export const useInternalChatStore = defineStore('internalChat', {
           input.notifications_push ??
           existingChatUser?.notifications_push ??
           true,
-        notifications_status_update:
-          input.notifications_status_update ??
-          existingChatUser?.notifications_status_update ??
-          true,
-        notifications_status_queue:
-          input.notifications_status_queue ??
-          existingChatUser?.notifications_status_queue ??
-          false,
-        notifications_status_in_chat:
-          input.notifications_status_in_chat ??
-          existingChatUser?.notifications_status_in_chat ??
-          true,
-        notifications_status_chatbot:
-          input.notifications_status_chatbot ??
-          existingChatUser?.notifications_status_chatbot ??
-          false,
         notifications_message_queue:
           input.notifications_message_queue ??
           existingChatUser?.notifications_message_queue ??

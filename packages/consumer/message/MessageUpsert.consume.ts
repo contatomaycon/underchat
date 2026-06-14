@@ -604,17 +604,9 @@ export class MessageUpsertConsume {
     chat: IChat | null | undefined,
     data: IUpsertMessage
   ): Promise<void> {
-    if (!chat || data.from_history_sync) {
-      return;
-    }
-
-    if (previousStatus === chat.status) {
-      return;
-    }
-
-    await this.pushNotificationService
-      .sendNotificationForChatStatusChange(chat)
-      .catch(() => {});
+    void previousStatus;
+    void chat;
+    void data;
   }
 
   private async ensureChatAndHandleMessage(
@@ -4640,15 +4632,34 @@ export class MessageUpsertConsume {
     accountId: string;
     workerId: string;
     targetUserId?: string | null;
+    targetSectorId?: string | null;
   }): Promise<string[]> {
     if (input.targetUserId) {
       return [input.targetUserId];
     }
 
-    return this.userService.listUserIdsWithAccessToChannel(
-      input.accountId,
-      input.workerId
-    );
+    if (!input.targetSectorId) {
+      return this.userService.listUserIdsWithAccessToChannel(
+        input.accountId,
+        input.workerId
+      );
+    }
+
+    const [sectorUsers, channelUserIds] = await Promise.all([
+      this.sectorService.listSectorUsersForTransfer(
+        input.accountId,
+        input.targetSectorId
+      ),
+      this.userService.listUserIdsWithAccessToChannel(
+        input.accountId,
+        input.workerId
+      ),
+    ]);
+
+    const allowedSet = new Set(channelUserIds);
+    return sectorUsers
+      .map((user) => user.id)
+      .filter((userId) => allowedSet.has(userId));
   }
 
   private async notifyChatTransfer(input: {
@@ -4661,6 +4672,7 @@ export class MessageUpsertConsume {
         accountId: input.chat.account.id,
         workerId: input.chat.worker.id,
         targetUserId: input.user?.id ?? null,
+        targetSectorId: input.sector?.id ?? null,
       });
 
     await this.pushNotificationService.sendNotificationForChatTransfer({

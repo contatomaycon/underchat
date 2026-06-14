@@ -116,25 +116,38 @@ const makeChat = (overrides: Partial<IChat> = {}): IChat => {
 };
 
 function makeService(eligibleUserIds: string[] = [memberUserId]) {
+  const eligibleRecipients = eligibleUserIds.map((userId) => ({
+    user_id: userId,
+    notifications_sound: true,
+  }));
   const usersWithNotificationsListerRepository = {
     listInternalChatUsersWithNotifications: jest
       .fn()
-      .mockResolvedValue(eligibleUserIds),
+      .mockResolvedValue(eligibleRecipients),
     listUsersWithTransferNotifications: jest.fn().mockResolvedValue([]),
     listUsersWithNotifications: jest.fn().mockResolvedValue([]),
+  };
+  const userSectorsListerRepository = {
+    listUserSectors: jest.fn().mockResolvedValue([]),
+    listUserIdsBySector: jest.fn().mockResolvedValue([]),
+  };
+  const userChannelChannelsListerRepository = {
+    listChannelsWithNamesByUserAndAccount: jest.fn().mockResolvedValue([]),
+    listUserIdsWithAccessToChannel: jest.fn().mockResolvedValue([]),
+  };
+  const permissionService = {
+    viewPermissionByUserId: jest
+      .fn()
+      .mockResolvedValue([EGeneralPermissions.full_access]),
   };
 
   const service = new PushNotificationService(
     { listByUserId: jest.fn() } as never,
     { deleteByEndpoint: jest.fn() } as never,
     usersWithNotificationsListerRepository as never,
-    { listUserSectors: jest.fn() } as never,
-    { listChannelsWithNamesByUserAndAccount: jest.fn() } as never,
-    {
-      viewPermissionByUserId: jest
-        .fn()
-        .mockResolvedValue([EGeneralPermissions.full_access]),
-    } as never
+    userSectorsListerRepository as never,
+    userChannelChannelsListerRepository as never,
+    permissionService as never
   );
 
   const sendNotificationToUser = jest
@@ -144,6 +157,9 @@ function makeService(eligibleUserIds: string[] = [memberUserId]) {
   return {
     service,
     usersWithNotificationsListerRepository,
+    userSectorsListerRepository,
+    userChannelChannelsListerRepository,
+    permissionService,
     sendNotificationToUser,
   };
 }
@@ -226,6 +242,127 @@ describe('PushNotificationService internal chat notifications', () => {
   });
 });
 
+describe('PushNotificationService chat message audiences', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  const makeMessage = () =>
+    ({
+      message_id: 'message-1',
+      chat_id: 'chat-1',
+      type_user: ETypeUserChat.client,
+      message_key: { from_me: false },
+      content: {
+        type: EMessageType.text,
+        message: 'Oi',
+      },
+    }) as never;
+
+  it('notifies only the primary attendant for queue messages when a primary attendant is set', async () => {
+    const {
+      service,
+      usersWithNotificationsListerRepository,
+      sendNotificationToUser,
+    } = makeService();
+    usersWithNotificationsListerRepository.listUsersWithNotifications.mockResolvedValue(
+      [{ user_id: targetUserId, notifications_sound: false }]
+    );
+
+    await service.sendNotificationForChatMessage(
+      makeChat({ status: EChatStatus.queue }),
+      makeMessage()
+    );
+
+    expect(
+      usersWithNotificationsListerRepository.listUsersWithNotifications
+    ).toHaveBeenCalledWith(accountId, EChatStatus.queue, [targetUserId]);
+    expect(sendNotificationToUser).toHaveBeenCalledWith(
+      targetUserId,
+      expect.objectContaining({ sound: false })
+    );
+  });
+
+  it('notifies sector users with channel access for queue messages without a primary attendant', async () => {
+    const {
+      service,
+      usersWithNotificationsListerRepository,
+      userSectorsListerRepository,
+      userChannelChannelsListerRepository,
+    } = makeService();
+    userSectorsListerRepository.listUserIdsBySector.mockResolvedValue([
+      'sector-user-1',
+      'sector-user-2',
+    ]);
+    userChannelChannelsListerRepository.listUserIdsWithAccessToChannel.mockResolvedValue(
+      ['sector-user-2', 'channel-user']
+    );
+
+    await service.sendNotificationForChatMessage(
+      makeChat({
+        status: EChatStatus.queue,
+        user: null,
+      }),
+      makeMessage()
+    );
+
+    expect(
+      usersWithNotificationsListerRepository.listUsersWithNotifications
+    ).toHaveBeenCalledWith(accountId, EChatStatus.queue, ['sector-user-2']);
+  });
+
+  it('notifies only explicit participants for in-chat messages', async () => {
+    const { service, usersWithNotificationsListerRepository } = makeService();
+
+    await service.sendNotificationForChatMessage(
+      makeChat({
+        status: EChatStatus.in_chat,
+        secondary_users: [{ id: 'secondary-1', name: 'Secondary' }],
+      }),
+      makeMessage()
+    );
+
+    expect(
+      usersWithNotificationsListerRepository.listUsersWithNotifications
+    ).toHaveBeenCalledWith(accountId, EChatStatus.in_chat, [
+      targetUserId,
+      'secondary-1',
+    ]);
+  });
+
+  it('does not notify a sector candidate that cannot view the chat', async () => {
+    const {
+      service,
+      usersWithNotificationsListerRepository,
+      userSectorsListerRepository,
+      userChannelChannelsListerRepository,
+      permissionService,
+      sendNotificationToUser,
+    } = makeService();
+    userSectorsListerRepository.listUserIdsBySector.mockResolvedValue([
+      'sector-user-1',
+    ]);
+    userSectorsListerRepository.listUserSectors.mockResolvedValue(['sector-1']);
+    userChannelChannelsListerRepository.listUserIdsWithAccessToChannel.mockResolvedValue(
+      ['sector-user-1']
+    );
+    usersWithNotificationsListerRepository.listUsersWithNotifications.mockResolvedValue(
+      [{ user_id: 'sector-user-1', notifications_sound: true }]
+    );
+    permissionService.viewPermissionByUserId.mockResolvedValue([]);
+
+    await service.sendNotificationForChatMessage(
+      makeChat({
+        status: EChatStatus.queue,
+        user: null,
+      }),
+      makeMessage()
+    );
+
+    expect(sendNotificationToUser).not.toHaveBeenCalled();
+  });
+});
+
 describe('PushNotificationService delivery routing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -254,8 +391,11 @@ describe('PushNotificationService delivery routing', () => {
         listUsersWithTransferNotifications: jest.fn().mockResolvedValue([]),
         listUsersWithNotifications: jest.fn().mockResolvedValue([]),
       } as never,
-      { listUserSectors: jest.fn() } as never,
-      { listChannelsWithNamesByUserAndAccount: jest.fn() } as never,
+      { listUserSectors: jest.fn(), listUserIdsBySector: jest.fn() } as never,
+      {
+        listChannelsWithNamesByUserAndAccount: jest.fn(),
+        listUserIdsWithAccessToChannel: jest.fn(),
+      } as never,
       { viewPermissionByUserId: jest.fn().mockResolvedValue([]) } as never,
       queue as never
     );
@@ -369,7 +509,7 @@ describe('PushNotificationService chat transfer notifications', () => {
       sendNotificationToUser,
     } = makeService();
     usersWithNotificationsListerRepository.listUsersWithTransferNotifications.mockResolvedValue(
-      [targetUserId]
+      [{ user_id: targetUserId, notifications_sound: true }]
     );
     const chat = makeChat();
 

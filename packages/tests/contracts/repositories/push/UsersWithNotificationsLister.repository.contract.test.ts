@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
 import {
-  canReceivePushForChatStatus,
+  canReceivePushForChatTransfer,
+  canReceivePushForChatMessage,
   isChatbotNotificationStatus,
   UsersWithNotificationsListerRepository,
 } from '@core/repositories/push/UsersWithNotificationsLister.repository';
@@ -11,20 +12,17 @@ import { createSelectDbMock } from '@core/tests/helpers/drizzleMock';
 const enabledPreferences = {
   notifications: true,
   notifications_push: true,
-  notifications_status_update: true,
-  notifications_status_queue: true,
-  notifications_status_in_chat: true,
-  notifications_status_chatbot: true,
+  notifications_sound: true,
   notifications_message_queue: true,
   notifications_message_in_chat: true,
   notifications_message_chatbot: true,
   notifications_transfer: true,
 };
 
-describe('canReceivePushForChatStatus', () => {
+describe('canReceivePushForChatMessage', () => {
   it('blocks push when master notifications are disabled', () => {
     expect(
-      canReceivePushForChatStatus({
+      canReceivePushForChatMessage({
         ...enabledPreferences,
         notifications: false,
       })
@@ -33,7 +31,7 @@ describe('canReceivePushForChatStatus', () => {
 
   it('blocks push when background push is disabled', () => {
     expect(
-      canReceivePushForChatStatus({
+      canReceivePushForChatMessage({
         ...enabledPreferences,
         notifications_push: false,
       })
@@ -42,7 +40,7 @@ describe('canReceivePushForChatStatus', () => {
 
   it('blocks queue message push when queue message notifications are disabled', () => {
     expect(
-      canReceivePushForChatStatus(
+      canReceivePushForChatMessage(
         {
           ...enabledPreferences,
           notifications_message_queue: false,
@@ -54,7 +52,7 @@ describe('canReceivePushForChatStatus', () => {
 
   it('blocks in-chat message push when in-chat message notifications are disabled', () => {
     expect(
-      canReceivePushForChatStatus(
+      canReceivePushForChatMessage(
         {
           ...enabledPreferences,
           notifications_message_in_chat: false,
@@ -66,7 +64,7 @@ describe('canReceivePushForChatStatus', () => {
 
   it('blocks chatbot message push when chatbot message notifications are disabled', () => {
     expect(
-      canReceivePushForChatStatus(
+      canReceivePushForChatMessage(
         {
           ...enabledPreferences,
           notifications_message_chatbot: false,
@@ -76,34 +74,18 @@ describe('canReceivePushForChatStatus', () => {
     ).toBe(false);
   });
 
-  it('blocks status push when the status parent toggle is disabled', () => {
+  it('blocks transfer push when transfer notifications are disabled', () => {
     expect(
-      canReceivePushForChatStatus(
-        {
-          ...enabledPreferences,
-          notifications_status_update: false,
-        },
-        EChatStatus.queue,
-        'status'
-      )
-    ).toBe(false);
-  });
-
-  it('blocks status push when the specific status toggle is disabled', () => {
-    expect(
-      canReceivePushForChatStatus(
-        {
-          ...enabledPreferences,
-          notifications_status_queue: false,
-        },
-        EChatStatus.queue,
-        'status'
-      )
+      canReceivePushForChatTransfer({
+        ...enabledPreferences,
+        notifications_transfer: false,
+      })
     ).toBe(false);
   });
 
   it('allows push when all required preferences are enabled', () => {
-    expect(canReceivePushForChatStatus(enabledPreferences)).toBe(true);
+    expect(canReceivePushForChatMessage(enabledPreferences)).toBe(true);
+    expect(canReceivePushForChatTransfer(enabledPreferences)).toBe(true);
   });
 });
 
@@ -121,15 +103,18 @@ describe('isChatbotNotificationStatus', () => {
 describe('UsersWithNotificationsListerRepository', () => {
   it('returns user ids from the query result', async () => {
     const { db, execute } = createSelectDbMock([
-      { user_id: 'user-1' },
-      { user_id: 'user-2' },
+      { user_id: 'user-1', notifications_sound: true },
+      { user_id: 'user-2', notifications_sound: false },
     ]);
 
     const repository = new UsersWithNotificationsListerRepository(db as never);
 
     await expect(
       repository.listUsersWithNotifications('account-1')
-    ).resolves.toEqual(['user-1', 'user-2']);
+    ).resolves.toEqual([
+      { user_id: 'user-1', notifications_sound: true },
+      { user_id: 'user-2', notifications_sound: false },
+    ]);
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
@@ -142,15 +127,17 @@ describe('UsersWithNotificationsListerRepository', () => {
     ).resolves.toEqual([]);
   });
 
-  it('executes queries for all status-branch combinations', async () => {
-    const { db, where } = createSelectDbMock([{ user_id: 'user-1' }]);
+  it('executes queries for all message status branches', async () => {
+    const { db, where } = createSelectDbMock([
+      { user_id: 'user-1', notifications_sound: true },
+    ]);
     const repository = new UsersWithNotificationsListerRepository(db as never);
 
     await repository.listUsersWithNotifications('account-1', EChatStatus.queue);
     await repository.listUsersWithNotifications(
       'account-1',
       EChatStatus.in_chat,
-      true
+      ['user-1']
     );
     await repository.listUsersWithNotifications('account-1', EChatStatus.ura);
 
@@ -169,8 +156,8 @@ describe('UsersWithNotificationsListerRepository', () => {
 
   it('returns transfer notification user ids from eligible candidates', async () => {
     const { db, execute, where } = createSelectDbMock([
-      { user_id: 'user-1' },
-      { user_id: 'user-2' },
+      { user_id: 'user-1', notifications_sound: true },
+      { user_id: 'user-2', notifications_sound: false },
     ]);
     const repository = new UsersWithNotificationsListerRepository(db as never);
 
@@ -179,7 +166,10 @@ describe('UsersWithNotificationsListerRepository', () => {
         'user-1',
         'user-2',
       ])
-    ).resolves.toEqual(['user-1', 'user-2']);
+    ).resolves.toEqual([
+      { user_id: 'user-1', notifications_sound: true },
+      { user_id: 'user-2', notifications_sound: false },
+    ]);
     expect(where).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);
   });
@@ -200,8 +190,8 @@ describe('UsersWithNotificationsListerRepository', () => {
 
   it('returns internal chat notification user ids from active participants', async () => {
     const { db, execute, where } = createSelectDbMock([
-      { user_id: 'user-1' },
-      { user_id: 'user-2' },
+      { user_id: 'user-1', notifications_sound: true },
+      { user_id: 'user-2', notifications_sound: false },
     ]);
     const repository = new UsersWithNotificationsListerRepository(db as never);
 
@@ -211,7 +201,10 @@ describe('UsersWithNotificationsListerRepository', () => {
         ['user-1', 'user-2', 'sender-1'],
         EInternalChatConversationType.direct
       )
-    ).resolves.toEqual(['user-1', 'user-2']);
+    ).resolves.toEqual([
+      { user_id: 'user-1', notifications_sound: true },
+      { user_id: 'user-2', notifications_sound: false },
+    ]);
     expect(where).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);
   });

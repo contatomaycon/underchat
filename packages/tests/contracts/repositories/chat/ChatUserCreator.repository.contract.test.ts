@@ -28,8 +28,6 @@ describe('ChatUserCreatorRepository', () => {
         chat_user_id: 'chat-user-id-1',
         user_id: 'user-1',
         notifications: true,
-        notifications_status_queue: false,
-        notifications_status_chatbot: false,
         notifications_message_queue: false,
         notifications_message_in_chat: true,
         notifications_message_chatbot: false,

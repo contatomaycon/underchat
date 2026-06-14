@@ -831,22 +831,6 @@ export const useChatStore = defineStore('chat', {
           input.notifications_push ??
           existingChatUser?.notifications_push ??
           true,
-        notifications_status_update:
-          input.notifications_status_update ??
-          existingChatUser?.notifications_status_update ??
-          true,
-        notifications_status_queue:
-          input.notifications_status_queue ??
-          existingChatUser?.notifications_status_queue ??
-          false,
-        notifications_status_in_chat:
-          input.notifications_status_in_chat ??
-          existingChatUser?.notifications_status_in_chat ??
-          true,
-        notifications_status_chatbot:
-          input.notifications_status_chatbot ??
-          existingChatUser?.notifications_status_chatbot ??
-          false,
         notifications_message_queue:
           input.notifications_message_queue ??
           existingChatUser?.notifications_message_queue ??
@@ -2932,14 +2916,6 @@ export const useChatStore = defineStore('chat', {
         notifications_browser:
           this.user?.chat_user?.notifications_browser ?? true,
         notifications_push: this.user?.chat_user?.notifications_push ?? true,
-        notifications_status_update:
-          this.user?.chat_user?.notifications_status_update ?? true,
-        notifications_status_queue:
-          this.user?.chat_user?.notifications_status_queue ?? false,
-        notifications_status_in_chat:
-          this.user?.chat_user?.notifications_status_in_chat ?? true,
-        notifications_status_chatbot:
-          this.user?.chat_user?.notifications_status_chatbot ?? false,
         notifications_message_queue:
           this.user?.chat_user?.notifications_message_queue ?? false,
         notifications_message_in_chat:
@@ -2972,12 +2948,6 @@ export const useChatStore = defineStore('chat', {
         notifications_toast: chatUserUpdate.notifications_toast,
         notifications_browser: chatUserUpdate.notifications_browser,
         notifications_push: chatUserUpdate.notifications_push,
-        notifications_status_update: chatUserUpdate.notifications_status_update,
-        notifications_status_queue: chatUserUpdate.notifications_status_queue,
-        notifications_status_in_chat:
-          chatUserUpdate.notifications_status_in_chat,
-        notifications_status_chatbot:
-          chatUserUpdate.notifications_status_chatbot,
         notifications_message_queue: chatUserUpdate.notifications_message_queue,
         notifications_message_in_chat:
           chatUserUpdate.notifications_message_in_chat,

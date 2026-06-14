@@ -485,15 +485,34 @@ export class TransferChatUseCase {
     accountId: string;
     targetWorkerId: string;
     targetUserId?: string;
+    targetSectorId?: string;
   }): Promise<string[]> {
     if (input.targetUserId) {
       return [input.targetUserId];
     }
 
-    return this.userService.listUserIdsWithAccessToChannel(
-      input.accountId,
-      input.targetWorkerId
-    );
+    if (!input.targetSectorId) {
+      return this.userService.listUserIdsWithAccessToChannel(
+        input.accountId,
+        input.targetWorkerId
+      );
+    }
+
+    const [sectorUsers, channelUserIds] = await Promise.all([
+      this.sectorService.listSectorUsersForTransfer(
+        input.accountId,
+        input.targetSectorId
+      ),
+      this.userService.listUserIdsWithAccessToChannel(
+        input.accountId,
+        input.targetWorkerId
+      ),
+    ]);
+
+    const allowedSet = new Set(channelUserIds);
+    return sectorUsers
+      .map((user) => user.id)
+      .filter((userId) => allowedSet.has(userId));
   }
 
   async execute(
@@ -647,6 +666,7 @@ export class TransferChatUseCase {
         accountId,
         targetWorkerId: targetWorker.id,
         targetUserId: user?.id ?? undefined,
+        targetSectorId: sector?.id ?? undefined,
       });
 
     await this.pushNotificationService

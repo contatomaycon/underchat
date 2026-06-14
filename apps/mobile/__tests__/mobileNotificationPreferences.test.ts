@@ -5,7 +5,6 @@ import {
   resolveChatForegroundDelivery,
   resolveInternalChatForegroundDelivery,
   shouldNotifyChatMessage,
-  shouldNotifyChatStatusChange,
   shouldNotifyChatTransfer,
   shouldNotifyInternalChatMessage,
 } from '../utils/mobileNotificationPreferences';
@@ -31,11 +30,9 @@ describe('mobile notification preferences', () => {
       ...DEFAULT_MOBILE_CHAT_NOTIFICATION_SETTINGS,
       notifications: false,
       notifications_message_queue: true,
-      notifications_status_queue: true,
     };
 
     expect(shouldNotifyChatMessage(settings, 'queue')).toBe(false);
-    expect(shouldNotifyChatStatusChange(settings, 'queue')).toBe(false);
     expect(shouldNotifyChatTransfer(settings)).toBe(false);
     expect(resolveChatForegroundDelivery(settings)).toEqual({
       showToast: false,
@@ -43,24 +40,17 @@ describe('mobile notification preferences', () => {
     });
   });
 
-  it('respects chat message and status rules by attendance status', () => {
+  it('respects chat message rules by attendance status', () => {
     const settings = {
       ...DEFAULT_MOBILE_CHAT_NOTIFICATION_SETTINGS,
       notifications_message_queue: true,
       notifications_message_chatbot: true,
-      notifications_status_queue: true,
-      notifications_status_chatbot: true,
     };
 
     expect(shouldNotifyChatMessage(settings, 'queue')).toBe(true);
     expect(shouldNotifyChatMessage(settings, 'in_chat')).toBe(true);
     expect(shouldNotifyChatMessage(settings, 'ura')).toBe(true);
     expect(shouldNotifyChatMessage(settings, 'closed')).toBe(false);
-
-    expect(shouldNotifyChatStatusChange(settings, 'queue')).toBe(true);
-    expect(shouldNotifyChatStatusChange(settings, 'in_chat')).toBe(true);
-    expect(shouldNotifyChatStatusChange(settings, 'ura_output')).toBe(true);
-    expect(shouldNotifyChatStatusChange(settings, 'closed')).toBe(false);
   });
 
   it('does not use the browser internal chat preference for mobile foreground delivery', () => {

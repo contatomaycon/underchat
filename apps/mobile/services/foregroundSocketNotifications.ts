@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { AppStateStatus } from 'react-native';
-import { canViewChat } from '../constants/chatAuthorization';
+import {
+  canViewChat,
+  isChatParticipant,
+  isChatPrimary,
+} from '../constants/chatAuthorization';
 import {
   isChatRoomFocused,
   isInternalChatRoomFocused,
@@ -35,13 +39,11 @@ import {
 } from '../types/internalChat';
 import { resolveInternalChatMessagePreview } from '../utils/internalChatText';
 import {
-  isChatNotificationStatusEligible,
   readMobileChatNotificationSettingsFromUser,
   readMobileInternalChatNotificationSettingsFromUser,
   resolveChatForegroundDelivery,
   resolveInternalChatForegroundDelivery,
   shouldNotifyChatMessage,
-  shouldNotifyChatStatusChange,
   shouldNotifyChatTransfer,
   shouldNotifyInternalChatMessage,
 } from '../utils/mobileNotificationPreferences';
@@ -105,6 +107,128 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function getUserId(user: unknown): string | null {
   if (!isRecord(user)) return null;
   return normalizeIdentifier(user.id) ?? normalizeIdentifier(user.user_id);
+}
+
+function hasChatParticipants(chat: ListChatsResult): boolean {
+  if (chat.user?.id) {
+    return true;
+  }
+
+  return Array.isArray(chat.secondary_users) && chat.secondary_users.length > 0;
+}
+
+function hasChannelAccess(
+  chat: ListChatsResult,
+  userChannels: UserChannel[]
+): boolean {
+  if (userChannels.length === 0) {
+    return true;
+  }
+
+  return userChannels.some((channel) => channel.id === chat.worker?.id);
+}
+
+function hasSectorAccess(
+  chat: ListChatsResult,
+  userSectors: string[]
+): boolean {
+  return !!chat.sector?.id && userSectors.includes(chat.sector.id);
+}
+
+function canReceiveChatMessageNotification(
+  chat: ListChatsResult,
+  context: ChatAccessContext
+): boolean {
+  const userId = getUserId(context.user);
+  if (!userId) {
+    return false;
+  }
+
+  if (
+    !canViewChat(chat, {
+      permissions: context.permissions,
+      userId,
+      userSectors: context.userSectors,
+      userChannels: context.userChannels,
+    })
+  ) {
+    return false;
+  }
+
+  if (chat.status === 'in_chat') {
+    return isChatParticipant(chat, userId);
+  }
+
+  if (chat.status === 'queue') {
+    if (chat.user?.id) {
+      return isChatPrimary(chat, userId);
+    }
+
+    if (chat.sector?.id) {
+      return (
+        hasSectorAccess(chat, context.userSectors) &&
+        hasChannelAccess(chat, context.userChannels)
+      );
+    }
+
+    return hasChannelAccess(chat, context.userChannels);
+  }
+
+  if (
+    chat.status === 'ura' ||
+    chat.status === 'ura_output' ||
+    chat.status === 'ura_schedule' ||
+    chat.status === 'ura_webhook'
+  ) {
+    if (hasChatParticipants(chat)) {
+      return isChatParticipant(chat, userId);
+    }
+
+    if (chat.sector?.id) {
+      return (
+        hasSectorAccess(chat, context.userSectors) &&
+        hasChannelAccess(chat, context.userChannels)
+      );
+    }
+
+    return hasChannelAccess(chat, context.userChannels);
+  }
+
+  return false;
+}
+
+function canReceiveChatTransferNotification(
+  chat: ListChatsResult,
+  context: ChatAccessContext
+): boolean {
+  const userId = getUserId(context.user);
+  if (!userId) {
+    return false;
+  }
+
+  if (
+    !canViewChat(chat, {
+      permissions: context.permissions,
+      userId,
+      userSectors: context.userSectors,
+      userChannels: context.userChannels,
+    })
+  ) {
+    return false;
+  }
+
+  if (hasChatParticipants(chat)) {
+    return isChatParticipant(chat, userId);
+  }
+
+  if (chat.sector?.id) {
+    return (
+      hasSectorAccess(chat, context.userSectors) &&
+      hasChannelAccess(chat, context.userChannels)
+    );
+  }
+
+  return hasChannelAccess(chat, context.userChannels);
 }
 
 function coerceChatPayload(payload: SocketChatPayload): ListChatsResult | null {
@@ -176,20 +300,6 @@ function isIncomingChatMessage(payload: SocketMessagePayload): boolean {
 
   const contentType = readString(message.content?.type);
   return contentType !== 'system' && contentType !== 'annotation';
-}
-
-function getChatStatusBody(status: EChatStatus): string {
-  if (status === 'queue') return 'Aguardando atendimento';
-  if (status === 'in_chat') return 'Em atendimento';
-  if (
-    status === 'ura' ||
-    status === 'ura_output' ||
-    status === 'ura_schedule' ||
-    status === 'ura_webhook'
-  ) {
-    return 'Chatbot';
-  }
-  return 'Status atualizado';
 }
 
 function getTransferProtocolKey(chat: ListChatsResult): string {
@@ -387,23 +497,15 @@ export function useForegroundSocketNotifications({
       const eventKey = `chat-message:${payload.message_id}`;
       if (!markRecentEvent(eventKey)) return;
 
-      const { permissions, user, userSectors, userChannels } =
-        await loadChatAccessContext();
+      const context = await loadChatAccessContext();
 
       if (!isChatForegroundReady()) return;
 
-      if (
-        !canViewChat(chat, {
-          permissions,
-          userId: getUserId(user),
-          userSectors,
-          userChannels,
-        })
-      ) {
+      if (!canReceiveChatMessageNotification(chat, context)) {
         return;
       }
 
-      const settings = readMobileChatNotificationSettingsFromUser(user);
+      const settings = readMobileChatNotificationSettingsFromUser(context.user);
       if (!shouldNotifyChatMessage(settings, chat.status)) return;
 
       dispatchForegroundNotification(resolveChatForegroundDelivery(settings), {
@@ -411,47 +513,6 @@ export function useForegroundSocketNotifications({
         title: getChatTitle(chat),
         body: getChatMessagePreview(payload, chat),
         icon: 'chatbubble-ellipses-outline',
-        onPress: () => {
-          navigateToChatRoom(chat);
-        },
-      });
-    },
-    [isChatForegroundReady, markRecentEvent]
-  );
-
-  const notifyChatStatusChange = useCallback(
-    async (chat: ListChatsResult) => {
-      if (!isChatForegroundReady()) return;
-      if (!isChatNotificationStatusEligible(chat.status)) return;
-      if (isChatRoomFocused(chat.chat_id)) return;
-
-      const eventKey = `chat-status:${chat.chat_id}:${chat.status}`;
-      if (!markRecentEvent(eventKey)) return;
-
-      const { permissions, user, userSectors, userChannels } =
-        await loadChatAccessContext();
-
-      if (!isChatForegroundReady()) return;
-
-      if (
-        !canViewChat(chat, {
-          permissions,
-          userId: getUserId(user),
-          userSectors,
-          userChannels,
-        })
-      ) {
-        return;
-      }
-
-      const settings = readMobileChatNotificationSettingsFromUser(user);
-      if (!shouldNotifyChatStatusChange(settings, chat.status)) return;
-
-      dispatchForegroundNotification(resolveChatForegroundDelivery(settings), {
-        id: eventKey,
-        title: getChatTitle(chat),
-        body: getChatStatusBody(chat.status),
-        icon: 'git-compare-outline',
         onPress: () => {
           navigateToChatRoom(chat);
         },
@@ -469,23 +530,15 @@ export function useForegroundSocketNotifications({
       const eventKey = `chat-transfer:${chat.chat_id}:${transferKey}`;
       if (!markRecentEvent(eventKey)) return;
 
-      const { permissions, user, userSectors, userChannels } =
-        await loadChatAccessContext();
+      const context = await loadChatAccessContext();
 
       if (!isChatForegroundReady()) return;
 
-      if (
-        !canViewChat(chat, {
-          permissions,
-          userId: getUserId(user),
-          userSectors,
-          userChannels,
-        })
-      ) {
+      if (!canReceiveChatTransferNotification(chat, context)) {
         return;
       }
 
-      const settings = readMobileChatNotificationSettingsFromUser(user);
+      const settings = readMobileChatNotificationSettingsFromUser(context.user);
       if (!shouldNotifyChatTransfer(settings)) return;
 
       dispatchForegroundNotification(resolveChatForegroundDelivery(settings), {
@@ -555,17 +608,8 @@ export function useForegroundSocketNotifications({
         void notifyChatTransfer(chat);
         return;
       }
-
-      if (previous.status !== chat.status) {
-        void notifyChatStatusChange(chat);
-      }
     },
-    [
-      flushPendingChatMessagesForChat,
-      isChatForegroundReady,
-      notifyChatStatusChange,
-      notifyChatTransfer,
-    ]
+    [flushPendingChatMessagesForChat, isChatForegroundReady, notifyChatTransfer]
   );
 
   const handleInternalMessage = useCallback(

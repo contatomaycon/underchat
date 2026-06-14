@@ -2,7 +2,10 @@ import { injectable, inject } from 'tsyringe';
 import webPush from 'web-push';
 import { PushSubscriptionListerRepository } from '@core/repositories/push/PushSubscriptionLister.repository';
 import { PushSubscriptionDeleterRepository } from '@core/repositories/push/PushSubscriptionDeleter.repository';
-import { UsersWithNotificationsListerRepository } from '@core/repositories/push/UsersWithNotificationsLister.repository';
+import {
+  PushNotificationRecipient,
+  UsersWithNotificationsListerRepository,
+} from '@core/repositories/push/UsersWithNotificationsLister.repository';
 import { UserSectorsListerRepository } from '@core/repositories/user/UserSectorsLister.repository';
 import { UserChannelChannelsListerRepository } from '@core/repositories/user/UserChannelChannelsLister.repository';
 import { PermissionService } from '@core/services/permission.service';
@@ -11,8 +14,8 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EMessageType } from '@core/common/enums/EMessageType';
-import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
+import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { IInternalChatMessage } from '@core/common/interfaces/internalChat/IInternalChatMessage';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
@@ -111,6 +114,7 @@ export class PushNotificationService {
         icon: payload.icon,
         badge: payload.badge || payload.icon,
         tag: payload.tag,
+        silent: payload.sound === false,
         data: payload.data,
       },
     });
@@ -185,15 +189,26 @@ export class PushNotificationService {
     }
 
     const accountId = chat.account.id;
+    const audienceUserIds = await this.resolveChatMessageAudienceUserIds(chat);
 
-    const userIds =
+    if (audienceUserIds.length === 0) {
+      return;
+    }
+
+    const recipients =
       await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
         accountId,
         chat.status,
-        'message'
+        audienceUserIds
       );
 
-    if (userIds.length === 0) {
+    const allowedRecipients = await this.filterRecipientsByChatAccess(
+      accountId,
+      chat,
+      recipients
+    );
+
+    if (allowedRecipients.length === 0) {
       return;
     }
 
@@ -217,87 +232,18 @@ export class PushNotificationService {
       },
     };
 
-    const eligibleUserIds = new Set<string>();
-
-    for (const userId of userIds) {
-      const canReceive = await this.canUserReceiveNotification(
-        userId,
-        accountId,
-        chat
-      );
-
-      if (canReceive) {
-        eligibleUserIds.add(userId);
-      }
-    }
-
-    if (eligibleUserIds.size === 0) {
-      return;
-    }
-
-    const promises = Array.from(eligibleUserIds).map((userId) =>
-      this.sendNotificationToUser(userId, payload).catch(() => {})
+    const promises = allowedRecipients.map((recipient) =>
+      this.sendNotificationToUser(
+        recipient.user_id,
+        this.withRecipientSound(payload, recipient.notifications_sound)
+      ).catch(() => {})
     );
 
     await Promise.all(promises);
   }
 
   async sendNotificationForChatStatusChange(chat: IChat): Promise<void> {
-    if (!this.isChatStatusEligible(chat.status)) {
-      return;
-    }
-
-    const accountId = chat.account.id;
-    const userIds =
-      await this.usersWithNotificationsListerRepository.listUsersWithNotifications(
-        accountId,
-        chat.status,
-        'status'
-      );
-
-    if (userIds.length === 0) {
-      return;
-    }
-
-    const senderName = chat.name || chat.contact?.name || 'Desconhecido';
-    const statusLabel = this.getChatStatusNotificationLabel(chat.status);
-
-    const payload: IPushNotificationPayload = {
-      title: senderName,
-      body: statusLabel,
-      icon:
-        chat.photo || chat.contact?.photo || '/images/svg/avatar-default.svg',
-      tag: `chat-status-${chat.chat_id}`,
-      data: {
-        chatId: chat.chat_id,
-        notificationType: 'chat_status_change',
-        chatSnapshot: this.buildChatSnapshot(chat),
-      },
-    };
-
-    const eligibleUserIds = new Set<string>();
-
-    for (const userId of userIds) {
-      const canReceive = await this.canUserReceiveNotification(
-        userId,
-        accountId,
-        chat
-      );
-
-      if (canReceive) {
-        eligibleUserIds.add(userId);
-      }
-    }
-
-    if (eligibleUserIds.size === 0) {
-      return;
-    }
-
-    const promises = Array.from(eligibleUserIds).map((userId) =>
-      this.sendNotificationToUser(userId, payload).catch(() => {})
-    );
-
-    await Promise.all(promises);
+    void chat;
   }
 
   async sendNotificationForChatTransfer(input: {
@@ -321,31 +267,19 @@ export class PushNotificationService {
       return;
     }
 
-    const userIds =
+    const recipients =
       await this.usersWithNotificationsListerRepository.listUsersWithTransferNotifications(
         accountId,
         candidateUserIds
       );
 
-    if (userIds.length === 0) {
-      return;
-    }
+    const allowedRecipients = await this.filterRecipientsByChatAccess(
+      accountId,
+      input.chat,
+      recipients
+    );
 
-    const eligibleUserIds = new Set<string>();
-
-    for (const userId of userIds) {
-      const canReceive = await this.canUserReceiveNotification(
-        userId,
-        accountId,
-        input.chat
-      );
-
-      if (canReceive) {
-        eligibleUserIds.add(userId);
-      }
-    }
-
-    if (eligibleUserIds.size === 0) {
+    if (allowedRecipients.length === 0) {
       return;
     }
 
@@ -382,8 +316,11 @@ export class PushNotificationService {
       },
     };
 
-    const promises = Array.from(eligibleUserIds).map((userId) =>
-      this.sendNotificationToUser(userId, payload).catch(() => {})
+    const promises = allowedRecipients.map((recipient) =>
+      this.sendNotificationToUser(
+        recipient.user_id,
+        this.withRecipientSound(payload, recipient.notifications_sound)
+      ).catch(() => {})
     );
 
     await Promise.all(promises);
@@ -411,14 +348,14 @@ export class PushNotificationService {
       return;
     }
 
-    const eligibleUserIds =
+    const recipients =
       await this.usersWithNotificationsListerRepository.listInternalChatUsersWithNotifications(
         message.account_id,
         recipientUserIds,
         conversationType
       );
 
-    if (eligibleUserIds.length === 0) {
+    if (recipients.length === 0) {
       return;
     }
 
@@ -449,53 +386,14 @@ export class PushNotificationService {
       },
     };
 
-    const promises = eligibleUserIds.map((userId) =>
-      this.sendNotificationToUser(userId, payload).catch(() => {})
+    const promises = recipients.map((recipient) =>
+      this.sendNotificationToUser(
+        recipient.user_id,
+        this.withRecipientSound(payload, recipient.notifications_sound)
+      ).catch(() => {})
     );
 
     await Promise.all(promises);
-  }
-
-  private async canUserReceiveNotification(
-    userId: string,
-    accountId: string,
-    chat: IChat
-  ): Promise<boolean> {
-    if (!this.isChatStatusEligible(chat.status)) {
-      return false;
-    }
-
-    const permissions =
-      await this.permissionService.viewPermissionByUserId(userId);
-
-    const userChannels =
-      await this.userChannelChannelsListerRepository.listChannelsWithNamesByUserAndAccount(
-        userId,
-        accountId
-      );
-
-    const userSectors = await this.userSectorsListerRepository.listUserSectors(
-      accountId,
-      userId
-    );
-
-    return canReadChatByPolicy({
-      chat,
-      userId,
-      actions: this.buildPermissionActions(permissions),
-      userSectors,
-      userChannels,
-    });
-  }
-
-  private buildPermissionActions(permissions: string[]): IJwtGroupHierarchy[] {
-    return permissions.map((permission) => ({
-      account_id: '',
-      permission_role_id: '',
-      role_name: '',
-      module_name: '',
-      action_name: permission as EPermissionsRoles,
-    }));
   }
 
   private isChatStatusEligible(status: EChatStatus): boolean {
@@ -513,22 +411,6 @@ export class PushNotificationService {
       status === EChatStatus.ura_schedule ||
       status === EChatStatus.ura_webhook
     );
-  }
-
-  private getChatStatusNotificationLabel(status: EChatStatus): string {
-    if (status === EChatStatus.queue) {
-      return 'Aguardando atendimento';
-    }
-
-    if (status === EChatStatus.in_chat) {
-      return 'Em atendimento';
-    }
-
-    if (this.isChatbotStatus(status)) {
-      return 'Chatbot';
-    }
-
-    return 'Status atualizado';
   }
 
   private getInternalChatMessagePreview(message: IInternalChatMessage): string {
@@ -684,6 +566,218 @@ export class PushNotificationService {
     return (
       this.pushDeliveryQueueService?.isProviderConfigured(provider) === true
     );
+  }
+
+  private withRecipientSound(
+    payload: IPushNotificationPayload,
+    notificationsSound: boolean
+  ): IPushNotificationPayload {
+    return {
+      ...payload,
+      sound: notificationsSound,
+    };
+  }
+
+  private async filterRecipientsByChatAccess(
+    accountId: string,
+    chat: IChat,
+    recipients: PushNotificationRecipient[]
+  ): Promise<PushNotificationRecipient[]> {
+    if (recipients.length === 0) {
+      return [];
+    }
+
+    const checks = await Promise.all(
+      recipients.map(async (recipient) => {
+        const canRead = await this.canUserReadChat(
+          recipient.user_id,
+          accountId,
+          chat
+        ).catch(() => false);
+
+        return canRead ? recipient : null;
+      })
+    );
+
+    return checks.filter(
+      (recipient): recipient is PushNotificationRecipient => !!recipient
+    );
+  }
+
+  private async canUserReadChat(
+    userId: string,
+    accountId: string,
+    chat: IChat
+  ): Promise<boolean> {
+    const [permissions, userChannels, userSectors] = await Promise.all([
+      this.permissionService.viewPermissionByUserId(userId),
+      this.userChannelChannelsListerRepository.listChannelsWithNamesByUserAndAccount(
+        userId,
+        accountId
+      ),
+      this.userSectorsListerRepository.listUserSectors(accountId, userId),
+    ]);
+
+    return canReadChatByPolicy({
+      chat,
+      userId,
+      actions: this.buildPermissionActions(permissions),
+      userSectors,
+      userChannels,
+    });
+  }
+
+  private buildPermissionActions(permissions: string[]): IJwtGroupHierarchy[] {
+    return permissions.map((permission) => ({
+      account_id: '',
+      permission_role_id: '',
+      role_name: '',
+      module_name: '',
+      action_name: permission as EPermissionsRoles,
+    }));
+  }
+
+  private normalizeUserId(value: unknown): string | null {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      return normalized.length > 0 ? normalized : null;
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    return null;
+  }
+
+  private getPrimaryUserId(chat: IChat): string | null {
+    return this.normalizeUserId(chat.user?.id);
+  }
+
+  private getParticipantUserIds(chat: IChat): string[] {
+    const userIds = new Set<string>();
+    const primaryUserId = this.getPrimaryUserId(chat);
+
+    if (primaryUserId) {
+      userIds.add(primaryUserId);
+    }
+
+    for (const secondaryUser of chat.secondary_users ?? []) {
+      const secondaryUserId = this.normalizeUserId(secondaryUser?.id);
+      if (secondaryUserId) {
+        userIds.add(secondaryUserId);
+      }
+    }
+
+    return Array.from(userIds);
+  }
+
+  private async filterUserIdsWithChannelAccess(
+    accountId: string,
+    channelId: string | undefined,
+    userIds: string[]
+  ): Promise<string[]> {
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    if (!channelId) {
+      return Array.from(new Set(userIds));
+    }
+
+    const allowedUserIds =
+      await this.userChannelChannelsListerRepository.listUserIdsWithAccessToChannel(
+        accountId,
+        channelId
+      );
+
+    if (allowedUserIds.length === 0) {
+      return [];
+    }
+
+    const allowedSet = new Set(allowedUserIds);
+    return Array.from(new Set(userIds)).filter((userId) =>
+      allowedSet.has(userId)
+    );
+  }
+
+  private async listSectorUserIdsWithChannelAccess(
+    accountId: string,
+    sectorId: string,
+    channelId: string | undefined
+  ): Promise<string[]> {
+    const sectorUserIds =
+      await this.userSectorsListerRepository.listUserIdsBySector(
+        accountId,
+        sectorId
+      );
+
+    return this.filterUserIdsWithChannelAccess(
+      accountId,
+      channelId,
+      sectorUserIds
+    );
+  }
+
+  private async listChannelAccessUserIds(
+    accountId: string,
+    channelId: string | undefined
+  ): Promise<string[]> {
+    if (!channelId) {
+      return [];
+    }
+
+    return this.userChannelChannelsListerRepository.listUserIdsWithAccessToChannel(
+      accountId,
+      channelId
+    );
+  }
+
+  private async resolveChatMessageAudienceUserIds(
+    chat: IChat
+  ): Promise<string[]> {
+    const accountId = chat.account.id;
+    const channelId = chat.worker?.id;
+
+    if (chat.status === EChatStatus.in_chat) {
+      return this.getParticipantUserIds(chat);
+    }
+
+    if (chat.status === EChatStatus.queue) {
+      const primaryUserId = this.getPrimaryUserId(chat);
+      if (primaryUserId) {
+        return [primaryUserId];
+      }
+
+      if (chat.sector?.id) {
+        return this.listSectorUserIdsWithChannelAccess(
+          accountId,
+          chat.sector.id,
+          channelId
+        );
+      }
+
+      return this.listChannelAccessUserIds(accountId, channelId);
+    }
+
+    if (this.isChatbotStatus(chat.status)) {
+      const participantUserIds = this.getParticipantUserIds(chat);
+      if (participantUserIds.length > 0) {
+        return participantUserIds;
+      }
+
+      if (chat.sector?.id) {
+        return this.listSectorUserIdsWithChannelAccess(
+          accountId,
+          chat.sector.id,
+          channelId
+        );
+      }
+
+      return this.listChannelAccessUserIds(accountId, channelId);
+    }
+
+    return [];
   }
 
   private buildChatSnapshot(chat: IChat): Record<string, unknown> {
