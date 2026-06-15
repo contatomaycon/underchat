@@ -653,6 +653,7 @@ declare module 'vue' {
     readonly useCached: UnwrapRef<typeof import('@vueuse/core')['useCached']>
     readonly useCeil: UnwrapRef<typeof import('@vueuse/math')['useCeil']>
     readonly useChannelRecreateCooldown: UnwrapRef<typeof import('./src/composables/useChannelRecreateCooldown')['useChannelRecreateCooldown']>
+    readonly useChatAttendanceHistory: UnwrapRef<typeof import('./src/composables/useChatAttendanceHistory')['useChatAttendanceHistory']>
     readonly useChatNotificationToast: UnwrapRef<typeof import('./src/composables/useChatNotificationToast')['useChatNotificationToast']>
     readonly useChatNotifications: UnwrapRef<typeof import('./src/composables/useChatNotifications')['useChatNotifications']>
     readonly useChatSocket: UnwrapRef<typeof import('./src/composables/useChatSocket')['useChatSocket']>
