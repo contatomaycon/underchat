@@ -1,8 +1,13 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
+import { resolveScopedEnvValue } from './envScope';
 
 export class DatabaseElasticEnvironment {
   public get elasticSearchHost(): string {
-    const host = process.env.DB_ELASTIC_HOST;
+    const host = resolveScopedEnvValue({
+      publicKey: 'DB_ELASTIC_PUBLIC_HOST',
+      privateKey: 'DB_ELASTIC_PRIVATE_HOST',
+      legacyKey: 'DB_ELASTIC_HOST',
+    });
     if (!host) {
       throw new InvalidConfigurationError('DB_ELASTIC_HOST is not defined.');
     }

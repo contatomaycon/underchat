@@ -87,6 +87,44 @@ export const appEnvVarsToRemove = [
   'XDG_RUNTIME_DIR',
 ] as const;
 
+export const externalAppEnvPublicPromotions = [
+  ['DB_PUBLIC_HOST_RW', 'DB_HOST_RW'],
+  ['DB_PUBLIC_PORT_RW', 'DB_PORT_RW'],
+  ['DB_PUBLIC_HOST_RO', 'DB_HOST_RO'],
+  ['DB_PUBLIC_PORT_RO', 'DB_PORT_RO'],
+  ['DB_PUBLIC_DATABASE_URL', 'DB_DATABASE_URL'],
+  ['DB_PUBLIC_ATLAS', 'DB_ATLAS'],
+  ['DB_ELASTIC_PUBLIC_HOST', 'DB_ELASTIC_HOST'],
+  ['DB_CACHE_PUBLIC_HOST', 'DB_CACHE_HOST'],
+  ['DB_CACHE_PUBLIC_PORT', 'DB_CACHE_PORT'],
+  ['CENTRIFUGO_PUBLIC_WS_URL', 'CENTRIFUGO_WS_URL'],
+  ['CENTRIFUGO_PUBLIC_HTTP_API_URL', 'CENTRIFUGO_HTTP_API_URL'],
+  ['KAFKA_PUBLIC_BROKER', 'KAFKA_BROKER'],
+  ['KAFKA_PUBLIC_SECURITY_PROTOCOL', 'SECURITY_PROTOCOL'],
+  ['KAFKA_PUBLIC_USERNAME', 'KAFKA_USERNAME'],
+  ['KAFKA_PUBLIC_PASSWORD', 'KAFKA_PASSWORD'],
+  ['KAFKA_PUBLIC_SASL_MECHANISM', 'SASL_MECHANISM'],
+] as const;
+
+export const externalAppPrivateScopedEnvVarsToRemove = [
+  'DB_PRIVATE_HOST_RW',
+  'DB_PRIVATE_PORT_RW',
+  'DB_PRIVATE_HOST_RO',
+  'DB_PRIVATE_PORT_RO',
+  'DB_PRIVATE_DATABASE_URL',
+  'DB_PRIVATE_ATLAS',
+  'DB_ELASTIC_PRIVATE_HOST',
+  'DB_CACHE_PRIVATE_HOST',
+  'DB_CACHE_PRIVATE_PORT',
+  'CENTRIFUGO_PRIVATE_WS_URL',
+  'CENTRIFUGO_PRIVATE_HTTP_API_URL',
+  'KAFKA_PRIVATE_BROKER',
+  'KAFKA_PRIVATE_SECURITY_PROTOCOL',
+  'KAFKA_PRIVATE_USERNAME',
+  'KAFKA_PRIVATE_PASSWORD',
+  'KAFKA_PRIVATE_SASL_MECHANISM',
+] as const;
+
 function escapeForSedPattern(value: string): string {
   return value.replaceAll(/[[\]{}()*+?.\\^$|/]/g, String.raw`\$&`);
 }
@@ -121,4 +159,33 @@ export function getUpsertEnvVarInFileCommand(
   const escapedKeyValue = escapeShellSingleQuotes(`${key}=${value}`);
 
   return `sed -i -e '/^${escapedKeyPattern}=/d' '${escapedPath}' && printf '%s\\n' '${escapedKeyValue}' >> '${escapedPath}'`;
+}
+
+export function getPrepareExternalAppEnvFileCommand(
+  envFilePath: string
+): string {
+  const escapedPath = escapeShellSingleQuotes(envFilePath);
+  const promotionCommands = externalAppEnvPublicPromotions
+    .map(([source, target]) => `promote_env '${source}' '${target}'`)
+    .join('\n');
+  const privateDeleteExpressions = externalAppPrivateScopedEnvVarsToRemove
+    .map((envVar) => `-e '/^${escapeForSedPattern(envVar)}=/d'`)
+    .join(' ');
+
+  const script = `set -e
+ENV_FILE='${escapedPath}'
+promote_env() {
+  SOURCE="$1"
+  TARGET="$2"
+  VALUE=$(awk -F= -v key="$SOURCE" '$1 == key { sub(/^[^=]*=/, ""); value=$0 } END { if (value != "") print value }' "$ENV_FILE")
+  if [ -n "$VALUE" ]; then
+    sed -i -e "/^$TARGET=/d" "$ENV_FILE"
+    printf '%s=%s\\n' "$TARGET" "$VALUE" >> "$ENV_FILE"
+  fi
+}
+${promotionCommands}
+sed -i ${privateDeleteExpressions} -e '/^UNDERCHAT_ENV_SCOPE=/d' "$ENV_FILE"
+printf '%s\\n' 'UNDERCHAT_ENV_SCOPE=public' >> "$ENV_FILE"`;
+
+  return `bash -c '${escapeShellSingleQuotes(script)}'`;
 }

@@ -82,6 +82,8 @@ RUN apt-get update && \
 
 EXPOSE 3005 50052
 
+ENV UNDERCHAT_ENV_SCOPE=public
+
 WORKDIR /app/apps/worker_baileys
 
 CMD ["node", "src/index.js"]

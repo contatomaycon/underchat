@@ -1,4 +1,5 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
+import { resolveScopedEnvValue } from './envScope';
 
 type DatabaseSslMode =
   | 'disable'
@@ -30,7 +31,11 @@ const SSL_MODE_VALUES = new Set<DatabaseSslMode>([
 
 export class DatabaseEnvironment {
   public get dbHostRw(): string {
-    const host = process.env.DB_HOST_RW;
+    const host = resolveScopedEnvValue({
+      publicKey: 'DB_PUBLIC_HOST_RW',
+      privateKey: 'DB_PRIVATE_HOST_RW',
+      legacyKey: 'DB_HOST_RW',
+    });
     if (!host) {
       throw new InvalidConfigurationError('DB_HOST_RW is not defined.');
     }
@@ -39,7 +44,11 @@ export class DatabaseEnvironment {
   }
 
   public get dbHostRo(): string {
-    const host = process.env.DB_HOST_RO;
+    const host = resolveScopedEnvValue({
+      publicKey: 'DB_PUBLIC_HOST_RO',
+      privateKey: 'DB_PRIVATE_HOST_RO',
+      legacyKey: 'DB_HOST_RO',
+    });
     if (!host) {
       throw new InvalidConfigurationError('DB_HOST_RO is not defined.');
     }
@@ -48,7 +57,12 @@ export class DatabaseEnvironment {
   }
 
   public get dbPortRw(): number {
-    const port = process.env.DB_PORT_RW && Number(process.env.DB_PORT_RW);
+    const portValue = resolveScopedEnvValue({
+      publicKey: 'DB_PUBLIC_PORT_RW',
+      privateKey: 'DB_PRIVATE_PORT_RW',
+      legacyKey: 'DB_PORT_RW',
+    });
+    const port = portValue && Number(portValue);
     if (!port) {
       throw new InvalidConfigurationError('DB_PORT_RW is not defined.');
     }
@@ -57,7 +71,12 @@ export class DatabaseEnvironment {
   }
 
   public get dbPortRo(): number {
-    const port = process.env.DB_PORT_RO && Number(process.env.DB_PORT_RO);
+    const portValue = resolveScopedEnvValue({
+      publicKey: 'DB_PUBLIC_PORT_RO',
+      privateKey: 'DB_PRIVATE_PORT_RO',
+      legacyKey: 'DB_PORT_RO',
+    });
+    const port = portValue && Number(portValue);
     if (!port) {
       throw new InvalidConfigurationError('DB_PORT_RO is not defined.');
     }
@@ -163,7 +182,11 @@ export class DatabaseEnvironment {
   }
 
   public get dbDatabaseUrl(): string {
-    const url = process.env.DB_DATABASE_URL;
+    const url = resolveScopedEnvValue({
+      publicKey: 'DB_PUBLIC_DATABASE_URL',
+      privateKey: 'DB_PRIVATE_DATABASE_URL',
+      legacyKey: 'DB_DATABASE_URL',
+    });
     if (!url) {
       throw new InvalidConfigurationError('DB_DATABASE_URL is not defined.');
     }
@@ -172,7 +195,11 @@ export class DatabaseEnvironment {
   }
 
   public get dbAtlas(): string {
-    const atlas = process.env.DB_ATLAS;
+    const atlas = resolveScopedEnvValue({
+      publicKey: 'DB_PUBLIC_ATLAS',
+      privateKey: 'DB_PRIVATE_ATLAS',
+      legacyKey: 'DB_ATLAS',
+    });
     if (!atlas) {
       throw new InvalidConfigurationError('DB_ATLAS is not defined.');
     }

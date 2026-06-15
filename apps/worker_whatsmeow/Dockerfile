@@ -25,6 +25,7 @@ RUN apt-get update \
 COPY --from=builder /out/worker /usr/local/bin/worker-whatsmeow
 
 EXPOSE 3005 50054
+ENV UNDERCHAT_ENV_SCOPE=public
 VOLUME ["/app/data"]
 
 CMD ["/usr/local/bin/worker-whatsmeow"]

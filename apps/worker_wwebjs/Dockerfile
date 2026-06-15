@@ -113,7 +113,8 @@ RUN chmod +x /usr/local/bin/worker-wwebjs-entrypoint.sh
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
     CHROME_BIN=/usr/bin/google-chrome-stable \
-    CHROME_PATH=/usr/bin/google-chrome-stable
+    CHROME_PATH=/usr/bin/google-chrome-stable \
+    UNDERCHAT_ENV_SCOPE=public
 
 EXPOSE 3005 50052
 

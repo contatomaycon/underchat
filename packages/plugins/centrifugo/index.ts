@@ -42,7 +42,7 @@ const centrifugoPlugin: FastifyPluginAsync<CentrifugoPluginOptions> = async (
   const token = await generateToken();
   const connectStart = Date.now();
   const client = new Centrifuge(
-    `${centrifugoEnvironment.centrifugoPrivateWsUrl}/connection/websocket`,
+    `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
     {
       websocket: WebSocket,
       token: token,

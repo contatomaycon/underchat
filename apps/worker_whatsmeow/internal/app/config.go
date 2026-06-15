@@ -82,26 +82,72 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
+	envScope, err := resolveUnderchatEnvScope()
+	if err != nil {
+		return Config{}, err
+	}
 	kafkaConsumerStallTimeout := envMillisDurationDefault("KAFKA_CONSUMER_STALL_MS", 5*time.Minute)
 
 	cfg := Config{
-		WorkerID:             strings.TrimSpace(os.Getenv("WORKER_ID")),
-		AccountID:            strings.TrimSpace(os.Getenv("ACCOUNT_ID")),
-		RuntimeGeneration:    envIntDefault("RUNTIME_GENERATION", 0),
-		DataDir:              envDefault("WORKER_DATA_DIR", "/app/data"),
-		WarmStandby:          envBoolDefault("WARM_STANDBY", false),
-		WarmPoolID:           strings.TrimSpace(os.Getenv("WARM_POOL_ID")),
-		HTTPAddr:             ":" + envDefault("WORKER_HTTP_PORT", "3005"),
-		GRPCAddr:             ":" + envDefault("WORKER_WHATSMEOW_GRPC_PORT", "50054"),
-		BalanceGRPCHost:      envDefault("BALANCER_GRPC_HOST", "under-balance-api"),
-		BalanceGRPCPort:      envIntDefault("BALANCER_GRPC_PORT", 50051),
-		KafkaBrokers:         splitCSV(os.Getenv("KAFKA_BROKER")),
-		KafkaProtocol:        strings.ToLower(envDefault("SECURITY_PROTOCOL", "plaintext")),
-		KafkaUsername:        os.Getenv("KAFKA_USERNAME"),
-		KafkaPassword:        os.Getenv("KAFKA_PASSWORD"),
-		KafkaSASLMechanism:   strings.ToUpper(envDefault("SASL_MECHANISM", "PLAIN")),
-		RedisHost:            envDefault("DB_CACHE_HOST", "localhost"),
-		RedisPort:            envIntDefault("DB_CACHE_PORT", 6379),
+		WorkerID:          strings.TrimSpace(os.Getenv("WORKER_ID")),
+		AccountID:         strings.TrimSpace(os.Getenv("ACCOUNT_ID")),
+		RuntimeGeneration: envIntDefault("RUNTIME_GENERATION", 0),
+		DataDir:           envDefault("WORKER_DATA_DIR", "/app/data"),
+		WarmStandby:       envBoolDefault("WARM_STANDBY", false),
+		WarmPoolID:        strings.TrimSpace(os.Getenv("WARM_POOL_ID")),
+		HTTPAddr:          ":" + envDefault("WORKER_HTTP_PORT", "3005"),
+		GRPCAddr:          ":" + envDefault("WORKER_WHATSMEOW_GRPC_PORT", "50054"),
+		BalanceGRPCHost:   envDefault("BALANCER_GRPC_HOST", "under-balance-api"),
+		BalanceGRPCPort:   envIntDefault("BALANCER_GRPC_PORT", 50051),
+		KafkaBrokers: splitCSV(scopedEnvDefault(
+			envScope,
+			"KAFKA_PUBLIC_BROKER",
+			"KAFKA_PRIVATE_BROKER",
+			"KAFKA_BROKER",
+			"",
+		)),
+		KafkaProtocol: strings.ToLower(scopedEnvDefault(
+			envScope,
+			"KAFKA_PUBLIC_SECURITY_PROTOCOL",
+			"KAFKA_PRIVATE_SECURITY_PROTOCOL",
+			"SECURITY_PROTOCOL",
+			"plaintext",
+		)),
+		KafkaUsername: scopedEnvDefault(
+			envScope,
+			"KAFKA_PUBLIC_USERNAME",
+			"KAFKA_PRIVATE_USERNAME",
+			"KAFKA_USERNAME",
+			"",
+		),
+		KafkaPassword: scopedEnvDefault(
+			envScope,
+			"KAFKA_PUBLIC_PASSWORD",
+			"KAFKA_PRIVATE_PASSWORD",
+			"KAFKA_PASSWORD",
+			"",
+		),
+		KafkaSASLMechanism: strings.ToUpper(scopedEnvDefault(
+			envScope,
+			"KAFKA_PUBLIC_SASL_MECHANISM",
+			"KAFKA_PRIVATE_SASL_MECHANISM",
+			"SASL_MECHANISM",
+			"PLAIN",
+		)),
+		RedisHost: scopedEnvDefault(
+			envScope,
+			"DB_CACHE_PUBLIC_HOST",
+			"DB_CACHE_PRIVATE_HOST",
+			"DB_CACHE_HOST",
+			"localhost",
+		),
+		RedisPort: envScopedIntDefault(
+			envScope,
+			"DB_CACHE_PUBLIC_PORT",
+			"DB_CACHE_PRIVATE_PORT",
+			"DB_CACHE_PORT",
+			6379,
+		),
 		RedisPassword:        os.Getenv("DB_CACHE_PASSWORD"),
 		S3Endpoint:           os.Getenv("S3_ENDPOINT"),
 		S3AccessKeyID:        os.Getenv("S3_ACCESS_KEY_ID"),
@@ -113,7 +159,13 @@ func LoadConfig() (Config, error) {
 		S3SecretBackup:       os.Getenv("S3_SECRET_ACCESS_KEY_BACKUP"),
 		S3RegionBackup:       envDefault("S3_REGION_BACKUP", "us-east-1"),
 		S3BucketPrefixBackup: os.Getenv("S3_BUCKET_PREFIX_BACKUP"),
-		CentrifugoHTTPAPIURL: os.Getenv("CENTRIFUGO_HTTP_API_URL"),
+		CentrifugoHTTPAPIURL: scopedEnvDefault(
+			envScope,
+			"CENTRIFUGO_PUBLIC_HTTP_API_URL",
+			"CENTRIFUGO_PRIVATE_HTTP_API_URL",
+			"CENTRIFUGO_HTTP_API_URL",
+			"",
+		),
 		CentrifugoHTTPAPIKey: os.Getenv("CENTRIFUGO_HTTP_API_KEY"),
 		ProxyProtocol:        strings.ToLower(envDefault("PROXY_PROTOCOL", "http")),
 		ProxyHost:            os.Getenv("PROXY_HOST"),
@@ -289,6 +341,59 @@ func firstEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func resolveUnderchatEnvScope() (string, error) {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("UNDERCHAT_ENV_SCOPE")))
+	if raw != "" {
+		if raw == "public" || raw == "private" {
+			return raw, nil
+		}
+		return "", fmt.Errorf("UNDERCHAT_ENV_SCOPE is invalid: %s", os.Getenv("UNDERCHAT_ENV_SCOPE"))
+	}
+
+	candidates := []string{os.Args[0]}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, cwd)
+	}
+	if executable, err := os.Executable(); err == nil {
+		candidates = append(candidates, executable)
+	}
+	for _, candidate := range candidates {
+		normalized := strings.ReplaceAll(candidate, "\\", "/")
+		if strings.Contains(normalized, "/apps/worker_whatsmeow/") ||
+			strings.HasSuffix(normalized, "/apps/worker_whatsmeow") {
+			return "public", nil
+		}
+	}
+
+	return "private", nil
+}
+
+func scopedEnvDefault(scope, publicKey, privateKey, legacyKey, fallback string) string {
+	scopedKey := privateKey
+	if scope == "public" {
+		scopedKey = publicKey
+	}
+	if value := strings.TrimSpace(os.Getenv(scopedKey)); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(os.Getenv(legacyKey)); value != "" {
+		return value
+	}
+	return fallback
+}
+
+func envScopedIntDefault(scope, publicKey, privateKey, legacyKey string, fallback int) int {
+	raw := scopedEnvDefault(scope, publicKey, privateKey, legacyKey, "")
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 func envDurationDefault(key string, fallback time.Duration) time.Duration {

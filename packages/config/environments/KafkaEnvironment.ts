@@ -1,8 +1,13 @@
 import InvalidConfigurationError from '@core/common/exceptions/InvalidConfigurationError';
+import { resolveScopedEnvValue } from './envScope';
 
 export class KafkaEnvironment {
   public get kafkaBroker(): string {
-    const broker = process.env.KAFKA_BROKER;
+    const broker = resolveScopedEnvValue({
+      publicKey: 'KAFKA_PUBLIC_BROKER',
+      privateKey: 'KAFKA_PRIVATE_BROKER',
+      legacyKey: 'KAFKA_BROKER',
+    });
     if (!broker) {
       throw new InvalidConfigurationError('KAFKA_BROKER is not defined.');
     }
@@ -11,7 +16,11 @@ export class KafkaEnvironment {
   }
 
   public get securityProtocol(): string {
-    const securityProtocol = process.env.SECURITY_PROTOCOL;
+    const securityProtocol = resolveScopedEnvValue({
+      publicKey: 'KAFKA_PUBLIC_SECURITY_PROTOCOL',
+      privateKey: 'KAFKA_PRIVATE_SECURITY_PROTOCOL',
+      legacyKey: 'SECURITY_PROTOCOL',
+    });
     if (!securityProtocol) {
       throw new InvalidConfigurationError('SECURITY_PROTOCOL is not defined.');
     }
@@ -25,7 +34,11 @@ export class KafkaEnvironment {
       return undefined;
     }
 
-    const username = process.env.KAFKA_USERNAME;
+    const username = resolveScopedEnvValue({
+      publicKey: 'KAFKA_PUBLIC_USERNAME',
+      privateKey: 'KAFKA_PRIVATE_USERNAME',
+      legacyKey: 'KAFKA_USERNAME',
+    });
     if (!username) {
       throw new InvalidConfigurationError('KAFKA_USERNAME is not defined.');
     }
@@ -39,7 +52,11 @@ export class KafkaEnvironment {
       return undefined;
     }
 
-    const password = process.env.KAFKA_PASSWORD;
+    const password = resolveScopedEnvValue({
+      publicKey: 'KAFKA_PUBLIC_PASSWORD',
+      privateKey: 'KAFKA_PRIVATE_PASSWORD',
+      legacyKey: 'KAFKA_PASSWORD',
+    });
     if (!password) {
       throw new InvalidConfigurationError('KAFKA_PASSWORD is not defined.');
     }
@@ -53,7 +70,11 @@ export class KafkaEnvironment {
       return undefined;
     }
 
-    const saslMechanism = process.env.SASL_MECHANISM;
+    const saslMechanism = resolveScopedEnvValue({
+      publicKey: 'KAFKA_PUBLIC_SASL_MECHANISM',
+      privateKey: 'KAFKA_PRIVATE_SASL_MECHANISM',
+      legacyKey: 'SASL_MECHANISM',
+    });
     if (!saslMechanism) {
       throw new InvalidConfigurationError('SASL_MECHANISM is not defined.');
     }

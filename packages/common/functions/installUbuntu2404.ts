@@ -7,7 +7,10 @@ import { IViewServerWebById } from '../interfaces/IViewServerWebById';
 import { IServerBuildDefaultImages } from '../interfaces/IServerBuildDefaultImages';
 import { escapeShellSingleQuotes } from './escapeShellSingleQuotes';
 import { getHarborLoginCommand } from './getHarborLoginCommand';
-import { getRemoveEnvVarsFromFileCommand } from './getRemoveEnvVarsFromFileCommand';
+import {
+  getPrepareExternalAppEnvFileCommand,
+  getRemoveEnvVarsFromFileCommand,
+} from './getRemoveEnvVarsFromFileCommand';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,6 +37,8 @@ export async function installUbuntu2404(
   });
   const removeEnvVarsFromAppEnvCommand =
     getRemoveEnvVarsFromFileCommand('/home/app/.env');
+  const prepareExternalAppEnvCommand =
+    getPrepareExternalAppEnvFileCommand('/home/app/.env');
 
   return [
     'dpkg --configure -a',
@@ -107,6 +112,10 @@ export async function installUbuntu2404(
     `bash -c "printf '%b' '${envContent}' > /home/app/.env && \
       ${removeEnvVarsFromAppEnvCommand} && \
       chown $USER:$USER /home/app/.env"`,
+
+    prepareExternalAppEnvCommand,
+
+    `bash -c "chown $USER:$USER /home/app/.env"`,
 
     `bash -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH && \
       hash -r && \

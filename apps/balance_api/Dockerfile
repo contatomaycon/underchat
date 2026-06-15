@@ -84,6 +84,8 @@ RUN apt-get update && \
 
 EXPOSE 3003 50051
 
+ENV UNDERCHAT_ENV_SCOPE=public
+
 WORKDIR /app/apps/balance_api
 
 CMD ["node", "src/index.js"]

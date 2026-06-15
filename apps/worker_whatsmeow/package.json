@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "go run ./cmd/worker",
+    "dev": "UNDERCHAT_ENV_SCOPE=public go run ./cmd/worker",
     "build": "go build -buildvcs=false -o bin/worker ./cmd/worker",
     "lint": "go test ./...",
     "sonar": "echo \"sonar for worker_whatsmeow is handled by the root scanner\""

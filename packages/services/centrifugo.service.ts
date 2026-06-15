@@ -1007,7 +1007,7 @@ export class CentrifugoService {
       const token = this.generateSubToken(subId);
 
       const tempClient = new Centrifuge(
-        `${centrifugoEnvironment.centrifugoPrivateWsUrl}/connection/websocket`,
+        `${centrifugoEnvironment.centrifugoWsUrl}/connection/websocket`,
         {
           websocket: WebSocket,
           token,
