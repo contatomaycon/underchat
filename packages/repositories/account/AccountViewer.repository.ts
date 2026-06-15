@@ -85,7 +85,7 @@ export class AccountViewerRepository {
                 : null,
           }
         : null,
-      generate_invoice: result[0].generate_invoice ?? null,
+      generate_invoice: result[0].generate_invoice ?? true,
       created_at: result[0].created_at,
     };
   };

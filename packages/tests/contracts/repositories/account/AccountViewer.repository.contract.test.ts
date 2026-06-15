@@ -112,7 +112,7 @@ describe('AccountViewerRepository', () => {
       name: 'Account 1',
       account_status: null,
       plan: null,
-      generate_invoice: null,
+      generate_invoice: true,
       created_at: '2026-01-01T00:00:00.000Z',
     });
   });

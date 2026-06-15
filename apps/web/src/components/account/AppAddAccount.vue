@@ -47,7 +47,7 @@ const name = ref<string | null>(null);
 const account_status_id = ref<string | null>(EAccountStatus.active);
 const plan_id = ref<string | null>(null);
 const billing_period = ref<'monthly' | 'annual' | null>(null);
-const generate_invoice = ref<boolean>(false);
+const generate_invoice = ref<boolean>(true);
 
 const refFormAddAccount = ref<VForm>();
 
@@ -106,7 +106,7 @@ const resetForm = () => {
   account_status_id.value = EAccountStatus.active;
   plan_id.value = null;
   billing_period.value = null;
-  generate_invoice.value = false;
+  generate_invoice.value = true;
   refFormAddAccount.value?.resetValidation();
 };
 

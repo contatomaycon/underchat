@@ -24,7 +24,7 @@ describe('AccountCreatorRepository', () => {
   });
 
   it('createAccount returns account id when insert succeeds', async () => {
-    const { db } = createInsertDbMock({ rowCount: 1 });
+    const { db, values } = createInsertDbMock({ rowCount: 1 });
     const repository = new AccountCreatorRepository(db as never);
     const uuidMock = uuidv7 as unknown as jest.Mock;
     uuidMock.mockReturnValue('acc-1');
@@ -36,10 +36,38 @@ describe('AccountCreatorRepository', () => {
         generate_invoice: true,
       } as never)
     ).resolves.toBe('acc-1');
+
+    expect(values).toHaveBeenCalledWith({
+      account_id: 'acc-1',
+      account_status_id: 'status-1',
+      name: 'Account A',
+      generate_invoice: true,
+    });
+  });
+
+  it('createAccount defaults generate_invoice to true when omitted', async () => {
+    const { db, values } = createInsertDbMock({ rowCount: 1 });
+    const repository = new AccountCreatorRepository(db as never);
+    const uuidMock = uuidv7 as unknown as jest.Mock;
+    uuidMock.mockReturnValue('acc-default');
+
+    await expect(
+      repository.createAccount({
+        name: 'Account Default',
+        account_status: { account_status_id: 'status-1' },
+      } as never)
+    ).resolves.toBe('acc-default');
+
+    expect(values).toHaveBeenCalledWith({
+      account_id: 'acc-default',
+      account_status_id: 'status-1',
+      name: 'Account Default',
+      generate_invoice: true,
+    });
   });
 
   it('createAccount returns null when insert fails', async () => {
-    const { db } = createInsertDbMock(undefined);
+    const { db, values } = createInsertDbMock(undefined);
     const repository = new AccountCreatorRepository(db as never);
     const uuidMock = uuidv7 as unknown as jest.Mock;
     uuidMock.mockReturnValue('acc-2');
@@ -51,6 +79,13 @@ describe('AccountCreatorRepository', () => {
         generate_invoice: false,
       } as never)
     ).resolves.toBeNull();
+
+    expect(values).toHaveBeenCalledWith({
+      account_id: 'acc-2',
+      account_status_id: 'status-1',
+      name: 'Account B',
+      generate_invoice: false,
+    });
   });
 
   it('createAccountWithPlanAndApiKey creates regular annual plan and api key', async () => {
@@ -99,7 +134,6 @@ describe('AccountCreatorRepository', () => {
       repository.createAccountWithPlanAndApiKey({
         name: 'Account C',
         account_status: { account_status_id: 'status-active' },
-        generate_invoice: false,
         plan: {
           plan_id: 'plan-1',
           billing_period: 'annual',
@@ -114,6 +148,14 @@ describe('AccountCreatorRepository', () => {
         'plan_account_id' in (item as Record<string, unknown>)
     ) as Record<string, unknown> | undefined;
 
+    const accountInsert = inserts.find(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        'account_status_id' in (item as Record<string, unknown>)
+    ) as Record<string, unknown> | undefined;
+
+    expect(accountInsert?.generate_invoice).toBe(true);
     expect(planAccountInsert).toBeDefined();
     expect(planAccountInsert?.billing_period_id).toBe(EBillingPeriod.annual);
     expect(planAccountInsert?.value).toBe('90');

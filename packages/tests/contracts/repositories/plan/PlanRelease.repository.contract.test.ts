@@ -181,11 +181,17 @@ describe('PlanReleaseRepository', () => {
   });
 
   it('findPlan helpers and account invoice flag return expected values', async () => {
+    const findAccount = jest
+      .fn()
+      .mockResolvedValueOnce({ generate_invoice: true })
+      .mockResolvedValueOnce({ generate_invoice: null })
+      .mockResolvedValueOnce(null);
+
     const repository = buildRepository(
       {
         query: {
           account: {
-            findFirst: jest.fn(async () => ({ generate_invoice: true })),
+            findFirst: findAccount,
           },
         },
       },
@@ -209,5 +215,11 @@ describe('PlanReleaseRepository', () => {
     await expect(
       repository.findAccountGenerateInvoiceById('a-1')
     ).resolves.toBe(true);
+    await expect(
+      repository.findAccountGenerateInvoiceById('a-2')
+    ).resolves.toBe(true);
+    await expect(
+      repository.findAccountGenerateInvoiceById('missing-account')
+    ).resolves.toBeNull();
   });
 });

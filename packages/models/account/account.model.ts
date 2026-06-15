@@ -35,7 +35,7 @@ export const account = pgTable(
       .references(() => accountStatus.account_status_id)
       .notNull(),
     name: varchar({ length: 10 }).notNull(),
-    generate_invoice: boolean().default(false),
+    generate_invoice: boolean().default(true).notNull(),
     bucket_deleted: boolean().default(false),
     created_at: timestamp({
       mode: 'string',

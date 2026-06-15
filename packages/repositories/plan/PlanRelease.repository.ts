@@ -860,6 +860,10 @@ export class PlanReleaseRepository {
       },
     });
 
-    return accountData?.generate_invoice ?? null;
+    if (!accountData) {
+      return null;
+    }
+
+    return accountData.generate_invoice ?? true;
   };
 }

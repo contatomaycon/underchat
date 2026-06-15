@@ -26,7 +26,7 @@ const isVisible = computed({
 const accountId = toRef(props, 'accountId');
 const name = ref<string | null>(null);
 const accountStatus = ref<string | null>(null);
-const generate_invoice = ref<boolean>(false);
+const generate_invoice = ref<boolean>(true);
 const accountStatusOptions = Object.entries(EAccountStatus).map(
   ([key, value]) => ({
     name: t(`${key}`) || key,
@@ -77,7 +77,7 @@ const initializeModal = async () => {
     if (account) {
       name.value = account.name;
       accountStatus.value = account.account_status?.account_status_id ?? null;
-      generate_invoice.value = account.generate_invoice ?? false;
+      generate_invoice.value = account.generate_invoice ?? true;
     }
   } finally {
     isInitializingModal.value = false;
