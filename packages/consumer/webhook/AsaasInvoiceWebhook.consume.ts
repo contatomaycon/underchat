@@ -92,6 +92,8 @@ export class AsaasInvoiceWebhookConsume {
       case 'PAYMENT_REFUNDED':
         await this.handlePaymentRefunded(data);
         break;
+      case 'PAYMENT_CHECKOUT_VIEWED':
+        break;
       default:
         throw new Error(`Unhandled event type: ${data.event}`);
     }
