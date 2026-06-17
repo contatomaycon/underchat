@@ -1,11 +1,12 @@
 import * as schema from '@core/models';
-import { workerConfig } from '@core/models';
+import { chatbot, workerConfig } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { eq, and } from 'drizzle-orm';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+import { EChatbotType } from '@core/common/enums/EChatbotType';
 import {
   OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES,
   parseOperatorReplyPendingAlertConfig,
@@ -22,12 +23,14 @@ export class WorkerConfigForChatViewerRepository {
   ): Promise<ViewWorkerConfigForChatResponse> => {
     const [
       configMap,
+      chatbotInputConfig,
       chatbotOutputConfig,
       aiAgentConfig,
       operatorReplyPendingAlertConfig,
     ] = await Promise.all([
       this.fetchActiveConfigs(workerId),
-      this.fetchChatbotOutputConfig(workerId),
+      this.fetchChatbotConfig(workerId, EWorkerConfigType.chatbot_id),
+      this.fetchChatbotConfig(workerId, EWorkerConfigType.chatbot_output_id),
       this.fetchAiAgentConfig(workerId),
       this.fetchOperatorReplyPendingAlertConfig(workerId),
     ]);
@@ -38,28 +41,37 @@ export class WorkerConfigForChatViewerRepository {
 
     return this.buildConfigForChat(
       configMap,
+      chatbotInputConfig,
       chatbotOutputConfig,
       aiAgentConfig,
       operatorReplyPendingAlertConfig
     );
   };
 
-  private async fetchChatbotOutputConfig(
-    workerId: string
-  ): Promise<{ chatbotId: string | null; statusId: string } | null> {
+  private async fetchChatbotConfig(
+    workerId: string,
+    configType:
+      | EWorkerConfigType.chatbot_id
+      | EWorkerConfigType.chatbot_output_id
+  ): Promise<{
+    chatbotId: string | null;
+    name: string | null;
+    type: EChatbotType | null;
+    enabled: boolean;
+  } | null> {
     const result = await this.dbRo
       .select({
         chatbot_id: workerConfig.chatbot_id,
         worker_config_status_id: workerConfig.worker_config_status_id,
+        name: chatbot.name,
+        type: chatbot.type,
       })
       .from(workerConfig)
+      .leftJoin(chatbot, eq(workerConfig.chatbot_id, chatbot.chatbot_id))
       .where(
         and(
           eq(workerConfig.worker_id, workerId),
-          eq(
-            workerConfig.worker_config_type_id,
-            EWorkerConfigType.chatbot_output_id
-          )
+          eq(workerConfig.worker_config_type_id, configType)
         )
       )
       .limit(1)
@@ -70,7 +82,9 @@ export class WorkerConfigForChatViewerRepository {
 
     return {
       chatbotId: row.chatbot_id,
-      statusId: row.worker_config_status_id,
+      name: row.name,
+      type: row.type ?? null,
+      enabled: row.worker_config_status_id === EWorkerConfigStatus.active,
     };
   }
 
@@ -101,7 +115,18 @@ export class WorkerConfigForChatViewerRepository {
 
   private buildConfigForChat(
     configMap: Map<EWorkerConfigType, string | null>,
-    chatbotOutputConfig: { chatbotId: string | null; statusId: string } | null,
+    chatbotInputConfig: {
+      chatbotId: string | null;
+      name: string | null;
+      type: EChatbotType | null;
+      enabled: boolean;
+    } | null,
+    chatbotOutputConfig: {
+      chatbotId: string | null;
+      name: string | null;
+      type: EChatbotType | null;
+      enabled: boolean;
+    } | null,
     aiAgentConfig: { aiAgentId: string | null; enabled: boolean },
     operatorReplyPendingAlertConfig: {
       value: string | null;
@@ -112,11 +137,31 @@ export class WorkerConfigForChatViewerRepository {
       configMap.get(EWorkerConfigType.simultaneous_attendance)
     );
 
-    const hasUraOutput = !!(
-      chatbotOutputConfig &&
+    const inputChatbot =
+      chatbotInputConfig?.enabled &&
+      chatbotInputConfig.chatbotId &&
+      chatbotInputConfig.name &&
+      chatbotInputConfig.type === EChatbotType.input
+        ? {
+            chatbot_id: chatbotInputConfig.chatbotId,
+            name: chatbotInputConfig.name,
+            type: EChatbotType.input,
+          }
+        : null;
+
+    const outputChatbot =
+      chatbotOutputConfig?.enabled &&
       chatbotOutputConfig.chatbotId &&
-      String(chatbotOutputConfig.chatbotId).trim().length > 0
-    );
+      chatbotOutputConfig.name &&
+      chatbotOutputConfig.type === EChatbotType.output
+        ? {
+            chatbot_id: chatbotOutputConfig.chatbotId,
+            name: chatbotOutputConfig.name,
+            type: EChatbotType.output,
+          }
+        : null;
+
+    const hasUraOutput = outputChatbot !== null;
 
     const parsedOperatorReplyPendingAlertConfig =
       parseOperatorReplyPendingAlertConfig(
@@ -165,6 +210,8 @@ export class WorkerConfigForChatViewerRepository {
       operator_reply_pending_alert_time_minutes:
         parsedOperatorReplyPendingAlertConfig.time_minutes,
       has_ura_output: hasUraOutput,
+      input_chatbot: inputChatbot,
+      output_chatbot: outputChatbot,
       ai_agent_enabled: aiAgentConfig.enabled,
       ai_agent_id: aiAgentConfig.aiAgentId,
     };

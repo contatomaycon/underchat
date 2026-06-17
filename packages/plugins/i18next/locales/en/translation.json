@@ -607,6 +607,7 @@
   "chat_bulk_category_required": "Category is required for filtered selection.",
   "chat_bulk_action_item_failed": "Failed to process chat.",
   "transfer_requires_user_or_sector": "User or sector is required to transfer!",
+  "transfer_chatbot_cannot_combine_targets": "Cannot transfer to chatbot together with user or sector!",
   "channel_required": "Channel is required!",
   "user_required": "User is required!",
   "sector_required": "Sector is required!",

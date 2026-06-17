@@ -4363,7 +4363,8 @@ export const useChatStore = defineStore('chat', {
       hasAppliedAdvancedFilters = false,
       workerId?: string | null,
       keepInChat = false,
-      sendMessageOnTransfer?: boolean
+      sendMessageOnTransfer?: boolean,
+      chatbotId?: string | null
     ): Promise<boolean> {
       void hasAppliedAdvancedFilters;
       try {
@@ -4376,6 +4377,7 @@ export const useChatStore = defineStore('chat', {
           worker_id: workerId ?? undefined,
           user_id: userId ?? undefined,
           sector_id: sectorId ?? undefined,
+          chatbot_id: chatbotId ?? undefined,
           annotation: annotation?.trim() ?? undefined,
           keep_in_chat: keepInChat,
           send_message_on_transfer: sendMessageOnTransfer,

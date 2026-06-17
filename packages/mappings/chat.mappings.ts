@@ -206,6 +206,9 @@ export const chatMappings = () => {
         chatbot_webhook_id: {
           type: 'keyword',
         },
+        chatbot_transfer_id: {
+          type: 'keyword',
+        },
         satisfaction_response: {
           type: 'object',
           properties: {

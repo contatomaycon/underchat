@@ -17,6 +17,7 @@ import { IChat } from '@core/common/interfaces/IChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { WorkerService } from '@core/services/worker.service';
+import { ChatbotFlowRunnerService } from '@core/services/chatbotFlowRunner.service';
 import { replaceMessageTags } from '@core/common/functions/replaceMessageTags';
 import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer.repository';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
@@ -30,6 +31,13 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
+
+type ChatbotTransferTarget = {
+  chatbotId: string;
+  status: EChatStatus.ura | EChatStatus.ura_output;
+  chatbotTransferId: string | null;
+};
 
 @injectable()
 export class TransferChatUseCase {
@@ -46,6 +54,8 @@ export class TransferChatUseCase {
     private readonly centrifugoService: CentrifugoService,
     @inject(WorkerService)
     private readonly workerService: WorkerService,
+    @inject(ChatbotFlowRunnerService)
+    private readonly chatbotFlowRunnerService: ChatbotFlowRunnerService,
     @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject('Redis') private readonly redis: Redis,
@@ -315,6 +325,173 @@ export class TransferChatUseCase {
       secondary_users: secondaryUsers,
       sector: shouldClearSector ? null : (sector ?? chat.sector),
       forward_to_output_chatbot: true,
+      chatbot_transfer_id: null,
+      chatbot_schedule_id: null,
+      chatbot_webhook_id: null,
+    };
+  }
+
+  private validateChatbotTransferTarget(
+    t: TFunction<'translation', undefined>,
+    body: TransferChatBody
+  ): void {
+    if (!body.chatbot_id) {
+      return;
+    }
+
+    if (!body.worker_id) {
+      throw new Error(t('channel_required'));
+    }
+
+    if (body.user_id || body.sector_id) {
+      throw new Error(t('transfer_chatbot_cannot_combine_targets'));
+    }
+  }
+
+  private async resolveChatbotTransferTarget(
+    t: TFunction<'translation', undefined>,
+    targetWorkerId: string,
+    chatbotId: string
+  ): Promise<ChatbotTransferTarget> {
+    const workerConfig =
+      await this.chatService.viewWorkerConfigForChat(targetWorkerId);
+
+    if (workerConfig?.input_chatbot?.chatbot_id === chatbotId) {
+      return {
+        chatbotId,
+        status: EChatStatus.ura,
+        chatbotTransferId: chatbotId,
+      };
+    }
+
+    if (workerConfig?.output_chatbot?.chatbot_id === chatbotId) {
+      return {
+        chatbotId,
+        status: EChatStatus.ura_output,
+        chatbotTransferId: null,
+      };
+    }
+
+    throw new Error(t('chatbot_not_found'));
+  }
+
+  private buildUpdatedChatForChatbotTransfer(
+    chat: IChat,
+    worker: IChat['worker'],
+    chatbotTarget: ChatbotTransferTarget
+  ): IChat {
+    return {
+      ...chat,
+      worker,
+      status: chatbotTarget.status,
+      user: null,
+      secondary_users: [],
+      sector: null,
+      forward_to_output_chatbot: false,
+      chatbot_transfer_id: chatbotTarget.chatbotTransferId,
+      chatbot_schedule_id: null,
+      chatbot_webhook_id: null,
+    };
+  }
+
+  private async bootstrapChatbotTransfer(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    chat: IChat,
+    chatbotId: string
+  ): Promise<void> {
+    const bootstrapEnvelope: IUpsertMessageEnvelope = {
+      key: {
+        id: `transfer_bootstrap_${chat.chat_id}_${Date.now()}`,
+        remoteJid: chat.message_key?.remote_jid ?? undefined,
+        remoteJidAlt: chat.message_key?.remote_jid_alt ?? undefined,
+        fromMe: true,
+      },
+      message: {
+        conversation: '',
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    };
+
+    await this.chatbotFlowRunnerService.clearFlowCacheForChat(
+      accountId,
+      chat.worker.id,
+      chat.chat_id
+    );
+
+    await this.chatbotFlowRunnerService.execute(
+      t,
+      {
+        account_id: accountId,
+        worker_id: chat.worker.id,
+        type: EMessageType.text,
+        message: bootstrapEnvelope,
+        has_quoted: false,
+        is_call_event: false,
+      },
+      chat,
+      chatbotId
+    );
+  }
+
+  private async executeChatbotTransfer(input: {
+    t: TFunction<'translation', undefined>;
+    accountId: string;
+    params: TransferChatParams;
+    body: TransferChatBody;
+    chat: IChat;
+    targetWorker: IChat['worker'];
+    chatbotTarget: ChatbotTransferTarget;
+    actorUserId: string;
+  }): Promise<{ chat_id: string; status: boolean }> {
+    const {
+      t,
+      accountId,
+      params,
+      body,
+      chat,
+      targetWorker,
+      chatbotTarget,
+      actorUserId,
+    } = input;
+    const chatbotId = body.chatbot_id;
+    if (!chatbotId) {
+      throw new Error(t('chatbot_not_found'));
+    }
+
+    const updatedChat = this.buildUpdatedChatForChatbotTransfer(
+      chat,
+      targetWorker,
+      chatbotTarget
+    );
+
+    const saved = await this.chatService.saveChat(updatedChat);
+    if (!saved) {
+      throw new Error(t('chat_transfer_failed'));
+    }
+
+    await this.chatService.clearChatSummary(params.chat_id, accountId);
+    await this.invalidateTransferCache(accountId, chat, updatedChat);
+    await this.publishChatUpdate(updatedChat, accountId, actorUserId);
+    await this.bootstrapChatbotTransfer(
+      t,
+      accountId,
+      updatedChat,
+      chatbotTarget.chatbotId
+    );
+
+    if (body.annotation?.trim()) {
+      await this.sendAnnotationMessage(
+        t,
+        accountId,
+        params.chat_id,
+        body.annotation
+      );
+    }
+
+    return {
+      chat_id: params.chat_id,
+      status: true,
     };
   }
 
@@ -555,6 +732,8 @@ export class TransferChatUseCase {
       throw new Error(t('chat_cannot_transfer_to_current_primary'));
     }
 
+    this.validateChatbotTransferTarget(t, body);
+
     const requestedDisableSendMessageOnTransfer =
       body.send_message_on_transfer === false;
     const canDisableSendMessageOnTransfer =
@@ -572,6 +751,25 @@ export class TransferChatUseCase {
 
     if (channelIds.length > 0 && !channelIds.includes(targetWorker.id)) {
       throw new Error(t('chat_access_denied'));
+    }
+
+    if (body.chatbot_id) {
+      const chatbotTarget = await this.resolveChatbotTransferTarget(
+        t,
+        targetWorker.id,
+        body.chatbot_id
+      );
+
+      return this.executeChatbotTransfer({
+        t,
+        accountId,
+        params,
+        body,
+        chat,
+        targetWorker,
+        chatbotTarget,
+        actorUserId,
+      });
     }
 
     const isChannelChanged = targetWorker.id !== chat.worker.id;

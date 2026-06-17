@@ -16,7 +16,8 @@ function createLimitChain(result: unknown[]) {
   const execute = jest.fn(async () => result);
   const limit = jest.fn(() => ({ execute }));
   const where = jest.fn(() => ({ limit }));
-  const from = jest.fn(() => ({ where }));
+  const leftJoin = jest.fn(() => ({ where }));
+  const from = jest.fn(() => ({ where, leftJoin }));
   const select = jest.fn(() => ({ from }));
 
   return { select };
@@ -25,6 +26,7 @@ function createLimitChain(result: unknown[]) {
 describe('WorkerConfigForChatViewerRepository', () => {
   it('returns null when there are no active configs', async () => {
     const activeChain = createActiveConfigChain([]);
+    const chatbotInputChain = createLimitChain([]);
     const chatbotOutputChain = createLimitChain([]);
     const aiAgentChain = createLimitChain([]);
     const operatorReplyPendingAlertChain = createLimitChain([]);
@@ -32,6 +34,7 @@ describe('WorkerConfigForChatViewerRepository', () => {
       select: jest
         .fn()
         .mockImplementationOnce(activeChain.select)
+        .mockImplementationOnce(chatbotInputChain.select)
         .mockImplementationOnce(chatbotOutputChain.select)
         .mockImplementationOnce(aiAgentChain.select)
         .mockImplementationOnce(operatorReplyPendingAlertChain.select),
@@ -58,10 +61,20 @@ describe('WorkerConfigForChatViewerRepository', () => {
         value: null,
       },
     ]);
+    const chatbotInputChain = createLimitChain([
+      {
+        chatbot_id: 'chatbot-input-1',
+        worker_config_status_id: EWorkerConfigStatus.active,
+        name: 'Entrada',
+        type: 'input',
+      },
+    ]);
     const chatbotOutputChain = createLimitChain([
       {
-        chatbot_id: 'chatbot-1',
+        chatbot_id: 'chatbot-output-1',
         worker_config_status_id: EWorkerConfigStatus.active,
+        name: 'Saida',
+        type: 'output',
       },
     ]);
     const aiAgentChain = createLimitChain([
@@ -75,6 +88,7 @@ describe('WorkerConfigForChatViewerRepository', () => {
       select: jest
         .fn()
         .mockImplementationOnce(activeChain.select)
+        .mockImplementationOnce(chatbotInputChain.select)
         .mockImplementationOnce(chatbotOutputChain.select)
         .mockImplementationOnce(aiAgentChain.select)
         .mockImplementationOnce(operatorReplyPendingAlertChain.select),
@@ -96,6 +110,16 @@ describe('WorkerConfigForChatViewerRepository', () => {
       operator_reply_pending_alert_enabled: false,
       operator_reply_pending_alert_time_minutes: 15,
       has_ura_output: true,
+      input_chatbot: {
+        chatbot_id: 'chatbot-input-1',
+        name: 'Entrada',
+        type: 'input',
+      },
+      output_chatbot: {
+        chatbot_id: 'chatbot-output-1',
+        name: 'Saida',
+        type: 'output',
+      },
       ai_agent_enabled: true,
       ai_agent_id: 'agent-1',
     });

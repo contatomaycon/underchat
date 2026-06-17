@@ -22,13 +22,21 @@ const transferSectorSchema = Type.Object({
   sector_status: Type.Union([sectorStatusSchema, Type.Null()]),
 });
 
+const transferChatbotSchema = Type.Object({
+  chatbot_id: Type.String({ format: 'uuid' }),
+  name: Type.String(),
+  type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const listTransferOptionsResponseSchema = Type.Object({
   sectors: Type.Array(transferSectorSchema),
   workers: Type.Array(transferWorkerSchema),
+  chatbots: Type.Array(transferChatbotSchema),
 });
 
 export type TransferWorker = Static<typeof transferWorkerSchema>;
 export type TransferSector = Static<typeof transferSectorSchema>;
+export type TransferChatbot = Static<typeof transferChatbotSchema>;
 export type ListTransferOptionsResponse = Static<
   typeof listTransferOptionsResponseSchema
 >;

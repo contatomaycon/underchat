@@ -50,6 +50,7 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EColor } from '@core/common/enums/EColor';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
+import { EChatbotType } from '@core/common/enums/EChatbotType';
 import type { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
 import {
   IChatMessage,
@@ -921,11 +922,12 @@ const toggleHeaderPhoneVisibility = async () => {
 };
 
 const isTransferModalOpen = ref(false);
-const transferType = ref<'user' | 'sector' | null>(null);
+const transferType = ref<'user' | 'sector' | 'chatbot' | null>(null);
 const selectedTransferChannel = ref<string | null>(null);
 const selectedTransferUser = ref<string | null>(null);
 const selectedTransferSector = ref<string | null>(null);
 const selectedTransferSectorUser = ref<string | null>(null);
+const selectedTransferChatbot = ref<string | null>(null);
 type TransferChannelOption = {
   value: string;
   title: string;
@@ -939,10 +941,41 @@ const transferSectorUsers = ref<any[]>([]);
 const transferWorkerConfigForChat = ref<ViewWorkerConfigForChatResponse | null>(
   null
 );
+const transferChatbots = computed(() => {
+  const config = transferWorkerConfigForChat.value;
+  if (!config) {
+    return [];
+  }
+
+  const items: Array<{
+    value: string;
+    title: string;
+    type: EChatbotType.input | EChatbotType.output;
+  }> = [];
+
+  if (config.input_chatbot) {
+    items.push({
+      value: config.input_chatbot.chatbot_id,
+      title: `${config.input_chatbot.name} (${t('chatbot_type_input')})`,
+      type: EChatbotType.input,
+    });
+  }
+
+  if (config.output_chatbot) {
+    items.push({
+      value: config.output_chatbot.chatbot_id,
+      title: `${config.output_chatbot.name} (${t('chatbot_type_output')})`,
+      type: EChatbotType.output,
+    });
+  }
+
+  return items;
+});
 const isLoadingTransferChannels = ref(false);
 const isLoadingTransferUsers = ref(false);
 const isLoadingTransferSectors = ref(false);
 const isLoadingTransferSectorUsers = ref(false);
+const isLoadingTransferChatbots = ref(false);
 const isTransferring = ref(false);
 const transferAnnotationText = ref('');
 const transferKeepInChat = ref(false);
@@ -970,6 +1003,26 @@ const selectedTransferChannelOption = computed<TransferChannelOption | null>(
       (channel) => channel.value === selectedTransferChannel.value
     ) ?? null
 );
+
+const selectedTransferChatbotOption = computed(
+  () =>
+    transferChatbots.value.find(
+      (chatbot) => chatbot.value === selectedTransferChatbot.value
+    ) ?? null
+);
+
+const transferTargetTypeOptions = computed(() => {
+  const items = [
+    { value: 'user', title: t('user') },
+    { value: 'sector', title: t('sector') },
+  ];
+
+  if (transferChatbots.value.length > 0) {
+    items.push({ value: 'chatbot', title: t('chatbot') });
+  }
+
+  return items;
+});
 
 const activeContactLabelTemplate = computed<{
   label: string;
@@ -1065,7 +1118,11 @@ watch(
 );
 
 const loadTransferChannels = async () => {
-  if (!chatStore.user?.account_id) return;
+  if (!chatStore.user?.account_id) {
+    isLoadingTransferChannels.value = false;
+    isLoadingTransferChatbots.value = false;
+    return;
+  }
 
   isLoadingTransferChannels.value = true;
   try {
@@ -1087,6 +1144,7 @@ const loadTransferChannels = async () => {
     transferChannels.value = [];
   } finally {
     isLoadingTransferChannels.value = false;
+    isLoadingTransferChatbots.value = false;
   }
 };
 
@@ -1096,11 +1154,32 @@ const loadTransferWorkerConfig = async (channelId?: string | null) => {
     return;
   }
 
+  isLoadingTransferChatbots.value = true;
   try {
     const config = await channelStore.fetchWorkerConfigForChat(channelId);
     transferWorkerConfigForChat.value = config;
+    if (
+      selectedTransferChatbot.value &&
+      !transferChatbots.value.some(
+        (chatbot) => chatbot.value === selectedTransferChatbot.value
+      )
+    ) {
+      selectedTransferChatbot.value = null;
+    }
+    if (
+      transferType.value === 'chatbot' &&
+      transferChatbots.value.length === 0
+    ) {
+      transferType.value = null;
+    }
   } catch (error) {
     transferWorkerConfigForChat.value = null;
+    selectedTransferChatbot.value = null;
+    if (transferType.value === 'chatbot') {
+      transferType.value = null;
+    }
+  } finally {
+    isLoadingTransferChatbots.value = false;
   }
 };
 
@@ -1182,12 +1261,18 @@ watch(transferType, () => {
   selectedTransferUser.value = null;
   selectedTransferSector.value = null;
   selectedTransferSectorUser.value = null;
+  selectedTransferChatbot.value = null;
   transferSectorUsers.value = [];
+  if (transferType.value === 'chatbot') {
+    transferKeepInChat.value = false;
+    transferSendMessageOnTransfer.value = true;
+  }
 });
 
 watch(selectedTransferChannel, async (channelId) => {
   selectedTransferUser.value = null;
   selectedTransferSectorUser.value = null;
+  selectedTransferChatbot.value = null;
   transferUsers.value = [];
   transferSectorUsers.value = [];
 
@@ -1225,6 +1310,7 @@ watch(isTransferModalOpen, async (isOpen) => {
   if (isOpen) {
     isLoadingTransferChannels.value = true;
     isLoadingTransferSectors.value = true;
+    isLoadingTransferChatbots.value = true;
     nextTick(() => {
       try {
         transferType.value = null;
@@ -1232,6 +1318,7 @@ watch(isTransferModalOpen, async (isOpen) => {
         selectedTransferUser.value = null;
         selectedTransferSector.value = null;
         selectedTransferSectorUser.value = null;
+        selectedTransferChatbot.value = null;
         transferChannels.value = [];
         transferUsers.value = [];
         transferSectors.value = [];
@@ -1250,6 +1337,7 @@ watch(isTransferModalOpen, async (isOpen) => {
     transferKeepInChat.value = false;
     transferSendMessageOnTransfer.value = true;
     selectedTransferChannel.value = null;
+    selectedTransferChatbot.value = null;
     transferWorkerConfigForChat.value = null;
   }
 });
@@ -1277,6 +1365,11 @@ const handleTransfer = async () => {
     return;
   }
 
+  if (transferType.value === 'chatbot' && !selectedTransferChatbot.value) {
+    chatStore.showSnackbar(t('chatbot_required'), EColor.error);
+    return;
+  }
+
   isTransferring.value = true;
 
   try {
@@ -1296,11 +1389,14 @@ const handleTransfer = async () => {
 
     const sectorId =
       transferType.value === 'sector' ? selectedTransferSector.value : null;
+    const chatbotId =
+      transferType.value === 'chatbot' ? selectedTransferChatbot.value : null;
     const workerId = selectedTransferChannel.value;
     const annotation = transferAnnotationText.value.trim() || null;
     const transferredChatId = chatStore.activeChat.chat_id;
     const routeChatId = resolveRouteChatId();
     const wasRoutePointingToTransferredChat = routeChatId === transferredChatId;
+    const selectedChatbotOption = selectedTransferChatbotOption.value;
 
     const success = await chatStore.transferChat(
       transferredChatId,
@@ -1309,10 +1405,11 @@ const handleTransfer = async () => {
       annotation,
       leftSidebarRef.value?.hasAppliedAdvancedFilters ?? false,
       workerId,
-      transferKeepInChat.value,
+      transferType.value === 'chatbot' ? false : transferKeepInChat.value,
       shouldShowTransferSendMessageToggle.value
         ? transferSendMessageOnTransfer.value
-        : undefined
+        : undefined,
+      chatbotId
     );
 
     if (success) {
@@ -1383,6 +1480,10 @@ const handleTransfer = async () => {
         } else {
           nextUser = null;
         }
+      } else if (transferType.value === 'chatbot') {
+        nextUser = null;
+        nextSector = null;
+        nextSecondaryUsers = [];
       } else {
         nextUser = null;
         nextSector = null;
@@ -1425,10 +1526,32 @@ const handleTransfer = async () => {
         {
           ...activeChat,
           worker: nextWorker,
-          status: EChatStatus.queue,
+          status:
+            transferType.value === 'chatbot'
+              ? selectedChatbotOption?.type === EChatbotType.output
+                ? EChatStatus.ura_output
+                : EChatStatus.ura
+              : EChatStatus.queue,
           user: nextUser,
           secondary_users: nextSecondaryUsers,
           sector: nextSector,
+          forward_to_output_chatbot:
+            transferType.value === 'chatbot'
+              ? false
+              : activeChat.forward_to_output_chatbot,
+          chatbot_transfer_id:
+            transferType.value === 'chatbot' &&
+            selectedChatbotOption?.type === EChatbotType.input
+              ? chatbotId
+              : null,
+          chatbot_schedule_id:
+            transferType.value === 'chatbot'
+              ? null
+              : activeChat.chatbot_schedule_id,
+          chatbot_webhook_id:
+            transferType.value === 'chatbot'
+              ? null
+              : activeChat.chatbot_webhook_id,
         },
         true
       );
@@ -1590,8 +1713,10 @@ const shouldShowCloseServiceSendMessageToggle = computed(() => {
 
 const shouldShowTransferSendMessageToggle = computed(() => {
   return (
+    transferType.value !== 'chatbot' &&
     transferWorkerConfigForChat.value?.send_message_on_transfer_enabled ===
-      true && canDisableSendMessageOnTransfer.value
+      true &&
+    canDisableSendMessageOnTransfer.value
   );
 });
 
@@ -7807,7 +7932,8 @@ onBeforeUnmount(() => {
           v-if="
             isLoadingTransferChannels ||
             isLoadingTransferUsers ||
-            isLoadingTransferSectors
+            isLoadingTransferSectors ||
+            isLoadingTransferChatbots
           "
         >
           <VRow>
@@ -7863,10 +7989,7 @@ onBeforeUnmount(() => {
             <VLabel class="text-body-2 mb-1">{{ $t('transfer_to') }}:</VLabel>
             <AppSelectSearch
               v-model="transferType"
-              :items="[
-                { value: 'user', title: $t('user') },
-                { value: 'sector', title: $t('sector') },
-              ]"
+              :items="transferTargetTypeOptions"
               :placeholder="$t('transfer_to_placeholder')"
               :clearable="true"
               :disabled="!selectedTransferChannel"
@@ -8015,7 +8138,26 @@ onBeforeUnmount(() => {
             </VCol>
           </template>
 
-          <VCol cols="12">
+          <VCol v-if="transferType === 'chatbot'" cols="12">
+            <VLabel class="text-body-2 mb-1">{{ $t('chatbot') }}:</VLabel>
+            <AppSelectSearch
+              v-model="selectedTransferChatbot"
+              :items="transferChatbots"
+              :placeholder="$t('select_chatbot')"
+              :loading="isLoadingTransferChatbots"
+              :disabled="!selectedTransferChannel"
+              item-value="value"
+              item-title="title"
+            >
+              <template #item-prepend>
+                <VAvatar size="24" color="primary" variant="tonal">
+                  <VIcon icon="tabler-robot" size="16" />
+                </VAvatar>
+              </template>
+            </AppSelectSearch>
+          </VCol>
+
+          <VCol v-if="transferType !== 'chatbot'" cols="12">
             <VCheckbox
               v-model="transferKeepInChat"
               density="compact"
@@ -8108,11 +8250,14 @@ onBeforeUnmount(() => {
           color="primary"
           :disabled="
             !selectedTransferChannel ||
+            !transferType ||
             (transferType === 'user'
               ? !selectedTransferUser
               : transferType === 'sector'
                 ? !selectedTransferSector
-                : false)
+                : transferType === 'chatbot'
+                  ? !selectedTransferChatbot
+                  : false)
           "
           :loading="isTransferring"
           @click="handleTransfer"

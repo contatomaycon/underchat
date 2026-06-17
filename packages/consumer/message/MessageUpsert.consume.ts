@@ -4821,6 +4821,13 @@ export class MessageUpsertConsume {
       return getChat.chatbot_webhook_id;
     }
 
+    if (
+      getChat?.status === EChatStatus.ura &&
+      getChat?.chatbot_transfer_id
+    ) {
+      return getChat.chatbot_transfer_id;
+    }
+
     return inputChatbotId;
   }
 

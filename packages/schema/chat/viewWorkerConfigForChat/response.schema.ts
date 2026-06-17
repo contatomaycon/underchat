@@ -1,4 +1,11 @@
 import { Static, Type } from '@sinclair/typebox';
+import { EChatbotType } from '@core/common/enums/EChatbotType';
+
+const linkedChatbotSchema = Type.Object({
+  chatbot_id: Type.String({ format: 'uuid' }),
+  name: Type.String(),
+  type: Type.String({ enum: [EChatbotType.input, EChatbotType.output] }),
+});
 
 export const workerConfigForChatSchema = Type.Object({
   show_worker_name: Type.Boolean(),
@@ -13,6 +20,8 @@ export const workerConfigForChatSchema = Type.Object({
   operator_reply_pending_alert_enabled: Type.Boolean(),
   operator_reply_pending_alert_time_minutes: Type.Integer({ minimum: 1 }),
   has_ura_output: Type.Boolean(),
+  input_chatbot: Type.Union([linkedChatbotSchema, Type.Null()]),
+  output_chatbot: Type.Union([linkedChatbotSchema, Type.Null()]),
   ai_agent_enabled: Type.Boolean(),
   ai_agent_id: Type.Union([Type.String(), Type.Null()]),
 });

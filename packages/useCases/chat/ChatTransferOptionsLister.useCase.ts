@@ -29,6 +29,7 @@ export class ChatTransferOptionsListerUseCase {
     return {
       sectors,
       workers: filteredWorkers,
+      chatbots: [],
     };
   }
 }

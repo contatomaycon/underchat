@@ -1041,6 +1041,60 @@ describe('MessageUpsertConsume edit fallback', () => {
     }
   });
 
+  it('continues a transferred chatbot flow using chatbot_transfer_id', async () => {
+    jest.useFakeTimers({
+      now: new Date('2026-06-05T14:03:00.000Z'),
+    });
+
+    try {
+      const {
+        consumer,
+        chat,
+        chatService,
+        workerConfigService,
+        chatbotFlowRunnerService,
+      } = makeConsumer();
+      const transferredChat = {
+        ...chat,
+        status: EChatStatus.ura,
+        chatbot_transfer_id: 'chatbot-transfer',
+      } as IChat;
+
+      chatService.findChatByPhone.mockResolvedValueOnce(transferredChat as any);
+      workerConfigService.viewChatbots.mockResolvedValue({
+        enabled: true,
+        chatbot_id: 'chatbot-input',
+        output_chatbot_id: null,
+        chatbot_working_hours_enabled: false,
+        chatbot_working_hours_rules: null,
+        chatbot_working_hours_timezone: null,
+      } as any);
+      chatbotFlowRunnerService.canTriggerChatbotEvent.mockResolvedValue(true);
+
+      const data = makeTextUpsert('continuar fluxo', {
+        messageTimestamp: Math.floor(Date.now() / 1000) - 30,
+      });
+
+      await (consumer as any).createOrUpdateChat(
+        jest.fn((key: string) => key),
+        data,
+        '556999715039'
+      );
+
+      expect(
+        chatbotFlowRunnerService.canTriggerChatbotEvent
+      ).toHaveBeenCalledWith(data, 'account-1', 'chatbot-transfer');
+      expect(chatbotFlowRunnerService.execute).toHaveBeenCalledWith(
+        expect.any(Function),
+        data,
+        transferredChat,
+        'chatbot-transfer'
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('sends a transfer push when message upsert transfers the chat to a user', async () => {
     const { consumer, chat, chatService, pushNotificationService } =
       makeConsumer();

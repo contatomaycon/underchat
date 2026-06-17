@@ -67,6 +67,7 @@ export interface ChatPatch {
   forward_to_output_chatbot?: boolean | null;
   chatbot_schedule_id?: string | null;
   chatbot_webhook_id?: string | null;
+  chatbot_transfer_id?: string | null;
 }
 
 export interface ChatPatchOptions {

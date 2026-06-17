@@ -607,6 +607,7 @@
   "chat_bulk_category_required": "La categoría es obligatoria para selección filtrada.",
   "chat_bulk_action_item_failed": "Error al procesar chat.",
   "transfer_requires_user_or_sector": "¡Se requiere usuario o sector para transferir!",
+  "transfer_chatbot_cannot_combine_targets": "¡No es posible transferir al chatbot junto con usuario o sector!",
   "channel_required": "¡Canal obligatorio!",
   "user_required": "¡Usuario obligatorio!",
   "sector_required": "¡Sector obligatorio!",
