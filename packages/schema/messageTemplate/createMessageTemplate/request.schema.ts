@@ -11,6 +11,11 @@ export const createMessageTemplateRequestSchema = Type.Object({
   channel_ids: Type.Optional(
     Type.Union([
       Type.Array(Type.String({ format: 'uuid' })),
+      Type.Array(
+        Type.Object({
+          value: Type.String({ format: 'uuid' }),
+        })
+      ),
       Type.String(),
       Type.Null(),
       Type.Object({
