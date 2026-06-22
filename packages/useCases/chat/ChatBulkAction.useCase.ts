@@ -30,6 +30,7 @@ type BulkListFilters = Pick<
   | 'filter_protocol'
   | 'filter_date_start'
   | 'filter_date_end'
+  | 'filter_unread_conversations'
 >;
 
 @injectable()
@@ -114,6 +115,8 @@ export class ChatBulkActionUseCase {
       filter_protocol: input.filter_protocol ?? undefined,
       filter_date_start: input.filter_date_start ?? undefined,
       filter_date_end: input.filter_date_end ?? undefined,
+      filter_unread_conversations:
+        input.filter_unread_conversations ?? undefined,
     };
   }
 

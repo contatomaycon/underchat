@@ -78,4 +78,45 @@ describe('ChatSearcherUseCase', () => {
     expect(queryJson).toContain('"sector.id":["sector-allowed"]');
     expect(queryJson).not.toContain('sector-blocked');
   });
+
+  it('filters unread conversations in search and count queries', async () => {
+    const elasticDatabaseService = {
+      select: jest.fn().mockResolvedValue(emptyElasticResult()),
+    } as unknown as ElasticDatabaseService;
+    const chatUserService = {
+      viewChatUser: jest.fn(),
+    } as unknown as ChatUserService;
+    const useCase = new ChatSearcherUseCase(
+      elasticDatabaseService,
+      chatUserService
+    );
+
+    await useCase.execute(
+      'account-1',
+      {
+        current_page: 1,
+        per_page: 20,
+        search: '',
+        status: EChatStatus.queue,
+        filter_unread_conversations: true,
+        sort_field: 'summary.last_message',
+        sort_order: 'desc',
+      },
+      'user-1',
+      [buildAction(EChatPermissions.chat_group)],
+      [],
+      []
+    );
+
+    const selectCalls = (elasticDatabaseService.select as jest.Mock).mock.calls;
+    expect(selectCalls[0][0]).toBe(EElasticIndex.chat);
+
+    const initialQueryJson = JSON.stringify(selectCalls[0][1]);
+    expect(initialQueryJson).toContain('"path":"summary"');
+    expect(initialQueryJson).toContain('"summary.unread_count":{"gt":0}');
+
+    const countQueryJson = JSON.stringify(selectCalls[1][1]);
+    expect(countQueryJson).toContain('"path":"summary"');
+    expect(countQueryJson).toContain('"summary.unread_count":{"gt":0}');
+  });
 });

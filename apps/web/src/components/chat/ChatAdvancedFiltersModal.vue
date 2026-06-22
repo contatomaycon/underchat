@@ -15,6 +15,10 @@ import { can } from '@/@layouts/plugins/casl';
 
 const { t } = useI18n();
 
+const DEFAULT_SORT_FIELD = 'summary.last_message';
+const DEFAULT_SORT_ORDER = 'desc';
+const UNREAD_CONVERSATIONS_SORT_VALUE = 'unread_conversations';
+
 interface Props {
   modelValue: boolean;
   filterLabel?: string | null;
@@ -26,6 +30,7 @@ interface Props {
   filterProtocol?: string | null;
   filterDateStart?: string | Date | null;
   filterDateEnd?: string | Date | null;
+  filterUnreadConversations?: boolean | null;
   sortField?: string | null;
   sortOrder?: string | null;
 }
@@ -41,6 +46,7 @@ interface Emits {
   (e: 'update:filterProtocol', value: string | null): void;
   (e: 'update:filterDateStart', value: string | null): void;
   (e: 'update:filterDateEnd', value: string | null): void;
+  (e: 'update:filterUnreadConversations', value: boolean): void;
   (e: 'update:sortField', value: string | null): void;
   (e: 'update:sortOrder', value: string | null): void;
   (e: 'filtersUpdated'): void;
@@ -91,8 +97,13 @@ const filterDateStart = ref<Date | null>(
 const filterDateEnd = ref<Date | null>(
   props.filterDateEnd ? new Date(props.filterDateEnd) : null
 );
-const sortField = ref<string | null>(props.sortField ?? 'summary.last_message');
-const sortOrder = ref<string | null>(props.sortOrder ?? 'desc');
+const filterUnreadConversations = ref(Boolean(props.filterUnreadConversations));
+const sortField = ref<string | null>(
+  props.filterUnreadConversations
+    ? UNREAD_CONVERSATIONS_SORT_VALUE
+    : (props.sortField ?? DEFAULT_SORT_FIELD)
+);
+const sortOrder = ref<string | null>(props.sortOrder ?? DEFAULT_SORT_ORDER);
 
 const sortFieldOptions = [
   {
@@ -109,6 +120,10 @@ const sortFieldOptions = [
   { value: 'sector.name', title: t('sector', 'Setor') },
   { value: 'started_at', title: t('started_at', 'Iniciado em') },
   { value: 'closed_at', title: t('closed_at', 'Fechado em') },
+  {
+    value: UNREAD_CONVERSATIONS_SORT_VALUE,
+    title: t('unread_conversations', 'Conversas não lidas'),
+  },
 ];
 
 const sortOrderOptions = [
@@ -228,6 +243,9 @@ const isSaving = ref(false);
 const handleSave = async () => {
   isSaving.value = true;
   try {
+    const shouldFilterUnread =
+      sortField.value === UNREAD_CONVERSATIONS_SORT_VALUE;
+
     emit('update:filterLabel', filterLabelTemplateId.value);
     emit('update:filterWorker', filterWorkerId.value);
     emit(
@@ -246,8 +264,17 @@ const handleSave = async () => {
       formatDateForApi(filterDateStart.value, false)
     );
     emit('update:filterDateEnd', formatDateForApi(filterDateEnd.value, true));
-    emit('update:sortField', sortField.value);
-    emit('update:sortOrder', sortOrder.value);
+    emit('update:filterUnreadConversations', shouldFilterUnread);
+    emit(
+      'update:sortField',
+      shouldFilterUnread ? DEFAULT_SORT_FIELD : sortField.value
+    );
+    emit(
+      'update:sortOrder',
+      shouldFilterUnread
+        ? DEFAULT_SORT_ORDER
+        : (sortOrder.value ?? DEFAULT_SORT_ORDER)
+    );
     isVisible.value = false;
     emit('filtersUpdated');
   } finally {
@@ -276,8 +303,13 @@ watch(isVisible, (visible) => {
     filterDateEnd.value = props.filterDateEnd
       ? new Date(props.filterDateEnd)
       : null;
-    sortField.value = props.sortField ?? 'summary.last_message';
-    sortOrder.value = props.sortOrder ?? 'desc';
+    filterUnreadConversations.value = Boolean(
+      props.filterUnreadConversations
+    );
+    sortField.value = filterUnreadConversations.value
+      ? UNREAD_CONVERSATIONS_SORT_VALUE
+      : (props.sortField ?? DEFAULT_SORT_FIELD);
+    sortOrder.value = props.sortOrder ?? DEFAULT_SORT_ORDER;
   }
 });
 
@@ -357,16 +389,43 @@ watch(
 );
 
 watch(
+  () => props.filterUnreadConversations,
+  (newValue) => {
+    filterUnreadConversations.value = Boolean(newValue);
+    if (filterUnreadConversations.value) {
+      sortField.value = UNREAD_CONVERSATIONS_SORT_VALUE;
+      sortOrder.value = DEFAULT_SORT_ORDER;
+    } else if (sortField.value === UNREAD_CONVERSATIONS_SORT_VALUE) {
+      sortField.value = props.sortField ?? DEFAULT_SORT_FIELD;
+    }
+  }
+);
+
+watch(
+  () => sortField.value,
+  (newValue) => {
+    if (newValue === UNREAD_CONVERSATIONS_SORT_VALUE) {
+      sortOrder.value = DEFAULT_SORT_ORDER;
+    }
+  }
+);
+
+watch(
   () => props.sortField,
   (newValue) => {
-    sortField.value = newValue ?? 'date';
+    if (filterUnreadConversations.value) {
+      sortField.value = UNREAD_CONVERSATIONS_SORT_VALUE;
+      return;
+    }
+
+    sortField.value = newValue ?? DEFAULT_SORT_FIELD;
   }
 );
 
 watch(
   () => props.sortOrder,
   (newValue) => {
-    sortOrder.value = newValue ?? 'desc';
+    sortOrder.value = newValue ?? DEFAULT_SORT_ORDER;
   }
 );
 </script>

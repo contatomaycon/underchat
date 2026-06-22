@@ -25,6 +25,7 @@ export const searchChatsQuerySchema = Type.Object({
   filter_protocol: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   filter_date_start: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   filter_date_end: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  filter_unread_conversations: Type.Optional(Type.Boolean()),
   sort_field: Type.Optional(
     Type.Union([
       Type.String({

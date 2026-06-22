@@ -142,6 +142,7 @@ type ChatFilters = {
   filter_protocol?: string | null;
   filter_date_start?: string | null;
   filter_date_end?: string | null;
+  filter_unread_conversations?: boolean;
   sort_field?: string | null;
   sort_order?: string | null;
 };
@@ -189,6 +190,7 @@ const FILTER_KEYS = [
   'filter_protocol',
   'filter_date_start',
   'filter_date_end',
+  'filter_unread_conversations',
 ] as const;
 
 const buildJwtActions = (
@@ -2979,6 +2981,7 @@ export const useChatStore = defineStore('chat', {
           filter_protocol: input.filter_protocol,
           filter_date_start: input.filter_date_start,
           filter_date_end: input.filter_date_end,
+          filter_unread_conversations: input.filter_unread_conversations,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -3071,6 +3074,7 @@ export const useChatStore = defineStore('chat', {
           filter_protocol: input.filter_protocol,
           filter_date_start: input.filter_date_start,
           filter_date_end: input.filter_date_end,
+          filter_unread_conversations: input.filter_unread_conversations,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -3147,6 +3151,7 @@ export const useChatStore = defineStore('chat', {
           filter_protocol: input.filter_protocol,
           filter_date_start: input.filter_date_start,
           filter_date_end: input.filter_date_end,
+          filter_unread_conversations: input.filter_unread_conversations,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -3210,6 +3215,7 @@ export const useChatStore = defineStore('chat', {
           filter_protocol: input.filter_protocol,
           filter_date_start: input.filter_date_start,
           filter_date_end: input.filter_date_end,
+          filter_unread_conversations: input.filter_unread_conversations,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -3271,6 +3277,7 @@ export const useChatStore = defineStore('chat', {
           filter_protocol: input.filter_protocol,
           filter_date_start: input.filter_date_start,
           filter_date_end: input.filter_date_end,
+          filter_unread_conversations: input.filter_unread_conversations,
         };
 
         const response = await axios.get<IApiResponse<ListChatsResponse>>(
@@ -3351,6 +3358,10 @@ export const useChatStore = defineStore('chat', {
         }
         if (input.filter_date_end) {
           params.filter_date_end = input.filter_date_end;
+        }
+        if (input.filter_unread_conversations) {
+          params.filter_unread_conversations =
+            input.filter_unread_conversations;
         }
         if (input.status !== null && input.status !== undefined) {
           params.status = input.status;

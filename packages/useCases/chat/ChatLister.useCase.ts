@@ -121,6 +121,21 @@ export class ChatListerUseCase {
     } as unknown as IElasticsearchBoolClause;
   }
 
+  private buildUnreadConversationsFilter(): IElasticsearchBoolClause {
+    return {
+      nested: {
+        path: 'summary',
+        query: {
+          range: {
+            'summary.unread_count': {
+              gt: 0,
+            },
+          },
+        },
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
   private buildParticipantExistsFilter(): IElasticsearchBoolClause {
     return {
       bool: {
@@ -972,6 +987,12 @@ export class ChatListerUseCase {
       } as unknown as IElasticsearchBoolClause;
       filterClauses.push(dateFilter);
       baseFiltersForCounts.push(dateFilter);
+    }
+
+    if (query.filter_unread_conversations) {
+      const unreadConversationsFilter = this.buildUnreadConversationsFilter();
+      filterClauses.push(unreadConversationsFilter);
+      baseFiltersForCounts.push(unreadConversationsFilter);
     }
 
     const canViewOthers = this.canViewOthersChats(actions);

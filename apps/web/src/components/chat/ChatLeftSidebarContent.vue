@@ -505,7 +505,8 @@ const hasActiveFilters = computed(() => {
     currentFilterPhone.value ||
     currentFilterProtocol.value ||
     currentFilterDateStart.value ||
-    currentFilterDateEnd.value
+    currentFilterDateEnd.value ||
+    currentFilterUnreadConversations.value
   );
 });
 
@@ -1372,6 +1373,7 @@ const handleClearFilters = async () => {
   currentFilterProtocol.value = null;
   currentFilterDateStart.value = null;
   currentFilterDateEnd.value = null;
+  currentFilterUnreadConversations.value = false;
   currentSortField.value = 'summary.last_message';
   currentSortOrder.value = 'desc';
   hasAppliedAdvancedFilters.value = false;
@@ -1428,6 +1430,7 @@ const clearAdvancedFilters = async () => {
   currentFilterProtocol.value = null;
   currentFilterDateStart.value = null;
   currentFilterDateEnd.value = null;
+  currentFilterUnreadConversations.value = false;
   hasAppliedAdvancedFilters.value = false;
   hiddenRealtimeNewChatIds.value.clear();
 
@@ -1498,6 +1501,7 @@ const currentFilterPhone = ref<string | null>(null);
 const currentFilterProtocol = ref<string | null>(null);
 const currentFilterDateStart = ref<string | null>(null);
 const currentFilterDateEnd = ref<string | null>(null);
+const currentFilterUnreadConversations = ref(false);
 const currentSortField = ref<string | null>('summary.last_message');
 const currentSortOrder = ref<string | null>('desc');
 
@@ -1521,6 +1525,7 @@ watch(
     currentFilterProtocol,
     currentFilterDateStart,
     currentFilterDateEnd,
+    currentFilterUnreadConversations,
   ],
   () => {
     resetBulkSelection();
@@ -1711,6 +1716,8 @@ const getChatUserFilters = () => {
     filter_protocol: currentFilterProtocol.value ?? undefined,
     filter_date_start: currentFilterDateStart.value ?? undefined,
     filter_date_end: currentFilterDateEnd.value ?? undefined,
+    filter_unread_conversations:
+      currentFilterUnreadConversations.value || undefined,
     sort_field: currentSortField.value ?? undefined,
     sort_order: currentSortOrder.value ?? undefined,
   };
@@ -2659,6 +2666,7 @@ const buildBulkActionBasePayload = (): Omit<
     filter_protocol: currentFilterProtocol.value,
     filter_date_start: currentFilterDateStart.value,
     filter_date_end: currentFilterDateEnd.value,
+    filter_unread_conversations: currentFilterUnreadConversations.value,
     sort_field: currentSortField.value,
     sort_order: currentSortOrder.value,
   };
@@ -3009,6 +3017,7 @@ const performSearch = async (append = false) => {
       filter_protocol: filters.filter_protocol,
       filter_date_start: filters.filter_date_start,
       filter_date_end: filters.filter_date_end,
+      filter_unread_conversations: filters.filter_unread_conversations,
       sort_field: filters.sort_field,
       sort_order: filters.sort_order,
     };
@@ -5112,6 +5121,7 @@ defineExpose({
     :filter-protocol="currentFilterProtocol"
     :filter-date-start="currentFilterDateStart"
     :filter-date-end="currentFilterDateEnd"
+    :filter-unread-conversations="currentFilterUnreadConversations"
     :sort-field="currentSortField"
     :sort-order="currentSortOrder"
     @update:filter-label="currentFilterLabelTemplateId = $event"
@@ -5123,6 +5133,9 @@ defineExpose({
     @update:filter-protocol="currentFilterProtocol = $event"
     @update:filter-date-start="currentFilterDateStart = $event"
     @update:filter-date-end="currentFilterDateEnd = $event"
+    @update:filter-unread-conversations="
+      currentFilterUnreadConversations = $event
+    "
     @update:sort-field="currentSortField = $event"
     @update:sort-order="currentSortOrder = $event"
     @update:model-value="isAdvancedFiltersModalOpen = $event"

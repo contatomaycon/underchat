@@ -28,6 +28,7 @@ export const listChatsQuerySchema = Type.Object({
   filter_protocol: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   filter_date_start: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   filter_date_end: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  filter_unread_conversations: Type.Optional(Type.Boolean()),
 });
 
 export type ListChatsQuery = Static<typeof listChatsQuerySchema>;

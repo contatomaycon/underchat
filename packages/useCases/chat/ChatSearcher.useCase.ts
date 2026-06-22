@@ -58,6 +58,21 @@ export class ChatSearcherUseCase {
     };
   }
 
+  private buildUnreadConversationsFilter(): IElasticsearchBoolClause {
+    return {
+      nested: {
+        path: 'summary',
+        query: {
+          range: {
+            'summary.unread_count': {
+              gt: 0,
+            },
+          },
+        },
+      },
+    } as unknown as IElasticsearchBoolClause;
+  }
+
   private canViewOthersChats(actions: IJwtGroupHierarchy[]): boolean {
     const permissions = [
       EGeneralPermissions.full_access,
@@ -676,6 +691,12 @@ export class ChatSearcherUseCase {
       );
       filterClauses.push(dateFilter);
       baseFiltersForCounts.push(dateFilter);
+    }
+
+    if (query.filter_unread_conversations) {
+      const unreadConversationsFilter = this.buildUnreadConversationsFilter();
+      filterClauses.push(unreadConversationsFilter);
+      baseFiltersForCounts.push(unreadConversationsFilter);
     }
 
     const isMyChats = query.status === MY_CHATS_STATUS;
