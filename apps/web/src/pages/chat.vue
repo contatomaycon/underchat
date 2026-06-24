@@ -80,6 +80,7 @@ import data from 'emoji-mart-vue-fast/data/all.json';
 import 'emoji-mart-vue-fast/css/emoji-mart.css';
 import { useI18n } from 'vue-i18n';
 import { ListQuickMessageTemplatesResponse } from '@core/schema/chat/listQuickMessageTemplates/response.schema';
+import type { ChatEditablePhotoPreview } from '@/components/chat/image-editor/types';
 
 const emojiIndex = new EmojiIndex(data);
 const { t } = useI18n();
@@ -125,6 +126,9 @@ const TranscribeModal = defineAsyncComponent(
 );
 const ChatMediaViewer = defineAsyncComponent(
   () => import('@/components/chat/ChatMediaViewer.vue')
+);
+const ChatImageEditorDialog = defineAsyncComponent(
+  () => import('@/components/chat/image-editor/ChatImageEditorDialog.vue')
 );
 
 const MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024;
@@ -225,7 +229,7 @@ const typingStates = ref(
   new Map<string, { mode: RemoteActivityMode; timestamp: number }>()
 );
 const typingTimeouts = ref(new Map<string, NodeJS.Timeout>());
-const selectedPhotos = ref<ISelectedPhotoPreview[]>([]);
+const selectedPhotos = ref<ChatEditablePhotoPreview[]>([]);
 const selectedDocuments = ref<ISelectedDocumentPreview[]>([]);
 const selectedVideos = ref<ISelectedVideoPreview[]>([]);
 const selectedAudios = ref<ISelectedAudioPreview[]>([]);
@@ -236,6 +240,62 @@ const selectedLocation = ref<{
   name?: string | null;
   address?: string | null;
 } | null>(null);
+const isImageEditorOpen = ref(false);
+const imageEditorInitialPhotoId = ref<string | null>(null);
+
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (typeof event.target?.result === 'string') {
+        resolve(event.target.result);
+        return;
+      }
+
+      reject(new Error('Invalid image preview'));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('Image read error'));
+    reader.readAsDataURL(file);
+  });
+
+const isGifFile = (file: File): boolean => {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  return file.type === 'image/gif' || extension === 'gif';
+};
+
+const createEditablePhotoPreview = (
+  file: File,
+  preview: string
+): ChatEditablePhotoPreview => ({
+  id: crypto.randomUUID(),
+  file,
+  preview,
+  originalFile: file,
+  originalPreview: preview,
+  edited: false,
+});
+
+const openImageEditorIfEditable = (photos: ChatEditablePhotoPreview[]) => {
+  const firstEditablePhoto = photos.find((photo) => !isGifFile(photo.file));
+  if (firstEditablePhoto) {
+    imageEditorInitialPhotoId.value = firstEditablePhoto.id;
+    isImageEditorOpen.value = true;
+  }
+};
+
+const openSelectedPhotoEditor = (photo: ChatEditablePhotoPreview) => {
+  if (isGifFile(photo.file)) {
+    openPreviewImage(photo);
+    return;
+  }
+
+  imageEditorInitialPhotoId.value = photo.id;
+  isImageEditorOpen.value = true;
+};
+
+const handleImageEditorSend = () => {
+  void sendMessage();
+};
 
 const persistMessageDraft = (
   chatId: string | null | undefined,
@@ -3442,7 +3502,7 @@ const onPickDoc = (e: Event) => {
 
   target.value = '';
 };
-const onPickPhoto = (e: Event) => {
+const onPickPhoto = async (e: Event) => {
   const target = e.target as HTMLInputElement;
   const files = target.files;
 
@@ -3533,18 +3593,14 @@ const onPickPhoto = (e: Event) => {
     return;
   }
 
-  for (const file of validImages) {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        selectedPhotos.value.push({
-          file,
-          preview: event.target.result as string,
-        });
-      }
-    };
-    reader.readAsDataURL(file);
-  }
+  const loadedPhotos = await Promise.all(
+    validImages.map(async (file) =>
+      createEditablePhotoPreview(file, await readFileAsDataUrl(file))
+    )
+  );
+
+  selectedPhotos.value.push(...loadedPhotos);
+  openImageEditorIfEditable(loadedPhotos);
 
   target.value = '';
 };
@@ -4383,16 +4439,12 @@ const processPastedFile = async (file: File) => {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        selectedPhotos.value.push({
-          file,
-          preview: event.target.result as string,
-        });
-      }
-    };
-    reader.readAsDataURL(file);
+    const photo = createEditablePhotoPreview(
+      file,
+      await readFileAsDataUrl(file)
+    );
+    selectedPhotos.value.push(photo);
+    openImageEditorIfEditable([photo]);
     return;
   }
 
@@ -7155,7 +7207,7 @@ onBeforeUnmount(() => {
                           :src="photo.preview"
                           cover
                           class="photo-preview-image"
-                          @click="openPreviewImage(photo)"
+                          @click="openSelectedPhotoEditor(photo)"
                         />
                         <VBtn
                           icon
@@ -7550,6 +7602,14 @@ onBeforeUnmount(() => {
               @change="onPickAudio"
             />
           </VForm>
+
+          <ChatImageEditorDialog
+            v-model:open="isImageEditorOpen"
+            v-model:photos="selectedPhotos"
+            v-model:caption="msg"
+            :initial-photo-id="imageEditorInitialPhotoId"
+            @send="handleImageEditorSend"
+          />
         </div>
 
         <div
@@ -8482,6 +8542,7 @@ $chat-app-header-height: 76px;
   }
 
   .chat-main-content {
+    position: relative;
     display: flex;
     flex-direction: column;
     block-size: 100%;
