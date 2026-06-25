@@ -177,6 +177,7 @@ func (w *Worker) startHTTP() error {
 			"provider_state":          healthString(health, "provider_state"),
 			"degraded_reason":         healthString(health, "degraded_reason"),
 			"connected":               healthBool(health, "connected"),
+			"phone":                   healthString(health, "phone"),
 			"kafka_unhealthy":         kafkaUnhealthy,
 			"fail_on_kafka_unhealthy": failOnKafkaUnhealthy,
 			"runtime_generation":      w.cfg.RuntimeGeneration,

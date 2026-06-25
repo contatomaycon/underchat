@@ -48,6 +48,7 @@ interface HealthCheckResult {
   degraded_reason?: string;
   last_probe_at: string;
   probe_latency_ms: number;
+  phone?: string;
 }
 
 type SocketStateName = 'open' | 'connecting' | 'closing' | 'closed' | 'unknown';
@@ -458,6 +459,7 @@ export class BaileysHealthCheckService {
       canSend: false,
       lastProbeAt: result.last_probe_at,
       probeLatencyMs: result.probe_latency_ms,
+      phone: result.phone,
     });
   }
 
@@ -483,6 +485,7 @@ export class BaileysHealthCheckService {
       reason: result.reason,
       last_probe_at: result.last_probe_at,
       probe_latency_ms: result.probe_latency_ms,
+      phone: result.phone,
       is_healthy: result.isHealthy,
       ...extra,
     });
@@ -517,6 +520,7 @@ export class BaileysHealthCheckService {
     const probeStartedAt = Date.now();
     const lastProbeAt = new Date().toISOString();
     const userId = socket.user?.id;
+    const selfPhone = getPhoneNumber(userId);
     const hasSession = this.hasSessionAction?.() === true;
     const incomingBound = this.isIncomingBoundAction?.(socket) === true;
 
@@ -532,6 +536,7 @@ export class BaileysHealthCheckService {
         canReceiveRuntime: incomingBound,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -547,6 +552,7 @@ export class BaileysHealthCheckService {
         canReceiveRuntime: incomingBound,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -562,10 +568,10 @@ export class BaileysHealthCheckService {
         canReceiveRuntime: false,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
-    const selfPhone = getPhoneNumber(userId);
     if (!selfPhone) {
       return this.buildResult({
         isHealthy: true,
@@ -596,6 +602,7 @@ export class BaileysHealthCheckService {
         canReceiveRuntime: true,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -611,6 +618,7 @@ export class BaileysHealthCheckService {
       providerState: 'open',
       lastProbeAt,
       probeLatencyMs: Date.now() - probeStartedAt,
+      phone: selfPhone,
     });
   }
 
@@ -676,6 +684,7 @@ export class BaileysHealthCheckService {
     degradedReason?: string;
     lastProbeAt?: string;
     probeLatencyMs?: number;
+    phone?: string;
   }): HealthCheckResult {
     const sessionReady = input.sessionReady === true;
     const degradedReason =
@@ -695,6 +704,7 @@ export class BaileysHealthCheckService {
       degraded_reason: degradedReason,
       last_probe_at: input.lastProbeAt ?? new Date().toISOString(),
       probe_latency_ms: input.probeLatencyMs ?? 0,
+      phone: input.phone,
     };
   }
 

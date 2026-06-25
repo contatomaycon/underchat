@@ -324,6 +324,10 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 	clientConnected := client != nil && client.IsConnected()
 	loggedIn := client != nil && client.IsLoggedIn()
 	hasStoreID := client != nil && client.Store != nil && client.Store.ID != nil
+	phone := ""
+	if hasStoreID {
+		phone = phoneFromOwnID(client.Store.ID)
+	}
 	authenticated := loggedIn && hasStoreID
 
 	m.mu.RLock()
@@ -375,6 +379,7 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 		"can_send":                  ready,
 		"can_receive_runtime":       canReceiveRuntime,
 		"authenticated":             authenticated,
+		"phone":                     phone,
 		"provider_state":            healthStatus,
 		"connected_event":           connectedEvent,
 		"client_connected":          clientConnected,

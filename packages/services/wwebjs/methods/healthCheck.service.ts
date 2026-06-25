@@ -63,6 +63,7 @@ interface HealthCheckResult {
   degraded_reason?: string;
   last_probe_at: string;
   probe_latency_ms: number;
+  phone?: string;
 }
 
 interface WwebjsHealthCheckConfig {
@@ -557,6 +558,7 @@ export class WwebjsHealthCheckService {
       canSend: false,
       lastProbeAt: result.last_probe_at,
       probeLatencyMs: result.probe_latency_ms,
+      phone: result.phone,
     });
   }
 
@@ -583,6 +585,7 @@ export class WwebjsHealthCheckService {
       wa_state: result.waState,
       last_probe_at: result.last_probe_at,
       probe_latency_ms: result.probe_latency_ms,
+      phone: result.phone,
       is_healthy: result.isHealthy,
       ...extra,
     });
@@ -727,6 +730,7 @@ export class WwebjsHealthCheckService {
     const probeStartedAt = Date.now();
     const lastProbeAt = new Date().toISOString();
     const selfJid = client.info?.wid?._serialized;
+    const selfPhone = getPhoneNumber(selfJid);
     const eventBridgeAttached =
       this.isEventBridgeAttachedAction?.(client) === true;
 
@@ -741,6 +745,7 @@ export class WwebjsHealthCheckService {
         canReceiveRuntime: eventBridgeAttached,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -756,6 +761,7 @@ export class WwebjsHealthCheckService {
         canReceiveRuntime: false,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -771,6 +777,7 @@ export class WwebjsHealthCheckService {
         canReceiveRuntime: true,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -786,6 +793,7 @@ export class WwebjsHealthCheckService {
         canReceiveRuntime: true,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -804,6 +812,7 @@ export class WwebjsHealthCheckService {
         canReceiveRuntime: true,
         lastProbeAt,
         probeLatencyMs: Date.now() - probeStartedAt,
+        phone: selfPhone,
       });
     }
 
@@ -820,6 +829,7 @@ export class WwebjsHealthCheckService {
       providerState: waState,
       lastProbeAt,
       probeLatencyMs: Date.now() - probeStartedAt,
+      phone: selfPhone,
     });
   }
 
@@ -916,6 +926,7 @@ export class WwebjsHealthCheckService {
     degradedReason?: string;
     lastProbeAt?: string;
     probeLatencyMs?: number;
+    phone?: string;
   }): HealthCheckResult {
     const sessionReady = input.sessionReady === true;
     const degradedReason =
@@ -936,6 +947,7 @@ export class WwebjsHealthCheckService {
       degraded_reason: degradedReason,
       last_probe_at: input.lastProbeAt ?? new Date().toISOString(),
       probe_latency_ms: input.probeLatencyMs ?? 0,
+      phone: input.phone,
     };
   }
 

@@ -23,6 +23,7 @@ import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
+import { currentTime } from '@core/common/functions/currentTime';
 
 const mapConcurrent = async <T, R>(
   items: T[],
@@ -51,6 +52,23 @@ interface IRunningWorkerContainer {
   name: string;
   isWarmStandby: boolean;
   warmPoolId?: string;
+}
+
+interface IConnectionHealthCheckResult {
+  healthy: boolean;
+  code: number | null;
+  body: unknown;
+  session_ready?: boolean;
+  connected?: boolean;
+  can_send?: boolean;
+  can_receive_runtime?: boolean;
+  authenticated?: boolean;
+  provider_state?: string;
+  degraded_reason?: string;
+  last_probe_at?: string;
+  probe_latency_ms?: number;
+  phone?: string;
+  kafka_unhealthy: boolean;
 }
 
 @injectable()
@@ -212,7 +230,7 @@ export class WorkerMonitorService {
       return;
     }
 
-    const connectionHealthy = await this.checkConnection(
+    const connectionHealth = await this.checkConnection(
       worker,
       server.server_id,
       sshConfig
@@ -220,7 +238,7 @@ export class WorkerMonitorService {
 
     await this.syncConnectionStatusWithFailureTracking(
       worker,
-      connectionHealthy,
+      connectionHealth,
       server.server_id,
       sshConfig
     );
@@ -348,12 +366,13 @@ export class WorkerMonitorService {
 
   private readonly syncConnectionStatusWithFailureTracking = async (
     worker: IWorkerMonitor,
-    connectionHealthy: boolean,
+    connectionHealth: IConnectionHealthCheckResult,
     serverId: string,
     sshConfig: ConnectConfig
   ): Promise<void> => {
     const now = Date.now();
     const tracker = this.connectionFailureTrackers.get(worker.worker_id);
+    const connectionHealthy = connectionHealth.healthy;
 
     if (connectionHealthy) {
       logLocalConnectionStatus('service.monitor.connection_check.healthy', {
@@ -363,6 +382,14 @@ export class WorkerMonitorService {
         worker_type_id: worker.worker_type_id,
         worker_status_id: worker.worker_status_id,
         connection_healthy: true,
+        session_ready: connectionHealth.session_ready,
+        connected: connectionHealth.connected,
+        can_send: connectionHealth.can_send,
+        can_receive_runtime: connectionHealth.can_receive_runtime,
+        authenticated: connectionHealth.authenticated,
+        provider_state: connectionHealth.provider_state,
+        degraded_reason: connectionHealth.degraded_reason,
+        phone: connectionHealth.phone,
         had_tracker: Boolean(tracker),
       });
       if (tracker) {
@@ -373,17 +400,35 @@ export class WorkerMonitorService {
         worker.worker_id
       );
 
-      if (
-        worker.worker_status_id === EWorkerStatus.offline ||
-        worker.worker_status_id === EWorkerStatus.mismatched
-      ) {
-        await this.updateWorkerStatus(
-          worker,
-          EWorkerStatus.online,
-          ECodeMessage.info,
-          EBaileysConnectionStatus.info
-        );
+      if (this.shouldPromoteReadyWorkerToOnline(worker.worker_status_id)) {
+        await this.promoteReadyWorkerToOnline(worker, connectionHealth);
       }
+
+      return;
+    }
+
+    if (worker.worker_status_id === EWorkerStatus.disponible) {
+      if (tracker) {
+        this.connectionFailureTrackers.delete(worker.worker_id);
+      }
+
+      logLocalConnectionStatus('service.monitor.disponible_not_ready', {
+        layer: 'service.monitor',
+        worker_id: worker.worker_id,
+        account_id: worker.account_id,
+        worker_type_id: worker.worker_type_id,
+        worker_status_id: worker.worker_status_id,
+        connection_healthy: false,
+        status_code: connectionHealth.code,
+        session_ready: connectionHealth.session_ready,
+        connected: connectionHealth.connected,
+        can_send: connectionHealth.can_send,
+        can_receive_runtime: connectionHealth.can_receive_runtime,
+        authenticated: connectionHealth.authenticated,
+        provider_state: connectionHealth.provider_state,
+        degraded_reason: connectionHealth.degraded_reason,
+        kafka_unhealthy: connectionHealth.kafka_unhealthy,
+      });
 
       return;
     }
@@ -472,23 +517,16 @@ export class WorkerMonitorService {
 
   private readonly handleHealthyConnection = async (
     workerId: string,
-    currentWorker: IWorkerMonitor
+    currentWorker: IWorkerMonitor,
+    connectionHealth: IConnectionHealthCheckResult
   ): Promise<void> => {
     this.connectionFailureTrackers.delete(workerId);
     this.activeContinuousChecks.delete(workerId);
 
     await this.workerService.updateWorkerLastConnectionCheckAt(workerId);
 
-    if (
-      currentWorker.worker_status_id === EWorkerStatus.offline ||
-      currentWorker.worker_status_id === EWorkerStatus.mismatched
-    ) {
-      await this.updateWorkerStatus(
-        currentWorker,
-        EWorkerStatus.online,
-        ECodeMessage.info,
-        EBaileysConnectionStatus.info
-      );
+    if (this.shouldPromoteReadyWorkerToOnline(currentWorker.worker_status_id)) {
+      await this.promoteReadyWorkerToOnline(currentWorker, connectionHealth);
     }
   };
 
@@ -538,15 +576,19 @@ export class WorkerMonitorService {
         return;
       }
 
-      const connectionHealthy = await this.checkConnection(
+      const connectionHealth = await this.checkConnection(
         currentWorker,
         serverId,
         sshConfig
       );
       await this.workerService.updateWorkerUpdatedAt(worker.worker_id);
 
-      if (connectionHealthy) {
-        await this.handleHealthyConnection(worker.worker_id, currentWorker);
+      if (connectionHealth.healthy) {
+        await this.handleHealthyConnection(
+          worker.worker_id,
+          currentWorker,
+          connectionHealth
+        );
         return;
       }
 
@@ -600,6 +642,84 @@ export class WorkerMonitorService {
       workerCentrifugoQueue(worker.account_id),
       payload
     );
+  };
+
+  private readonly shouldPromoteReadyWorkerToOnline = (
+    status: EWorkerStatus
+  ): boolean => {
+    return [
+      EWorkerStatus.offline,
+      EWorkerStatus.mismatched,
+      EWorkerStatus.disponible,
+    ].includes(status);
+  };
+
+  private readonly promoteReadyWorkerToOnline = async (
+    worker: IWorkerMonitor,
+    connectionHealth: IConnectionHealthCheckResult
+  ): Promise<void> => {
+    const view = await this.workerService.viewWorkerPhoneConnectionDate(
+      worker.worker_id
+    );
+    const phone =
+      this.normalizePhone(connectionHealth.phone) ??
+      this.normalizePhone(view?.number) ??
+      null;
+    const connectionDate = phone
+      ? currentTime()
+      : (view?.connection_date ?? null);
+
+    await this.workerService.updateWorkerPhoneStatusConnectionDate({
+      worker_id: worker.worker_id,
+      status: EWorkerStatus.online,
+      number: phone,
+      connection_date: connectionDate,
+    });
+
+    logLocalConnectionStatus('service.monitor.ready_worker_promoted_online', {
+      layer: 'service.monitor',
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      previous_worker_status_id: worker.worker_status_id,
+      worker_status_id: EWorkerStatus.online,
+      session_ready: connectionHealth.session_ready,
+      can_send: connectionHealth.can_send,
+      can_receive_runtime: connectionHealth.can_receive_runtime,
+      authenticated: connectionHealth.authenticated,
+      provider_state: connectionHealth.provider_state,
+      degraded_reason: connectionHealth.degraded_reason,
+      phone,
+      previous_phone: view?.number ?? null,
+      connection_date: connectionDate,
+      previous_connection_date: view?.connection_date ?? null,
+    });
+
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.connectionEstablished,
+      status: EBaileysConnectionStatus.connected,
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      phone: phone ?? undefined,
+      worker_status_id: EWorkerStatus.online,
+      session_ready: true,
+      can_send: connectionHealth.can_send ?? true,
+      can_receive_runtime: connectionHealth.can_receive_runtime ?? true,
+      authenticated: connectionHealth.authenticated ?? true,
+      provider_state: connectionHealth.provider_state,
+      degraded_reason: connectionHealth.degraded_reason,
+      last_probe_at: connectionHealth.last_probe_at,
+      probe_latency_ms: connectionHealth.probe_latency_ms,
+    };
+
+    await Promise.all([
+      this.centrifugoService.publishSub(
+        workerCentrifugoQueue(worker.account_id),
+        payload
+      ),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
+    ]);
   };
 
   private readonly buildSshConfig = (
@@ -693,7 +813,7 @@ export class WorkerMonitorService {
     worker: IWorkerMonitor,
     serverId: string,
     sshConfig: ConnectConfig
-  ): Promise<boolean> => {
+  ): Promise<IConnectionHealthCheckResult> => {
     const workerId = worker.worker_id;
     const command = String.raw`bash -c "docker exec ${workerId} sh -c 'curl -s -w \"__HTTP_STATUS__%{http_code}\" http://127.0.0.1:3005/v1/connection/health/check'"`;
 
@@ -709,6 +829,11 @@ export class WorkerMonitorService {
       const health = this.parseHttpResponse(rawOutput);
       const code = health.code;
       const healthy = code === 200 && this.hasSessionReadyBody(health.body);
+      const result = this.buildConnectionHealthCheckResult(
+        healthy,
+        code,
+        health.body
+      );
       logLocalConnectionStatus('service.monitor.connection_health_http', {
         layer: 'service.monitor',
         worker_id: worker.worker_id,
@@ -716,20 +841,20 @@ export class WorkerMonitorService {
         worker_type_id: worker.worker_type_id,
         worker_status_id: worker.worker_status_id,
         status_code: code,
-        connection_healthy: healthy,
-        session_ready: this.readBooleanBody(health.body, 'session_ready'),
-        connected: this.readBooleanBody(health.body, 'connected'),
-        can_send: this.readBooleanBody(health.body, 'can_send'),
-        can_receive_runtime: this.readBooleanBody(
-          health.body,
-          'can_receive_runtime'
-        ),
-        authenticated: this.readBooleanBody(health.body, 'authenticated'),
-        provider_state: this.readStringBody(health.body, 'provider_state'),
-        degraded_reason: this.readStringBody(health.body, 'degraded_reason'),
-        kafka_unhealthy: this.readKafkaUnhealthy(health.body),
+        connection_healthy: result.healthy,
+        session_ready: result.session_ready,
+        connected: result.connected,
+        can_send: result.can_send,
+        can_receive_runtime: result.can_receive_runtime,
+        authenticated: result.authenticated,
+        provider_state: result.provider_state,
+        degraded_reason: result.degraded_reason,
+        last_probe_at: result.last_probe_at,
+        probe_latency_ms: result.probe_latency_ms,
+        phone: result.phone,
+        kafka_unhealthy: result.kafka_unhealthy,
       });
-      return healthy;
+      return result;
     } catch (error) {
       logLocalConnectionStatus('service.monitor.connection_health_error', {
         layer: 'service.monitor',
@@ -739,7 +864,13 @@ export class WorkerMonitorService {
         worker_status_id: worker.worker_status_id,
         reason: error instanceof Error ? error.message : String(error),
       });
-      return false;
+      return {
+        healthy: false,
+        code: null,
+        body: null,
+        kafka_unhealthy: false,
+        degraded_reason: error instanceof Error ? error.message : String(error),
+      };
     }
   };
 
@@ -821,6 +952,50 @@ export class WorkerMonitorService {
     return typeof value === 'string' ? value : undefined;
   };
 
+  private readonly readNumberBody = (
+    body: unknown,
+    key: string
+  ): number | undefined => {
+    if (!body || typeof body !== 'object') {
+      return undefined;
+    }
+
+    const value = (body as Record<string, unknown>)[key];
+    return typeof value === 'number' && Number.isFinite(value)
+      ? value
+      : undefined;
+  };
+
+  private readonly buildConnectionHealthCheckResult = (
+    healthy: boolean,
+    code: number | null,
+    body: unknown
+  ): IConnectionHealthCheckResult => {
+    return {
+      healthy,
+      code,
+      body,
+      session_ready: this.readBooleanBody(body, 'session_ready'),
+      connected: this.readBooleanBody(body, 'connected'),
+      can_send: this.readBooleanBody(body, 'can_send'),
+      can_receive_runtime: this.readBooleanBody(body, 'can_receive_runtime'),
+      authenticated: this.readBooleanBody(body, 'authenticated'),
+      provider_state: this.readStringBody(body, 'provider_state'),
+      degraded_reason: this.readStringBody(body, 'degraded_reason'),
+      last_probe_at: this.readStringBody(body, 'last_probe_at'),
+      probe_latency_ms: this.readNumberBody(body, 'probe_latency_ms'),
+      phone: this.normalizePhone(this.readStringBody(body, 'phone')),
+      kafka_unhealthy: this.readKafkaUnhealthy(body),
+    };
+  };
+
+  private readonly normalizePhone = (
+    phone: string | null | undefined
+  ): string | undefined => {
+    const normalized = phone?.trim();
+    return normalized || undefined;
+  };
+
   private readonly readKafkaUnhealthy = (body: unknown): boolean => {
     if (!body || typeof body !== 'object') {
       return false;
@@ -876,6 +1051,7 @@ export class WorkerMonitorService {
       EWorkerStatus.online,
       EWorkerStatus.offline,
       EWorkerStatus.mismatched,
+      EWorkerStatus.disponible,
     ];
 
     const result = statuses.includes(worker.worker_status_id);

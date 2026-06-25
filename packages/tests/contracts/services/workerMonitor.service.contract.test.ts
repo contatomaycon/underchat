@@ -29,16 +29,18 @@ import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
 
 function makeService(
   overrides: {
+    workerService?: Record<string, unknown>;
     sshService?: { runCommands: jest.Mock };
+    centrifugoService?: Record<string, unknown>;
   } = {}
 ): WorkerMonitorService {
   return new WorkerMonitorService(
-    {} as never,
+    (overrides.workerService ?? {}) as never,
     {} as never,
     (overrides.sshService ?? {}) as never,
     {} as never,
     {} as never,
-    {} as never,
+    (overrides.centrifugoService ?? {}) as never,
     {} as never
   );
 }
@@ -114,5 +116,120 @@ describe('WorkerMonitorService', () => {
       'worker-1',
       '019dfe2c-2c30-730d-88e9-63b839bb1b37',
     ]);
+  });
+
+  it('checks connection for disponible workers', () => {
+    const service = makeService();
+
+    const shouldCheck = (service as any).shouldCheckConnection(
+      makeWorker({ worker_status_id: EWorkerStatus.disponible })
+    );
+
+    expect(shouldCheck).toBe(true);
+  });
+
+  it('promotes a disponible worker to online when health proves session readiness', async () => {
+    const workerService = {
+      updateWorkerLastConnectionCheckAt: jest.fn(async () => true),
+      viewWorkerPhoneConnectionDate: jest.fn(async () => ({
+        id: 'worker-1',
+        number: '556192037138',
+        connection_date: null,
+      })),
+      updateWorkerPhoneStatusConnectionDate: jest.fn(async () => true),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => true),
+      publish: jest.fn(async () => true),
+    };
+    const service = makeService({ workerService, centrifugoService });
+
+    await (service as any).syncConnectionStatusWithFailureTracking(
+      makeWorker({ worker_status_id: EWorkerStatus.disponible }),
+      {
+        healthy: true,
+        code: 200,
+        body: {},
+        session_ready: true,
+        connected: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
+        provider_state: 'CONNECTED',
+        last_probe_at: '2026-06-25T17:21:00.000Z',
+        probe_latency_ms: 12,
+        phone: '556192037138',
+        kafka_unhealthy: false,
+      },
+      'server-1',
+      {} as never
+    );
+
+    expect(
+      workerService.updateWorkerLastConnectionCheckAt
+    ).not.toHaveBeenCalled();
+    expect(
+      workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith({
+      worker_id: 'worker-1',
+      status: EWorkerStatus.online,
+      number: '556192037138',
+      connection_date: expect.any(String),
+    });
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        code: 200,
+        status: 'connected',
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        session_ready: true,
+        phone: '556192037138',
+      })
+    );
+    expect(centrifugoService.publish).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        session_ready: true,
+      })
+    );
+  });
+
+  it('keeps a disponible worker disponible when health is not session ready', async () => {
+    const workerService = {
+      updateWorkerLastConnectionCheckAt: jest.fn(async () => true),
+      updateStatusWorker: jest.fn(async () => true),
+      updateWorkerPhoneStatusConnectionDate: jest.fn(async () => true),
+    };
+    const service = makeService({ workerService });
+
+    await (service as any).syncConnectionStatusWithFailureTracking(
+      makeWorker({ worker_status_id: EWorkerStatus.disponible }),
+      {
+        healthy: false,
+        code: 503,
+        body: {},
+        session_ready: false,
+        connected: false,
+        can_send: false,
+        can_receive_runtime: true,
+        authenticated: false,
+        provider_state: 'PAIRING',
+        degraded_reason: 'missing_local_session',
+        kafka_unhealthy: false,
+      },
+      'server-1',
+      {} as never
+    );
+
+    expect(
+      workerService.updateWorkerLastConnectionCheckAt
+    ).toHaveBeenCalledWith('worker-1');
+    expect(workerService.updateStatusWorker).not.toHaveBeenCalled();
+    expect(
+      workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
   });
 });
