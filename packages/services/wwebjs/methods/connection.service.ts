@@ -356,6 +356,118 @@ export class WwebjsConnectionService {
     return fs.existsSync(sessionPath) && fs.readdirSync(sessionPath).length > 0;
   }
 
+  async verifyAndPublishConnectionStatus(
+    input: Pick<
+      IBaileysConnectionState,
+      'connection_attempt_id' | 'debug_trace_id'
+    > = {}
+  ): Promise<IBaileysConnectionState> {
+    const client = this.client;
+    const connectionAttemptId =
+      input.connection_attempt_id ?? this.connectionAttemptId;
+    const debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+
+    if (!client || !this.isActiveClient(client)) {
+      const payload = this.state(undefined, undefined, {
+        status: Status.disconnected,
+        code: ECodeMessage.connectionLost,
+        worker_status_id: EWorkerStatus.offline,
+        connection_attempt_id: connectionAttemptId,
+        debug_trace_id: debugTraceId,
+        session_ready: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+        provider_state: 'client_unavailable',
+        degraded_reason: 'client_unavailable',
+      });
+
+      this.publishSub(payload, true);
+      await this.notifyWorkerStatusSafely(payload, 'verify_client_unavailable');
+      return payload;
+    }
+
+    const readiness = await this.healthCheckService.verifyCurrentSession();
+    if (!readiness.session_ready) {
+      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+      this.connectionEstablished = false;
+
+      const payload: IBaileysConnectionState = {
+        status: this.status,
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        code: this.code,
+        phone: this.getClientPhone(client),
+        worker_status_id: EWorkerStatus.disponible,
+        connection_attempt_id: connectionAttemptId,
+        debug_trace_id: debugTraceId,
+        session_ready: false,
+        can_send: readiness.can_send,
+        can_receive_runtime: readiness.can_receive_runtime,
+        authenticated: readiness.authenticated,
+        provider_state: readiness.provider_state,
+        degraded_reason:
+          readiness.degraded_reason ?? readiness.reason ?? 'session_not_ready',
+        last_probe_at: readiness.last_probe_at,
+        probe_latency_ms: readiness.probe_latency_ms,
+      };
+
+      this.healthCheckService.markStatusPublished(readiness);
+      await this.notifyWorkerStatusSafely(payload, 'verify_not_ready');
+      this.publishSub(payload, true);
+      return payload;
+    }
+
+    this.clearConnectionStateProbe();
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
+    this.qrHash = undefined;
+    this.retryCount = 0;
+    this.clearDisconnectRetryTimer();
+    this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
+    this.connectionEstablished = true;
+    this.incomingMessageService.markConnectionReady();
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      code: this.code,
+      phone: this.getClientPhone(client),
+      worker_status_id: EWorkerStatus.online,
+      connection_attempt_id: connectionAttemptId,
+      debug_trace_id: debugTraceId,
+      session_ready: true,
+      can_send: readiness.can_send,
+      can_receive_runtime: readiness.can_receive_runtime,
+      authenticated: readiness.authenticated,
+      provider_state: readiness.provider_state,
+      degraded_reason: readiness.degraded_reason,
+      last_probe_at: readiness.last_probe_at,
+      probe_latency_ms: readiness.probe_latency_ms,
+    };
+
+    this.healthCheckService.markStatusPublished(readiness);
+    const notified = await this.notifyWorkerStatusSafely(
+      payload,
+      'verify_ready'
+    );
+    if (notified) {
+      this.publishSub(payload, true);
+    } else {
+      console.warn(
+        '[WwebjsConnection] Connected status was not published because NotifyWorkerStatus failed',
+        {
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          connection_attempt_id: payload.connection_attempt_id,
+        }
+      );
+    }
+    this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
+    return payload;
+  }
+
   async connect(input: IBaileysConnection): Promise<IBaileysConnectionState> {
     const {
       initial_connection: initialConnection = false,
@@ -1969,9 +2081,20 @@ export class WwebjsConnectionService {
       probe_latency_ms: readiness.probe_latency_ms,
     };
 
-    this.publishSub(payload, true);
     this.healthCheckService.markStatusPublished(readiness);
-    void this.notifyWorkerStatusSafely(payload, source);
+    const notified = await this.notifyWorkerStatusSafely(payload, source);
+    if (notified) {
+      this.publishSub(payload, true);
+    } else {
+      console.warn(
+        '[WwebjsConnection] Connected status was not published because NotifyWorkerStatus failed',
+        {
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          connection_attempt_id: payload.connection_attempt_id,
+        }
+      );
+    }
     void this.logConnectionIpInLocal(client, proxy);
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
     this.pendingResolve?.(payload);
@@ -2267,24 +2390,16 @@ export class WwebjsConnectionService {
     );
   }
 
-  private reportConnected(): IBaileysConnectionState {
-    if (this.initialConnection) {
-      this.lastPayload = null;
-
-      const payload = {
-        status: this.status,
-        code: ECodeMessage.connectionEstablished,
-        worker_id: getWorker(),
-        account_id: getAccount(),
-        phone: getPhoneNumber(this.client?.info?.wid?._serialized),
-        worker_status_id: EWorkerStatus.online,
-      };
-
-      this.publishSub(payload);
-      void this.notifyWorkerStatusSafely(payload, 'report_connected');
+  private async reportConnected(): Promise<IBaileysConnectionState> {
+    if (!this.initialConnection) {
+      return this.state();
     }
 
-    return this.state();
+    this.lastPayload = null;
+    return this.verifyAndPublishConnectionStatus({
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
+    });
   }
 
   private setStatus(s: Status, c?: ECodeMessage): void {
@@ -2389,7 +2504,7 @@ export class WwebjsConnectionService {
   private async notifyWorkerStatusSafely(
     payload: IBaileysConnectionState,
     context: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     try {
       this.logDebug('wwebjs.provider.notify_status', {
@@ -2410,6 +2525,7 @@ export class WwebjsConnectionService {
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         payloadWithConnectionMetadata
       );
+      return true;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -2420,6 +2536,7 @@ export class WwebjsConnectionService {
         worker_status_id: payload.worker_status_id,
         error: errorMessage,
       });
+      return false;
     }
   }
 

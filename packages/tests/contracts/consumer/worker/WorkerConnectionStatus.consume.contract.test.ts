@@ -118,6 +118,43 @@ describe('Worker connection status consumers', () => {
     );
   });
 
+  it('delegates an already connected Baileys status to session readiness verification', async () => {
+    const connectedState = {
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      worker_id: 'worker-b',
+      account_id: 'account-b',
+      phone: '556199999999',
+      worker_status_id: EWorkerStatus.online,
+      session_ready: true,
+    };
+    const baileysService = {
+      isConnected: jest.fn(() => true),
+      verifyAndPublishConnectionStatus: jest.fn(async () => connectedState),
+    };
+    const centrifugoService = { publishSub: jest.fn() };
+    const sut = new WorkerConnectionStatusConsume(
+      baileysService as never,
+      { notifyWorkerStatus: jest.fn() } as never,
+      centrifugoService as never
+    );
+
+    const result = await sut.requestConnection({
+      ...payload,
+      connection_attempt_id: 'attempt-1',
+      debug_trace_id: 'trace-1',
+    });
+
+    expect(
+      baileysService.verifyAndPublishConnectionStatus
+    ).toHaveBeenCalledWith({
+      connection_attempt_id: 'attempt-1',
+      debug_trace_id: 'trace-1',
+    });
+    expect(centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(result).toBe(connectedState);
+  });
+
   it('restarts a stale WWebJS connecting socket immediately for user requests', async () => {
     const wwebjsService = {
       isConnected: jest.fn(() => false),
@@ -150,6 +187,43 @@ describe('Worker connection status consumers', () => {
         requested_by_user: true,
       })
     );
+  });
+
+  it('delegates an already connected WWebJS status to session readiness verification', async () => {
+    const connectedState = {
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      worker_id: 'worker-w',
+      account_id: 'account-w',
+      phone: '556188888888',
+      worker_status_id: EWorkerStatus.online,
+      session_ready: true,
+    };
+    const wwebjsService = {
+      isConnected: jest.fn(() => true),
+      verifyAndPublishConnectionStatus: jest.fn(async () => connectedState),
+    };
+    const centrifugoService = { publishSub: jest.fn() };
+    const sut = new WorkerConnectionStatusWwebjsConsume(
+      wwebjsService as never,
+      { notifyWorkerStatus: jest.fn() } as never,
+      centrifugoService as never
+    );
+
+    const result = await sut.requestConnection({
+      ...payload,
+      connection_attempt_id: 'attempt-2',
+      debug_trace_id: 'trace-2',
+    });
+
+    expect(wwebjsService.verifyAndPublishConnectionStatus).toHaveBeenCalledWith(
+      {
+        connection_attempt_id: 'attempt-2',
+        debug_trace_id: 'trace-2',
+      }
+    );
+    expect(centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(result).toBe(connectedState);
   });
 
   it('clears a stale WWebJS session before generating a queued QR', async () => {

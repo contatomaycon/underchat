@@ -10,7 +10,6 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -271,36 +270,13 @@ export class WorkerConnectionStatusConsume {
   private async publishConnectedStatus(
     request?: StatusConnectionWorkerRequest
   ): Promise<IBaileysConnectionState> {
-    const workerId = baileysEnvironment.baileysWorkerId;
-    const accountId = baileysEnvironment.baileysAccountId;
-
-    const payload: IBaileysConnectionState = {
-      status: EBaileysConnectionStatus.connected,
-      worker_id: workerId,
-      account_id: accountId,
-      code: ECodeMessage.connectionEstablished,
-      phone: getPhoneNumber(this.baileysService.socket?.user?.id),
-      worker_status_id: EWorkerStatus.online,
+    return this.baileysService.verifyAndPublishConnectionStatus({
       connection_attempt_id:
         request?.connection_attempt_id ??
         this.activeConnectionRequest?.connection_attempt_id,
       debug_trace_id:
         request?.debug_trace_id ?? this.activeConnectionRequest?.debug_trace_id,
-    };
-
-    await this.centrifugoService
-      .publishSub(workerCentrifugoQueue(accountId), payload)
-      .catch((error) => {
-        console.error('Error publishing connected status to Centrifugo:', {
-          error,
-          account_id: accountId,
-          worker_id: workerId,
-          connection_attempt_id:
-            this.activeConnectionRequest?.connection_attempt_id,
-        });
-      });
-
-    return payload;
+    });
   }
 
   private currentState(code: ECodeMessage): IBaileysConnectionState {

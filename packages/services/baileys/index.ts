@@ -45,6 +45,15 @@ export class BaileysService {
     return this.connection.hasSession();
   }
 
+  verifyAndPublishConnectionStatus(
+    input: Pick<
+      IBaileysConnectionState,
+      'connection_attempt_id' | 'debug_trace_id'
+    > = {}
+  ): Promise<IBaileysConnectionState> {
+    return this.connection.verifyAndPublishConnectionStatus(input);
+  }
+
   get socket(): ReturnType<typeof makeWASocket> | undefined {
     return this.connection.getSocket();
   }

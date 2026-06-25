@@ -673,7 +673,7 @@ export class BaileysConnectionService {
 
   private handleExistingConnection(): Promise<IBaileysConnectionState> | null {
     if (this.connected) {
-      return Promise.resolve(this.reportConnected());
+      return this.reportConnected();
     }
 
     if (this.connecting) {
@@ -684,7 +684,7 @@ export class BaileysConnectionService {
     }
 
     if (this.status === Status.connected) {
-      return Promise.resolve(this.reportConnected());
+      return this.reportConnected();
     }
 
     return null;
@@ -1462,10 +1462,21 @@ export class BaileysConnectionService {
       probe_latency_ms: readiness.probe_latency_ms,
     };
 
-    this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
     this.healthCheckService.markStatusPublished(readiness);
-    void this.notifyWorkerStatusSafely(payload, 'open');
+    const notified = await this.notifyWorkerStatusSafely(payload, 'open');
+    if (notified) {
+      this.publishSub(payload);
+    } else {
+      console.warn(
+        '[BaileysConnection] Connected status was not published because NotifyWorkerStatus failed',
+        {
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          connection_attempt_id: payload.connection_attempt_id,
+        }
+      );
+    }
     void this.logConnectionIpInLocal();
 
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
@@ -1824,6 +1835,94 @@ export class BaileysConnectionService {
     return fs.existsSync(getFolder()) && fs.readdirSync(getFolder()).length > 0;
   }
 
+  async verifyAndPublishConnectionStatus(
+    input: Pick<
+      IBaileysConnectionState,
+      'connection_attempt_id' | 'debug_trace_id'
+    > = {}
+  ): Promise<IBaileysConnectionState> {
+    const connectionAttemptId =
+      input.connection_attempt_id ?? this.connectionAttemptId;
+    const debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+    const readiness = await this.healthCheckService.verifyCurrentSession();
+
+    if (!readiness.session_ready) {
+      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+      this.connectionEstablished = false;
+
+      const payload: IBaileysConnectionState = {
+        status: this.status,
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        code: this.code,
+        phone: getPhoneNumber(this.socket?.user?.id),
+        worker_status_id: EWorkerStatus.disponible,
+        connection_attempt_id: connectionAttemptId,
+        debug_trace_id: debugTraceId,
+        session_ready: false,
+        can_send: readiness.can_send,
+        can_receive_runtime: readiness.can_receive_runtime,
+        authenticated: readiness.authenticated,
+        provider_state: readiness.provider_state,
+        degraded_reason:
+          readiness.degraded_reason ?? readiness.reason ?? 'session_not_ready',
+        last_probe_at: readiness.last_probe_at,
+        probe_latency_ms: readiness.probe_latency_ms,
+      };
+
+      this.healthCheckService.markStatusPublished(readiness);
+      await this.notifyWorkerStatusSafely(payload, 'verify_not_ready');
+      this.publishSub(payload, true);
+      return payload;
+    }
+
+    this.resetQrReadSession();
+    this.qrReadSessionLocked = false;
+    this.qrHash = undefined;
+    this.clearReconnectRetryTimer();
+    this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
+    this.connectionEstablished = true;
+
+    const payload: IBaileysConnectionState = {
+      status: this.status,
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      code: this.code,
+      phone: getPhoneNumber(this.socket?.user?.id),
+      worker_status_id: EWorkerStatus.online,
+      connection_attempt_id: connectionAttemptId,
+      debug_trace_id: debugTraceId,
+      session_ready: true,
+      can_send: readiness.can_send,
+      can_receive_runtime: readiness.can_receive_runtime,
+      authenticated: readiness.authenticated,
+      provider_state: readiness.provider_state,
+      degraded_reason: readiness.degraded_reason,
+      last_probe_at: readiness.last_probe_at,
+      probe_latency_ms: readiness.probe_latency_ms,
+    };
+
+    this.healthCheckService.markStatusPublished(readiness);
+    const notified = await this.notifyWorkerStatusSafely(
+      payload,
+      'verify_ready'
+    );
+    if (notified) {
+      this.publishSub(payload, true);
+    } else {
+      console.warn(
+        '[BaileysConnection] Connected status was not published because NotifyWorkerStatus failed',
+        {
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          connection_attempt_id: payload.connection_attempt_id,
+        }
+      );
+    }
+    this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
+    return payload;
+  }
+
   private async restoreWithRetries(): Promise<IBaileysConnectionState> {
     try {
       return await this.connect({
@@ -1895,7 +1994,7 @@ export class BaileysConnectionService {
   private async notifyWorkerStatusSafely(
     payload: IBaileysConnectionState,
     context: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const payloadWithConnectionMetadata = this.withConnectionMetadata(payload);
     try {
       this.logDebug('baileys.provider.notify_status', {
@@ -1916,6 +2015,7 @@ export class BaileysConnectionService {
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         payloadWithConnectionMetadata
       );
+      return true;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -1926,6 +2026,7 @@ export class BaileysConnectionService {
         worker_status_id: payload.worker_status_id,
         error: errorMessage,
       });
+      return false;
     }
   }
 
@@ -2050,24 +2151,16 @@ export class BaileysConnectionService {
     }
   }
 
-  private reportConnected(): IBaileysConnectionState {
-    if (this.initialConnection) {
-      this.lastPayload = null;
-
-      const payload = {
-        status: this.status,
-        code: ECodeMessage.connectionEstablished,
-        worker_id: getWorker(),
-        account_id: getAccount(),
-        phone: getPhoneNumber(this.socket?.user?.id),
-        worker_status_id: EWorkerStatus.online,
-      };
-
-      this.publishSub(payload);
-      void this.notifyWorkerStatusSafely(payload, 'report_connected');
+  private async reportConnected(): Promise<IBaileysConnectionState> {
+    if (!this.initialConnection) {
+      return this.state();
     }
 
-    return this.state();
+    this.lastPayload = null;
+    return this.verifyAndPublishConnectionStatus({
+      connection_attempt_id: this.connectionAttemptId,
+      debug_trace_id: this.debugTraceId,
+    });
   }
 
   private prepareFolder() {
