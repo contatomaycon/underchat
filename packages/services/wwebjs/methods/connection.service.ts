@@ -34,6 +34,7 @@ import {
   ConnectionLifecycleDebugService,
   isConnectionLifecycleDebugEnabled,
 } from '@core/services/connectionLifecycleDebug.service';
+import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const RETRY_DELAY = 60_000;
@@ -275,6 +276,7 @@ export class WwebjsConnectionService {
     context: ConnectionLifecycleDebugContext
   ): void {
     void this.connectionLifecycleDebugService.log(event, context);
+    logLocalConnectionStatus(event, context);
   }
 
   private configureHealthCheck(): void {
@@ -2508,6 +2510,14 @@ export class WwebjsConnectionService {
       status: payloadWithConnectionMetadata.status,
       code: payloadWithConnectionMetadata.code,
       reason: payloadWithConnectionMetadata.reason,
+      worker_status_id: payloadWithConnectionMetadata.worker_status_id,
+      session_ready: payloadWithConnectionMetadata.session_ready,
+      can_send: payloadWithConnectionMetadata.can_send,
+      can_receive_runtime: payloadWithConnectionMetadata.can_receive_runtime,
+      authenticated: payloadWithConnectionMetadata.authenticated,
+      provider_state: payloadWithConnectionMetadata.provider_state,
+      degraded_reason: payloadWithConnectionMetadata.degraded_reason,
+      phone: payloadWithConnectionMetadata.phone,
       qrcode: payloadWithConnectionMetadata.qrcode,
       pairing_code: payloadWithConnectionMetadata.pairing_code,
       force,
@@ -2556,6 +2566,14 @@ export class WwebjsConnectionService {
         status: payloadWithConnectionMetadata.status,
         code: payloadWithConnectionMetadata.code,
         reason: context,
+        worker_status_id: payloadWithConnectionMetadata.worker_status_id,
+        session_ready: payloadWithConnectionMetadata.session_ready,
+        can_send: payloadWithConnectionMetadata.can_send,
+        can_receive_runtime: payloadWithConnectionMetadata.can_receive_runtime,
+        authenticated: payloadWithConnectionMetadata.authenticated,
+        provider_state: payloadWithConnectionMetadata.provider_state,
+        degraded_reason: payloadWithConnectionMetadata.degraded_reason,
+        phone: payloadWithConnectionMetadata.phone,
         qrcode: payloadWithConnectionMetadata.qrcode,
         pairing_code: payloadWithConnectionMetadata.pairing_code,
       });

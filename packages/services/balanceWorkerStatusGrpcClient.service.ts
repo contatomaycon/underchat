@@ -17,6 +17,7 @@ import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces
 import { normalizeTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
+import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
 
 const protoPath = resolveProtoPath('worker_command.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -90,6 +91,28 @@ export class BalanceWorkerStatusGrpcClientService {
         pairing_code: payload.pairing_code,
       }
     );
+    logLocalConnectionStatus('worker.notify_status_grpc.call', {
+      layer: payload.worker_type_id ?? 'worker',
+      provider: payload.worker_type_id,
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: payload.worker_type_id,
+      worker_status_id: workerStatusId,
+      status: payload.status,
+      code: payload.code,
+      session_ready: payload.session_ready,
+      can_send: payload.can_send,
+      can_receive_runtime: payload.can_receive_runtime,
+      authenticated: payload.authenticated,
+      provider_state: payload.provider_state,
+      degraded_reason: payload.degraded_reason,
+      reason: payload.reason,
+      phone: payload.phone,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+      qrcode: payload.qrcode,
+      pairing_code: payload.pairing_code,
+    });
     await new Promise<void>((resolve, reject) => {
       (client as any).NotifyWorkerStatus(
         protoPayload,
@@ -98,6 +121,20 @@ export class BalanceWorkerStatusGrpcClientService {
         (err: ServiceError | null) => {
           client.close();
           if (err) {
+            logLocalConnectionStatus('worker.notify_status_grpc.error', {
+              layer: payload.worker_type_id ?? 'worker',
+              provider: payload.worker_type_id,
+              worker_id: workerId,
+              account_id: accountId,
+              worker_type_id: payload.worker_type_id,
+              worker_status_id: workerStatusId,
+              status: payload.status,
+              code: payload.code,
+              session_ready: payload.session_ready,
+              reason: err.message,
+              connection_attempt_id: payload.connection_attempt_id,
+              runtime_generation: payload.runtime_generation,
+            });
             reject(err);
             return;
           }
@@ -120,6 +157,26 @@ export class BalanceWorkerStatusGrpcClientService {
         reason: payload.reason,
       }
     );
+    logLocalConnectionStatus('worker.notify_status_grpc.ok', {
+      layer: payload.worker_type_id ?? 'worker',
+      provider: payload.worker_type_id,
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: payload.worker_type_id,
+      worker_status_id: workerStatusId,
+      status: payload.status,
+      code: payload.code,
+      session_ready: payload.session_ready,
+      can_send: payload.can_send,
+      can_receive_runtime: payload.can_receive_runtime,
+      authenticated: payload.authenticated,
+      provider_state: payload.provider_state,
+      degraded_reason: payload.degraded_reason,
+      reason: payload.reason,
+      phone: payload.phone,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+    });
   }
 
   async registerS3BackupFallbackUpload(

@@ -22,6 +22,7 @@ import { AccountService } from './account.service';
 import { IPlanAccountStatus } from '@core/common/interfaces/IPlanAccountStatus';
 import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
+import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
 
 const mapConcurrent = async <T, R>(
   items: T[],
@@ -212,7 +213,7 @@ export class WorkerMonitorService {
     }
 
     const connectionHealthy = await this.checkConnection(
-      workerId,
+      worker,
       server.server_id,
       sshConfig
     );
@@ -355,6 +356,15 @@ export class WorkerMonitorService {
     const tracker = this.connectionFailureTrackers.get(worker.worker_id);
 
     if (connectionHealthy) {
+      logLocalConnectionStatus('service.monitor.connection_check.healthy', {
+        layer: 'service.monitor',
+        worker_id: worker.worker_id,
+        account_id: worker.account_id,
+        worker_type_id: worker.worker_type_id,
+        worker_status_id: worker.worker_status_id,
+        connection_healthy: true,
+        had_tracker: Boolean(tracker),
+      });
       if (tracker) {
         this.connectionFailureTrackers.delete(worker.worker_id);
       }
@@ -383,6 +393,19 @@ export class WorkerMonitorService {
         failureCount: 1,
         lastCheckTimestamp: now,
       });
+      logLocalConnectionStatus('service.monitor.connection_check.failure', {
+        layer: 'service.monitor',
+        worker_id: worker.worker_id,
+        account_id: worker.account_id,
+        worker_type_id: worker.worker_type_id,
+        worker_status_id: worker.worker_status_id,
+        connection_healthy: false,
+        failure_count: 1,
+        max_failures: this.maxConnectionFailures,
+        started_continuous_check: !this.activeContinuousChecks.has(
+          worker.worker_id
+        ),
+      });
 
       if (!this.activeContinuousChecks.has(worker.worker_id)) {
         this.activeContinuousChecks.add(worker.worker_id);
@@ -402,6 +425,16 @@ export class WorkerMonitorService {
     this.connectionFailureTrackers.set(worker.worker_id, {
       failureCount: newFailureCount,
       lastCheckTimestamp: now,
+    });
+    logLocalConnectionStatus('service.monitor.connection_check.failure', {
+      layer: 'service.monitor',
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      worker_status_id: worker.worker_status_id,
+      connection_healthy: false,
+      failure_count: newFailureCount,
+      max_failures: this.maxConnectionFailures,
     });
 
     if (newFailureCount >= this.maxConnectionFailures) {
@@ -506,7 +539,7 @@ export class WorkerMonitorService {
       }
 
       const connectionHealthy = await this.checkConnection(
-        worker.worker_id,
+        currentWorker,
         serverId,
         sshConfig
       );
@@ -544,6 +577,16 @@ export class WorkerMonitorService {
     connectionStatus: EBaileysConnectionStatus
   ): Promise<void> => {
     await this.workerService.updateStatusWorker(worker.worker_id, status);
+    logLocalConnectionStatus('service.monitor.status_update', {
+      layer: 'service.monitor',
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      previous_worker_status_id: worker.worker_status_id,
+      worker_status_id: status,
+      status: connectionStatus,
+      code,
+    });
 
     const payload: IBaileysConnectionState = {
       code,
@@ -647,10 +690,11 @@ export class WorkerMonitorService {
   };
 
   private readonly checkConnection = async (
-    workerId: string,
+    worker: IWorkerMonitor,
     serverId: string,
     sshConfig: ConnectConfig
   ): Promise<boolean> => {
+    const workerId = worker.worker_id;
     const command = String.raw`bash -c "docker exec ${workerId} sh -c 'curl -s -w \"__HTTP_STATUS__%{http_code}\" http://127.0.0.1:3005/v1/connection/health/check'"`;
 
     try {
@@ -665,10 +709,36 @@ export class WorkerMonitorService {
       const health = this.parseHttpResponse(rawOutput);
       const code = health.code;
       const healthy = code === 200 && this.hasSessionReadyBody(health.body);
-      if (!healthy) {
-      }
+      logLocalConnectionStatus('service.monitor.connection_health_http', {
+        layer: 'service.monitor',
+        worker_id: worker.worker_id,
+        account_id: worker.account_id,
+        worker_type_id: worker.worker_type_id,
+        worker_status_id: worker.worker_status_id,
+        status_code: code,
+        connection_healthy: healthy,
+        session_ready: this.readBooleanBody(health.body, 'session_ready'),
+        connected: this.readBooleanBody(health.body, 'connected'),
+        can_send: this.readBooleanBody(health.body, 'can_send'),
+        can_receive_runtime: this.readBooleanBody(
+          health.body,
+          'can_receive_runtime'
+        ),
+        authenticated: this.readBooleanBody(health.body, 'authenticated'),
+        provider_state: this.readStringBody(health.body, 'provider_state'),
+        degraded_reason: this.readStringBody(health.body, 'degraded_reason'),
+        kafka_unhealthy: this.readKafkaUnhealthy(health.body),
+      });
       return healthy;
-    } catch {
+    } catch (error) {
+      logLocalConnectionStatus('service.monitor.connection_health_error', {
+        layer: 'service.monitor',
+        worker_id: worker.worker_id,
+        account_id: worker.account_id,
+        worker_type_id: worker.worker_type_id,
+        worker_status_id: worker.worker_status_id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
       return false;
     }
   };
@@ -725,6 +795,30 @@ export class WorkerMonitorService {
     };
 
     return payload.session_ready === true && payload.connected === true;
+  };
+
+  private readonly readBooleanBody = (
+    body: unknown,
+    key: string
+  ): boolean | undefined => {
+    if (!body || typeof body !== 'object') {
+      return undefined;
+    }
+
+    const value = (body as Record<string, unknown>)[key];
+    return typeof value === 'boolean' ? value : undefined;
+  };
+
+  private readonly readStringBody = (
+    body: unknown,
+    key: string
+  ): string | undefined => {
+    if (!body || typeof body !== 'object') {
+      return undefined;
+    }
+
+    const value = (body as Record<string, unknown>)[key];
+    return typeof value === 'string' ? value : undefined;
   };
 
   private readonly readKafkaUnhealthy = (body: unknown): boolean => {

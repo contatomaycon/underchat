@@ -30,6 +30,7 @@ import {
   isConnectionLifecycleDebugEnabled,
   logConnectionLifecycleDebug,
 } from '@/@webcore/utils/connectionLifecycleDebug';
+import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
 
 definePage({
   meta: {
@@ -460,6 +461,25 @@ const workerStatusHandler = (
   data: IBaileysConnectionState,
   ctx?: { offset?: number }
 ) => {
+  logLocalConnectionStatus('web.channels.worker_status.received', {
+    layer: 'web.channels',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    can_send: data.can_send,
+    can_receive_runtime: data.can_receive_runtime,
+    authenticated: data.authenticated,
+    provider_state: data.provider_state,
+    degraded_reason: data.degraded_reason,
+    phone: data.phone,
+    connection_attempt_id: data.connection_attempt_id,
+    runtime_generation: data.runtime_generation,
+    offset: ctx?.offset,
+  });
   logConnectionLifecycleDebug('web.centrifugo.worker_status_received', {
     trace_id:
       data.debug_trace_id ?? channelConnectionDebugTraceId.value ?? undefined,
@@ -477,6 +497,16 @@ const workerStatusHandler = (
     offset: ctx?.offset,
   });
   if (!shouldProcessWorkerStatusEvent(data, ctx)) {
+    logLocalConnectionStatus('web.channels.worker_status.skipped_offset', {
+      layer: 'web.channels',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      offset: ctx?.offset,
+    });
     logConnectionLifecycleDebug('web.centrifugo.worker_status_skipped_offset', {
       trace_id:
         data.debug_trace_id ?? channelConnectionDebugTraceId.value ?? undefined,
@@ -489,6 +519,25 @@ const workerStatusHandler = (
 
   const applied = channelsStore.updateStatusChannel(data);
   if (!applied) {
+    logLocalConnectionStatus('web.channels.worker_status.ignored', {
+      layer: 'web.channels',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      can_send: data.can_send,
+      can_receive_runtime: data.can_receive_runtime,
+      authenticated: data.authenticated,
+      provider_state: data.provider_state,
+      degraded_reason: data.degraded_reason,
+      phone: data.phone,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      offset: ctx?.offset,
+    });
     logConnectionLifecycleDebug('web.centrifugo.worker_status_ignored', {
       trace_id:
         data.debug_trace_id ?? channelConnectionDebugTraceId.value ?? undefined,
@@ -508,6 +557,27 @@ const workerStatusHandler = (
     });
     return;
   }
+
+  const channel = channelsStore.list.find(
+    (item) => item.account?.id === data.account_id && item.id === data.worker_id
+  );
+  logLocalConnectionStatus('web.channels.worker_status.applied', {
+    layer: 'web.channels',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    phone: data.phone,
+    list_worker_status_id: channel?.status?.id,
+    list_phone: channel?.number ?? null,
+    list_connection_date: channel?.connection_date ?? null,
+    connection_attempt_id: data.connection_attempt_id,
+    runtime_generation: data.runtime_generation,
+    offset: ctx?.offset,
+  });
 
   if (
     data.worker_id === channelConnectionChannel.value &&

@@ -100,6 +100,26 @@ type historySyncCandidate struct {
 
 var ErrWhatsAppNotReady = errors.New("whatsmeow connection is not ready")
 
+func localConnectionStatusLog(event string, fields map[string]any) {
+	if strings.ToUpper(os.Getenv("APP_ENVIRONMENT")) != "LOCAL" {
+		return
+	}
+	if fields == nil {
+		fields = map[string]any{}
+	}
+	fields["event"] = event
+	fields["timestamp"] = time.Now().UTC().Format(time.RFC3339Nano)
+	if _, ok := fields["layer"]; !ok {
+		fields["layer"] = "worker_whatsmeow"
+	}
+	payload, err := json.Marshal(fields)
+	if err != nil {
+		log.Printf("[LOCAL_CONNECTION_STATUS] {\"event\":\"%s\",\"marshal_error\":\"%s\"}", event, err.Error())
+		return
+	}
+	log.Printf("[LOCAL_CONNECTION_STATUS] %s", payload)
+}
+
 func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, centrifugo *CentrifugoClient, balance *BalanceGRPCClient, storage *StorageClient, redisClient *redis.Client, debugLoggers ...*ConnectionLifecycleDebugLogger) (*WhatsAppManager, error) {
 	var debug *ConnectionLifecycleDebugLogger
 	if len(debugLoggers) > 0 {
@@ -567,6 +587,26 @@ func (m *WhatsAppManager) enrichReadiness(state *ConnectionState) {
 	state.ProbeLatencyMS = healthInt(health, "probe_latency_ms")
 
 	if state.WorkerStatusID == WorkerStatusOnline && !state.SessionReady {
+		localConnectionStatusLog("whatsmeow.readiness.online_downgraded", map[string]any{
+			"layer":                 "worker_whatsmeow.readiness",
+			"provider":              "whatsmeow",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"worker_status_id":      state.WorkerStatusID,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"session_ready":         state.SessionReady,
+			"can_send":              state.CanSend,
+			"can_receive_runtime":   state.CanReceiveRuntime,
+			"authenticated":         state.Authenticated,
+			"provider_state":        state.ProviderState,
+			"degraded_reason":       state.DegradedReason,
+			"reason":                firstNonEmpty(state.Reason, "session_not_ready"),
+			"phone":                 state.Phone,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+		})
 		state.WorkerStatusID = WorkerStatusDisponible
 		state.Status = "connecting"
 		if state.Code == CodeConnectionEstablished {
@@ -623,6 +663,23 @@ func (m *WhatsAppManager) isTerminalSessionInvalidated() bool {
 
 func (m *WhatsAppManager) publishConnectedWhenReady(ctx context.Context, reason string, phone string, isNewLogin bool) bool {
 	health := m.waitForSessionReady(ctx, reason)
+	localConnectionStatusLog("whatsmeow.connected.readiness_result", map[string]any{
+		"layer":                 "worker_whatsmeow.readiness",
+		"provider":              "whatsmeow",
+		"worker_id":             m.cfg.WorkerID,
+		"account_id":            m.cfg.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"session_ready":         healthBool(health, "session_ready"),
+		"can_send":              healthBool(health, "can_send"),
+		"can_receive_runtime":   healthBool(health, "can_receive_runtime"),
+		"authenticated":         healthBool(health, "authenticated"),
+		"provider_state":        healthString(health, "provider_state"),
+		"degraded_reason":       healthString(health, "degraded_reason"),
+		"reason":                reason,
+		"phone":                 phone,
+		"connection_attempt_id": m.getConnectionAttemptID(),
+		"runtime_generation":    m.cfg.RuntimeGeneration,
+	})
 	if m.isTerminalSessionInvalidated() {
 		log.Printf("whatsmeow connected publish skipped after terminal session invalidation worker_id=%s reason=%s", m.cfg.WorkerID, reason)
 		return false
@@ -1655,6 +1712,16 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 	switch event := evt.(type) {
 	case *events.Connected:
 		log.Printf("whatsmeow event connected worker_id=%s", m.cfg.WorkerID)
+		localConnectionStatusLog("whatsmeow.event.connected", map[string]any{
+			"layer":              "worker_whatsmeow.event",
+			"provider":           "whatsmeow",
+			"worker_id":          m.cfg.WorkerID,
+			"account_id":         m.cfg.AccountID,
+			"worker_type_id":     WorkerTypeWhatsmeow,
+			"status":             "connected",
+			"code":               CodeConnectionEstablished,
+			"runtime_generation": m.cfg.RuntimeGeneration,
+		})
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
 		client := m.getClient()
@@ -1674,6 +1741,18 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		go m.publishConnectedWhenReady(context.Background(), "connected-event", phone, false)
 	case *events.Disconnected:
 		log.Printf("whatsmeow event disconnected worker_id=%s", m.cfg.WorkerID)
+		localConnectionStatusLog("whatsmeow.event.disconnected", map[string]any{
+			"layer":              "worker_whatsmeow.event",
+			"provider":           "whatsmeow",
+			"worker_id":          m.cfg.WorkerID,
+			"account_id":         m.cfg.AccountID,
+			"worker_type_id":     WorkerTypeWhatsmeow,
+			"status":             "connecting",
+			"code":               CodeAwaitConnection,
+			"worker_status_id":   WorkerStatusDisponible,
+			"reason":             "disconnected_event",
+			"runtime_generation": m.cfg.RuntimeGeneration,
+		})
 		if m.isQRCodeReadSessionLocked() {
 			log.Printf("whatsmeow disconnected event ignored after qr limit worker_id=%s", m.cfg.WorkerID)
 			return
@@ -1688,6 +1767,19 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 	case *events.LoggedOut:
 		log.Printf("whatsmeow event logged_out worker_id=%s on_connect=%t reason=%s", m.cfg.WorkerID, event.OnConnect, event.Reason.String())
+		localConnectionStatusLog("whatsmeow.event.logged_out", map[string]any{
+			"layer":              "worker_whatsmeow.event",
+			"provider":           "whatsmeow",
+			"worker_id":          m.cfg.WorkerID,
+			"account_id":         m.cfg.AccountID,
+			"worker_type_id":     WorkerTypeWhatsmeow,
+			"status":             "disconnected",
+			"code":               CodeLoggedOut,
+			"worker_status_id":   WorkerStatusMismatched,
+			"reason":             event.Reason.String(),
+			"on_connect":         event.OnConnect,
+			"runtime_generation": m.cfg.RuntimeGeneration,
+		})
 		m.clearLoginArtifacts()
 		if m.startFreshLoginAfterStoredSessionLogout() {
 			return
@@ -1701,6 +1793,19 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.publishStateDisconnectedByUser(context.Background(), CodeLoggedOut, WorkerStatusMismatched)
 	case *events.ConnectFailure:
 		log.Printf("whatsmeow event connect_failure worker_id=%s reason=%s message=%s", m.cfg.WorkerID, event.Reason.String(), event.Message)
+		localConnectionStatusLog("whatsmeow.event.connect_failure", map[string]any{
+			"layer":              "worker_whatsmeow.event",
+			"provider":           "whatsmeow",
+			"worker_id":          m.cfg.WorkerID,
+			"account_id":         m.cfg.AccountID,
+			"worker_type_id":     WorkerTypeWhatsmeow,
+			"status":             "connecting",
+			"code":               CodeAwaitConnection,
+			"worker_status_id":   WorkerStatusDisponible,
+			"reason":             event.Reason.String(),
+			"message":            event.Message,
+			"runtime_generation": m.cfg.RuntimeGeneration,
+		})
 		m.clearLoginArtifacts()
 		if event.Reason.IsLoggedOut() {
 			m.mu.Lock()
@@ -1726,6 +1831,18 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 	case *events.StreamReplaced:
 		log.Printf("whatsmeow event stream_replaced worker_id=%s", m.cfg.WorkerID)
+		localConnectionStatusLog("whatsmeow.event.stream_replaced", map[string]any{
+			"layer":              "worker_whatsmeow.event",
+			"provider":           "whatsmeow",
+			"worker_id":          m.cfg.WorkerID,
+			"account_id":         m.cfg.AccountID,
+			"worker_type_id":     WorkerTypeWhatsmeow,
+			"status":             "disconnected",
+			"code":               CodeConnectionReplaced,
+			"worker_status_id":   WorkerStatusMismatched,
+			"reason":             "stream_replaced",
+			"runtime_generation": m.cfg.RuntimeGeneration,
+		})
 		m.clearLoginArtifacts()
 		m.clearFreshLoginFallback()
 		m.mu.Lock()
@@ -1921,6 +2038,33 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		state.PairingCode = qrOrPair
 	}
 	m.enrichReadiness(&state)
+	localConnectionStatusLog("whatsmeow.provider.publish_state", map[string]any{
+		"layer":                 "worker_whatsmeow.provider",
+		"provider":              "whatsmeow",
+		"worker_id":             state.WorkerID,
+		"account_id":            state.AccountID,
+		"worker_type_id":        state.WorkerTypeID,
+		"worker_status_id":      state.WorkerStatusID,
+		"status":                state.Status,
+		"code":                  state.Code,
+		"session_ready":         state.SessionReady,
+		"can_send":              state.CanSend,
+		"can_receive_runtime":   state.CanReceiveRuntime,
+		"authenticated":         state.Authenticated,
+		"provider_state":        state.ProviderState,
+		"degraded_reason":       state.DegradedReason,
+		"reason":                state.Reason,
+		"phone":                 state.Phone,
+		"connection_attempt_id": state.ConnectionAttemptID,
+		"runtime_generation":    state.RuntimeGeneration,
+		"has_qr":                state.QRCode != "",
+		"qr_length":             len(state.QRCode),
+		"has_pairing_code":      state.PairingCode != "",
+		"pairing_code_length":   len(state.PairingCode),
+		"is_new_login":          isNewLogin,
+		"attempt":               state.Attempt,
+		"max_attempts":          state.MaxAttempts,
+	})
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t is_new_login=%t attempt=%d max_attempts=%d connection_attempt_id=%s",
 		m.cfg.WorkerID,
@@ -1935,6 +2079,20 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		state.ConnectionAttemptID,
 	)
 	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+		localConnectionStatusLog("whatsmeow.provider.centrifugo_publish.error", map[string]any{
+			"layer":                 "worker_whatsmeow.provider",
+			"provider":              "whatsmeow",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"worker_status_id":      state.WorkerStatusID,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"session_ready":         state.SessionReady,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+			"reason":                err.Error(),
+		})
 		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.error", map[string]any{
 			"trace_id":              state.DebugTraceID,
 			"layer":                 "worker_whatsmeow.provider",
@@ -1951,6 +2109,20 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 		})
 		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
 	} else {
+		localConnectionStatusLog("whatsmeow.provider.centrifugo_publish.ok", map[string]any{
+			"layer":                 "worker_whatsmeow.provider",
+			"provider":              "whatsmeow",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"worker_status_id":      state.WorkerStatusID,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"session_ready":         state.SessionReady,
+			"phone":                 state.Phone,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+		})
 		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.ok", map[string]any{
 			"trace_id":              state.DebugTraceID,
 			"layer":                 "worker_whatsmeow.provider",
@@ -1967,7 +2139,42 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 	}
 	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible || state.WorkerStatusID == WorkerStatusMismatched {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
+			localConnectionStatusLog("whatsmeow.provider.balance_notify.error", map[string]any{
+				"layer":                 "worker_whatsmeow.provider",
+				"provider":              "whatsmeow",
+				"worker_id":             state.WorkerID,
+				"account_id":            state.AccountID,
+				"worker_type_id":        state.WorkerTypeID,
+				"worker_status_id":      state.WorkerStatusID,
+				"status":                state.Status,
+				"code":                  state.Code,
+				"session_ready":         state.SessionReady,
+				"phone":                 state.Phone,
+				"connection_attempt_id": state.ConnectionAttemptID,
+				"runtime_generation":    state.RuntimeGeneration,
+				"reason":                err.Error(),
+			})
 			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, state.Code, state.WorkerStatusID, err)
+		} else {
+			localConnectionStatusLog("whatsmeow.provider.balance_notify.ok", map[string]any{
+				"layer":                 "worker_whatsmeow.provider",
+				"provider":              "whatsmeow",
+				"worker_id":             state.WorkerID,
+				"account_id":            state.AccountID,
+				"worker_type_id":        state.WorkerTypeID,
+				"worker_status_id":      state.WorkerStatusID,
+				"status":                state.Status,
+				"code":                  state.Code,
+				"session_ready":         state.SessionReady,
+				"can_send":              state.CanSend,
+				"can_receive_runtime":   state.CanReceiveRuntime,
+				"authenticated":         state.Authenticated,
+				"provider_state":        state.ProviderState,
+				"degraded_reason":       state.DegradedReason,
+				"phone":                 state.Phone,
+				"connection_attempt_id": state.ConnectionAttemptID,
+				"runtime_generation":    state.RuntimeGeneration,
+			})
 		}
 	}
 	if code == CodeConnectionEstablished || code == CodeLoggedOut || code == CodeConnectionClosed {
@@ -1992,6 +2199,25 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		WarmPoolID:          m.cfg.WarmPoolID,
 	}
 	m.enrichReadiness(&state)
+	localConnectionStatusLog("whatsmeow.provider.publish_state_disconnected_user", map[string]any{
+		"layer":                 "worker_whatsmeow.provider",
+		"provider":              "whatsmeow",
+		"worker_id":             state.WorkerID,
+		"account_id":            state.AccountID,
+		"worker_type_id":        state.WorkerTypeID,
+		"worker_status_id":      state.WorkerStatusID,
+		"status":                state.Status,
+		"code":                  state.Code,
+		"session_ready":         state.SessionReady,
+		"can_send":              state.CanSend,
+		"can_receive_runtime":   state.CanReceiveRuntime,
+		"authenticated":         state.Authenticated,
+		"provider_state":        state.ProviderState,
+		"degraded_reason":       state.DegradedReason,
+		"disconnected_user":     true,
+		"connection_attempt_id": state.ConnectionAttemptID,
+		"runtime_generation":    state.RuntimeGeneration,
+	})
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false connection_attempt_id=%s",
 		m.cfg.WorkerID,
@@ -2001,6 +2227,21 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		state.ConnectionAttemptID,
 	)
 	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
+		localConnectionStatusLog("whatsmeow.provider.centrifugo_publish.error", map[string]any{
+			"layer":                 "worker_whatsmeow.provider",
+			"provider":              "whatsmeow",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"worker_status_id":      state.WorkerStatusID,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"session_ready":         state.SessionReady,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+			"disconnected_user":     true,
+			"reason":                err.Error(),
+		})
 		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.error", map[string]any{
 			"trace_id":              state.DebugTraceID,
 			"layer":                 "worker_whatsmeow.provider",
@@ -2015,6 +2256,20 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		})
 		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, state.Status, code, err)
 	} else {
+		localConnectionStatusLog("whatsmeow.provider.centrifugo_publish.ok", map[string]any{
+			"layer":                 "worker_whatsmeow.provider",
+			"provider":              "whatsmeow",
+			"worker_id":             state.WorkerID,
+			"account_id":            state.AccountID,
+			"worker_type_id":        state.WorkerTypeID,
+			"worker_status_id":      state.WorkerStatusID,
+			"status":                state.Status,
+			"code":                  state.Code,
+			"session_ready":         state.SessionReady,
+			"connection_attempt_id": state.ConnectionAttemptID,
+			"runtime_generation":    state.RuntimeGeneration,
+			"disconnected_user":     true,
+		})
 		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.ok", map[string]any{
 			"trace_id":              state.DebugTraceID,
 			"layer":                 "worker_whatsmeow.provider",
@@ -2029,7 +2284,37 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 	}
 	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible || state.WorkerStatusID == WorkerStatusMismatched {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
+			localConnectionStatusLog("whatsmeow.provider.balance_notify.error", map[string]any{
+				"layer":                 "worker_whatsmeow.provider",
+				"provider":              "whatsmeow",
+				"worker_id":             state.WorkerID,
+				"account_id":            state.AccountID,
+				"worker_type_id":        state.WorkerTypeID,
+				"worker_status_id":      state.WorkerStatusID,
+				"status":                state.Status,
+				"code":                  state.Code,
+				"session_ready":         state.SessionReady,
+				"connection_attempt_id": state.ConnectionAttemptID,
+				"runtime_generation":    state.RuntimeGeneration,
+				"disconnected_user":     true,
+				"reason":                err.Error(),
+			})
 			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, state.Code, state.WorkerStatusID, err)
+		} else {
+			localConnectionStatusLog("whatsmeow.provider.balance_notify.ok", map[string]any{
+				"layer":                 "worker_whatsmeow.provider",
+				"provider":              "whatsmeow",
+				"worker_id":             state.WorkerID,
+				"account_id":            state.AccountID,
+				"worker_type_id":        state.WorkerTypeID,
+				"worker_status_id":      state.WorkerStatusID,
+				"status":                state.Status,
+				"code":                  state.Code,
+				"session_ready":         state.SessionReady,
+				"connection_attempt_id": state.ConnectionAttemptID,
+				"runtime_generation":    state.RuntimeGeneration,
+				"disconnected_user":     true,
+			})
 		}
 	}
 	m.clearConnectionAttemptID()

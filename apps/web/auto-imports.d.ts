@@ -85,6 +85,7 @@ declare global {
   const isDefined: typeof import('@vueuse/core').isDefined
   const isEmpty: typeof import('./src/@webcore/utils/helpers').isEmpty
   const isEmptyArray: typeof import('./src/@webcore/utils/helpers').isEmptyArray
+  const isLocalConnectionStatusLogEnabled: typeof import('./src/@webcore/utils/localConnectionStatusLog').isLocalConnectionStatusLogEnabled
   const isNullOrUndefined: typeof import('./src/@webcore/utils/helpers').isNullOrUndefined
   const isObject: typeof import('./src/@webcore/utils/helpers').isObject
   const isProxy: typeof import('vue').isProxy
@@ -97,6 +98,7 @@ declare global {
   const kFormatter: typeof import('./src/@webcore/utils/formatters').kFormatter
   const lengthValidator: typeof import('./src/@webcore/utils/validators').lengthValidator
   const logConnectionLifecycleDebug: typeof import('./src/@webcore/utils/connectionLifecycleDebug').logConnectionLifecycleDebug
+  const logLocalConnectionStatus: typeof import('./src/@webcore/utils/localConnectionStatusLog').logLocalConnectionStatus
   const logicAnd: typeof import('@vueuse/math').logicAnd
   const logicNot: typeof import('@vueuse/math').logicNot
   const logicOr: typeof import('@vueuse/math').logicOr
@@ -428,6 +430,9 @@ declare global {
   export type { ConnectionLifecycleDebugContext } from './src/@webcore/utils/connectionLifecycleDebug'
   import('./src/@webcore/utils/connectionLifecycleDebug')
   // @ts-ignore
+  export type { LocalConnectionStatusLogContext } from './src/@webcore/utils/localConnectionStatusLog'
+  import('./src/@webcore/utils/localConnectionStatusLog')
+  // @ts-ignore
   export type { EPasswordStrength, IPasswordStrength } from './src/@webcore/utils/passwordStrength'
   import('./src/@webcore/utils/passwordStrength')
   // @ts-ignore
@@ -518,6 +523,7 @@ declare module 'vue' {
     readonly isDefined: UnwrapRef<typeof import('@vueuse/core')['isDefined']>
     readonly isEmpty: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isEmpty']>
     readonly isEmptyArray: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isEmptyArray']>
+    readonly isLocalConnectionStatusLogEnabled: UnwrapRef<typeof import('./src/@webcore/utils/localConnectionStatusLog')['isLocalConnectionStatusLogEnabled']>
     readonly isNullOrUndefined: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isNullOrUndefined']>
     readonly isObject: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isObject']>
     readonly isProxy: UnwrapRef<typeof import('vue')['isProxy']>
@@ -530,6 +536,7 @@ declare module 'vue' {
     readonly kFormatter: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['kFormatter']>
     readonly lengthValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['lengthValidator']>
     readonly logConnectionLifecycleDebug: UnwrapRef<typeof import('./src/@webcore/utils/connectionLifecycleDebug')['logConnectionLifecycleDebug']>
+    readonly logLocalConnectionStatus: UnwrapRef<typeof import('./src/@webcore/utils/localConnectionStatusLog')['logLocalConnectionStatus']>
     readonly logicAnd: UnwrapRef<typeof import('@vueuse/math')['logicAnd']>
     readonly logicNot: UnwrapRef<typeof import('@vueuse/math')['logicNot']>
     readonly logicOr: UnwrapRef<typeof import('@vueuse/math')['logicOr']>

@@ -17,6 +17,7 @@ import { reduceWorkerConnectionState } from '@core/common/functions/reduceWorker
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { subscribeExternalConnection } from '@/@webcore/centrifugoExternalConnection';
+import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
 
 definePage({
   meta: {
@@ -306,13 +307,47 @@ function shouldIgnoreConnectedPayload(
   }
 
   if (!hasConfirmedSessionReady(data)) {
+    logLocalConnectionStatus('web.external_connection.connected_ignored', {
+      layer: 'web.external_connection',
+      worker_id: data.worker_id ?? externalConnection.value?.worker_id,
+      account_id: data.account_id ?? externalConnection.value?.account_id,
+      worker_type_id: data.worker_type_id,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      can_send: data.can_send,
+      can_receive_runtime: data.can_receive_runtime,
+      authenticated: data.authenticated,
+      provider_state: data.provider_state,
+      degraded_reason: data.degraded_reason,
+      reason: 'connected_without_confirmed_session_ready',
+      phone: data.phone,
+      connection_attempt_id: data.connection_attempt_id,
+    });
     return true;
   }
 
-  return (
+  const ignored =
     Boolean(connectionAttemptId.value) &&
-    data.connection_attempt_id !== connectionAttemptId.value
-  );
+    data.connection_attempt_id !== connectionAttemptId.value;
+  if (ignored) {
+    logLocalConnectionStatus('web.external_connection.connected_ignored', {
+      layer: 'web.external_connection',
+      worker_id: data.worker_id ?? externalConnection.value?.worker_id,
+      account_id: data.account_id ?? externalConnection.value?.account_id,
+      worker_type_id: data.worker_type_id,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      reason: 'stale_connection_attempt',
+      expected_connection_attempt_id: connectionAttemptId.value,
+      connection_attempt_id: data.connection_attempt_id,
+    });
+  }
+
+  return ignored;
 }
 
 function setInitialStateFromWorker(data: WorkerExternalConnectionViewResponse) {
@@ -337,6 +372,23 @@ function setInitialStateFromWorker(data: WorkerExternalConnectionViewResponse) {
 }
 
 function applyConnectedState(data: IBaileysConnectionState) {
+  logLocalConnectionStatus('web.external_connection.connected_applied', {
+    layer: 'web.external_connection',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    can_send: data.can_send,
+    can_receive_runtime: data.can_receive_runtime,
+    authenticated: data.authenticated,
+    provider_state: data.provider_state,
+    degraded_reason: data.degraded_reason,
+    phone: data.phone,
+    connection_attempt_id: data.connection_attempt_id,
+  });
   workerStatusId.value = EWorkerStatus.online;
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
@@ -445,6 +497,23 @@ function applyDirectConnectionResponse(data: IBaileysConnectionState) {
 }
 
 function handleWorkerConnectionMessage(data: IBaileysConnectionState) {
+  logLocalConnectionStatus('web.external_connection.message_received', {
+    layer: 'web.external_connection',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    can_send: data.can_send,
+    can_receive_runtime: data.can_receive_runtime,
+    authenticated: data.authenticated,
+    provider_state: data.provider_state,
+    degraded_reason: data.degraded_reason,
+    phone: data.phone,
+    connection_attempt_id: data.connection_attempt_id,
+  });
   applyConnectionState(data);
 
   if (data.worker_status_id === EWorkerStatus.disponible) {

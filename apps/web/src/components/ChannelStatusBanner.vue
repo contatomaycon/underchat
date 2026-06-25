@@ -11,6 +11,7 @@ import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getUser, getChannels } from '@/@webcore/localStorage/user';
+import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
 
 const POLLING_INTERVAL_MS = 60_000;
 
@@ -119,10 +120,38 @@ const getStatusName = (statusId: string | undefined | null): string | null => {
 const user = getUser();
 
 const workerStatusHandler = (data: IBaileysConnectionState) => {
+  logLocalConnectionStatus('web.status_banner.worker_status.received', {
+    layer: 'web.status_banner',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    can_send: data.can_send,
+    can_receive_runtime: data.can_receive_runtime,
+    authenticated: data.authenticated,
+    provider_state: data.provider_state,
+    degraded_reason: data.degraded_reason,
+    phone: data.phone,
+    connection_attempt_id: data.connection_attempt_id,
+    runtime_generation: data.runtime_generation,
+  });
   if (
     userChannelIds.value.size > 0 &&
     !userChannelIds.value.has(data.worker_id)
   ) {
+    logLocalConnectionStatus('web.status_banner.worker_status.ignored', {
+      layer: 'web.status_banner',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      reason: 'worker_not_in_user_channel_ids',
+    });
     return;
   }
 
@@ -130,11 +159,36 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
     data.worker_status_id === EWorkerStatus.online &&
     data.session_ready === true
   ) {
+    logLocalConnectionStatus('web.status_banner.worker_status.online_removed', {
+      layer: 'web.status_banner',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      phone: data.phone,
+    });
     dashboardStore.updateOfflineChannelStatus(data.worker_id, null, null);
     return;
   }
 
   if (data.worker_status_id === EWorkerStatus.online) {
+    logLocalConnectionStatus(
+      'web.status_banner.worker_status.weak_online_ignored',
+      {
+        layer: 'web.status_banner',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type_id: data.worker_type_id,
+        worker_status_id: data.worker_status_id,
+        status: data.status,
+        code: data.code,
+        session_ready: data.session_ready,
+        phone: data.phone,
+      }
+    );
     return;
   }
 
@@ -146,6 +200,17 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
     statusId,
     statusName
   );
+  logLocalConnectionStatus('web.status_banner.worker_status.offline_applied', {
+    layer: 'web.status_banner',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    status_name: statusName,
+  });
 
   if (!dashboardStore.offlineChannels.find((ch) => ch.id === data.worker_id)) {
     void dashboardStore.getDashboardOfflineChannels(true).catch(() => {});

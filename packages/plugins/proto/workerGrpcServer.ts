@@ -34,6 +34,7 @@ import {
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
+import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
 
 const protoPath = resolveProtoPath('worker_command.proto');
 
@@ -219,6 +220,27 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         pairing_code: req.pairing_code,
       }
     );
+    logLocalConnectionStatus('service.command_grpc.notify_status_received', {
+      layer: 'service.grpc',
+      worker_id: req.worker_id,
+      account_id: req.account_id,
+      worker_type_id: req.worker_type_id,
+      worker_status_id: req.worker_status_id,
+      status: req.status,
+      code: req.code,
+      session_ready: req.session_ready,
+      can_send: req.can_send,
+      can_receive_runtime: req.can_receive_runtime,
+      authenticated: req.authenticated,
+      provider_state: req.provider_state,
+      degraded_reason: req.degraded_reason,
+      reason: req.reason,
+      phone: req.phone,
+      connection_attempt_id: req.connection_attempt_id,
+      runtime_generation: req.runtime_generation,
+      qrcode: req.qrcode,
+      pairing_code: req.pairing_code,
+    });
 
     handler
       .notifyWorkerStatus(req)
@@ -237,10 +259,37 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
             code: req.code,
           }
         );
+        logLocalConnectionStatus('service.command_grpc.notify_status_done', {
+          layer: 'service.grpc',
+          worker_id: req.worker_id,
+          account_id: req.account_id,
+          worker_type_id: req.worker_type_id,
+          worker_status_id: req.worker_status_id,
+          status: req.status,
+          code: req.code,
+          session_ready: req.session_ready,
+          phone: req.phone,
+          connection_attempt_id: req.connection_attempt_id,
+          runtime_generation: req.runtime_generation,
+        });
         callback(null, {});
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
+        logLocalConnectionStatus('service.command_grpc.notify_status_error', {
+          layer: 'service.grpc',
+          worker_id: req.worker_id,
+          account_id: req.account_id,
+          worker_type_id: req.worker_type_id,
+          worker_status_id: req.worker_status_id,
+          status: req.status,
+          code: req.code,
+          session_ready: req.session_ready,
+          phone: req.phone,
+          connection_attempt_id: req.connection_attempt_id,
+          runtime_generation: req.runtime_generation,
+          reason: msg,
+        });
         fastify.log.error(
           { err, workerId: req.worker_id },
           'NotifyWorkerStatus gRPC handler error'

@@ -73,6 +73,7 @@ import {
   ConnectionLifecycleDebugContext,
   ConnectionLifecycleDebugService,
 } from '@core/services/connectionLifecycleDebug.service';
+import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -213,6 +214,7 @@ export class WorkerCommandHandlerService {
     context: ConnectionLifecycleDebugContext
   ): void {
     void this.connectionLifecycleDebugService.log(event, context);
+    logLocalConnectionStatus(event, context);
   }
 
   private optionalRuntimeGeneration(value: unknown): number | undefined {
@@ -1085,6 +1087,13 @@ export class WorkerCommandHandlerService {
       qrcode: payload.qrcode,
       pairing_code: payload.pairing_code,
       worker_status_id: workerStatusId,
+      session_ready: payload.session_ready,
+      can_send: payload.can_send,
+      can_receive_runtime: payload.can_receive_runtime,
+      authenticated: payload.authenticated,
+      provider_state: payload.provider_state,
+      degraded_reason: payload.degraded_reason,
+      phone: payload.phone,
     });
     const shouldPublishAsQrAttempt = this.isNotifyQrAttemptState(payload);
     const shouldResolveQrWorkerData =
@@ -1104,12 +1113,47 @@ export class WorkerCommandHandlerService {
       payload.runtime_generation ??= qrWorkerData.runtimeGeneration;
       payload.warm_pool_id ??= qrWorkerData.warmPoolId ?? undefined;
       payload.container_id ??= qrWorkerData.containerId ?? undefined;
+      this.logDebug('service.notify_status.worker_data_resolved', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: payload.worker_type_id,
+        worker_status_id: payload.worker_status_id,
+        status: payload.status,
+        code: payload.code,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        container_id: payload.container_id,
+        warm_pool_id: payload.warm_pool_id,
+      });
     }
 
+    const requestedWorkerStatusId = workerStatusId;
     workerStatusId = await this.enforceOnlineNotificationReadiness(
       payload,
       workerStatusId
     );
+    this.logDebug('service.notify_status.readiness_gate_result', {
+      trace_id: payload.debug_trace_id,
+      layer: 'service',
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: payload.worker_type_id,
+      requested_worker_status_id: requestedWorkerStatusId,
+      worker_status_id: workerStatusId,
+      status: payload.status,
+      code: payload.code,
+      session_ready: payload.session_ready,
+      can_send: payload.can_send,
+      can_receive_runtime: payload.can_receive_runtime,
+      authenticated: payload.authenticated,
+      provider_state: payload.provider_state,
+      degraded_reason: payload.degraded_reason,
+      phone: payload.phone,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+    });
 
     const isDisponibleWithDisconnectedUser =
       workerStatusId === EWorkerStatus.disponible &&
@@ -1125,6 +1169,19 @@ export class WorkerCommandHandlerService {
       };
 
       await this.workerService.updateWorkerById(accountId, updateInput);
+      this.logDebug('service.notify_status.db_update_disconnected_user', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: payload.worker_type_id,
+        worker_status_id: updateInput.worker_status_id,
+        status: payload.status,
+        code: payload.code,
+        number: updateInput.number,
+        connection_date: updateInput.connection_date,
+        disconnected_user: true,
+      });
       await Promise.all([
         this.centrifugoPublish(payload),
         this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
@@ -1191,6 +1248,23 @@ export class WorkerCommandHandlerService {
       status: workerStatusId,
       number: phoneNumber,
       connection_date: connectionDate,
+    });
+    this.logDebug('service.notify_status.db_update', {
+      trace_id: payload.debug_trace_id,
+      layer: 'service',
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: payload.worker_type_id,
+      worker_status_id: workerStatusId,
+      status: payload.status,
+      code: payload.code,
+      session_ready: payload.session_ready,
+      phone: phoneNumber,
+      previous_phone: view?.number ?? null,
+      connection_date: connectionDate,
+      previous_connection_date: view?.connection_date ?? null,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
     });
 
     let qrAttemptPublished: boolean | undefined;
@@ -1348,6 +1422,20 @@ export class WorkerCommandHandlerService {
     }
 
     if (payload.session_ready === true) {
+      this.logDebug('service.notify_status.session_ready_payload_accepted', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        worker_status_id: workerStatusId,
+        status: payload.status,
+        code: payload.code,
+        session_ready: payload.session_ready,
+        phone: payload.phone,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+      });
       return workerStatusId;
     }
 
@@ -1359,6 +1447,25 @@ export class WorkerCommandHandlerService {
           { worker_id: payload.worker_id },
           workerType
         );
+        this.logDebug('service.notify_status.session_ready_probe_result', {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: workerType,
+          worker_status_id: workerStatusId,
+          status: payload.status,
+          code: payload.code,
+          session_ready: health?.session_ready,
+          can_send: health?.can_send,
+          can_receive_runtime: health?.can_receive_runtime,
+          authenticated: health?.authenticated,
+          provider_state: health?.provider_state,
+          degraded_reason: health?.degraded_reason,
+          runtime_generation: health?.runtime_generation,
+          runtime_state: health?.runtime_state,
+          connection_attempt_id: payload.connection_attempt_id,
+        });
 
         if (this.isConnectedRuntimeHealth(health, workerType)) {
           payload.session_ready = true;

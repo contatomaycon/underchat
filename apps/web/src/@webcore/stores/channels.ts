@@ -55,6 +55,7 @@ import {
   isConnectionLifecycleDebugEnabled,
   logConnectionLifecycleDebug,
 } from '@webcore/utils/connectionLifecycleDebug';
+import { logLocalConnectionStatus } from '@webcore/utils/localConnectionStatusLog';
 
 type WorkerRecreateCooldownConflictResponse = IApiResponse<{
   recreate_available_at: string | null;
@@ -2553,9 +2554,33 @@ export const useChannelsStore = defineStore('channels', {
         (c) => c.account?.id === input.account_id && c.id === input.worker_id
       );
 
-      if (index === -1) return false;
+      if (index === -1) {
+        logLocalConnectionStatus('web.store.update_status.not_found', {
+          layer: 'web.store',
+          worker_id: input.worker_id,
+          account_id: input.account_id,
+          worker_type_id: input.worker_type_id,
+          worker_status_id: input.worker_status_id,
+          status: input.status,
+          code: input.code,
+          session_ready: input.session_ready,
+          phone: input.phone,
+          connection_attempt_id: input.connection_attempt_id,
+          runtime_generation: input.runtime_generation,
+        });
+        return false;
+      }
 
       if (input.worker_status_id === EWorkerStatus.delete) {
+        logLocalConnectionStatus('web.store.update_status.deleted', {
+          layer: 'web.store',
+          worker_id: input.worker_id,
+          account_id: input.account_id,
+          worker_type_id: input.worker_type_id,
+          worker_status_id: input.worker_status_id,
+          status: input.status,
+          code: input.code,
+        });
         this.list.splice(index, 1);
 
         return true;
@@ -2565,10 +2590,34 @@ export const useChannelsStore = defineStore('channels', {
         input.worker_status_id === EWorkerStatus.online &&
         (input.session_ready !== true || !input.phone?.trim())
       ) {
+        logLocalConnectionStatus(
+          'web.store.update_status.weak_online_rejected',
+          {
+            layer: 'web.store',
+            worker_id: input.worker_id,
+            account_id: input.account_id,
+            worker_type_id: input.worker_type_id,
+            worker_status_id: input.worker_status_id,
+            status: input.status,
+            code: input.code,
+            session_ready: input.session_ready,
+            can_send: input.can_send,
+            can_receive_runtime: input.can_receive_runtime,
+            authenticated: input.authenticated,
+            provider_state: input.provider_state,
+            degraded_reason: input.degraded_reason,
+            phone: input.phone,
+            connection_attempt_id: input.connection_attempt_id,
+            runtime_generation: input.runtime_generation,
+          }
+        );
         return false;
       }
 
       const channel = this.list[index];
+      const previousStatus = channel?.status?.id ?? null;
+      const previousNumber = channel?.number ?? null;
+      const previousConnectionDate = channel?.connection_date ?? null;
       if (channel?.status && input?.worker_status_id) {
         channel.status.id = input.worker_status_id;
       }
@@ -2590,6 +2639,31 @@ export const useChannelsStore = defineStore('channels', {
       if (channel && 'recreate_available_at' in input) {
         channel.recreate_available_at = input.recreate_available_at ?? null;
       }
+
+      logLocalConnectionStatus('web.store.update_status.applied', {
+        layer: 'web.store',
+        worker_id: input.worker_id,
+        account_id: input.account_id,
+        worker_type_id: input.worker_type_id,
+        worker_status_id: input.worker_status_id,
+        previous_worker_status_id: previousStatus,
+        status: input.status,
+        code: input.code,
+        session_ready: input.session_ready,
+        can_send: input.can_send,
+        can_receive_runtime: input.can_receive_runtime,
+        authenticated: input.authenticated,
+        provider_state: input.provider_state,
+        degraded_reason: input.degraded_reason,
+        phone: input.phone,
+        previous_phone: previousNumber,
+        next_phone: channel?.number ?? null,
+        previous_connection_date: previousConnectionDate,
+        next_connection_date: channel?.connection_date ?? null,
+        disconnected_user: input.disconnected_user,
+        connection_attempt_id: input.connection_attempt_id,
+        runtime_generation: input.runtime_generation,
+      });
 
       return true;
     },

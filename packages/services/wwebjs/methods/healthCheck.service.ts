@@ -16,6 +16,7 @@ import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
 import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppConnectionDocumentId';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 import type { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
+import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const STATE_CHECK_TIMEOUT_MS = 10_000;
@@ -236,6 +237,10 @@ export class WwebjsHealthCheckService {
         providerState: 'not_configured',
       });
       this.lastResult = result;
+      this.logHealthResult('wwebjs.health_check.result', result, {
+        reported_status: undefined,
+        configured: false,
+      });
       return result;
     }
 
@@ -278,6 +283,10 @@ export class WwebjsHealthCheckService {
       reportedStatus
     );
     this.lastResult = result;
+    this.logHealthResult('wwebjs.health_check.result', result, {
+      reported_status: reportedStatus,
+      transient_disconnect_failures: this.transientDisconnectFailures,
+    });
 
     if (
       result.detectedStatus !== this.lastKnownStatus ||
@@ -548,6 +557,34 @@ export class WwebjsHealthCheckService {
       canSend: false,
       lastProbeAt: result.last_probe_at,
       probeLatencyMs: result.probe_latency_ms,
+    });
+  }
+
+  private logHealthResult(
+    event: string,
+    result: HealthCheckResult,
+    extra: Record<string, unknown> = {}
+  ): void {
+    logLocalConnectionStatus(event, {
+      layer: 'wwebjs.health',
+      provider: 'wwebjs',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: result.workerStatus,
+      status: result.detectedStatus,
+      session_ready: result.session_ready,
+      can_send: result.can_send,
+      can_receive_runtime: result.can_receive_runtime,
+      authenticated: result.authenticated,
+      provider_state: result.provider_state,
+      degraded_reason: result.degraded_reason,
+      reason: result.reason,
+      wa_state: result.waState,
+      last_probe_at: result.last_probe_at,
+      probe_latency_ms: result.probe_latency_ms,
+      is_healthy: result.isHealthy,
+      ...extra,
     });
   }
 
@@ -927,6 +964,26 @@ export class WwebjsHealthCheckService {
       last_probe_at: result.last_probe_at,
       probe_latency_ms: result.probe_latency_ms,
     };
+
+    logLocalConnectionStatus('wwebjs.health_check.notify_status', {
+      layer: 'wwebjs.health',
+      provider: 'wwebjs',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id,
+      worker_status_id: payload.worker_status_id,
+      status: payload.status,
+      code: payload.code,
+      session_ready: payload.session_ready,
+      can_send: payload.can_send,
+      can_receive_runtime: payload.can_receive_runtime,
+      authenticated: payload.authenticated,
+      provider_state: payload.provider_state,
+      degraded_reason: payload.degraded_reason,
+      phone: payload.phone,
+      reason: result.reason,
+      wa_state: result.waState,
+    });
 
     try {
       await this.centrifugo.publishSub(getChannel(), payload);

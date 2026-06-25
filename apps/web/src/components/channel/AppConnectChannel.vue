@@ -30,6 +30,7 @@ import {
   isConnectionLifecycleDebugEnabled,
   logConnectionLifecycleDebug,
 } from '@/@webcore/utils/connectionLifecycleDebug';
+import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
 
 const channelStore = useChannelsStore();
 
@@ -530,6 +531,25 @@ function shouldIgnoreConnectedPayload(
   }
 
   if (!hasConfirmedSessionReady(data)) {
+    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
+      layer: 'web.connection_modal',
+      worker_id: data.worker_id ?? channelId.value ?? undefined,
+      account_id: data.account_id ?? accountId.value ?? undefined,
+      worker_type_id: data.worker_type_id ?? activeWorkerTypeId.value,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      can_send: data.can_send,
+      can_receive_runtime: data.can_receive_runtime,
+      authenticated: data.authenticated,
+      provider_state: data.provider_state,
+      degraded_reason: data.degraded_reason,
+      reason: 'connected_without_confirmed_session_ready',
+      phone: data.phone,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+    });
     return true;
   }
 
@@ -537,14 +557,46 @@ function shouldIgnoreConnectedPayload(
     connectionAttemptId.value &&
     data.connection_attempt_id !== connectionAttemptId.value
   ) {
+    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
+      layer: 'web.connection_modal',
+      worker_id: data.worker_id ?? channelId.value ?? undefined,
+      account_id: data.account_id ?? accountId.value ?? undefined,
+      worker_type_id: data.worker_type_id ?? activeWorkerTypeId.value,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      reason: 'stale_connection_attempt',
+      expected_connection_attempt_id: connectionAttemptId.value,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+    });
     return true;
   }
 
-  return (
+  const ignored =
     !options.directResponse &&
     !connectionAttemptId.value &&
-    props.initialStatusId !== EWorkerStatus.online
-  );
+    props.initialStatusId !== EWorkerStatus.online;
+  if (ignored) {
+    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
+      layer: 'web.connection_modal',
+      worker_id: data.worker_id ?? channelId.value ?? undefined,
+      account_id: data.account_id ?? accountId.value ?? undefined,
+      worker_type_id: data.worker_type_id ?? activeWorkerTypeId.value,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      reason: 'terminal_connected_without_active_attempt',
+      phone: data.phone,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      initial_worker_status_id: props.initialStatusId,
+    });
+  }
+
+  return ignored;
 }
 
 function canRecoverQrFromRecentHistory(): boolean {
@@ -932,6 +984,24 @@ function scheduleConnectedState(data: IBaileysConnectionState) {
 }
 
 function applyConnectedState(data: IBaileysConnectionState) {
+  logLocalConnectionStatus('web.connection_modal.connected_applied', {
+    layer: 'web.connection_modal',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id ?? activeWorkerTypeId.value,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    can_send: data.can_send,
+    can_receive_runtime: data.can_receive_runtime,
+    authenticated: data.authenticated,
+    provider_state: data.provider_state,
+    degraded_reason: data.degraded_reason,
+    phone: data.phone,
+    connection_attempt_id: data.connection_attempt_id,
+    runtime_generation: data.runtime_generation,
+  });
   isResetting.value = false;
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
@@ -1204,6 +1274,25 @@ function handleWorkerConnectionMessage(
   }
 
   activeDebugTraceId.value = data.debug_trace_id ?? activeDebugTraceId.value;
+  logLocalConnectionStatus('web.connection_modal.message_received', {
+    layer: 'web.connection_modal',
+    worker_id: data.worker_id,
+    account_id: data.account_id,
+    worker_type_id: data.worker_type_id,
+    worker_status_id: data.worker_status_id,
+    status: data.status,
+    code: data.code,
+    session_ready: data.session_ready,
+    can_send: data.can_send,
+    can_receive_runtime: data.can_receive_runtime,
+    authenticated: data.authenticated,
+    provider_state: data.provider_state,
+    degraded_reason: data.degraded_reason,
+    phone: data.phone,
+    connection_attempt_id: data.connection_attempt_id,
+    runtime_generation: data.runtime_generation,
+    offset: ctx?.offset,
+  });
   logConnectionLifecycleDebug('web.centrifugo.connection_message', {
     trace_id: activeDebugTraceId.value,
     layer: 'web',

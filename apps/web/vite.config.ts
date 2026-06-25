@@ -8,7 +8,7 @@ import {
   getPascalCaseRouteName,
 } from 'unplugin-vue-router';
 import VueRouter from 'unplugin-vue-router/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import VueDevTools from 'vite-plugin-vue-devtools';
 import MetaLayouts from 'vite-plugin-vue-meta-layouts';
 import vuetify from 'vite-plugin-vuetify';
@@ -18,6 +18,7 @@ import path from 'node:path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(({ mode }) => {
+  const rootEnv = loadEnv(mode, path.resolve(__dirname, '../..'), ['APP_']);
   const isProduction = mode === 'production';
   const chunkGroups = [
     {
@@ -172,5 +173,10 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: { exclude: ['vuetify'], entries: ['./src/**/*.vue'] },
+    define: {
+      'import.meta.env.APP_ENVIRONMENT': JSON.stringify(
+        rootEnv.APP_ENVIRONMENT ?? process.env.APP_ENVIRONMENT ?? ''
+      ),
+    },
   };
 });

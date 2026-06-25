@@ -164,6 +164,23 @@ func (w *Worker) startHTTP() error {
 		kafkaUnhealthy := w.kafka.HasUnhealthyConsumers()
 		health["kafka_unhealthy"] = kafkaUnhealthy
 		failOnKafkaUnhealthy := w.cfg.ConnectionHealthFailOnKafkaUnhealthy
+		localConnectionStatusLog("whatsmeow.http.connection_health", map[string]any{
+			"layer":                   "worker_whatsmeow.http",
+			"provider":                "whatsmeow",
+			"worker_id":               w.cfg.WorkerID,
+			"account_id":              w.cfg.AccountID,
+			"worker_type_id":          WorkerTypeWhatsmeow,
+			"session_ready":           healthBool(health, "session_ready"),
+			"can_send":                healthBool(health, "can_send"),
+			"can_receive_runtime":     healthBool(health, "can_receive_runtime"),
+			"authenticated":           healthBool(health, "authenticated"),
+			"provider_state":          healthString(health, "provider_state"),
+			"degraded_reason":         healthString(health, "degraded_reason"),
+			"connected":               healthBool(health, "connected"),
+			"kafka_unhealthy":         kafkaUnhealthy,
+			"fail_on_kafka_unhealthy": failOnKafkaUnhealthy,
+			"runtime_generation":      w.cfg.RuntimeGeneration,
+		})
 		if ready, _ := health["session_ready"].(bool); ready && (!kafkaUnhealthy || !failOnKafkaUnhealthy) {
 			writeJSON(resp, http.StatusOK, health)
 			return
@@ -371,7 +388,7 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		hasQR = w.whatsapp.currentQRCode != ""
 		w.whatsapp.mu.RUnlock()
 	}
-	return WorkerRuntimeHealthResponse{
+	response := WorkerRuntimeHealthResponse{
 		Ready:             ready,
 		Standby:           standby,
 		Activated:         w.runtimeStarted,
@@ -392,7 +409,31 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		DegradedReason:    degradedReason,
 		LastProbeAt:       lastProbeAt,
 		ProbeLatencyMS:    probeLatencyMS,
-	}, nil
+	}
+	localConnectionStatusLog("whatsmeow.grpc.runtime_health", map[string]any{
+		"layer":                "worker_whatsmeow.grpc",
+		"provider":             "whatsmeow",
+		"worker_id":            response.WorkerID,
+		"account_id":           response.AccountID,
+		"worker_type_id":       response.WorkerTypeID,
+		"session_ready":        response.SessionReady,
+		"can_send":             response.CanSend,
+		"can_receive_runtime":  response.CanReceiveRuntime,
+		"authenticated":        response.Authenticated,
+		"provider_state":       response.ProviderState,
+		"degraded_reason":      response.DegradedReason,
+		"runtime_generation":   response.RuntimeGeneration,
+		"runtime_state":        response.RuntimeState,
+		"ready":                response.Ready,
+		"activated":            response.Activated,
+		"standby":              response.Standby,
+		"has_session":          response.HasSession,
+		"has_qr":               response.HasQR,
+		"qr_stream_ready":      response.QRStreamReady,
+		"request_worker_id":    req.WorkerID,
+		"request_warm_pool_id": req.WarmPoolID,
+	})
+	return response, nil
 }
 
 func writeJSON(resp http.ResponseWriter, status int, payload any) {
