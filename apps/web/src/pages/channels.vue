@@ -487,7 +487,28 @@ const workerStatusHandler = (
     return;
   }
 
-  channelsStore.updateStatusChannel(data);
+  const applied = channelsStore.updateStatusChannel(data);
+  if (!applied) {
+    logConnectionLifecycleDebug('web.centrifugo.worker_status_ignored', {
+      trace_id:
+        data.debug_trace_id ?? channelConnectionDebugTraceId.value ?? undefined,
+      layer: 'web',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      status: data.status,
+      code: data.code,
+      worker_status_id: data.worker_status_id,
+      session_ready: data.session_ready,
+      phone: data.phone,
+      reason: data.reason,
+      offset: ctx?.offset,
+    });
+    return;
+  }
+
   if (
     data.worker_id === channelConnectionChannel.value &&
     data.worker_status_id

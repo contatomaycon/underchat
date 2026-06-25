@@ -189,7 +189,7 @@ func (m *WhatsAppManager) Bootstrap(ctx context.Context) {
 		m.setState("connecting", CodeAwaitConnection, "")
 		if err := m.connectClient(ctx, client, "bootstrap"); err != nil {
 			log.Printf("whatsmeow bootstrap connect failed: %v", err)
-			m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
+			m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 		}
 	}()
 }
@@ -1681,11 +1681,11 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.clearLoginArtifacts()
 		m.mu.Lock()
 		m.connected = false
-		m.status = "disconnected"
-		m.code = CodeConnectionLost
+		m.status = "connecting"
+		m.code = CodeAwaitConnection
 		m.degradedReason = "disconnected_event"
 		m.mu.Unlock()
-		m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
+		m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 	case *events.LoggedOut:
 		log.Printf("whatsmeow event logged_out worker_id=%s on_connect=%t reason=%s", m.cfg.WorkerID, event.OnConnect, event.Reason.String())
 		m.clearLoginArtifacts()
@@ -1717,7 +1717,13 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 			return
 		}
 		m.clearFreshLoginFallback()
-		m.publishState(context.Background(), "disconnected", CodeConnectionLost, WorkerStatusOffline, "", "", false)
+		m.mu.Lock()
+		m.connected = false
+		m.status = "connecting"
+		m.code = CodeAwaitConnection
+		m.degradedReason = "connect_failure"
+		m.mu.Unlock()
+		m.publishState(context.Background(), "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", false)
 	case *events.StreamReplaced:
 		log.Printf("whatsmeow event stream_replaced worker_id=%s", m.cfg.WorkerID)
 		m.clearLoginArtifacts()

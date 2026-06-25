@@ -85,7 +85,7 @@ describe('reduceWorkerConnectionState', () => {
     expect(result.state.connection_attempt_id).toBe('attempt-current');
   });
 
-  it('accepts connected terminal from another attempt', () => {
+  it('ignores connected terminal from another attempt', () => {
     const result = reduceWorkerConnectionState(
       {
         status: EBaileysConnectionStatus.connecting,
@@ -102,9 +102,10 @@ describe('reduceWorkerConnectionState', () => {
       }
     );
 
-    expect(result.ignored).toBe(false);
-    expect(result.state.qrcode).toBeUndefined();
-    expect(result.state.connection_attempt_id).toBe('attempt-old');
+    expect(result.ignored).toBe(true);
+    expect(result.reason).toBe('attempt_mismatch_connected');
+    expect(result.state.qrcode).toBe('data:image/png;base64,qr');
+    expect(result.state.connection_attempt_id).toBe('attempt-current');
   });
 
   it('keeps an existing QR when a non-terminal event arrives without QR', () => {

@@ -73,6 +73,14 @@ export function reduceWorkerConnectionState(
     Boolean(incomingAttempt) &&
     currentAttempt !== incomingAttempt;
 
+  if (attemptMismatch && isSuccessfulTerminal(incoming)) {
+    return {
+      state: current,
+      ignored: true,
+      reason: 'attempt_mismatch_connected',
+    };
+  }
+
   if (
     attemptMismatch &&
     Boolean(current.qrcode) &&

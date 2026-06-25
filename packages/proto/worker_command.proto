@@ -93,6 +93,7 @@ message NotifyWorkerStatusRequest {
   string degraded_reason = 35;
   string last_probe_at = 36;
   int32 probe_latency_ms = 37;
+  string worker_type_id = 38;
 }
 
 message ResolveIncomingCallActionRequest {

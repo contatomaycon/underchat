@@ -14,6 +14,7 @@ func TestCommandNotifyWorkerStatusUsesCompleteConnectionState(t *testing.T) {
 		Status:              "connecting",
 		WorkerID:            "worker-1",
 		AccountID:           "account-1",
+		WorkerTypeID:        WorkerTypeWhatsmeow,
 		QRCode:              "data:image/png;base64,qr",
 		IsNewLogin:          true,
 		Time:                123,
@@ -37,6 +38,9 @@ func TestCommandNotifyWorkerStatusUsesCompleteConnectionState(t *testing.T) {
 	}
 	if got := dynamicString(msg, "worker_status_id"); got != WorkerStatusDisponible {
 		t.Fatalf("unexpected worker_status_id %q", got)
+	}
+	if got := dynamicString(msg, "worker_type_id"); got != WorkerTypeWhatsmeow {
+		t.Fatalf("unexpected worker_type_id %q", got)
 	}
 	if got := int(dynamicInt32(msg, "attempt")); got != 2 {
 		t.Fatalf("unexpected attempt %d", got)

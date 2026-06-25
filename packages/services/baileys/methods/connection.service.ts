@@ -565,13 +565,21 @@ export class BaileysConnectionService {
       worker_id: getWorker(),
       account_id: getAccount(),
       code: ECodeMessage.awaitConnection,
+      worker_status_id: EWorkerStatus.disponible,
       attempt,
       max_attempts: this.maxRetries,
       seconds_until_next_attempt: Math.ceil(delayMs / 1000),
       connection_attempt_id: this.connectionAttemptId,
       debug_trace_id: this.debugTraceId,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'reconnecting',
+      degraded_reason: 'reconnect_scheduled',
     };
     this.publishSub(retryPayload, true);
+    void this.notifyWorkerStatusSafely(retryPayload, 'reconnect_attempt');
   }
 
   private publishConnectionStarting(): void {
@@ -1592,11 +1600,6 @@ export class BaileysConnectionService {
       statusCode === ECodeMessage.restartRequired &&
       this.isQrPairingInProgress();
 
-    if (statusCode !== ECodeMessage.restartRequired) {
-      await this.healthCheckService.notifyDisconnected(
-        statusMessage ?? 'Connection closed'
-      );
-    }
     this.healthCheckService.stop();
     this.clearReconnectRetryTimer();
 
@@ -1618,28 +1621,50 @@ export class BaileysConnectionService {
       return;
     }
 
-    const disconnectionCode =
-      statusCode ?? this.code ?? ECodeMessage.connectionLost;
-
-    this.setStatus(Status.disconnected, disconnectionCode);
-
     const isMismatchedStatus =
       statusCode === ECodeMessage.loggedOut ||
       statusCode === ECodeMessage.multideviceMismatch ||
       statusCode === ECodeMessage.badSession ||
       statusCode === ECodeMessage.connectionReplaced;
 
+    const disconnectionCode =
+      statusCode ?? this.code ?? ECodeMessage.connectionLost;
+    const shouldRetryAfterClose = this.shouldScheduleRetryAfterClose();
+
+    if (isMismatchedStatus) {
+      this.setStatus(Status.disconnected, disconnectionCode);
+    } else {
+      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+      await this.healthCheckService.notifyDisconnected(
+        statusMessage ?? 'Connection closed',
+        {
+          detectedStatus: Status.connecting,
+          workerStatus: EWorkerStatus.disponible,
+          providerState: shouldRetryAfterClose ? 'reconnecting' : 'disponible',
+        }
+      );
+    }
+
     const workerStatusId = isMismatchedStatus
       ? EWorkerStatus.mismatched
-      : EWorkerStatus.offline;
+      : EWorkerStatus.disponible;
 
     if (!this.awaitingNewLogin) {
       const payload: IBaileysConnectionState = {
         status: this.status,
         worker_id: getWorker(),
         account_id: getAccount(),
-        code: disconnectionCode,
+        code: this.code,
+        phone: getPhoneNumber(this.socket?.user?.id),
         worker_status_id: workerStatusId,
+        session_ready: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+        provider_state: isMismatchedStatus ? 'disconnected' : 'reconnecting',
+        degraded_reason:
+          statusMessage ??
+          (isMismatchedStatus ? 'terminal_disconnect' : 'connection_closed'),
       };
 
       const payloadStr = JSON.stringify(payload);
@@ -2036,12 +2061,19 @@ export class BaileysConnectionService {
       status: Status.disconnected,
       worker_id: getWorker(),
       account_id: getAccount(),
+      phone: getPhoneNumber(this.socket?.user?.id),
       worker_status_id: EWorkerStatus.mismatched,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'mismatched',
+      degraded_reason: 'mismatched',
     };
 
     this.publishSub(payload);
 
-    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
+    await this.notifyWorkerStatusSafely(payload, 'mismatched_status');
   }
 
   private async safeLogout(forceLogout = false): Promise<void> {

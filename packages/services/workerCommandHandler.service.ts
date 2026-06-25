@@ -1248,6 +1248,9 @@ export class WorkerCommandHandlerService {
       status: this.normalizeNotifyStatus(input.status),
       worker_id: workerId,
       account_id: accountId,
+      worker_type_id: input.worker_type_id
+        ? (input.worker_type_id as EWorkerType)
+        : undefined,
       worker_status_id: workerStatusId,
       phone: input.phone || undefined,
       disconnected_user: input.disconnected_user ?? undefined,

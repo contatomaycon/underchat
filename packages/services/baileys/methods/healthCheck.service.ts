@@ -11,6 +11,7 @@ import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import type { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
@@ -19,6 +20,7 @@ import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
 const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
+const TRANSIENT_DISCONNECT_THRESHOLD = 3;
 
 function getChannel(): string {
   return workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
@@ -78,6 +80,7 @@ export class BaileysHealthCheckService {
     | undefined;
   private bootstrapPromise: Promise<void> | undefined;
   private bootstrapLock = false;
+  private transientDisconnectFailures = 0;
   private lastResult: HealthCheckResult = {
     isHealthy: false,
     reason: 'Health check not run',
@@ -158,13 +161,26 @@ export class BaileysHealthCheckService {
     return this.bootstrapPromise;
   }
 
-  async notifyDisconnected(reason?: string): Promise<void> {
+  async notifyDisconnected(
+    reason?: string,
+    options: {
+      workerStatus?: EWorkerStatus;
+      detectedStatus?: Status;
+      providerState?: string;
+    } = {}
+  ): Promise<void> {
+    const workerStatus = options.workerStatus ?? EWorkerStatus.disponible;
+    const detectedStatus =
+      options.detectedStatus ??
+      (workerStatus === EWorkerStatus.disponible
+        ? Status.connecting
+        : Status.disconnected);
     const result = this.buildResult({
       isHealthy: false,
       reason: reason ?? 'Connection closed',
-      detectedStatus: Status.disconnected,
-      workerStatus: EWorkerStatus.offline,
-      providerState: 'disconnected',
+      detectedStatus,
+      workerStatus,
+      providerState: options.providerState ?? 'reconnecting',
     });
     this.lastResult = result;
 
@@ -235,7 +251,14 @@ export class BaileysHealthCheckService {
     const socket = this.socketGetter();
     const reportedStatus = this.statusGetter();
 
-    const result = await this.checkConnectivity(socket, reportedStatus);
+    const connectivityResult = await this.checkConnectivity(
+      socket,
+      reportedStatus
+    );
+    const result = this.withTransientDisconnectTolerance(
+      connectivityResult,
+      reportedStatus
+    );
     this.lastResult = result;
 
     if (
@@ -327,6 +350,7 @@ export class BaileysHealthCheckService {
       status: Status.info,
       worker_id: getWorker(),
       account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
       worker_status_id: EWorkerStatus.disponible,
       session_ready: false,
       can_send: false,
@@ -395,6 +419,59 @@ export class BaileysHealthCheckService {
       workerStatus: EWorkerStatus.offline,
       providerState: socketState.state,
     });
+  }
+
+  private withTransientDisconnectTolerance(
+    result: HealthCheckResult,
+    reportedStatus: Status
+  ): HealthCheckResult {
+    if (!this.isTransientDisconnectResult(result, reportedStatus)) {
+      if (result.session_ready) {
+        this.transientDisconnectFailures = 0;
+      }
+      return result;
+    }
+
+    this.transientDisconnectFailures += 1;
+    if (this.transientDisconnectFailures >= TRANSIENT_DISCONNECT_THRESHOLD) {
+      return result;
+    }
+
+    return this.buildResult({
+      isHealthy: true,
+      reason: `Transient disconnect tolerated (${result.reason ?? result.provider_state})`,
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
+      providerState: result.provider_state || 'transient_disconnect',
+      degradedReason: result.degraded_reason ?? result.reason,
+      authenticated: result.authenticated,
+      canReceiveRuntime: result.can_receive_runtime,
+      canSend: false,
+      lastProbeAt: result.last_probe_at,
+      probeLatencyMs: result.probe_latency_ms,
+    });
+  }
+
+  private isTransientDisconnectResult(
+    result: HealthCheckResult,
+    reportedStatus: Status
+  ): boolean {
+    if (
+      reportedStatus !== Status.connected ||
+      result.detectedStatus !== Status.disconnected ||
+      result.workerStatus !== EWorkerStatus.offline
+    ) {
+      return false;
+    }
+
+    const reason = result.reason ?? '';
+    return (
+      reason === 'No socket instance' ||
+      reason === 'WebSocket state unavailable' ||
+      reason.includes('CLOSED') ||
+      reason.includes('CLOSING') ||
+      reason.includes('unknown')
+    );
   }
 
   private async probeOpenSocket(
@@ -593,6 +670,7 @@ export class BaileysHealthCheckService {
       status: result.detectedStatus,
       worker_id: getWorker(),
       account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
       code: result.session_ready
         ? ECodeMessage.connectionEstablished
         : result.detectedStatus === Status.connecting

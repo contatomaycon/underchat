@@ -951,14 +951,22 @@ export class WwebjsConnectionService {
       worker_id: getWorker(),
       account_id: getAccount(),
       code: ECodeMessage.awaitConnection,
+      worker_status_id: EWorkerStatus.disponible,
       attempt,
       max_attempts: MAX_RETRIES,
       seconds_until_next_attempt: Math.ceil(delayMs / 1000),
       connection_attempt_id: this.connectionAttemptId,
       debug_trace_id: this.debugTraceId,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'reconnecting',
+      degraded_reason: 'reconnect_scheduled',
     };
 
     this.publishSub(retryPayload, true);
+    void this.notifyWorkerStatusSafely(retryPayload, 'reconnect_attempt');
   }
 
   private publishConnectionStarting(): void {
@@ -1554,28 +1562,50 @@ export class WwebjsConnectionService {
         this.clearConnectionStateProbe();
         const statusCode = this.mapDisconnectReason(reason);
 
-        void this.healthCheckService.notifyDisconnected(reason);
         this.healthCheckService.stop();
-        this.setStatus(Status.disconnected, statusCode);
 
         const isMismatchedStatus =
           statusCode === ECodeMessage.loggedOut ||
           statusCode === ECodeMessage.multideviceMismatch ||
           statusCode === ECodeMessage.badSession ||
           statusCode === ECodeMessage.connectionReplaced;
+        const shouldRetryAfterDisconnect =
+          this.shouldScheduleRetryAfterDisconnect();
+
+        if (isMismatchedStatus) {
+          this.setStatus(Status.disconnected, statusCode);
+        } else {
+          this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+          void this.healthCheckService.notifyDisconnected(reason, {
+            detectedStatus: Status.connecting,
+            workerStatus: EWorkerStatus.disponible,
+            providerState: shouldRetryAfterDisconnect
+              ? 'reconnecting'
+              : 'disponible',
+          });
+        }
 
         const workerStatusId = isMismatchedStatus
           ? EWorkerStatus.mismatched
-          : EWorkerStatus.offline;
+          : EWorkerStatus.disponible;
 
         const payload: IBaileysConnectionState = {
           status: this.status,
           worker_id: getWorker(),
           account_id: getAccount(),
-          code: statusCode,
+          code: this.code,
+          phone: this.getClientPhone(client),
           worker_status_id: workerStatusId,
           connection_attempt_id: this.connectionAttemptId,
           debug_trace_id: this.debugTraceId,
+          session_ready: false,
+          can_send: false,
+          can_receive_runtime: false,
+          authenticated: false,
+          provider_state: isMismatchedStatus ? 'disconnected' : 'reconnecting',
+          degraded_reason:
+            reason ??
+            (isMismatchedStatus ? 'terminal_disconnect' : 'connection_closed'),
         };
 
         this.publishSub(payload, true);
@@ -1656,9 +1686,16 @@ export class WwebjsConnectionService {
           worker_id: getWorker(),
           account_id: getAccount(),
           code: this.code,
+          phone: this.getClientPhone(client),
           worker_status_id: EWorkerStatus.mismatched,
           connection_attempt_id: this.connectionAttemptId,
           debug_trace_id: this.debugTraceId,
+          session_ready: false,
+          can_send: false,
+          can_receive_runtime: false,
+          authenticated: false,
+          provider_state: 'auth_failure',
+          degraded_reason: 'auth_failure',
         };
         this.publishSub(payload, true);
         void this.notifyWorkerStatusSafely(payload, 'auth_failure');
@@ -2546,13 +2583,20 @@ export class WwebjsConnectionService {
       status: Status.disconnected,
       worker_id: getWorker(),
       account_id: getAccount(),
+      phone: this.client ? this.getClientPhone(this.client) : undefined,
       worker_status_id: EWorkerStatus.mismatched,
       connection_attempt_id: this.connectionAttemptId,
       debug_trace_id: this.debugTraceId,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'mismatched',
+      degraded_reason: 'mismatched',
     };
 
     this.publishSub(payload);
-    await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload);
+    await this.notifyWorkerStatusSafely(payload, 'mismatched_status');
   }
 
   private readonly saveLogWppConnection = async (

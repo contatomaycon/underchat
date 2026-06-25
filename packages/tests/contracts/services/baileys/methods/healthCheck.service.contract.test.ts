@@ -236,6 +236,40 @@ describe('BaileysHealthCheckService', () => {
     ).toHaveBeenCalled();
   });
 
+  it('keeps reported connected socket in connecting state on transient closed websocket', async () => {
+    const { service } = makeService();
+    const mismatch = jest.fn();
+
+    service.configure({
+      getSocket: () =>
+        ({
+          ws: { isClosed: true },
+        }) as never,
+      getStatus: () => Status.connected,
+      getCode: () => ECodeMessage.connectionEstablished,
+      reconnect: jest.fn(),
+      isConnected: () => true,
+      hasSession: () => true,
+      isIncomingBound: () => true,
+      onStatusMismatch: mismatch,
+    });
+
+    (service as any).lastKnownStatus = Status.connected;
+    (service as any).lastKnownWorkerStatus = EWorkerStatus.online;
+
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
+      isHealthy: true,
+      reason: 'Transient disconnect tolerated (WebSocket client state: CLOSED)',
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
+    });
+    expect(mismatch).toHaveBeenCalledWith(
+      Status.connecting,
+      EWorkerStatus.disponible
+    );
+  });
+
   it('bootstrapConnection handles all bootstrap branches and promise lock', async () => {
     const { service, balanceWorkerStatusGrpcClientService } = makeService();
 

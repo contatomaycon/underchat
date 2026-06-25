@@ -9,6 +9,7 @@ import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { getPhoneNumber } from '@core/common/functions/getPhoneNumber';
@@ -178,13 +179,26 @@ export class WwebjsHealthCheckService {
     return this.bootstrapPromise;
   }
 
-  async notifyDisconnected(reason?: string): Promise<void> {
+  async notifyDisconnected(
+    reason?: string,
+    options: {
+      workerStatus?: EWorkerStatus;
+      detectedStatus?: Status;
+      providerState?: string;
+    } = {}
+  ): Promise<void> {
+    const workerStatus = options.workerStatus ?? EWorkerStatus.disponible;
+    const detectedStatus =
+      options.detectedStatus ??
+      (workerStatus === EWorkerStatus.disponible
+        ? Status.connecting
+        : Status.disconnected);
     const result = this.buildResult({
       isHealthy: false,
       reason: reason ?? 'Connection closed',
-      detectedStatus: Status.disconnected,
-      workerStatus: EWorkerStatus.offline,
-      providerState: 'disconnected',
+      detectedStatus,
+      workerStatus,
+      providerState: options.providerState ?? 'reconnecting',
     });
     this.lastResult = result;
 
@@ -420,6 +434,7 @@ export class WwebjsHealthCheckService {
       status: Status.info,
       worker_id: getWorker(),
       account_id: getAccount(),
+      worker_type_id: EWorkerType.wwebjs,
       worker_status_id: EWorkerStatus.disponible,
       session_ready: false,
       can_send: false,
@@ -508,13 +523,32 @@ export class WwebjsHealthCheckService {
     result: HealthCheckResult,
     reportedStatus: Status
   ): HealthCheckResult {
-    if (this.isTransientDisconnectResult(result, reportedStatus)) {
-      this.transientDisconnectFailures = TRANSIENT_DISCONNECT_THRESHOLD;
+    if (!this.isTransientDisconnectResult(result, reportedStatus)) {
+      if (result.session_ready) {
+        this.transientDisconnectFailures = 0;
+      }
       return result;
     }
 
-    this.transientDisconnectFailures = 0;
-    return result;
+    this.transientDisconnectFailures += 1;
+    if (this.transientDisconnectFailures >= TRANSIENT_DISCONNECT_THRESHOLD) {
+      return result;
+    }
+
+    return this.buildResult({
+      isHealthy: true,
+      reason: `Transient disconnect tolerated (${result.reason ?? result.provider_state})`,
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
+      waState: result.waState,
+      providerState: result.provider_state || 'transient_disconnect',
+      degradedReason: result.degraded_reason ?? result.reason,
+      authenticated: result.authenticated,
+      canReceiveRuntime: result.can_receive_runtime,
+      canSend: false,
+      lastProbeAt: result.last_probe_at,
+      probeLatencyMs: result.probe_latency_ms,
+    });
   }
 
   private isTransientDisconnectResult(
@@ -876,6 +910,7 @@ export class WwebjsHealthCheckService {
       status: result.detectedStatus,
       worker_id: getWorker(),
       account_id: getAccount(),
+      worker_type_id: EWorkerType.wwebjs,
       code: result.session_ready
         ? ECodeMessage.connectionEstablished
         : result.detectedStatus === Status.connecting

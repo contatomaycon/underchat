@@ -219,6 +219,7 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("degraded_reason", 35),
 				stringField("last_probe_at", 36),
 				int32Field("probe_latency_ms", 37),
+				stringField("worker_type_id", 38),
 			),
 			message("ResolveIncomingCallActionRequest",
 				stringField("worker_id", 1),

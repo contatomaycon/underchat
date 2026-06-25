@@ -2548,17 +2548,24 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
-    updateStatusChannel(input: IBaileysConnectionState): void {
+    updateStatusChannel(input: IBaileysConnectionState): boolean {
       const index = this.list.findIndex(
         (c) => c.account?.id === input.account_id && c.id === input.worker_id
       );
 
-      if (index === -1) return;
+      if (index === -1) return false;
 
       if (input.worker_status_id === EWorkerStatus.delete) {
         this.list.splice(index, 1);
 
-        return;
+        return true;
+      }
+
+      if (
+        input.worker_status_id === EWorkerStatus.online &&
+        (input.session_ready !== true || !input.phone?.trim())
+      ) {
+        return false;
       }
 
       const channel = this.list[index];
@@ -2566,9 +2573,25 @@ export const useChannelsStore = defineStore('channels', {
         channel.status.id = input.worker_status_id;
       }
 
+      if (channel && input.worker_status_id === EWorkerStatus.online) {
+        channel.number = input.phone?.trim() ?? channel.number;
+        channel.connection_date = new Date().toISOString();
+      }
+
+      if (
+        channel &&
+        input.worker_status_id === EWorkerStatus.disponible &&
+        input.disconnected_user === true
+      ) {
+        channel.number = null;
+        channel.connection_date = null;
+      }
+
       if (channel && 'recreate_available_at' in input) {
         channel.recreate_available_at = input.recreate_available_at ?? null;
       }
+
+      return true;
     },
   },
 });

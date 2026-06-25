@@ -207,7 +207,7 @@ describe('WwebjsHealthCheckService', () => {
     expect(notifyStatusChangeSpy).not.toHaveBeenCalled();
   });
 
-  it('disconnects immediately on state check failure while reported connected', async () => {
+  it('keeps a reported connected client in connecting state on transient state check failure', async () => {
     const { service } = makeService();
 
     const mismatch = jest.fn();
@@ -236,16 +236,16 @@ describe('WwebjsHealthCheckService', () => {
     (service as any).lastKnownWorkerStatus = EWorkerStatus.online;
 
     await expect(service.runHealthCheck()).resolves.toMatchObject({
-      isHealthy: false,
+      isHealthy: true,
       reason:
-        "Failed to get state: Cannot read properties of null (reading 'evaluate')",
-      detectedStatus: Status.disconnected,
-      workerStatus: EWorkerStatus.offline,
+        "Transient disconnect tolerated (Failed to get state: Cannot read properties of null (reading 'evaluate'))",
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
       session_ready: false,
     });
     expect(mismatch).toHaveBeenCalledWith(
-      Status.disconnected,
-      EWorkerStatus.offline
+      Status.connecting,
+      EWorkerStatus.disponible
     );
   });
 

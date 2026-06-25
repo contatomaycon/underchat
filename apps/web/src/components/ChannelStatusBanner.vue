@@ -126,8 +126,15 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
     return;
   }
 
-  if (data.worker_status_id === EWorkerStatus.online) {
+  if (
+    data.worker_status_id === EWorkerStatus.online &&
+    data.session_ready === true
+  ) {
     dashboardStore.updateOfflineChannelStatus(data.worker_id, null, null);
+    return;
+  }
+
+  if (data.worker_status_id === EWorkerStatus.online) {
     return;
   }
 

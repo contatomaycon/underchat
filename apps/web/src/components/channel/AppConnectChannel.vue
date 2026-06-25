@@ -88,6 +88,7 @@ const qrMaxAttempts = shallowRef(0);
 const workerStatusId = shallowRef<string | null>(props.initialStatusId ?? null);
 const isRequestingQr = shallowRef(false);
 const phoneNumber = shallowRef<string | null>(null);
+const sessionReady = shallowRef(props.initialStatusId === EWorkerStatus.online);
 const disconnectedByUser = shallowRef(false);
 const isResetting = shallowRef(false);
 const pairingCodePrimary = shallowRef('');
@@ -118,6 +119,10 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   attempt: qrAttempt.value || undefined,
   max_attempts: qrMaxAttempts.value || undefined,
   phone: phoneNumber.value ?? undefined,
+  worker_status_id: workerStatusId.value
+    ? (workerStatusId.value as EWorkerStatus)
+    : undefined,
+  session_ready: sessionReady.value,
   disconnected_user: disconnectedByUser.value,
   debug_trace_id: activeDebugTraceId.value,
 }));
@@ -496,6 +501,52 @@ function shouldIgnoreConnectionPayloadIdentity(
   return false;
 }
 
+function isConnectedPayload(data: Partial<IBaileysConnectionState>): boolean {
+  return (
+    data.status === EBaileysConnectionStatus.connected ||
+    data.code === ECodeMessage.connectionEstablished ||
+    data.worker_status_id === EWorkerStatus.online
+  );
+}
+
+function hasConfirmedSessionReady(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  return (
+    data.status === EBaileysConnectionStatus.connected &&
+    data.code === ECodeMessage.connectionEstablished &&
+    data.worker_status_id === EWorkerStatus.online &&
+    data.session_ready === true &&
+    Boolean(data.phone?.trim())
+  );
+}
+
+function shouldIgnoreConnectedPayload(
+  data: Partial<IBaileysConnectionState>,
+  options: { directResponse?: boolean } = {}
+): boolean {
+  if (!isConnectedPayload(data)) {
+    return false;
+  }
+
+  if (!hasConfirmedSessionReady(data)) {
+    return true;
+  }
+
+  if (
+    connectionAttemptId.value &&
+    data.connection_attempt_id !== connectionAttemptId.value
+  ) {
+    return true;
+  }
+
+  return (
+    !options.directResponse &&
+    !connectionAttemptId.value &&
+    props.initialStatusId !== EWorkerStatus.online
+  );
+}
+
 function canRecoverQrFromRecentHistory(): boolean {
   return (
     isVisible.value &&
@@ -696,6 +747,7 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
     ? currentRuntimeGeneration
     : undefined;
   qrPending.value = shouldPreserveQr ? currentQrPending : true;
+  sessionReady.value = false;
   if (shouldPreserveQr) {
     qrAttempt.value = currentQrAttempt;
     qrMaxAttempts.value = currentQrMaxAttempts;
@@ -726,6 +778,7 @@ function prepareInitialModalState() {
   connectionAttemptId.value = undefined;
   connectionRuntimeGeneration.value = undefined;
   qrPending.value = false;
+  sessionReady.value = true;
   resetQrAttempts();
   phoneNumber.value = props.initialPhone
     ? formatPhoneBR(props.initialPhone)
@@ -883,6 +936,7 @@ function applyConnectedState(data: IBaileysConnectionState) {
   statusConnection.value = EBaileysConnectionStatus.connected;
   statusCode.value = ECodeMessage.connectionEstablished;
   phoneNumber.value = data.phone ? formatPhoneBR(data.phone) : null;
+  sessionReady.value = true;
   disconnectedByUser.value = false;
   workerStatusId.value = EWorkerStatus.online;
   isRequestingQr.value = false;
@@ -890,6 +944,8 @@ function applyConnectedState(data: IBaileysConnectionState) {
   qrPending.value = false;
   connectionAttemptId.value =
     data.connection_attempt_id ?? connectionAttemptId.value;
+  connectionRuntimeGeneration.value =
+    data.runtime_generation ?? connectionRuntimeGeneration.value;
   resetQrAttempts();
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
@@ -935,6 +991,25 @@ function applyReducedConnectionState(
       reason: data.reason,
       qrcode: data.qrcode,
       pairing_code: data.pairing_code,
+    });
+    return;
+  }
+
+  if (shouldIgnoreConnectedPayload(data, options)) {
+    logConnectionLifecycleDebug('web.connection_state.connected_ignored', {
+      trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      status: data.status,
+      code: data.code,
+      worker_status_id: data.worker_status_id,
+      session_ready: data.session_ready,
+      phone: data.phone,
+      reason: data.reason,
     });
     return;
   }
@@ -1005,6 +1080,14 @@ function applyReducedConnectionState(
 
   if (next.disconnected_user !== undefined) {
     disconnectedByUser.value = next.disconnected_user;
+  }
+
+  if (next.session_ready !== undefined) {
+    sessionReady.value = next.session_ready === true;
+  }
+
+  if (next.worker_status_id && next.worker_status_id !== EWorkerStatus.online) {
+    sessionReady.value = false;
   }
 
   if (hasExceededQrAttempts(next)) {
@@ -1142,6 +1225,25 @@ function handleWorkerConnectionMessage(
   }
 
   if (!shouldProcessConnectionPublication(ctx)) {
+    return;
+  }
+
+  if (shouldIgnoreConnectedPayload(data)) {
+    logConnectionLifecycleDebug('web.centrifugo.connected_ignored', {
+      trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      connection_attempt_id: data.connection_attempt_id,
+      runtime_generation: data.runtime_generation,
+      status: data.status,
+      code: data.code,
+      worker_status_id: data.worker_status_id,
+      session_ready: data.session_ready,
+      phone: data.phone,
+      offset: ctx?.offset,
+    });
     return;
   }
 

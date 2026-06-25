@@ -615,6 +615,63 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
+  it('uses worker_type_id from NotifyWorkerStatus to confirm online readiness through runtime health', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.runtimeHealth.mockResolvedValueOnce({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.whatsmeow,
+      activated: true,
+      ready: true,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      standby: false,
+      has_session: true,
+      runtime_state: 'active',
+      qr_stream_ready: true,
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.whatsmeow,
+      worker_status_id: EWorkerStatus.online,
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      phone: '+556192037138',
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      { worker_id: 'worker-1' },
+      EWorkerType.whatsmeow
+    );
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        number: '+556192037138',
+        connection_date: expect.any(String),
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.whatsmeow,
+        worker_status_id: EWorkerStatus.online,
+        session_ready: true,
+      })
+    );
+  });
+
   it('preserves QR state from worker status notifications', async () => {
     const deps = buildHandler();
 
