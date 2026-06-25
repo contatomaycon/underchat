@@ -9,6 +9,7 @@ const (
 	WorkerStatusOffline    = "019a930d-c6f6-766d-9c84-3696c2cd5ed8"
 	WorkerStatusDisponible = "019a930d-c6f6-766d-9c84-3904383fe742"
 	WorkerStatusError      = "019a930d-c6f6-766d-9c84-48cb970a9f21"
+	WorkerStatusMismatched = "019a930d-c6f6-766d-9c84-5056ccf66633"
 
 	CodeConnectionEstablished = 200
 	CodeAwaitingReadQRCode    = 202

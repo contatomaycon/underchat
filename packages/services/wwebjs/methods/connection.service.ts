@@ -1898,6 +1898,16 @@ export class WwebjsConnectionService {
 
       this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
       this.connectionEstablished = false;
+      console.warn('[WwebjsConnection] Session readiness verification failed', {
+        source,
+        reason:
+          readiness.degraded_reason ?? readiness.reason ?? 'session_not_ready',
+        provider_state: readiness.provider_state,
+        session_ready: readiness.session_ready,
+        can_send: readiness.can_send,
+        can_receive_runtime: readiness.can_receive_runtime,
+        authenticated: readiness.authenticated,
+      });
       const payload: IBaileysConnectionState = {
         status: this.status,
         worker_id: getWorker(),

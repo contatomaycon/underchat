@@ -764,7 +764,14 @@ export class WwebjsHealthCheckService {
     try {
       return await this.withProbeTimeout(
         Promise.resolve(
-          page.evaluate(() => Boolean((globalThis as any).Store?.WWebJS))
+          page.evaluate(() => {
+            const scope = globalThis as unknown as {
+              Store?: { WWebJS?: unknown };
+              WWebJS?: unknown;
+            };
+
+            return Boolean(scope.Store?.WWebJS || scope.WWebJS);
+          })
         ),
         'store_wwebjs'
       );
@@ -786,10 +793,9 @@ export class WwebjsHealthCheckService {
         'getNumberId'
       );
 
-      if (!numberId) {
-        throw new Error('self_number_not_registered');
+      if (numberId) {
+        return;
       }
-      return;
     }
 
     if (typeof probeClient.isRegisteredUser === 'function') {

@@ -32,6 +32,8 @@ import (
 const inboundKafkaPublishMaxAttempts = 3
 const inboundKafkaPublishBaseDelay = 250 * time.Millisecond
 const inboundKafkaPublishMaxDelay = 2 * time.Second
+const whatsmeowSessionReadyTimeout = 20 * time.Second
+const whatsmeowSessionReadyPollInterval = 250 * time.Millisecond
 
 type WhatsAppManager struct {
 	cfg        Config
@@ -174,8 +176,7 @@ func (m *WhatsAppManager) Bootstrap(ctx context.Context) {
 		m.consecutiveSendFailures = 0
 		m.degradedReason = ""
 		m.mu.Unlock()
-		go m.markPresenceAvailable(context.Background(), "bootstrap-already-authenticated")
-		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
+		m.publishConnectedWhenReady(context.Background(), "bootstrap-already-authenticated", phoneFromOwnID(client.Store.ID), false)
 		return
 	}
 	if client.IsConnected() {
@@ -577,6 +578,72 @@ func (m *WhatsAppManager) enrichReadiness(state *ConnectionState) {
 	}
 }
 
+func (m *WhatsAppManager) waitForSessionReady(ctx context.Context, reason string) map[string]any {
+	deadline := time.NewTimer(whatsmeowSessionReadyTimeout)
+	ticker := time.NewTicker(whatsmeowSessionReadyPollInterval)
+	defer deadline.Stop()
+	defer ticker.Stop()
+
+	var health map[string]any
+	for {
+		health = m.ConnectionHealth()
+		if healthBool(health, "session_ready") {
+			return health
+		}
+
+		select {
+		case <-ctx.Done():
+			return health
+		case <-deadline.C:
+			log.Printf(
+				"whatsmeow session readiness timeout worker_id=%s reason=%s provider_state=%s degraded_reason=%s authenticated=%t client_connected=%t logged_in=%t has_store_id=%t connected_event=%t",
+				m.cfg.WorkerID,
+				reason,
+				healthString(health, "provider_state"),
+				healthString(health, "degraded_reason"),
+				healthBool(health, "authenticated"),
+				healthBool(health, "client_connected"),
+				healthBool(health, "logged_in"),
+				healthBool(health, "has_store_id"),
+				healthBool(health, "connected_event"),
+			)
+			return health
+		case <-ticker.C:
+		}
+	}
+}
+
+func (m *WhatsAppManager) isTerminalSessionInvalidated() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return m.status == "disconnected" &&
+		(m.code == CodeLoggedOut || m.code == CodeConnectionReplaced || m.degradedReason == "logged_out" || m.degradedReason == "stream_replaced")
+}
+
+func (m *WhatsAppManager) publishConnectedWhenReady(ctx context.Context, reason string, phone string, isNewLogin bool) bool {
+	health := m.waitForSessionReady(ctx, reason)
+	if m.isTerminalSessionInvalidated() {
+		log.Printf("whatsmeow connected publish skipped after terminal session invalidation worker_id=%s reason=%s", m.cfg.WorkerID, reason)
+		return false
+	}
+	if !healthBool(health, "session_ready") {
+		m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, phone, "", isNewLogin)
+		return false
+	}
+
+	if phone == "" {
+		if client := m.getClient(); client != nil && client.Store != nil && client.Store.ID != nil {
+			phone = phoneFromOwnID(client.Store.ID)
+		}
+	}
+
+	log.Printf("whatsmeow session readiness confirmed worker_id=%s reason=%s phone_set=%t", m.cfg.WorkerID, reason, phone != "")
+	go m.markPresenceAvailable(context.Background(), reason)
+	m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", isNewLogin)
+	return true
+}
+
 func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConnectionRequest) (state ConnectionState, err error) {
 	startedAt := time.Now()
 	if req.ConnectionAttemptID != "" {
@@ -900,8 +967,10 @@ func (m *WhatsAppManager) publishConnectedIfAuthenticated(ctx context.Context, r
 	m.consecutiveSendFailures = 0
 	m.degradedReason = ""
 	m.mu.Unlock()
-	go m.markPresenceAvailable(context.Background(), reason)
-	m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
+	ready := m.publishConnectedWhenReady(ctx, reason, phone, false)
+	if !ready {
+		return true
+	}
 	return healthBool(m.ConnectionHealth(), "session_ready")
 }
 
@@ -1117,8 +1186,7 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
 		m.resetQRCodeReadSession(true)
-		go m.markPresenceAvailable(context.Background(), "qrcode-already-authenticated")
-		m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
+		m.publishConnectedWhenReady(ctx, "qrcode-already-authenticated", phoneFromOwnID(client.Store.ID), false)
 		return m.currentConnectionState(), nil
 	}
 	m.resetQRCodeReadSession(true)
@@ -1466,8 +1534,7 @@ func (m *WhatsAppManager) connectWithPhonePairingInternal(ctx context.Context, p
 		log.Printf("whatsmeow phone pairing request already authenticated worker_id=%s", m.cfg.WorkerID)
 		m.clearFreshLoginFallback()
 		m.clearLoginArtifacts()
-		go m.markPresenceAvailable(context.Background(), "phone-already-authenticated")
-		m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phoneFromOwnID(client.Store.ID), "", false)
+		m.publishConnectedWhenReady(ctx, "phone-already-authenticated", phoneFromOwnID(client.Store.ID), false)
 		return nil
 	}
 	if client.IsConnected() && client.Store.ID == nil {
@@ -1604,8 +1671,7 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.consecutiveSendFailures = 0
 		m.degradedReason = ""
 		m.mu.Unlock()
-		go m.markPresenceAvailable(context.Background(), "connected-event")
-		m.publishState(context.Background(), "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
+		go m.publishConnectedWhenReady(context.Background(), "connected-event", phone, false)
 	case *events.Disconnected:
 		log.Printf("whatsmeow event disconnected worker_id=%s", m.cfg.WorkerID)
 		if m.isQRCodeReadSessionLocked() {
@@ -1632,11 +1698,22 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.code = CodeLoggedOut
 		m.degradedReason = "logged_out"
 		m.mu.Unlock()
-		m.publishStateDisconnectedByUser(context.Background(), CodeLoggedOut, WorkerStatusDisponible)
+		m.publishStateDisconnectedByUser(context.Background(), CodeLoggedOut, WorkerStatusMismatched)
 	case *events.ConnectFailure:
 		log.Printf("whatsmeow event connect_failure worker_id=%s reason=%s message=%s", m.cfg.WorkerID, event.Reason.String(), event.Message)
 		m.clearLoginArtifacts()
-		if event.Reason.IsLoggedOut() && m.startFreshLoginAfterStoredSessionLogout() {
+		if event.Reason.IsLoggedOut() {
+			m.mu.Lock()
+			m.connected = false
+			m.status = "disconnected"
+			m.code = CodeLoggedOut
+			m.degradedReason = "logged_out"
+			m.mu.Unlock()
+			if m.startFreshLoginAfterStoredSessionLogout() {
+				return
+			}
+			m.clearFreshLoginFallback()
+			m.publishStateDisconnectedByUser(context.Background(), CodeLoggedOut, WorkerStatusMismatched)
 			return
 		}
 		m.clearFreshLoginFallback()
@@ -1645,7 +1722,13 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		log.Printf("whatsmeow event stream_replaced worker_id=%s", m.cfg.WorkerID)
 		m.clearLoginArtifacts()
 		m.clearFreshLoginFallback()
-		m.publishState(context.Background(), "disconnected", CodeConnectionReplaced, WorkerStatusOffline, "", "", false)
+		m.mu.Lock()
+		m.connected = false
+		m.status = "disconnected"
+		m.code = CodeConnectionReplaced
+		m.degradedReason = "stream_replaced"
+		m.mu.Unlock()
+		m.publishState(context.Background(), "disconnected", CodeConnectionReplaced, WorkerStatusMismatched, "", "", false)
 	case *events.KeepAliveTimeout:
 		m.recordKeepAliveTimeout(context.Background(), event)
 	case *events.KeepAliveRestored:
@@ -1732,7 +1815,7 @@ func (m *WhatsAppManager) startFreshLoginAfterStoredSessionLogout() bool {
 	go func() {
 		if err := m.resetAndStartFreshLogin(context.Background(), req); err != nil {
 			log.Printf("failed to restart whatsmeow fresh login after stale session logout: %v", err)
-			m.publishState(context.Background(), "disconnected", CodeLoggedOut, WorkerStatusDisponible, "", "", false)
+			m.publishState(context.Background(), "disconnected", CodeLoggedOut, WorkerStatusMismatched, "", "", false)
 		}
 	}()
 	return true
@@ -1835,9 +1918,9 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t is_new_login=%t attempt=%d max_attempts=%d connection_attempt_id=%s",
 		m.cfg.WorkerID,
-		status,
-		code,
-		workerStatusID,
+		state.Status,
+		state.Code,
+		state.WorkerStatusID,
 		state.QRCode != "",
 		state.PairingCode != "",
 		isNewLogin,
@@ -1876,7 +1959,7 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 			"pairing_code":          state.PairingCode,
 		})
 	}
-	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible {
+	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible || state.WorkerStatusID == WorkerStatusMismatched {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
 			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, state.Code, state.WorkerStatusID, err)
 		}
@@ -1907,8 +1990,8 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false connection_attempt_id=%s",
 		m.cfg.WorkerID,
 		state.Status,
-		code,
-		workerStatusID,
+		state.Code,
+		state.WorkerStatusID,
 		state.ConnectionAttemptID,
 	)
 	if err := m.centrifugo.Publish(ctx, workerCentrifugoQueue(m.cfg.AccountID), state); err != nil {
@@ -1938,7 +2021,7 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 			"disconnected_user":     true,
 		})
 	}
-	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible {
+	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible || state.WorkerStatusID == WorkerStatusMismatched {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
 			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, state.Code, state.WorkerStatusID, err)
 		}
