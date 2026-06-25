@@ -1249,6 +1249,7 @@ export class WorkerCommandHandlerService {
       number: phoneNumber,
       connection_date: connectionDate,
     });
+    await this.clearQrAttemptAfterSuccessfulTerminal(payload);
     this.logDebug('service.notify_status.db_update', {
       trace_id: payload.debug_trace_id,
       layer: 'service',
@@ -2399,6 +2400,35 @@ export class WorkerCommandHandlerService {
     }
   }
 
+  private async clearQrAttemptAfterSuccessfulTerminal(
+    state: IBaileysConnectionState
+  ): Promise<void> {
+    if (
+      !this.isQrAttemptSuccessfulTerminalState(state) ||
+      !state.worker_type_id
+    ) {
+      return;
+    }
+
+    await this.redis.del(
+      this.qrAttemptCacheKey(state.worker_id, state.worker_type_id)
+    );
+
+    if (!state.connection_attempt_id) {
+      return;
+    }
+
+    const active = await this.getActiveQrAttempt(
+      state.worker_id,
+      state.worker_type_id
+    );
+    if (active?.ack.connection_attempt_id === state.connection_attempt_id) {
+      await this.redis.del(
+        this.activeQrAttemptKey(state.worker_id, state.worker_type_id)
+      );
+    }
+  }
+
   private async invalidateQrAttemptState(
     workerId: string,
     options: {
@@ -2476,6 +2506,10 @@ export class WorkerCommandHandlerService {
       hasQrCredential || this.isQrAttemptSuccessfulTerminalState(state);
 
     if (state.disconnected_user === true) {
+      return { ignored: false };
+    }
+
+    if (this.isQrAttemptSuccessfulTerminalState(state)) {
       return { ignored: false };
     }
 

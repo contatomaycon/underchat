@@ -793,6 +793,78 @@ describe('WorkerCommandHandlerService connection', () => {
     expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
   });
 
+  it('persists a connected notification even when a QR is cached for the same attempt', async () => {
+    const deps = buildHandler();
+    seedActiveQrAttempt(deps.redisStore, {
+      connectionAttemptId: 'attempt-active',
+      runtimeGeneration: 1,
+    });
+    deps.redisStore.set(
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
+      JSON.stringify({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        worker_status_id: EWorkerStatus.disponible,
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        qrcode: 'data:image/png;base64,cached-qr',
+        connection_attempt_id: 'attempt-active',
+        runtime_generation: 1,
+        qr_generated_at: new Date().toISOString(),
+      })
+    );
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.online,
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      phone: '556192037138',
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      provider_state: 'CONNECTED',
+      connection_attempt_id: 'attempt-active',
+      runtime_generation: 1,
+    });
+
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        number: '556192037138',
+        connection_date: expect.any(String),
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        status: EBaileysConnectionStatus.connected,
+        code: ECodeMessage.connectionEstablished,
+        session_ready: true,
+        phone: '556192037138',
+      })
+    );
+    expect(
+      deps.redisStore.has(
+        `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`
+      )
+    ).toBe(false);
+    expect(
+      deps.redisStore.has(
+        `connection:qrcode:${EWorkerType.wwebjs}:worker-1:active_attempt`
+      )
+    ).toBe(false);
+  });
+
   it('enqueues QR in Redis Streams and returns pending state', async () => {
     const deps = buildHandler();
 
