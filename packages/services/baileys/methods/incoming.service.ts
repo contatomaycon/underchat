@@ -66,11 +66,7 @@ const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
   'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
   100
 );
-const HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS = 60 * 60 * 1000;
-const HISTORY_RECONCILIATION_MAX_AGE_MS = readPositiveIntEnv(
-  'HISTORY_RECONCILIATION_MAX_AGE_MS',
-  HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS
-);
+const HISTORY_RECONCILIATION_WINDOW_MS = 60 * 60 * 1000;
 
 interface ProcessIncomingOptions {
   allowHistoricalUpsert?: boolean;
@@ -871,7 +867,7 @@ export class BaileysIncomingMessageService {
     const timestampMs = getWAMessageTimestampMs(m);
     if (
       !timestampMs ||
-      Date.now() - timestampMs > HISTORY_RECONCILIATION_MAX_AGE_MS
+      Date.now() - timestampMs > HISTORY_RECONCILIATION_WINDOW_MS
     ) {
       return false;
     }

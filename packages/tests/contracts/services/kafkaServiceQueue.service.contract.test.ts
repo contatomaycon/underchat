@@ -18,7 +18,6 @@ describe('KafkaServiceQueueService', () => {
     expect(service.updateMessage()).toBe('update.message');
     expect(service.upsertMessage()).toBe('upsert.message');
     expect(service.upsertMessageHistory()).toBe('upsert.message.history');
-    expect(service.upsertMessageDlq()).toBe('upsert.message.dlq');
     expect(service.updateMessageStatus()).toBe('update.message.status');
     expect(service.markMessageRead()).toBe('mark.message.read');
     expect(service.clearChatSummary()).toBe('clear.chat.summary');
@@ -67,7 +66,6 @@ describe('KafkaServiceQueueService', () => {
       'update.message',
       'upsert.message',
       'upsert.message.history',
-      'upsert.message.dlq',
       'update.message.status',
       'mark.message.read',
       'clear.chat.summary',

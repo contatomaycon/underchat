@@ -15,8 +15,6 @@ const WORKER_UUID_IN_TEXT_PATTERN =
 
 export const WORKER_TOPIC_SUFFIXES = [
   'send.message',
-  'send.message.dlq',
-  'consumer.dlq',
   'schedule.send.message',
   'validate.phone',
   'notification.message',

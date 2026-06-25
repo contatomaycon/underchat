@@ -25,10 +25,7 @@ export class MessageHistorySyncConsume {
 
   private readonly HISTORY_RECONCILIATION_ENABLED =
     process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
-  private readonly HISTORY_WINDOW_MS = this.readPositiveIntEnv(
-    'HISTORY_RECONCILIATION_MAX_AGE_MS',
-    60 * 60 * 1000
-  );
+  private readonly HISTORY_WINDOW_MS = 60 * 60 * 1000;
   private readonly WORKER_DATES_CACHE_TTL_MS = 60 * 1000;
   private workerDatesCache: Map<string, ICachedWorkerDates> = new Map();
   private readonly receiptCache: MessageHistoryReceiptCacheService;
@@ -595,19 +592,5 @@ export class MessageHistorySyncConsume {
     }
 
     return Array.from(candidates);
-  }
-
-  private readPositiveIntEnv(key: string, fallback: number): number {
-    const raw = process.env[key];
-    if (!raw) {
-      return fallback;
-    }
-
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return fallback;
-    }
-
-    return Math.floor(parsed);
   }
 }

@@ -64,11 +64,7 @@ const HISTORY_RECONCILIATION_MESSAGE_LIMIT = readPositiveIntEnv(
   'HISTORY_RECONCILIATION_MESSAGE_LIMIT',
   100
 );
-const HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS = 60 * 60 * 1000;
-const HISTORY_RECONCILIATION_MAX_AGE_MS = readPositiveIntEnv(
-  'HISTORY_RECONCILIATION_MAX_AGE_MS',
-  HISTORY_RECONCILIATION_DEFAULT_MAX_AGE_MS
-);
+const HISTORY_RECONCILIATION_WINDOW_MS = 60 * 60 * 1000;
 const HISTORY_EVENT_BUFFER_FLUSH_DELAY_MS = 1000;
 const HISTORY_EVENT_POST_READY_GRACE_MS = 2 * 60 * 1000;
 const HISTORY_EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
@@ -1649,7 +1645,7 @@ export class WwebjsIncomingMessageService {
         reason: skipReason,
         timestampMs: ageStatus.timestampMs ?? undefined,
         ageMs: ageStatus.ageMs ?? undefined,
-        maxAgeMs: HISTORY_RECONCILIATION_MAX_AGE_MS,
+        maxAgeMs: HISTORY_RECONCILIATION_WINDOW_MS,
       });
       return null;
     }
@@ -1825,7 +1821,7 @@ export class WwebjsIncomingMessageService {
         reason: skipReason,
         timestampMs: ageStatus.timestampMs ?? undefined,
         ageMs: ageStatus.ageMs ?? undefined,
-        maxAgeMs: HISTORY_RECONCILIATION_MAX_AGE_MS,
+        maxAgeMs: HISTORY_RECONCILIATION_WINDOW_MS,
         connectionReady: this.connectionReady,
         withinReadyGrace: this.isWithinPostReadyHistoryGraceWindow(),
       });
@@ -1972,7 +1968,7 @@ export class WwebjsIncomingMessageService {
   }
 
   private isTimestampWithinHistoryMaxAge(timestampMs: number): boolean {
-    return Date.now() - timestampMs <= HISTORY_RECONCILIATION_MAX_AGE_MS;
+    return Date.now() - timestampMs <= HISTORY_RECONCILIATION_WINDOW_MS;
   }
 
   private getHistoryMessageAgeStatus(msg: Message): IWwebjsHistoryAgeStatus {
@@ -3348,7 +3344,7 @@ export class WwebjsIncomingMessageService {
         to: msg.to,
         type: msg.type,
         reason: 'timestamp_resolution_rejected',
-        maxAgeMs: HISTORY_RECONCILIATION_MAX_AGE_MS,
+        maxAgeMs: HISTORY_RECONCILIATION_WINDOW_MS,
         connectionReady: this.connectionReady,
         withinReadyGrace: this.isWithinPostReadyHistoryGraceWindow(),
       });

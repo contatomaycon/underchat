@@ -47,9 +47,7 @@ func TestSelectLatestHistorySyncCandidatesLimitsGloballyAndReturnsChronologicall
 
 func TestBuildHistorySyncCandidateFiltersBeforeLimit(t *testing.T) {
 	manager := &WhatsAppManager{
-		cfg: Config{
-			HistoryReconciliationMaxAge: time.Hour,
-		},
+		cfg: Config{},
 	}
 	chatJID := types.NewJID("5511999999999", types.DefaultUserServer)
 	now := uint64(time.Now().Unix())

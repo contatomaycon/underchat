@@ -21,8 +21,6 @@ describe('KafkaBaileysQueueService', () => {
       'worker.w1.validate.phone',
       'worker.w1.notification.message',
       'worker.w1.webhook.integration',
-      'worker.w1.send.message.dlq',
-      'worker.w1.consumer.dlq',
     ]);
     expect(service.deletable('w1')).toEqual([
       'worker.w1.schedule.send.message',

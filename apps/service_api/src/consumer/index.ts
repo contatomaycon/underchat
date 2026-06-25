@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { startBalanceConsume } from './balance.consume';
 import { startMessageUpdateConsume } from './messageUpdate.consume';
 import { startMessageUpsertConsume } from './messageUpsert.consume';
-import { startMessageUpsertDlqConsume } from './messageUpsertDlq.consume';
 import { startMessageHistorySyncConsume } from './messageHistorySync.consume';
 import { startMessageStatusUpdateConsume } from './messageStatusUpdate.consume';
 import { startChatSummaryClearConsume } from './chatSummaryClear.consume';
@@ -47,7 +46,6 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
     () => startBalanceConsume(server),
     () => startMessageUpdateConsume(server),
     () => startMessageUpsertConsume(server),
-    () => startMessageUpsertDlqConsume(server),
     () => startMessageHistorySyncConsume(server),
     () => startMessageStatusUpdateConsume(server),
     () => startChatSummaryClearConsume(server),

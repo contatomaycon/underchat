@@ -26,7 +26,6 @@ export class KafkaServiceQueueService {
     const updateMessage = this.updateMessage();
     const upsertMessage = this.upsertMessage();
     const upsertMessageHistory = this.upsertMessageHistory();
-    const upsertMessageDlq = this.upsertMessageDlq();
     const updateMessageStatus = this.updateMessageStatus();
     const markMessageRead = this.markMessageRead();
     const clearChatSummary = this.clearChatSummary();
@@ -56,7 +55,6 @@ export class KafkaServiceQueueService {
       updateMessage,
       upsertMessage,
       upsertMessageHistory,
-      upsertMessageDlq,
       updateMessageStatus,
       markMessageRead,
       clearChatSummary,
@@ -106,10 +104,6 @@ export class KafkaServiceQueueService {
 
   upsertMessageHistory = () => {
     return `upsert.message.history`;
-  };
-
-  upsertMessageDlq = () => {
-    return `upsert.message.dlq`;
   };
 
   updateMessageStatus = () => {

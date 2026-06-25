@@ -65,7 +65,7 @@ Coberto:
 - Mensagens recebidas com wrappers `ephemeralMessage`, `viewOnceMessage`, `viewOnceMessageV2`, `viewOnceMessageV2Extension`, `documentWithCaptionMessage`, `lottieStickerMessage` e `editedMessage`, alinhado ao `unwrapMessage` usado pelo Baileys.
 - Mensagens recebidas de sistema para pin/unpin e configuracao de mensagens temporarias (`set_disappearing_messages`), publicadas no mesmo contrato consumido por `MessageUpsert`.
 - Templates recebidos com `hydratedTemplate` sao classificados como texto, como no Baileys.
-- Conversas LID usam `remoteJidAlt` quando o whatsmeow entrega alias PN, evitando DLQ por telefone ausente.
+- Conversas LID usam `remoteJidAlt` quando o whatsmeow entrega alias PN, evitando descarte por telefone ausente.
 - Foto de contato em mensagens e chamadas recebidas via `GetProfilePictureInfo`, persistida no S3 pelo proprio worker antes do `upsert.message`, com cache Redis e fallback sem foto quando o WhatsApp negar ou nao houver imagem.
 - Receipts de enviada/entregue/lida/reproduzida mapeados para `update.message.status`.
 - Mark read.
@@ -85,7 +85,7 @@ Coberto:
 - Tipo de chamada de video e confiavel em `CallOfferNotice`; em `CallOffer` puro fica best-effort conforme metadados do evento.
 - Midia recebida que nao puder ser baixada ou enviada ao S3 segue para o contrato com `media_download_failed: true`.
 - Mensagem recebida view-once segue a paridade do Baileys: publica `type=view_once` e nao baixa/armazena a midia.
-- `worker.${WORKER_ID}.send.message.dlq` nao foi implementado porque nao existe no contrato real atual de `KafkaBaileysQueueService`; o DLQ existente no fluxo e `upsert.message.dlq`, aplicado pelo consumidor TypeScript depois do `upsert.message`.
+- Falhas terminais de mensagens sao registradas em log/estado e o offset e avancado; nao ha redrive por topico Kafka.
 - Reacao criptografada (`encReactionMessage`) e classificada como `react`, mas a atualizacao depende do payload trazer chave alvo suficiente no protojson.
 
 ## Unsupported Explicito

@@ -250,6 +250,7 @@ describe('KafkaConsumerRunner', () => {
     (createConsumer as jest.Mock).mockReturnValue(fakeConsumer);
 
     const started: number[] = [];
+    const logger = { error: jest.fn() };
     const runner = new KafkaConsumerRunner({
       kafka: { createConsumer: jest.fn(), getBroker: jest.fn() } as never,
       topic: 'worker.w1.send.message',
@@ -266,7 +267,7 @@ describe('KafkaConsumerRunner', () => {
       maxRetries: 1,
       maxInFlightTotal: 4,
       maxInFlightPerPartition: 4,
-      logger: { error: jest.fn() },
+      logger,
     });
 
     await runner.start();
@@ -289,6 +290,16 @@ describe('KafkaConsumerRunner', () => {
       'worker.w1.send.message',
       0,
       1
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        topic: 'worker.w1.send.message',
+        groupId: 'group-test',
+        partition: 0,
+        offset: 0,
+        attempts: 1,
+      }),
+      'Kafka consumer runner exhausted retries; discarding message'
     );
 
     await runner.close();

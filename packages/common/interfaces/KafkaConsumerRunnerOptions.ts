@@ -1,6 +1,5 @@
 import type { MessageHeader } from 'node-rdkafka';
 import type { KafkaClient } from '@core/plugins/kafkaStreams';
-import type { KafkaDeadLetterEnvelope } from './KafkaDeadLetterEnvelope';
 
 export interface KafkaRunnerMessage {
   value: Buffer | null;
@@ -22,21 +21,6 @@ export interface KafkaConsumerRunnerContext<TPayload> {
   entityKey: string;
   attempt: number;
   payload: TPayload;
-}
-
-export interface KafkaDeadLetterPublisher<TPayload = unknown> {
-  topic: string;
-  send: (
-    topic: string,
-    payload: KafkaDeadLetterEnvelope<TPayload>,
-    key?: string
-  ) => Promise<void>;
-  resolveKey?: (
-    payload: TPayload,
-    context: KafkaConsumerRunnerContext<TPayload>,
-    error: unknown
-  ) => string | null;
-  reason?: string;
 }
 
 export interface KafkaConsumerRunnerLogger {
@@ -65,7 +49,6 @@ export interface KafkaConsumerRunnerOptions<TPayload> {
   retryDelaysMs?: number[];
   processingTimeoutMs?: number;
   shutdownDrainTimeoutMs?: number;
-  dlq?: KafkaDeadLetterPublisher<TPayload>;
   logger?: KafkaConsumerRunnerLogger;
   onInvalidMessage?: (message: KafkaRunnerMessage) => Promise<void> | void;
   onProcessed?: (

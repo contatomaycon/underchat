@@ -44,7 +44,6 @@ import type {
   KafkaConsumerRunnerContext,
   KafkaRunnerMessage,
 } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
-import { ensureKafkaTopic } from '@core/common/functions/ensureKafkaTopic';
 
 interface IQueuedEnvelope {
   sourceTopic: string;
@@ -489,13 +488,12 @@ export class MessageSendConsume {
     failureEvent: 'delivery_unconfirmed' | 'processing_failed' | 'enqueue_error'
   ): Promise<void> {
     const messageId = this.extractMessageId(envelope.payload);
+    const reason = messageId
+      ? `${failureEvent}_terminal`
+      : `${failureEvent}_missing_message_id`;
 
     if (!messageId) {
-      await this.publishTerminalDlq(
-        envelope,
-        error,
-        `${failureEvent}_missing_message_id`
-      );
+      this.logTerminalFailure(envelope, error, reason);
       return;
     }
 
@@ -504,48 +502,30 @@ export class MessageSendConsume {
       return;
     }
 
-    const terminalReason = `${failureEvent}_terminal`;
     await this.markMessageAsFailedToSend(messageId);
-    await this.publishTerminalDlq(envelope, error, terminalReason);
+    this.logTerminalFailure(envelope, error, reason);
   }
 
-  private async publishTerminalDlq(
+  private logTerminalFailure(
     envelope: IQueuedEnvelope,
     error: unknown,
     reason: string
-  ): Promise<void> {
-    const topic = this.kafkaBaileysQueueService.workerSendMessageDlq(
-      baileysEnvironment.baileysWorkerId
-    );
-
-    try {
-      await ensureKafkaTopic(
-        this.kafka,
-        topic,
-        this.kafkaBaileysQueueService.getNumPartitions(),
-        this.kafkaBaileysQueueService.getReplicationFactor()
-      );
-      await this.streamProducerService.send(
-        topic,
-        {
-          provider: this.PROVIDER,
-          worker_id: baileysEnvironment.baileysWorkerId,
-          account_id: baileysEnvironment.baileysAccountId,
-          source_topic: envelope.sourceTopic,
-          group_id: `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`,
-          partition: envelope.partition,
-          offset: envelope.offset,
-          kafka_key: envelope.kafkaKey,
-          error: this.errorMessage(error),
-          reason,
-          failed_at: new Date().toISOString(),
-          original_payload: envelope.payload,
-        },
-        this.extractMessageId(envelope.payload) ??
-          envelope.kafkaKey ??
-          undefined
-      );
-    } catch {}
+  ): void {
+    console.error('[MessageSend] Discarding terminal send failure:', {
+      provider: this.PROVIDER,
+      worker_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+      source_topic: envelope.sourceTopic,
+      group_id: `group-underchat-baileys-send-${baileysEnvironment.baileysWorkerId}`,
+      partition: envelope.partition,
+      offset: envelope.offset,
+      kafka_key: envelope.kafkaKey,
+      queue_key: envelope.queueKey,
+      chat_id: envelope.chatId,
+      message_id: this.extractMessageId(envelope.payload),
+      error: this.errorMessage(error),
+      reason,
+    });
   }
 
   private errorMessage(error: unknown): string {

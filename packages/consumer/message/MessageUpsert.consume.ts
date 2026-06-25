@@ -87,10 +87,7 @@ import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappVa
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 import type { KafkaRunnerMessage } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
-import {
-  buildUpsertMessageDlqKey,
-  buildUpsertMessageKafkaKey,
-} from '@core/common/functions/buildUpsertMessageKafkaKey';
+import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -170,13 +167,6 @@ export class MessageUpsertConsume {
     'automation-send:idempotency:v1';
   private readonly AUTOMATION_SEND_DEDUPE_TTL_SECONDS =
     generalEnvironment.automationSendDedupeTtlSeconds;
-  private readonly DLQ_SEND_DEDUPE_PREFIX = 'message-upsert:dlq:v1';
-  private readonly DLQ_SEND_DEDUPE_TTL_SECONDS = 7 * 24 * 60 * 60;
-  private readonly DLQ_FALLBACK_REDIS_KEY = 'message-upsert:dlq:fallback:v1';
-  private readonly DLQ_FALLBACK_MAX_ITEMS = readPositiveIntEnv(
-    'MESSAGE_UPSERT_DLQ_FALLBACK_MAX_ITEMS',
-    10_000
-  );
   private readonly historyReceiptCache: MessageHistoryReceiptCacheService;
 
   private static readonly PROTOCOL_MESSAGE_TYPE_EPHEMERAL_SETTING = 3;
@@ -245,197 +235,49 @@ export class MessageUpsertConsume {
     );
   }
 
-  private async sendToDlq(
+  private discardTerminalMessage(
     data: IUpsertMessage,
     error: unknown,
-    retryCount: number
-  ): Promise<boolean> {
-    const maxDlqRetries = 5;
-    const dlqTopic = this.kafkaServiceQueueService.upsertMessageDlq();
-    const dlqDedupeKey = this.buildDlqDedupeKey(data, error);
+    reason: string,
+    partition: number,
+    offset: number,
+    level: 'warn' | 'error' = 'warn',
+    details: Record<string, unknown> = {}
+  ): boolean {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    this.logLifecycle(data, {
+      stage: 'message_upsert.discard.terminal',
+      decision: 'discard_message',
+      outcome: 'discarded',
+      reason,
+      level,
+      partition,
+      offset,
+      error: errorMessage,
+      ...details,
+    });
 
-    if (dlqDedupeKey) {
-      try {
-        const acquired = await this.redis.set(
-          dlqDedupeKey,
-          '1',
-          'EX',
-          this.DLQ_SEND_DEDUPE_TTL_SECONDS,
-          'NX'
-        );
-
-        if (acquired !== 'OK') {
-          this.logLifecycle(data, {
-            stage: 'message_upsert.dlq.skip',
-            decision: 'dlq_dedupe',
-            outcome: 'skipped',
-            reason: 'duplicate_dlq_message',
-            error: error instanceof Error ? error.message : String(error),
-          });
-          return true;
-        }
-      } catch {}
-    }
-
-    for (let attempt = 0; attempt < maxDlqRetries; attempt++) {
-      try {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.dlq.publish_start',
-          decision: 'publish_dlq',
-          outcome: 'started',
-          topic: dlqTopic,
-          attempts: attempt + 1,
-          retry_count: retryCount,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await this.streamProducerService.send(
-          dlqTopic,
-          {
-            ...data,
-            dlq_error: error instanceof Error ? error.message : String(error),
-            dlq_stack: error instanceof Error ? error.stack : undefined,
-            dlq_timestamp: new Date().toISOString(),
-            dlq_retry_count: retryCount,
-            dlq_pod: process.env.HOSTNAME || 'unknown',
-          },
-          this.resolveUpsertDlqKafkaKey(data)
-        );
-        this.logLifecycle(data, {
-          stage: 'message_upsert.dlq.publish_success',
-          decision: 'publish_dlq',
-          outcome: 'published',
-          topic: dlqTopic,
-          attempts: attempt + 1,
-          retry_count: retryCount,
-        });
-        return true;
-      } catch (dlqError) {
-        this.logLifecycle(data, {
-          stage: 'message_upsert.dlq.publish_error',
-          decision: 'publish_dlq',
-          outcome:
-            attempt < maxDlqRetries - 1 ? 'retrying' : 'failed_exhausted',
-          reason: 'dlq_publish_failed',
-          level: 'error',
-          topic: dlqTopic,
-          attempts: attempt + 1,
-          retry_count: retryCount,
-          error:
-            dlqError instanceof Error ? dlqError.message : String(dlqError),
-        });
-        console.error(
-          `[DLQ] Attempt ${attempt + 1}/${maxDlqRetries} failed:`,
-          dlqError
-        );
-        if (attempt < maxDlqRetries - 1) {
-          await delay(Math.min(100 * Math.pow(2, attempt), 2000));
-        }
-      }
-    }
-
-    if (dlqDedupeKey) {
-      await this.redis.del(dlqDedupeKey).catch(() => undefined);
-    }
-
-    console.error(
-      '[DLQ] CRITICAL: Failed to send to DLQ after all retries. Message data:',
-      JSON.stringify({
+    const payload = {
+      stage: 'message_upsert.discard.terminal',
+      reason,
+      error: errorMessage,
+      partition,
+      offset,
+      ...details,
+      message: {
         account_id: data.account_id,
         worker_id: data.worker_id,
         message_key_id: data.message?.key?.id,
-      })
-    );
-    this.logLifecycle(data, {
-      stage: 'message_upsert.dlq.failed',
-      decision: 'publish_dlq',
-      outcome: 'failed',
-      reason: 'dlq_retries_exhausted',
-      level: 'error',
-      topic: dlqTopic,
-      retry_count: retryCount,
-    });
+      },
+    };
 
-    const fallbackStored = await this.persistDlqFallback(
-      data,
-      error,
-      retryCount
-    );
-    this.logLifecycle(data, {
-      stage: 'message_upsert.dlq.fallback',
-      decision: 'persist_dlq_fallback',
-      outcome: fallbackStored ? 'persisted' : 'failed_open',
-      reason: fallbackStored
-        ? 'kafka_dlq_failed_redis_fallback_persisted'
-        : 'kafka_dlq_and_redis_fallback_failed',
-      level: fallbackStored ? 'warn' : 'error',
-      retry_count: retryCount,
-    });
+    if (level === 'error') {
+      console.error('[MessageUpsert] Discarding terminal message:', payload);
+    } else {
+      console.warn('[MessageUpsert] Discarding terminal message:', payload);
+    }
 
     return true;
-  }
-
-  private async persistDlqFallback(
-    data: IUpsertMessage,
-    error: unknown,
-    retryCount: number
-  ): Promise<boolean> {
-    try {
-      const payload = JSON.stringify({
-        failed_at: new Date().toISOString(),
-        retry_count: retryCount,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        message_key_id: data.message?.key?.id,
-        payload: data,
-      });
-
-      await this.redis.lpush(this.DLQ_FALLBACK_REDIS_KEY, payload);
-      await this.redis.ltrim(
-        this.DLQ_FALLBACK_REDIS_KEY,
-        0,
-        this.DLQ_FALLBACK_MAX_ITEMS - 1
-      );
-      await this.redis.expire(
-        this.DLQ_FALLBACK_REDIS_KEY,
-        this.DLQ_SEND_DEDUPE_TTL_SECONDS
-      );
-      return true;
-    } catch (fallbackError) {
-      console.error('[DLQ] CRITICAL: Failed to persist Redis DLQ fallback:', {
-        fallbackError,
-        account_id: data.account_id,
-        worker_id: data.worker_id,
-        message_key_id: data.message?.key?.id,
-      });
-      return false;
-    }
-  }
-
-  private buildDlqDedupeKey(
-    data: IUpsertMessage,
-    error: unknown
-  ): string | null {
-    const messageId = this.toNonEmptyString(data.message?.key?.id);
-    if (!messageId) {
-      return null;
-    }
-
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const rawJid =
-      remoteJid(data.message?.key) || remoteJidAlt(data.message?.key) || '';
-    const source = [
-      data.account_id,
-      data.worker_id,
-      data.message?.key?.fromMe === true ? '1' : '0',
-      rawJid,
-      messageId,
-      errorMessage,
-    ].join(':');
-    const hash = createHash('sha1').update(source).digest('hex');
-
-    return `${this.DLQ_SEND_DEDUPE_PREFIX}:${hash}`;
   }
 
   private async processWithRetry(
@@ -4821,10 +4663,7 @@ export class MessageUpsertConsume {
       return getChat.chatbot_webhook_id;
     }
 
-    if (
-      getChat?.status === EChatStatus.ura &&
-      getChat?.chatbot_transfer_id
-    ) {
+    if (getChat?.status === EChatStatus.ura && getChat?.chatbot_transfer_id) {
       return getChat.chatbot_transfer_id;
     }
 
@@ -5952,18 +5791,20 @@ export class MessageUpsertConsume {
 
     if (!jid && !jidAlt) {
       this.logLifecycle(data, {
-        stage: 'message_upsert.consume.dlq',
+        stage: 'message_upsert.consume.discard',
         decision: 'remote_jid_validation',
-        outcome: 'dlq',
+        outcome: 'discarded',
         reason: 'missing_remote_jid',
         level: 'warn',
         partition,
         offset,
       });
-      return this.sendToDlq(
+      return this.discardTerminalMessage(
         data,
         new Error('Received message without remoteJid'),
-        0
+        'missing_remote_jid',
+        partition,
+        offset
       );
     }
 
@@ -5971,9 +5812,9 @@ export class MessageUpsertConsume {
 
     if (!phone) {
       this.logLifecycle(data, {
-        stage: 'message_upsert.consume.dlq',
+        stage: 'message_upsert.consume.discard',
         decision: 'phone_validation',
-        outcome: 'dlq',
+        outcome: 'discarded',
         reason: 'missing_valid_phone',
         level: 'warn',
         partition,
@@ -5981,10 +5822,14 @@ export class MessageUpsertConsume {
         jid,
         remote_jid_alt: jidAlt,
       });
-      return this.sendToDlq(
+      return this.discardTerminalMessage(
         data,
         new Error('Received message without valid phone'),
-        0
+        'missing_valid_phone',
+        partition,
+        offset,
+        'warn',
+        { jid, remote_jid_alt: jidAlt }
       );
     }
 
@@ -6058,9 +5903,9 @@ export class MessageUpsertConsume {
         ? 'lock_acquisition_timeout'
         : 'consecutive_failures_exhausted';
       this.logLifecycle(data, {
-        stage: 'message_upsert.process.dlq',
+        stage: 'message_upsert.process.discard',
         decision: 'process_message',
-        outcome: 'dlq',
+        outcome: 'discarded',
         reason,
         level: 'error',
         partition,
@@ -6070,14 +5915,18 @@ export class MessageUpsertConsume {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      const sentToDlq = await this.sendToDlq(
+      return this.discardTerminalMessage(
         data,
         error,
-        lockTimeout ? this.MAX_RETRIES : consecutiveFailureCount
+        reason,
+        partition,
+        offset,
+        'error',
+        {
+          retry_count: lockTimeout ? this.MAX_RETRIES : consecutiveFailureCount,
+          consecutive_failure_count: consecutiveFailureCount,
+        }
       );
-      if (sentToDlq) {
-        return true;
-      }
     }
     this.logLifecycle(data, {
       stage: timeoutLogged
@@ -6114,10 +5963,6 @@ export class MessageUpsertConsume {
     const messageKey =
       data.message?.key?.id ?? message?.key?.toString() ?? null;
     return buildUpsertMessageKafkaKey(data, messageKey);
-  }
-
-  private resolveUpsertDlqKafkaKey(data: IUpsertMessage): string {
-    return buildUpsertMessageDlqKey(data, data.message?.key?.id ?? null);
   }
 
   private async saveChatWithCaches(chat: IChat): Promise<boolean> {

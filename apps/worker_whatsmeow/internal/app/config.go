@@ -78,7 +78,6 @@ type Config struct {
 
 	HistoryReconciliationEnabled      bool
 	HistoryReconciliationMessageLimit int
-	HistoryReconciliationMaxAge       time.Duration
 }
 
 func LoadConfig() (Config, error) {
@@ -197,7 +196,6 @@ func LoadConfig() (Config, error) {
 		SendIdempotencyStaleAfter:             envDurationDefault("WORKER_SEND_IDEMPOTENCY_STALE_AFTER", 0),
 		HistoryReconciliationEnabled:          envBoolDefault("HISTORY_RECONCILIATION_ENABLED", true),
 		HistoryReconciliationMessageLimit:     envIntDefault("HISTORY_RECONCILIATION_MESSAGE_LIMIT", 100),
-		HistoryReconciliationMaxAge:           envMillisDurationDefault("HISTORY_RECONCILIATION_MAX_AGE_MS", time.Hour),
 	}
 
 	if cfg.WarmStandby {

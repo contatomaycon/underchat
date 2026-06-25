@@ -4,14 +4,12 @@ import { connectConsumer } from './connectConsumer';
 import { commitOffset } from './commitOffset';
 import { ensureKafkaTopic } from './ensureKafkaTopic';
 import { handleConsumerError } from './handleConsumerError';
-import { getErrorMessage } from './toError';
 import { resolveKafkaTopicConfig } from './kafkaTopicConfig';
 import type {
   KafkaConsumerRunnerContext,
   KafkaConsumerRunnerOptions,
   KafkaRunnerMessage,
 } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
-import type { KafkaDeadLetterEnvelope } from '@core/common/interfaces/KafkaDeadLetterEnvelope';
 
 interface IPartitionCommitState {
   nextOffset: number | null;
@@ -433,7 +431,7 @@ export class KafkaConsumerRunner<TPayload> {
       }
     }
 
-    await this.publishDlq(payload, message, entityKey, lastError);
+    this.logRetriesExhausted(payload, message, entityKey, lastError);
     await this.completeOffset(message.partition, message.offset);
   }
 
@@ -498,54 +496,26 @@ export class KafkaConsumerRunner<TPayload> {
     }
   }
 
-  private async publishDlq(
+  private logRetriesExhausted(
     payload: TPayload,
     message: KafkaRunnerMessage,
     entityKey: string,
     error: unknown
-  ): Promise<void> {
-    const dlq = this.options.dlq;
-    if (!dlq) {
-      this.options.logger?.error?.(
-        {
-          err: error,
-          topic: this.options.topic,
-          groupId: this.options.groupId,
-          partition: message.partition,
-          offset: message.offset,
-        },
-        'Kafka consumer runner exhausted retries without DLQ'
-      );
-      return;
-    }
-
-    const context: KafkaConsumerRunnerContext<TPayload> = {
-      topic: this.options.topic,
-      groupId: this.options.groupId,
-      message,
-      partition: message.partition,
-      offset: message.offset,
-      kafkaKey: keyToString(message.key),
-      entityKey,
-      attempt: this.maxRetries,
-      payload,
-    };
-
-    const envelope: KafkaDeadLetterEnvelope<TPayload> = {
-      source_topic: this.options.topic,
-      source_group_id: this.options.groupId,
-      partition: message.partition,
-      offset: message.offset,
-      kafka_key: context.kafkaKey,
-      payload,
-      error: getErrorMessage(error),
-      failed_at: new Date().toISOString(),
-      attempts: this.maxRetries,
-      reason: dlq.reason ?? 'handler_failed',
-    };
-
-    const key = dlq.resolveKey?.(payload, context, error) ?? entityKey;
-    await dlq.send(dlq.topic, envelope, key);
+  ): void {
+    this.options.logger?.error?.(
+      {
+        err: error,
+        topic: this.options.topic,
+        groupId: this.options.groupId,
+        partition: message.partition,
+        offset: message.offset,
+        kafkaKey: keyToString(message.key),
+        entityKey,
+        attempts: this.maxRetries,
+        payload,
+      },
+      'Kafka consumer runner exhausted retries; discarding message'
+    );
   }
 
   private resolveEntityKey(

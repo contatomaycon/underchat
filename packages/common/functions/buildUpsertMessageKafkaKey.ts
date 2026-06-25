@@ -62,17 +62,3 @@ export function buildUpsertMessageKafkaKey(
 
   return `${upsert.account_id}:${messageKey}`;
 }
-
-export function buildUpsertMessageDlqKey(
-  upsert: Pick<
-    IUpsertMessage,
-    'account_id' | 'worker_id' | 'message' | 'call_jid' | 'call_jid_alt'
-  >,
-  fallbackKey?: string | null
-): string {
-  const entityKey = buildUpsertMessageKafkaKey(upsert, fallbackKey);
-  const messageId =
-    upsert.message?.key?.id?.trim() || fallbackKey?.trim() || 'unknown-message';
-
-  return `${entityKey}:${messageId}`;
-}

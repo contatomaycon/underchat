@@ -502,7 +502,6 @@ describe('MessageUpsertConsume edit fallback', () => {
       {} as never,
       {
         upsertMessage: jest.fn(() => 'upsert-message'),
-        upsertMessageDlq: jest.fn(() => 'upsert-message-dlq'),
         markMessageRead: jest.fn(() => 'mark-message-read'),
         getNumPartitions: jest.fn(() => 1),
         getReplicationFactor: jest.fn(() => 1),
@@ -615,33 +614,104 @@ describe('MessageUpsertConsume edit fallback', () => {
     });
   });
 
-  it('publishes lock acquisition timeouts to DLQ after local retries so the partition can commit', async () => {
+  it('discards messages without remote JID without publishing to Kafka', async () => {
     const { consumer, streamProducerService } = makeConsumer();
+    const consoleSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    const upsert = makeTextUpsert();
+    delete (upsert.message.key as { remoteJid?: string }).remoteJid;
+    delete (upsert.message.key as { remoteJidAlt?: string }).remoteJidAlt;
+
+    try {
+      const result = await (consumer as any).processKafkaUpsertOnce(
+        jest.fn(),
+        upsert,
+        17,
+        63533
+      );
+
+      expect(result).toBe(true);
+      expect(streamProducerService.send).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[MessageUpsert] Discarding terminal message:',
+        expect.objectContaining({
+          reason: 'missing_remote_jid',
+          partition: 17,
+          offset: 63533,
+        })
+      );
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('discards messages without valid phone without publishing to Kafka', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const consoleSpy = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    const upsert = makeTextUpsert();
+    upsert.message.key.remoteJid = 'not-a-phone@s.whatsapp.net';
+    delete (upsert.message.key as { remoteJidAlt?: string }).remoteJidAlt;
+
+    try {
+      const result = await (consumer as any).processKafkaUpsertOnce(
+        jest.fn(),
+        upsert,
+        17,
+        63534
+      );
+
+      expect(result).toBe(true);
+      expect(streamProducerService.send).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[MessageUpsert] Discarding terminal message:',
+        expect.objectContaining({
+          reason: 'missing_valid_phone',
+          partition: 17,
+          offset: 63534,
+        })
+      );
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('discards lock acquisition timeouts after local retries so the partition can commit', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const consoleSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     const error = new Error(
       'Failed to acquire lock "chat-create:account-1:worker-1:556999715039" after 90000ms'
     );
     error.name = 'LockAcquisitionTimeoutError';
 
-    const sentToDlq = await (consumer as any).handleProcessRetry(
-      makeTextUpsert(),
-      17,
-      63533,
-      true,
-      error
-    );
+    try {
+      const discarded = await (consumer as any).handleProcessRetry(
+        makeTextUpsert(),
+        17,
+        63535,
+        1,
+        true,
+        error
+      );
 
-    expect(sentToDlq).toBe(true);
-    expect(streamProducerService.send).toHaveBeenCalledTimes(1);
-    expect(streamProducerService.send).toHaveBeenCalledWith(
-      'upsert-message-dlq',
-      expect.objectContaining({
-        account_id: 'account-1',
-        worker_id: 'worker-1',
-        dlq_error: error.message,
-        dlq_retry_count: 3,
-      }),
-      'account-1:worker-1:556999715039@s.whatsapp.net:false_6352894177535@lid_3A7E64CFE62F38192A29'
-    );
+      expect(discarded).toBe(true);
+      expect(streamProducerService.send).not.toHaveBeenCalled();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[MessageUpsert] Discarding terminal message:',
+        expect.objectContaining({
+          reason: 'lock_acquisition_timeout',
+          partition: 17,
+          offset: 63535,
+          retry_count: 3,
+        })
+      );
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 
   it('creates the original message when edit_text points to a missing target', async () => {

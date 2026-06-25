@@ -375,8 +375,6 @@ func (w *Worker) startConsumers(ctx context.Context) error {
 		config KafkaTopicConfig
 	}{
 		{topicWorkerSendMessage(workerID), workerTopicConfig},
-		{topicWorkerSendMessageDLQ(workerID), workerTopicConfig},
-		{topicWorkerConsumerDLQ(workerID), workerTopicConfig},
 		{topicWorkerScheduleSend(workerID), workerTopicConfig},
 		{topicWorkerValidatePhone(workerID), workerTopicConfig},
 		{topicWorkerNotification(workerID), workerTopicConfig},
@@ -1069,7 +1067,6 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 		if statusErr != nil {
 			w.completeOutboundClaim(ctx, claim, sendIdempotencyStateAmbiguous, nil, statusErr)
 			w.logOutgoingMessageStepDebug("whatsmeow.outgoing.status_failed_publish.error", msg, data, map[string]any{"claim_id": claim.ID, "elapsed_ms": time.Since(startedAt).Milliseconds()}, statusErr)
-			_ = w.publishSendDLQ(ctx, msg, data, "status_publish_failed", statusErr)
 			return statusErr
 		}
 		w.completeOutboundClaim(ctx, claim, sendIdempotencyStateFailed, nil, err)
@@ -1098,7 +1095,6 @@ func (w *Worker) handleSendMessage(ctx context.Context, msg kafka.Message) (err 
 			err,
 		)
 		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.error", msg, data, map[string]any{"topic": topicUpdateMessage}, err)
-		_ = w.publishSendDLQ(ctx, msg, data, "update_publish_failed_after_send_ack", err)
 		return err
 	}
 	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.update.publish.success", msg, data, map[string]any{"topic": topicUpdateMessage}, nil)
@@ -1642,46 +1638,6 @@ func (w *Worker) publishRecoveredOutboundUpdate(ctx context.Context, data ChatMe
 	if err := w.kafka.SendJSON(ctx, topicUpdateMessage, data.MessageID, UpdateMessage{Message: claim.Result, Data: data}); err != nil {
 		return err
 	}
-	return nil
-}
-
-func (w *Worker) publishSendDLQ(ctx context.Context, msg kafka.Message, data ChatMessage, reason string, cause error) error {
-	topic := topicWorkerSendMessageDLQ(w.cfg.WorkerID)
-	payload := map[string]any{
-		"provider":         "whatsmeow",
-		"worker_id":        w.cfg.WorkerID,
-		"account_id":       firstNonEmpty(stringValue(data.Account["id"]), w.cfg.AccountID),
-		"message_id":       data.MessageID,
-		"chat_id":          data.ChatID,
-		"message_type":     chatMessageType(data),
-		"reason":           reason,
-		"error":            cause.Error(),
-		"source_topic":     msg.Topic,
-		"group_id":         "group-underchat-whatsmeow-send-" + w.cfg.WorkerID,
-		"partition":        msg.Partition,
-		"offset":           msg.Offset,
-		"source_partition": msg.Partition,
-		"source_offset":    msg.Offset,
-		"kafka_key":        string(msg.Key),
-		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
-		"original_payload": kafkaOriginalPayload(msg.Value),
-		"payload":          json.RawMessage(msg.Value),
-	}
-	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.start", msg, data, map[string]any{
-		"topic":  topic,
-		"reason": reason,
-	}, cause)
-	if err := w.kafka.SendJSON(ctx, topic, data.MessageID, payload); err != nil {
-		w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.error", msg, data, map[string]any{
-			"topic":  topic,
-			"reason": reason,
-		}, err)
-		return err
-	}
-	w.logOutgoingMessageStepDebug("whatsmeow.outgoing.dlq.publish.success", msg, data, map[string]any{
-		"topic":  topic,
-		"reason": reason,
-	}, nil)
 	return nil
 }
 

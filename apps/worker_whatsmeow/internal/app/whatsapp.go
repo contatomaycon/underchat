@@ -74,6 +74,7 @@ const (
 	whatsmeowPhotoCacheNoPhotoTTL    = 5 * time.Minute
 	whatsmeowPhotoFetchTimeout       = 5 * time.Second
 	whatsmeowLogoutTimeout           = 30 * time.Second
+	historyReconciliationMaxAge      = time.Hour
 
 	whatsmeowPairClientDesktop     whatsmeow.PairClientType = whatsmeow.PairClientElectron
 	whatsmeowPairClientDisplayName                          = "Desktop (Mac OS)"
@@ -2058,7 +2059,7 @@ func (m *WhatsAppManager) isRecentHistoryWebMessage(timestamp uint64) bool {
 		timestampMs = int64(timestamp)
 	}
 
-	return time.Since(time.UnixMilli(timestampMs)) <= m.cfg.HistoryReconciliationMaxAge
+	return time.Since(time.UnixMilli(timestampMs)) <= historyReconciliationMaxAge
 }
 
 func (m *WhatsAppManager) handleReceipt(ctx context.Context, evt *events.Receipt) {

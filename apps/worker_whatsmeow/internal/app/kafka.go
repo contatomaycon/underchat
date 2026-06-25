@@ -168,49 +168,6 @@ func (k *KafkaClient) SendJSON(ctx context.Context, topic string, key string, va
 	return k.writer.WriteMessages(ctx, msg)
 }
 
-func (k *KafkaClient) publishSendMessageDLQ(ctx context.Context, msg kafka.Message, groupID, reason string, cause error) error {
-	return k.publishKafkaDLQ(ctx, topicWorkerSendMessageDLQ(k.cfg.WorkerID), msg, groupID, reason, cause)
-}
-
-func (k *KafkaClient) publishConsumerDLQ(ctx context.Context, msg kafka.Message, groupID, reason string, cause error) error {
-	return k.publishKafkaDLQ(ctx, topicWorkerConsumerDLQ(k.cfg.WorkerID), msg, groupID, reason, cause)
-}
-
-func (k *KafkaClient) publishKafkaDLQ(ctx context.Context, topic string, msg kafka.Message, groupID, reason string, cause error) error {
-	if cause == nil {
-		cause = errors.New(reason)
-	}
-	_ = k.EnsureTopic(ctx, topic, 1, 2)
-
-	payload := map[string]any{
-		"provider":         "whatsmeow",
-		"worker_id":        k.cfg.WorkerID,
-		"account_id":       k.cfg.AccountID,
-		"source_topic":     msg.Topic,
-		"group_id":         groupID,
-		"partition":        msg.Partition,
-		"offset":           msg.Offset,
-		"kafka_key":        string(msg.Key),
-		"error":            cause.Error(),
-		"reason":           reason,
-		"failed_at":        time.Now().UTC().Format(time.RFC3339Nano),
-		"original_payload": kafkaOriginalPayload(msg.Value),
-	}
-	key := string(msg.Key)
-	if key == "" {
-		key = fmt.Sprintf("%s:%d:%d", msg.Topic, msg.Partition, msg.Offset)
-	}
-	return k.SendJSON(ctx, topic, key, payload)
-}
-
-func kafkaOriginalPayload(raw []byte) any {
-	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err == nil {
-		return decoded
-	}
-	return string(raw)
-}
-
 type KafkaMessageHandler func(ctx context.Context, msg kafka.Message) error
 
 type KafkaTopicConfig struct {
@@ -686,14 +643,12 @@ func (k *KafkaClient) consumeParallelReader(ctx context.Context, reader *kafka.R
 					cause = fmt.Errorf("handler timeout after %s: %w", k.handlerTimeout(topic), err)
 				}
 
-				if dlqErr := k.publishHandlerDLQ(consumeCtx, topic, msg, groupID, reason, cause); dlqErr != nil {
-					log.Printf("kafka dlq publish failed; committing failed message to avoid blocking queue topic=%s partition=%d offset=%d queue_key=%s: %v", topic, msg.Partition, msg.Offset, queueKey, dlqErr)
-				}
+				log.Printf("kafka handler failed; discarding message and committing offset without redrive topic=%s group=%s partition=%d offset=%d queue_key=%s reason=%s error=%v", topic, groupID, msg.Partition, msg.Offset, queueKey, reason, cause)
 
 				committed, commitErr := commits.complete(consumeCtx, msg)
 				if commitErr != nil {
 					k.markConsumerPendingDone(state, msg, commitErr, false)
-					setFirstErr(fmt.Errorf("kafka commit failed after dlq topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr))
+					setFirstErr(fmt.Errorf("kafka commit failed after handler discard topic=%s partition=%d offset=%d: %w", topic, msg.Partition, msg.Offset, commitErr))
 					return
 				}
 				k.markConsumerPendingDone(state, msg, nil, committed)
@@ -779,13 +734,6 @@ func (k *KafkaClient) handlerTimeout(topic string) time.Duration {
 	return k.cfg.KafkaConsumerStallTimeout
 }
 
-func (k *KafkaClient) publishHandlerDLQ(ctx context.Context, topic string, msg kafka.Message, groupID, reason string, cause error) error {
-	if isWorkerSendTopic(topic) {
-		return k.publishSendMessageDLQ(ctx, msg, groupID, reason, cause)
-	}
-	return k.publishConsumerDLQ(ctx, msg, groupID, reason, cause)
-}
-
 func isWorkerSendTopic(topic string) bool {
 	parts := strings.Split(topic, ".")
 	return len(parts) == 4 && parts[0] == "worker" && parts[1] != "" && parts[2] == "send" && parts[3] == "message"
@@ -793,14 +741,6 @@ func isWorkerSendTopic(topic string) bool {
 
 func topicWorkerSendMessage(workerID string) string {
 	return "worker." + workerID + ".send.message"
-}
-
-func topicWorkerSendMessageDLQ(workerID string) string {
-	return "worker." + workerID + ".send.message.dlq"
-}
-
-func topicWorkerConsumerDLQ(workerID string) string {
-	return "worker." + workerID + ".consumer.dlq"
 }
 
 func topicWorkerScheduleSend(workerID string) string {
