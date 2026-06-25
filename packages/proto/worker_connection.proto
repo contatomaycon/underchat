@@ -132,4 +132,5 @@ message WorkerRuntimeHealthResponse {
   string degraded_reason = 19;
   string last_probe_at = 20;
   int32 probe_latency_ms = 21;
+  string phone = 22;
 }

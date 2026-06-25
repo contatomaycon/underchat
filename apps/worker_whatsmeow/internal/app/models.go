@@ -181,6 +181,7 @@ type WorkerRuntimeHealthResponse struct {
 	DegradedReason    string `json:"degraded_reason,omitempty"`
 	LastProbeAt       string `json:"last_probe_at,omitempty"`
 	ProbeLatencyMS    int    `json:"probe_latency_ms,omitempty"`
+	Phone             string `json:"phone,omitempty"`
 	Error             string `json:"error,omitempty"`
 }
 

@@ -372,6 +372,7 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 	degradedReason := ""
 	lastProbeAt := ""
 	probeLatencyMS := 0
+	phone := ""
 	if w.whatsapp != nil {
 		health := w.whatsapp.ConnectionHealth()
 		if value, ok := health["has_store_id"].(bool); ok {
@@ -385,6 +386,14 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		degradedReason = healthString(health, "degraded_reason")
 		lastProbeAt = healthString(health, "last_probe_at")
 		probeLatencyMS = healthInt(health, "probe_latency_ms")
+		phone = healthString(health, "phone")
+		if phone == "" {
+			w.whatsapp.mu.RLock()
+			if w.whatsapp.client != nil && w.whatsapp.client.Store.ID != nil {
+				phone = phoneFromOwnID(w.whatsapp.client.Store.ID)
+			}
+			w.whatsapp.mu.RUnlock()
+		}
 		w.whatsapp.mu.RLock()
 		hasQR = w.whatsapp.currentQRCode != ""
 		w.whatsapp.mu.RUnlock()
@@ -410,6 +419,7 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		DegradedReason:    degradedReason,
 		LastProbeAt:       lastProbeAt,
 		ProbeLatencyMS:    probeLatencyMS,
+		Phone:             phone,
 	}
 	localConnectionStatusLog("whatsmeow.grpc.runtime_health", map[string]any{
 		"layer":                "worker_whatsmeow.grpc",
@@ -431,6 +441,7 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		"has_session":          response.HasSession,
 		"has_qr":               response.HasQR,
 		"qr_stream_ready":      response.QRStreamReady,
+		"phone":                response.Phone,
 		"request_worker_id":    req.WorkerID,
 		"request_warm_pool_id": req.WarmPoolID,
 	})

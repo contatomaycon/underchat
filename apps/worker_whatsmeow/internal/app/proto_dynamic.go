@@ -160,6 +160,7 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("degraded_reason", 19),
 				stringField("last_probe_at", 20),
 				int32Field("probe_latency_ms", 21),
+				stringField("phone", 22),
 			),
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{{

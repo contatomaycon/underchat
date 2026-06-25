@@ -44,4 +44,5 @@ export interface IWorkerRuntimeHealthResponseProto {
   degraded_reason?: string;
   last_probe_at?: string;
   probe_latency_ms?: number | string;
+  phone?: string;
 }

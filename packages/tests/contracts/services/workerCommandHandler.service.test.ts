@@ -257,6 +257,8 @@ function buildHandler(
       has_session: false,
       runtime_state: 'active',
       qr_stream_ready: true,
+      provider_state: '',
+      phone: '',
       ...overrides.runtimeHealthResponse,
     })),
   };
@@ -631,6 +633,8 @@ describe('WorkerCommandHandlerService connection', () => {
       has_session: true,
       runtime_state: 'active',
       qr_stream_ready: true,
+      provider_state: 'CONNECTED',
+      phone: '',
     });
 
     await deps.handler.notifyWorkerStatus({
@@ -670,6 +674,106 @@ describe('WorkerCommandHandlerService connection', () => {
         session_ready: true,
       })
     );
+  });
+
+  it('promotes a non-online notification to online when runtime health confirms a real session', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.runtimeHealth.mockResolvedValueOnce({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      activated: true,
+      ready: true,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      standby: false,
+      has_session: true,
+      runtime_state: 'active',
+      qr_stream_ready: true,
+      provider_state: 'CONNECTED',
+      phone: '556192037138',
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.disponible,
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitConnection,
+      reason: 'late_connecting_event',
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      { worker_id: 'worker-1' },
+      EWorkerType.wwebjs
+    );
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        number: '556192037138',
+        connection_date: expect.any(String),
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        worker_status_id: EWorkerStatus.online,
+        status: EBaileysConnectionStatus.connected,
+        code: ECodeMessage.connectionEstablished,
+        session_ready: true,
+        phone: '556192037138',
+      })
+    );
+  });
+
+  it('does not promote a strong logout notification even when runtime health is stale-ready', async () => {
+    const deps = buildHandler({
+      runtimeHealthResponse: {
+        session_ready: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
+        has_session: true,
+      },
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.disponible,
+      status: EBaileysConnectionStatus.disconnected,
+      code: ECodeMessage.loggedOut,
+      disconnected_user: true,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).not.toHaveBeenCalled();
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.disponible,
+        number: null,
+        connection_date: null,
+      })
+    );
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
   });
 
   it('preserves QR state from worker status notifications', async () => {
@@ -2306,6 +2410,8 @@ describe('WorkerCommandHandlerService connection', () => {
         has_session: false,
         runtime_state: 'active',
         qr_stream_ready: true,
+        provider_state: 'CONNECTING',
+        phone: '',
       })
       .mockResolvedValueOnce({
         worker_id: 'worker-1',
@@ -2321,6 +2427,8 @@ describe('WorkerCommandHandlerService connection', () => {
         has_session: true,
         runtime_state: 'active',
         qr_stream_ready: true,
+        provider_state: 'CONNECTED',
+        phone: '',
       });
 
     await deps.handler.handle({
@@ -2369,6 +2477,8 @@ describe('WorkerCommandHandlerService connection', () => {
       has_session: false,
       runtime_state: 'active',
       qr_stream_ready: true,
+      provider_state: 'CONNECTING',
+      phone: '',
     });
 
     await deps.handler.handle({

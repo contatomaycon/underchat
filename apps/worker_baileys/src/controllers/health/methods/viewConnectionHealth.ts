@@ -16,7 +16,7 @@ export const viewConnectionHealth = async (
   reply: FastifyReply
 ) => {
   const healthCheckService = container.resolve(BaileysHealthCheckService);
-  const readiness = healthCheckService.getReadinessSnapshot();
+  const readiness = await healthCheckService.verifyCurrentSession();
   const sessionReady = readiness.session_ready === true;
   const kafkaUnhealthy = hasUnhealthyKafkaConsumer();
   const data = {

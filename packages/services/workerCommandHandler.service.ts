@@ -1134,6 +1134,10 @@ export class WorkerCommandHandlerService {
       payload,
       workerStatusId
     );
+    workerStatusId = await this.reconcileNonOnlineNotificationReadiness(
+      payload,
+      workerStatusId
+    );
     this.logDebug('service.notify_status.readiness_gate_result', {
       trace_id: payload.debug_trace_id,
       layer: 'service',
@@ -1239,7 +1243,7 @@ export class WorkerCommandHandlerService {
     const phoneNumber = inputPhone ?? view?.number ?? null;
 
     let connectionDate = view?.connection_date;
-    if (workerStatusId === EWorkerStatus.online && phoneNumber) {
+    if (workerStatusId === EWorkerStatus.online) {
       connectionDate = currentTime();
     }
 
@@ -1423,6 +1427,7 @@ export class WorkerCommandHandlerService {
     }
 
     if (payload.session_ready === true) {
+      await this.enrichConnectedPayloadFromRuntimeHealth(payload);
       this.logDebug('service.notify_status.session_ready_payload_accepted', {
         trace_id: payload.debug_trace_id,
         layer: 'service',
@@ -1469,16 +1474,7 @@ export class WorkerCommandHandlerService {
         });
 
         if (this.isConnectedRuntimeHealth(health, workerType)) {
-          payload.session_ready = true;
-          payload.can_send = health?.can_send === true;
-          payload.can_receive_runtime = health?.can_receive_runtime === true;
-          payload.authenticated = health?.authenticated === true;
-          payload.provider_state = health?.provider_state || undefined;
-          payload.degraded_reason = health?.degraded_reason || undefined;
-          payload.last_probe_at = health?.last_probe_at || undefined;
-          payload.probe_latency_ms = this.normalizeNotifyOptionalNumber(
-            health?.probe_latency_ms
-          );
+          this.applyConnectedRuntimeHealthToPayload(payload, health);
           return workerStatusId;
         }
       } catch (error) {
@@ -1521,6 +1517,193 @@ export class WorkerCommandHandlerService {
     );
 
     return EWorkerStatus.disponible;
+  }
+
+  private shouldProbeNonOnlineNotificationReadiness(
+    payload: IBaileysConnectionState,
+    workerStatusId: EWorkerStatus
+  ): boolean {
+    if (workerStatusId === EWorkerStatus.online) {
+      return false;
+    }
+
+    if (!payload.worker_type_id) {
+      return false;
+    }
+
+    if (payload.disconnected_user === true) {
+      return false;
+    }
+
+    return !this.isStrongSessionInvalidationNotification(payload);
+  }
+
+  private isStrongSessionInvalidationNotification(
+    payload: Partial<IBaileysConnectionState>
+  ): boolean {
+    return (
+      payload.code === ECodeMessage.logoutInProgress ||
+      payload.code === ECodeMessage.loggedOut ||
+      payload.code === ECodeMessage.forbidden ||
+      payload.code === ECodeMessage.connectionReplaced ||
+      payload.code === ECodeMessage.badSession ||
+      payload.code === ECodeMessage.multideviceMismatch ||
+      payload.code === ECodeMessage.phoneNotAvailable
+    );
+  }
+
+  private applyConnectedRuntimeHealthToPayload(
+    payload: IBaileysConnectionState,
+    health: IWorkerRuntimeHealthResponseProto
+  ): void {
+    payload.worker_status_id = EWorkerStatus.online;
+    payload.status = EBaileysConnectionStatus.connected;
+    payload.code = ECodeMessage.connectionEstablished;
+    payload.session_ready = true;
+    payload.can_send = health.can_send === true;
+    payload.can_receive_runtime = health.can_receive_runtime === true;
+    payload.authenticated = health.authenticated === true;
+    payload.provider_state = health.provider_state || undefined;
+    payload.degraded_reason = health.degraded_reason || undefined;
+    payload.last_probe_at = health.last_probe_at || undefined;
+    payload.probe_latency_ms = this.normalizeNotifyOptionalNumber(
+      health.probe_latency_ms
+    );
+
+    if (health.phone?.trim()) {
+      payload.phone = health.phone.trim();
+    }
+  }
+
+  private async enrichConnectedPayloadFromRuntimeHealth(
+    payload: IBaileysConnectionState
+  ): Promise<void> {
+    if (payload.phone?.trim() || !payload.worker_type_id) {
+      return;
+    }
+
+    const workerType = payload.worker_type_id as EWorkerType;
+
+    try {
+      const health = await this.workerBaileysGrpcClientService.runtimeHealth(
+        payload.worker_id,
+        { worker_id: payload.worker_id },
+        workerType
+      );
+      this.logDebug('service.notify_status.connected_payload_enrich_result', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: workerType,
+        status: payload.status,
+        code: payload.code,
+        session_ready: health?.session_ready,
+        provider_state: health?.provider_state,
+        phone: health?.phone,
+        connection_attempt_id: payload.connection_attempt_id,
+      });
+
+      if (this.isConnectedRuntimeHealth(health, workerType)) {
+        this.applyConnectedRuntimeHealthToPayload(payload, health);
+      }
+    } catch (error) {
+      this.logDebug('service.notify_status.connected_payload_enrich_failed', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: workerType,
+        status: payload.status,
+        code: payload.code,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async reconcileNonOnlineNotificationReadiness(
+    payload: IBaileysConnectionState,
+    workerStatusId: EWorkerStatus
+  ): Promise<EWorkerStatus> {
+    if (
+      !this.shouldProbeNonOnlineNotificationReadiness(payload, workerStatusId)
+    ) {
+      return workerStatusId;
+    }
+
+    const workerType = payload.worker_type_id as EWorkerType;
+
+    try {
+      const health = await this.workerBaileysGrpcClientService.runtimeHealth(
+        payload.worker_id,
+        { worker_id: payload.worker_id },
+        workerType
+      );
+      this.logDebug('service.notify_status.non_online_probe_result', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: workerType,
+        requested_worker_status_id: workerStatusId,
+        status: payload.status,
+        code: payload.code,
+        session_ready: health?.session_ready,
+        can_send: health?.can_send,
+        can_receive_runtime: health?.can_receive_runtime,
+        authenticated: health?.authenticated,
+        provider_state: health?.provider_state,
+        degraded_reason: health?.degraded_reason,
+        runtime_generation: health?.runtime_generation,
+        runtime_state: health?.runtime_state,
+        phone: health?.phone,
+        connection_attempt_id: payload.connection_attempt_id,
+      });
+
+      if (!this.isConnectedRuntimeHealth(health, workerType)) {
+        return workerStatusId;
+      }
+
+      this.applyConnectedRuntimeHealthToPayload(payload, health);
+      this.logDebug(
+        'service.notify_status.non_online_promoted_by_runtime_health',
+        {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: workerType,
+          requested_worker_status_id: workerStatusId,
+          worker_status_id: EWorkerStatus.online,
+          status: payload.status,
+          code: payload.code,
+          session_ready: payload.session_ready,
+          can_send: payload.can_send,
+          can_receive_runtime: payload.can_receive_runtime,
+          authenticated: payload.authenticated,
+          provider_state: payload.provider_state,
+          degraded_reason: payload.degraded_reason,
+          phone: payload.phone,
+          connection_attempt_id: payload.connection_attempt_id,
+        }
+      );
+
+      return EWorkerStatus.online;
+    } catch (error) {
+      this.logDebug('service.notify_status.non_online_probe_failed', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: workerType,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        code: payload.code,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return workerStatusId;
+    }
   }
 
   private normalizeNotifyCode(code: unknown): ECodeMessage {
