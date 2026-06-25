@@ -81,6 +81,14 @@ type ConnectionState struct {
 	ProxyFallback           string `json:"proxy_fallback,omitempty"`
 	ProxyBypassed           bool   `json:"proxy_bypassed,omitempty"`
 	DebugTraceID            string `json:"debug_trace_id,omitempty"`
+	SessionReady            bool   `json:"session_ready,omitempty"`
+	CanSend                 bool   `json:"can_send,omitempty"`
+	CanReceiveRuntime       bool   `json:"can_receive_runtime,omitempty"`
+	Authenticated           bool   `json:"authenticated,omitempty"`
+	ProviderState           string `json:"provider_state,omitempty"`
+	DegradedReason          string `json:"degraded_reason,omitempty"`
+	LastProbeAt             string `json:"last_probe_at,omitempty"`
+	ProbeLatencyMS          int    `json:"probe_latency_ms,omitempty"`
 }
 
 type StatusConnectionRequest struct {
@@ -164,6 +172,14 @@ type WorkerRuntimeHealthResponse struct {
 	RuntimeGeneration int    `json:"runtime_generation,omitempty"`
 	RuntimeState      string `json:"runtime_state,omitempty"`
 	QRStreamReady     bool   `json:"qr_stream_ready,omitempty"`
+	SessionReady      bool   `json:"session_ready,omitempty"`
+	CanSend           bool   `json:"can_send,omitempty"`
+	CanReceiveRuntime bool   `json:"can_receive_runtime,omitempty"`
+	Authenticated     bool   `json:"authenticated,omitempty"`
+	ProviderState     string `json:"provider_state,omitempty"`
+	DegradedReason    string `json:"degraded_reason,omitempty"`
+	LastProbeAt       string `json:"last_probe_at,omitempty"`
+	ProbeLatencyMS    int    `json:"probe_latency_ms,omitempty"`
 	Error             string `json:"error,omitempty"`
 }
 

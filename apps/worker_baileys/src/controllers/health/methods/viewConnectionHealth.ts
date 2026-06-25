@@ -2,7 +2,7 @@ import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { sendResponse } from '@core/common/functions/sendResponse';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
-import { BaileysService } from '@core/services/baileys';
+import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
 import {
   getKafkaConsumerHealthSnapshots,
   hasUnhealthyKafkaConsumer,
@@ -15,16 +15,19 @@ export const viewConnectionHealth = async (
   _request: FastifyRequest,
   reply: FastifyReply
 ) => {
-  const baileysService = container.resolve(BaileysService);
-  const isConnected = baileysService.isConnected();
+  const healthCheckService = container.resolve(BaileysHealthCheckService);
+  const readiness = healthCheckService.getReadinessSnapshot();
+  const sessionReady = readiness.session_ready === true;
   const kafkaUnhealthy = hasUnhealthyKafkaConsumer();
   const data = {
-    connected: isConnected,
+    ...readiness,
+    connected: sessionReady,
+    ready: sessionReady,
     kafka_unhealthy: kafkaUnhealthy,
     kafka_consumers: getKafkaConsumerHealthSnapshots(),
   };
 
-  if (isConnected && (!kafkaUnhealthy || !FAIL_ON_KAFKA_UNHEALTHY)) {
+  if (sessionReady && (!kafkaUnhealthy || !FAIL_ON_KAFKA_UNHEALTHY)) {
     return sendResponse(reply, {
       httpStatusCode: EHTTPStatusCode.ok,
       data,

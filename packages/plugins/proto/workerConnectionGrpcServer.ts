@@ -22,7 +22,9 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ERouteModule } from '@core/common/enums/ERouteModule';
 import { BaileysService } from '@core/services/baileys';
+import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
 import { WwebjsService } from '@core/services/wwebjs';
+import { WwebjsHealthCheckService } from '@core/services/wwebjs/methods/healthCheck.service';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
@@ -152,6 +154,11 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
     return 'inactive';
   };
+
+  const getSessionReadiness = () =>
+    module === ERouteModule.worker_wwebjs
+      ? container.resolve(WwebjsHealthCheckService).getReadinessSnapshot()
+      : container.resolve(BaileysHealthCheckService).getReadinessSnapshot();
 
   const activateEnvironment = (
     request: IWorkerRuntimeActivationRequestProto
@@ -465,6 +472,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       const qrStreamReady = fastify.qrStreamReady === true;
       const runtimeActivated = isRuntimeActivated();
       const warmStandby = isWarmStandby();
+      const readiness = getSessionReadiness();
       callback(null, {
         worker_id: runtimeActivated ? getWorkerId() : '',
         account_id: runtimeActivated ? getAccountId() : '',
@@ -473,12 +481,20 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         standby: warmStandby,
         activated: runtimeActivated,
         ready: warmStandby || qrStreamReady,
-        has_session: false,
+        has_session: readiness.authenticated === true,
         has_qr: false,
         worker_type_id: getWorkerTypeId(),
         runtime_generation: getRuntimeGeneration(),
         runtime_state: getRuntimeState(),
         qr_stream_ready: qrStreamReady,
+        session_ready: readiness.session_ready === true,
+        can_send: readiness.can_send === true,
+        can_receive_runtime: readiness.can_receive_runtime === true,
+        authenticated: readiness.authenticated === true,
+        provider_state: readiness.provider_state ?? '',
+        degraded_reason: readiness.degraded_reason ?? '',
+        last_probe_at: readiness.last_probe_at ?? '',
+        probe_latency_ms: readiness.probe_latency_ms ?? 0,
         error: '',
       });
     } catch (err) {
@@ -496,6 +512,14 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         runtime_generation: 0,
         runtime_state: 'error',
         qr_stream_ready: false,
+        session_ready: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+        provider_state: 'error',
+        degraded_reason: err instanceof Error ? err.message : String(err),
+        last_probe_at: new Date().toISOString(),
+        probe_latency_ms: 0,
         error: err instanceof Error ? err.message : String(err),
       });
     }

@@ -123,6 +123,11 @@ const buildConnectedState = () => ({
   account_id: 'account-1',
   phone: '+556192037138',
   worker_status_id: EWorkerStatus.online,
+  session_ready: true,
+  can_send: true,
+  can_receive_runtime: true,
+  authenticated: true,
+  provider_state: 'connected',
 });
 
 const buildConnectingState = () => ({
@@ -132,6 +137,11 @@ const buildConnectingState = () => ({
   account_id: 'account-1',
   phone: '',
   worker_status_id: EWorkerStatus.disponible,
+  session_ready: false,
+  can_send: false,
+  can_receive_runtime: false,
+  authenticated: false,
+  provider_state: 'connecting',
 });
 
 function buildHandler(
@@ -239,6 +249,10 @@ function buildHandler(
       worker_type_id: EWorkerType.wwebjs,
       activated: true,
       ready: true,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
       standby: false,
       has_session: false,
       runtime_state: 'active',
@@ -564,6 +578,41 @@ describe('WorkerCommandHandlerService connection', () => {
       deps.workerService.updateWorkerPhoneStatusConnectionDate
     ).not.toHaveBeenCalled();
     expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
+  });
+
+  it('rejects online worker status notifications without session readiness', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.online,
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      phone: '+556192037138',
+    });
+
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.disponible,
+        number: '+556192037138',
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_status_id: EWorkerStatus.disponible,
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitConnection,
+        session_ready: false,
+        degraded_reason: 'online_without_session_ready',
+      })
+    );
   });
 
   it('preserves QR state from worker status notifications', async () => {
@@ -2120,6 +2169,10 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_type_id: EWorkerType.wwebjs,
         activated: true,
         ready: true,
+        session_ready: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
         standby: false,
         has_session: false,
         runtime_state: 'active',
@@ -2131,6 +2184,10 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_type_id: EWorkerType.wwebjs,
         activated: true,
         ready: true,
+        session_ready: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
         standby: false,
         has_session: true,
         runtime_state: 'active',
@@ -2175,6 +2232,10 @@ describe('WorkerCommandHandlerService connection', () => {
       worker_type_id: EWorkerType.wwebjs,
       activated: true,
       ready: true,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
       standby: false,
       has_session: false,
       runtime_state: 'active',
@@ -2210,6 +2271,10 @@ describe('WorkerCommandHandlerService connection', () => {
     const deps = buildHandler({
       runtimeHealthResponse: {
         worker_type_id: EWorkerType.wwebjs,
+        session_ready: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
         has_session: true,
       },
     });

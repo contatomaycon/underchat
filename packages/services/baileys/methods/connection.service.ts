@@ -432,21 +432,34 @@ export class BaileysConnectionService {
       reconnect: (input) => this.reconnect(input),
       isConnected: () => this.connected,
       hasSession: () => this.hasSession(),
-      onStatusMismatch: (detectedStatus) => {
-        this.handleHealthCheckMismatch(detectedStatus);
+      isIncomingBound: (socket) =>
+        this.baileysIncomingMessageService.isBoundTo(socket),
+      onStatusMismatch: (detectedStatus, workerStatus) => {
+        this.handleHealthCheckMismatch(detectedStatus, workerStatus);
       },
     });
   }
 
-  private handleHealthCheckMismatch(detectedStatus: Status): void {
-    if (detectedStatus === Status.disconnected && this.connectionEstablished) {
+  private handleHealthCheckMismatch(
+    detectedStatus: Status,
+    workerStatus: EWorkerStatus
+  ): void {
+    if (
+      this.connectionEstablished &&
+      (detectedStatus !== Status.connected ||
+        workerStatus !== EWorkerStatus.online)
+    ) {
       const socketReference = this.socket as unknown as {
         ws?: { isOpen?: boolean };
       };
       const wsClientIsOpen = socketReference.ws?.isOpen === true;
       const wsReadyState = this.resolveWebSocket()?.readyState;
 
-      if (wsClientIsOpen || wsReadyState === 1) {
+      if (
+        detectedStatus === Status.disconnected &&
+        workerStatus === EWorkerStatus.offline &&
+        (wsClientIsOpen || wsReadyState === 1)
+      ) {
         console.warn(
           '[BaileysConnection] Health check mismatch ignored: socket still OPEN'
         );
@@ -1387,6 +1400,46 @@ export class BaileysConnectionService {
     this.qrReadSessionLocked = false;
     this.qrHash = undefined;
     this.clearReconnectRetryTimer();
+
+    const readiness = await this.healthCheckService.verifyCurrentSession();
+    if (!readiness.session_ready) {
+      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+      this.connectionEstablished = false;
+
+      const payload: IBaileysConnectionState = {
+        status: this.status,
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        code: this.code,
+        phone: getPhoneNumber(this.socket?.user?.id),
+        worker_status_id: EWorkerStatus.disponible,
+        connection_attempt_id: this.connectionAttemptId,
+        debug_trace_id: this.debugTraceId,
+        session_ready: false,
+        can_send: readiness.can_send,
+        can_receive_runtime: readiness.can_receive_runtime,
+        authenticated: readiness.authenticated,
+        provider_state: readiness.provider_state,
+        degraded_reason:
+          readiness.degraded_reason ?? readiness.reason ?? 'session_not_ready',
+        last_probe_at: readiness.last_probe_at,
+        probe_latency_ms: readiness.probe_latency_ms,
+      };
+
+      this.publishSub(payload);
+      this.lastStatusPayload = JSON.stringify(payload);
+      this.healthCheckService.markStatusPublished(readiness);
+      void this.notifyWorkerStatusSafely(payload, 'open_verification_failed');
+
+      if (!this.userRequestedDisconnect) {
+        this.scheduleNextReconnectAttempt();
+      }
+
+      resolve(payload);
+      this.pendingResolve = undefined;
+      return;
+    }
+
     this.setStatus(Status.connected, ECodeMessage.connectionEstablished);
     this.connectionEstablished = true;
 
@@ -1399,16 +1452,25 @@ export class BaileysConnectionService {
       worker_status_id: EWorkerStatus.online,
       connection_attempt_id: this.connectionAttemptId,
       debug_trace_id: this.debugTraceId,
+      session_ready: readiness.session_ready,
+      can_send: readiness.can_send,
+      can_receive_runtime: readiness.can_receive_runtime,
+      authenticated: readiness.authenticated,
+      provider_state: readiness.provider_state,
+      degraded_reason: readiness.degraded_reason,
+      last_probe_at: readiness.last_probe_at,
+      probe_latency_ms: readiness.probe_latency_ms,
     };
 
     this.publishSub(payload);
     this.lastStatusPayload = JSON.stringify(payload);
+    this.healthCheckService.markStatusPublished(readiness);
     void this.notifyWorkerStatusSafely(payload, 'open');
     void this.logConnectionIpInLocal();
 
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
 
-    resolve(this.state());
+    resolve(payload);
 
     this.pendingResolve = undefined;
   }

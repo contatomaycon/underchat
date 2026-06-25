@@ -35,4 +35,12 @@ export interface IBaileysConnectionState {
   proxy_error_code?: string;
   proxy_fallback?: 'direct';
   proxy_bypassed?: boolean;
+  session_ready?: boolean;
+  can_send?: boolean;
+  can_receive_runtime?: boolean;
+  authenticated?: boolean;
+  provider_state?: string;
+  degraded_reason?: string;
+  last_probe_at?: string;
+  probe_latency_ms?: number;
 }

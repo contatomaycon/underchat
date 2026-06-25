@@ -179,6 +179,14 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "proxy_fallback", state.ProxyFallback)
 	setDynamicBool(out, "proxy_bypassed", state.ProxyBypassed)
 	setDynamicString(out, "debug_trace_id", state.DebugTraceID)
+	setDynamicBool(out, "session_ready", state.SessionReady)
+	setDynamicBool(out, "can_send", state.CanSend)
+	setDynamicBool(out, "can_receive_runtime", state.CanReceiveRuntime)
+	setDynamicBool(out, "authenticated", state.Authenticated)
+	setDynamicString(out, "provider_state", state.ProviderState)
+	setDynamicString(out, "degraded_reason", state.DegradedReason)
+	setDynamicString(out, "last_probe_at", state.LastProbeAt)
+	setDynamicInt32(out, "probe_latency_ms", int32(state.ProbeLatencyMS))
 }
 
 func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
@@ -268,6 +276,14 @@ func (s *WorkerConnectionGRPCServer) RuntimeHealth(ctx context.Context, msg *dyn
 	setDynamicInt32(out, "runtime_generation", int32(resp.RuntimeGeneration))
 	setDynamicString(out, "runtime_state", resp.RuntimeState)
 	setDynamicBool(out, "qr_stream_ready", resp.QRStreamReady)
+	setDynamicBool(out, "session_ready", resp.SessionReady)
+	setDynamicBool(out, "can_send", resp.CanSend)
+	setDynamicBool(out, "can_receive_runtime", resp.CanReceiveRuntime)
+	setDynamicBool(out, "authenticated", resp.Authenticated)
+	setDynamicString(out, "provider_state", resp.ProviderState)
+	setDynamicString(out, "degraded_reason", resp.DegradedReason)
+	setDynamicString(out, "last_probe_at", resp.LastProbeAt)
+	setDynamicInt32(out, "probe_latency_ms", int32(resp.ProbeLatencyMS))
 	setDynamicString(out, "error", resp.Error)
 	return out, nil
 }

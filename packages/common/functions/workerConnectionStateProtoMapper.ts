@@ -84,6 +84,27 @@ export function protoToConnectionState(
   if (proto.proxy_bypassed === true) {
     state.proxy_bypassed = true;
   }
+  if (proto.session_ready !== undefined) {
+    state.session_ready = proto.session_ready === true;
+  }
+  if (proto.can_send !== undefined) {
+    state.can_send = proto.can_send === true;
+  }
+  if (proto.can_receive_runtime !== undefined) {
+    state.can_receive_runtime = proto.can_receive_runtime === true;
+  }
+  if (proto.authenticated !== undefined) {
+    state.authenticated = proto.authenticated === true;
+  }
+  if (proto.provider_state) {
+    state.provider_state = proto.provider_state;
+  }
+  if (proto.degraded_reason) {
+    state.degraded_reason = proto.degraded_reason;
+  }
+  if (proto.last_probe_at) {
+    state.last_probe_at = proto.last_probe_at;
+  }
 
   const time = optionalNumber(proto.time);
   const secondsUntilNextAttempt = optionalNumber(
@@ -93,6 +114,7 @@ export function protoToConnectionState(
   const maxAttempts = optionalNumber(proto.max_attempts);
   const timeToFirstQrMs = optionalNumber(proto.time_to_first_qr_ms);
   const runtimeGeneration = optionalNumber(proto.runtime_generation);
+  const probeLatencyMs = optionalNumber(proto.probe_latency_ms);
 
   if (time !== undefined) state.time = time;
   if (secondsUntilNextAttempt !== undefined) {
@@ -105,6 +127,9 @@ export function protoToConnectionState(
   }
   if (runtimeGeneration !== undefined) {
     state.runtime_generation = runtimeGeneration;
+  }
+  if (probeLatencyMs !== undefined) {
+    state.probe_latency_ms = probeLatencyMs;
   }
 
   return state;
@@ -144,5 +169,13 @@ export function connectionStateToProto(
     proxy_error_code: state.proxy_error_code ?? '',
     proxy_fallback: state.proxy_fallback ?? '',
     proxy_bypassed: state.proxy_bypassed ?? false,
+    session_ready: state.session_ready ?? false,
+    can_send: state.can_send ?? false,
+    can_receive_runtime: state.can_receive_runtime ?? false,
+    authenticated: state.authenticated ?? false,
+    provider_state: state.provider_state ?? '',
+    degraded_reason: state.degraded_reason ?? '',
+    last_probe_at: state.last_probe_at ?? '',
+    probe_latency_ms: state.probe_latency_ms ?? 0,
   };
 }

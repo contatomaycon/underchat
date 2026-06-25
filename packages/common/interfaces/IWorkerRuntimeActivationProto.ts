@@ -36,4 +36,12 @@ export interface IWorkerRuntimeHealthResponseProto {
   runtime_generation?: number | string;
   runtime_state?: string;
   qr_stream_ready?: boolean;
+  session_ready?: boolean;
+  can_send?: boolean;
+  can_receive_runtime?: boolean;
+  authenticated?: boolean;
+  provider_state?: string;
+  degraded_reason?: string;
+  last_probe_at?: string;
+  probe_latency_ms?: number | string;
 }

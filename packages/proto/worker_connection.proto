@@ -56,6 +56,14 @@ message WorkerConnectionResponse {
   string worker_type_id = 29;
   string expires_at = 30;
   string debug_trace_id = 31;
+  bool session_ready = 32;
+  bool can_send = 33;
+  bool can_receive_runtime = 34;
+  bool authenticated = 35;
+  string provider_state = 36;
+  string degraded_reason = 37;
+  string last_probe_at = 38;
+  int32 probe_latency_ms = 39;
 }
 
 message PhoneValidationRequest {
@@ -116,4 +124,12 @@ message WorkerRuntimeHealthResponse {
   int32 runtime_generation = 11;
   string runtime_state = 12;
   bool qr_stream_ready = 13;
+  bool session_ready = 14;
+  bool can_send = 15;
+  bool can_receive_runtime = 16;
+  bool authenticated = 17;
+  string provider_state = 18;
+  string degraded_reason = 19;
+  string last_probe_at = 20;
+  int32 probe_latency_ms = 21;
 }

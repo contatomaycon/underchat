@@ -299,6 +299,7 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 	clientConnected := client != nil && client.IsConnected()
 	loggedIn := client != nil && client.IsLoggedIn()
 	hasStoreID := client != nil && client.Store != nil && client.Store.ID != nil
+	authenticated := loggedIn && hasStoreID
 
 	m.mu.RLock()
 	connectedEvent := m.connected
@@ -320,6 +321,8 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 			degradedReason = "client_socket_disconnected"
 		case !loggedIn:
 			degradedReason = "client_not_logged_in"
+		case !hasStoreID:
+			degradedReason = "missing_store_id"
 		case keepAliveFailures > 0:
 			degradedReason = "keepalive_timeout"
 		case consecutiveSendFailures > 0:
@@ -327,7 +330,8 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 		}
 	}
 
-	ready := connectedEvent && clientConnected && loggedIn && keepAliveFailures == 0 && degradedReason == ""
+	canReceiveRuntime := connectedEvent && clientConnected && loggedIn
+	ready := canReceiveRuntime && authenticated && keepAliveFailures == 0 && consecutiveSendFailures == 0 && degradedReason == ""
 	healthStatus := "connected"
 	if !ready {
 		if connectedEvent || clientConnected || loggedIn {
@@ -339,7 +343,14 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 
 	return map[string]any{
 		"status":                    healthStatus,
+		"provider":                  "whatsmeow",
 		"ready":                     ready,
+		"connected":                 ready,
+		"session_ready":             ready,
+		"can_send":                  ready,
+		"can_receive_runtime":       canReceiveRuntime,
+		"authenticated":             authenticated,
+		"provider_state":            healthStatus,
 		"connected_event":           connectedEvent,
 		"client_connected":          clientConnected,
 		"logged_in":                 loggedIn,
@@ -352,6 +363,8 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 		"last_send_error_at":        healthTime(lastSendErrorAt),
 		"consecutive_send_failures": consecutiveSendFailures,
 		"degraded_reason":           degradedReason,
+		"last_probe_at":             time.Now().UTC().Format(time.RFC3339Nano),
+		"probe_latency_ms":          0,
 	}
 }
 
@@ -489,8 +502,7 @@ func (m *WhatsAppManager) triggerConnectionReset(ctx context.Context, reason str
 
 func (m *WhatsAppManager) currentConnectionState() ConnectionState {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return ConnectionState{
+	state := ConnectionState{
 		Code:                m.code,
 		Status:              m.status,
 		WorkerID:            m.cfg.WorkerID,
@@ -503,6 +515,61 @@ func (m *WhatsAppManager) currentConnectionState() ConnectionState {
 		RuntimeGeneration:   m.cfg.RuntimeGeneration,
 		WarmPoolID:          m.cfg.WarmPoolID,
 		Time:                time.Now().Unix(),
+	}
+	m.mu.RUnlock()
+	m.enrichReadiness(&state)
+	return state
+}
+
+func healthBool(health map[string]any, key string) bool {
+	value, _ := health[key].(bool)
+	return value
+}
+
+func healthString(health map[string]any, key string) string {
+	value, _ := health[key].(string)
+	return value
+}
+
+func healthInt(health map[string]any, key string) int {
+	switch value := health[key].(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
+}
+
+func (m *WhatsAppManager) enrichReadiness(state *ConnectionState) {
+	if state == nil {
+		return
+	}
+
+	health := m.ConnectionHealth()
+	state.SessionReady = healthBool(health, "session_ready")
+	state.CanSend = healthBool(health, "can_send")
+	state.CanReceiveRuntime = healthBool(health, "can_receive_runtime")
+	state.Authenticated = healthBool(health, "authenticated")
+	state.ProviderState = healthString(health, "provider_state")
+	state.DegradedReason = healthString(health, "degraded_reason")
+	state.LastProbeAt = healthString(health, "last_probe_at")
+	state.ProbeLatencyMS = healthInt(health, "probe_latency_ms")
+
+	if state.WorkerStatusID == WorkerStatusOnline && !state.SessionReady {
+		state.WorkerStatusID = WorkerStatusDisponible
+		state.Status = "connecting"
+		if state.Code == CodeConnectionEstablished {
+			state.Code = CodeAwaitConnection
+		}
+		if state.Reason == "" {
+			state.Reason = "session_not_ready"
+		}
 	}
 }
 
@@ -831,7 +898,7 @@ func (m *WhatsAppManager) publishConnectedIfAuthenticated(ctx context.Context, r
 	m.mu.Unlock()
 	go m.markPresenceAvailable(context.Background(), reason)
 	m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", false)
-	return true
+	return healthBool(m.ConnectionHealth(), "session_ready")
 }
 
 func (m *WhatsAppManager) setCurrentQRCode(qr string) {
@@ -1760,6 +1827,7 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 	if code == CodeAwaitingPairingCode {
 		state.PairingCode = qrOrPair
 	}
+	m.enrichReadiness(&state)
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t is_new_login=%t attempt=%d max_attempts=%d connection_attempt_id=%s",
 		m.cfg.WorkerID,
@@ -1804,9 +1872,9 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 			"pairing_code":          state.PairingCode,
 		})
 	}
-	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
+	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
-			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, status, code, workerStatusID, err)
+			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, state.Code, state.WorkerStatusID, err)
 		}
 	}
 	if code == CodeConnectionEstablished || code == CodeLoggedOut || code == CodeConnectionClosed {
@@ -1830,6 +1898,7 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 		RuntimeGeneration:   m.cfg.RuntimeGeneration,
 		WarmPoolID:          m.cfg.WarmPoolID,
 	}
+	m.enrichReadiness(&state)
 	log.Printf(
 		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s disconnected_user=true has_qr=false has_pairing_code=false is_new_login=false connection_attempt_id=%s",
 		m.cfg.WorkerID,
@@ -1865,9 +1934,9 @@ func (m *WhatsAppManager) publishStateDisconnectedByUser(ctx context.Context, co
 			"disconnected_user":     true,
 		})
 	}
-	if workerStatusID == WorkerStatusOnline || workerStatusID == WorkerStatusOffline || workerStatusID == WorkerStatusDisponible {
+	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible {
 		if err := m.balance.NotifyWorkerStatus(ctx, state); err != nil {
-			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, code, workerStatusID, err)
+			log.Printf("balance notify worker status failed worker_id=%s status=%s code=%d worker_status_id=%s error=%v", m.cfg.WorkerID, state.Status, state.Code, state.WorkerStatusID, err)
 		}
 	}
 	m.clearConnectionAttemptID()

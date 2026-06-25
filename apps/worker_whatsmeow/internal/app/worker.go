@@ -145,7 +145,18 @@ func (w *Worker) startHTTP() error {
 	})
 	mux.HandleFunc("/v1/connection/health/check", func(resp http.ResponseWriter, req *http.Request) {
 		manager := w.currentWhatsApp()
-		health := map[string]any{"ready": false, "provider": "whatsmeow", "error": "runtime_not_initialized"}
+		health := map[string]any{
+			"ready":               false,
+			"connected":           false,
+			"session_ready":       false,
+			"can_send":            false,
+			"can_receive_runtime": false,
+			"authenticated":       false,
+			"provider":            "whatsmeow",
+			"provider_state":      "not_initialized",
+			"degraded_reason":     "runtime_not_initialized",
+			"error":               "runtime_not_initialized",
+		}
 		if manager != nil {
 			health = manager.ConnectionHealth()
 		}
@@ -153,7 +164,7 @@ func (w *Worker) startHTTP() error {
 		kafkaUnhealthy := w.kafka.HasUnhealthyConsumers()
 		health["kafka_unhealthy"] = kafkaUnhealthy
 		failOnKafkaUnhealthy := w.cfg.ConnectionHealthFailOnKafkaUnhealthy
-		if ready, _ := health["ready"].(bool); ready && (!kafkaUnhealthy || !failOnKafkaUnhealthy) {
+		if ready, _ := health["session_ready"].(bool); ready && (!kafkaUnhealthy || !failOnKafkaUnhealthy) {
 			writeJSON(resp, http.StatusOK, health)
 			return
 		}
@@ -335,11 +346,27 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 	}
 	hasSession := false
 	hasQR := false
+	sessionReady := false
+	canSend := false
+	canReceiveRuntime := false
+	authenticated := false
+	providerState := ""
+	degradedReason := ""
+	lastProbeAt := ""
+	probeLatencyMS := 0
 	if w.whatsapp != nil {
 		health := w.whatsapp.ConnectionHealth()
 		if value, ok := health["has_store_id"].(bool); ok {
 			hasSession = value
 		}
+		sessionReady = healthBool(health, "session_ready")
+		canSend = healthBool(health, "can_send")
+		canReceiveRuntime = healthBool(health, "can_receive_runtime")
+		authenticated = healthBool(health, "authenticated")
+		providerState = healthString(health, "provider_state")
+		degradedReason = healthString(health, "degraded_reason")
+		lastProbeAt = healthString(health, "last_probe_at")
+		probeLatencyMS = healthInt(health, "probe_latency_ms")
 		w.whatsapp.mu.RLock()
 		hasQR = w.whatsapp.currentQRCode != ""
 		w.whatsapp.mu.RUnlock()
@@ -357,6 +384,14 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		RuntimeGeneration: w.cfg.RuntimeGeneration,
 		RuntimeState:      runtimeState,
 		QRStreamReady:     qrStreamReady,
+		SessionReady:      sessionReady,
+		CanSend:           canSend,
+		CanReceiveRuntime: canReceiveRuntime,
+		Authenticated:     authenticated,
+		ProviderState:     providerState,
+		DegradedReason:    degradedReason,
+		LastProbeAt:       lastProbeAt,
+		ProbeLatencyMS:    probeLatencyMS,
 	}, nil
 }
 

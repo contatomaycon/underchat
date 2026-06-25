@@ -93,11 +93,12 @@ describe('BaileysHealthCheckService', () => {
   it('starts/stops health-check interval and handles unconfigured run', async () => {
     const { service } = makeService();
 
-    await expect(service.runHealthCheck()).resolves.toEqual({
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
       isHealthy: false,
       reason: 'Health check not configured',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     jest.useFakeTimers();
@@ -148,12 +149,16 @@ describe('BaileysHealthCheckService', () => {
       getSocket: () =>
         ({
           ws: { isOpen: true },
+          user: { id: '5511999999999@s.whatsapp.net' },
+          fetchPrivacySettings: jest.fn(async () => ({})),
+          onWhatsApp: jest.fn(async () => [{ exists: true }]),
         }) as never,
       getStatus: () => Status.connected,
       getCode: () => ECodeMessage.awaitConnection,
       reconnect: jest.fn(),
       isConnected: () => true,
       hasSession: () => true,
+      isIncomingBound: () => true,
     });
 
     (service as any).lastKnownStatus = Status.connected;
@@ -163,11 +168,15 @@ describe('BaileysHealthCheckService', () => {
       .spyOn(service as any, 'notifyStatusChange')
       .mockResolvedValue(undefined);
 
-    await expect(service.runHealthCheck()).resolves.toEqual({
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
       isHealthy: true,
-      reason: 'Connection healthy (WebSocket client state: OPEN)',
+      reason: 'Session ready (WebSocket client state: OPEN)',
       detectedStatus: Status.connected,
       workerStatus: EWorkerStatus.online,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
     });
 
     expect(notifyStatusChangeSpy).not.toHaveBeenCalled();
@@ -185,6 +194,8 @@ describe('BaileysHealthCheckService', () => {
       user: {
         id: '5511999999999@s.whatsapp.net',
       },
+      fetchPrivacySettings: jest.fn(async () => ({})),
+      onWhatsApp: jest.fn(async () => [{ exists: true }]),
     };
 
     service.configure({
@@ -194,14 +205,16 @@ describe('BaileysHealthCheckService', () => {
       reconnect: jest.fn(),
       isConnected: () => false,
       hasSession: () => true,
+      isIncomingBound: () => true,
       onStatusMismatch: mismatch,
     });
 
-    await expect(service.runHealthCheck()).resolves.toEqual({
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
       isHealthy: true,
-      reason: 'Connection healthy (WebSocket client state: OPEN)',
+      reason: 'Session ready (WebSocket client state: OPEN)',
       detectedStatus: Status.connected,
       workerStatus: EWorkerStatus.online,
+      session_ready: true,
     });
 
     expect(mismatch).toHaveBeenCalledWith(
@@ -215,6 +228,7 @@ describe('BaileysHealthCheckService', () => {
         worker_status_id: EWorkerStatus.online,
         phone: '5511999999999',
         code: ECodeMessage.connectionEstablished,
+        session_ready: true,
       })
     );
     expect(
@@ -338,11 +352,12 @@ describe('BaileysHealthCheckService', () => {
 
     await expect(
       sut.checkConnectivity(undefined, Status.disconnected)
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: false,
       reason: 'No socket instance',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     await expect(
@@ -352,11 +367,13 @@ describe('BaileysHealthCheckService', () => {
         },
         Status.connecting
       )
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: true,
-      reason: 'Connecting (WebSocket client state: OPEN)',
+      reason: 'Verifying session (WebSocket client state: OPEN)',
       detectedStatus: Status.connecting,
       workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
+      degraded_reason: 'missing_sock_user',
     });
 
     await expect(
@@ -366,11 +383,12 @@ describe('BaileysHealthCheckService', () => {
         },
         Status.disconnected
       )
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: true,
-      reason: 'Connection healthy (WebSocket client state: OPEN)',
-      detectedStatus: Status.connected,
-      workerStatus: EWorkerStatus.online,
+      reason: 'Verifying session (WebSocket client state: OPEN)',
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
     });
 
     await expect(
@@ -380,11 +398,12 @@ describe('BaileysHealthCheckService', () => {
         },
         Status.disconnected
       )
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: true,
       reason: 'Connecting (WebSocket client state: CONNECTING)',
       detectedStatus: Status.connecting,
       workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
     });
 
     await expect(
@@ -394,18 +413,22 @@ describe('BaileysHealthCheckService', () => {
         },
         Status.connecting
       )
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: true,
       reason: 'Connecting (reported by service)',
       detectedStatus: Status.connecting,
       workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
     });
 
-    await expect(sut.checkConnectivity({}, Status.connected)).resolves.toEqual({
-      isHealthy: true,
-      reason: 'Connected (reported by service, WebSocket state unavailable)',
-      detectedStatus: Status.connected,
-      workerStatus: EWorkerStatus.online,
+    await expect(
+      sut.checkConnectivity({}, Status.connected)
+    ).resolves.toMatchObject({
+      isHealthy: false,
+      reason: 'WebSocket state unavailable',
+      detectedStatus: Status.disconnected,
+      workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     await expect(
@@ -415,11 +438,12 @@ describe('BaileysHealthCheckService', () => {
         },
         Status.disconnected
       )
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: false,
       reason: 'WebSocket client state: CLOSING',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     expect(sut.mapReadyState(0, 'label')).toEqual({

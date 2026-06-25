@@ -285,14 +285,23 @@ export class WwebjsConnectionService {
       reconnect: (input) => this.reconnect(input),
       isConnected: () => this.connected,
       hasSession: () => this.hasSession(),
-      onStatusMismatch: (detectedStatus) => {
-        this.handleHealthCheckMismatch(detectedStatus);
+      isEventBridgeAttached: (client) =>
+        this.incomingMessageService.isEventBridgeAttached(client),
+      onStatusMismatch: (detectedStatus, workerStatus) => {
+        this.handleHealthCheckMismatch(detectedStatus, workerStatus);
       },
     });
   }
 
-  private handleHealthCheckMismatch(detectedStatus: Status): void {
-    if (detectedStatus === Status.disconnected && this.connectionEstablished) {
+  private handleHealthCheckMismatch(
+    detectedStatus: Status,
+    workerStatus: EWorkerStatus
+  ): void {
+    if (
+      this.connectionEstablished &&
+      (detectedStatus !== Status.connected ||
+        workerStatus !== EWorkerStatus.online)
+    ) {
       console.log(
         '[WwebjsConnection] Health check detected disconnection, triggering reconnect'
       );
@@ -1416,7 +1425,12 @@ export class WwebjsConnectionService {
           return;
         }
 
-        this.markConnected(client, attemptId, proxy, 'ready');
+        void this.confirmReadyAndMarkConnected(
+          client,
+          attemptId,
+          proxy,
+          'ready'
+        );
       });
 
       client.on('disconnected', (reason: string) => {
@@ -1552,28 +1566,6 @@ export class WwebjsConnectionService {
         });
         this.incomingMessageService.unbind();
         this.clearFolder();
-
-        if (
-          this.typeConnection === EBaileysConnectionType.qrcode &&
-          this.initialConnection &&
-          !this.userRequestedDisconnect
-        ) {
-          this.retryCount = 0;
-          this.clearDisconnectRetryTimer();
-          this.disconnectRetryTimer = setTimeout(() => {
-            this.disconnectRetryTimer = undefined;
-            this.connect({
-              initial_connection: this.initialConnection,
-              force_new: false,
-              allow_restore: false,
-              type: this.typeConnection,
-              requested_by_user: false,
-              from_disconnect_restart: true,
-            }).catch(() => {
-              this.scheduleNextReconnectAttempt();
-            });
-          }, RETRY_DELAY);
-        }
       });
 
       client.on('chat_state', (state) => {
@@ -1835,9 +1827,17 @@ export class WwebjsConnectionService {
           this.status === Status.connecting &&
           !this.connectionEstablished
         ) {
-          this.markConnected(client, attemptId, proxy, 'state_probe');
+          const marked = await this.confirmReadyAndMarkConnected(
+            client,
+            attemptId,
+            proxy,
+            'state_probe'
+          );
+
+          if (marked) {
+            return;
+          }
         }
-        return;
       }
 
       if (elapsedMs >= CONNECTION_STATE_RECONCILE_TIMEOUT_MS) {
@@ -1876,18 +1876,57 @@ export class WwebjsConnectionService {
     }, CONNECTION_STATE_RECONCILE_INTERVAL_MS);
   }
 
-  private markConnected(
+  private async confirmReadyAndMarkConnected(
     client: Client,
     attemptId: number,
     proxy: ReturnType<typeof readProxyConfig>,
     source: 'ready' | 'state_probe'
-  ): void {
+  ): Promise<boolean> {
     if (!this.isActiveClient(client)) {
-      return;
+      return false;
     }
 
     if (this.connectionEstablished && this.status === Status.connected) {
-      return;
+      return true;
+    }
+
+    const readiness = await this.healthCheckService.verifyCurrentSession();
+    if (!readiness.session_ready) {
+      if (!this.isActiveClient(client)) {
+        return false;
+      }
+
+      this.setStatus(Status.connecting, ECodeMessage.awaitConnection);
+      this.connectionEstablished = false;
+      const payload: IBaileysConnectionState = {
+        status: this.status,
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        code: this.code,
+        phone: this.getClientPhone(client),
+        worker_status_id: EWorkerStatus.disponible,
+        connection_attempt_id: this.connectionAttemptId,
+        debug_trace_id: this.debugTraceId,
+        session_ready: false,
+        can_send: readiness.can_send,
+        can_receive_runtime: readiness.can_receive_runtime,
+        authenticated: readiness.authenticated,
+        provider_state: readiness.provider_state,
+        degraded_reason:
+          readiness.degraded_reason ?? readiness.reason ?? 'session_not_ready',
+        last_probe_at: readiness.last_probe_at,
+        probe_latency_ms: readiness.probe_latency_ms,
+      };
+
+      this.publishSub(payload, true);
+      this.healthCheckService.markStatusPublished(readiness);
+      void this.notifyWorkerStatusSafely(
+        payload,
+        `${source}_verification_failed`
+      );
+      this.pendingResolve?.(payload);
+      this.pendingResolve = undefined;
+      return false;
     }
 
     this.clearConnectionStateProbe();
@@ -1910,14 +1949,24 @@ export class WwebjsConnectionService {
       worker_status_id: EWorkerStatus.online,
       connection_attempt_id: this.connectionAttemptId,
       debug_trace_id: this.debugTraceId,
+      session_ready: readiness.session_ready,
+      can_send: readiness.can_send,
+      can_receive_runtime: readiness.can_receive_runtime,
+      authenticated: readiness.authenticated,
+      provider_state: readiness.provider_state,
+      degraded_reason: readiness.degraded_reason,
+      last_probe_at: readiness.last_probe_at,
+      probe_latency_ms: readiness.probe_latency_ms,
     };
 
     this.publishSub(payload, true);
+    this.healthCheckService.markStatusPublished(readiness);
     void this.notifyWorkerStatusSafely(payload, source);
     void this.logConnectionIpInLocal(client, proxy);
     this.healthCheckService.start(HEALTH_CHECK_INTERVAL_MS);
     this.pendingResolve?.(payload);
     this.pendingResolve = undefined;
+    return true;
   }
 
   private extractPublicIpFromBody(bodyText: string): string | undefined {

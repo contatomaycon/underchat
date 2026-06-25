@@ -1105,6 +1105,12 @@ export class WorkerCommandHandlerService {
       payload.warm_pool_id ??= qrWorkerData.warmPoolId ?? undefined;
       payload.container_id ??= qrWorkerData.containerId ?? undefined;
     }
+
+    workerStatusId = await this.enforceOnlineNotificationReadiness(
+      payload,
+      workerStatusId
+    );
+
     const isDisponibleWithDisconnectedUser =
       workerStatusId === EWorkerStatus.disponible &&
       input.disconnected_user === true;
@@ -1255,6 +1261,23 @@ export class WorkerCommandHandlerService {
       error: input.error || undefined,
       container_id: input.container_id || undefined,
       warm_pool_id: input.warm_pool_id || undefined,
+      session_ready:
+        input.session_ready !== undefined
+          ? input.session_ready === true
+          : undefined,
+      can_send:
+        input.can_send !== undefined ? input.can_send === true : undefined,
+      can_receive_runtime:
+        input.can_receive_runtime !== undefined
+          ? input.can_receive_runtime === true
+          : undefined,
+      authenticated:
+        input.authenticated !== undefined
+          ? input.authenticated === true
+          : undefined,
+      provider_state: input.provider_state || undefined,
+      degraded_reason: input.degraded_reason || undefined,
+      last_probe_at: input.last_probe_at || undefined,
     };
 
     if (input.proxy_status) {
@@ -1287,6 +1310,9 @@ export class WorkerCommandHandlerService {
     const runtimeGeneration = this.normalizeNotifyOptionalNumber(
       input.runtime_generation
     );
+    const probeLatencyMs = this.normalizeNotifyOptionalNumber(
+      input.probe_latency_ms
+    );
 
     if (attempt !== undefined) payload.attempt = attempt;
     if (maxAttempts !== undefined) payload.max_attempts = maxAttempts;
@@ -1300,11 +1326,90 @@ export class WorkerCommandHandlerService {
     if (runtimeGeneration !== undefined) {
       payload.runtime_generation = runtimeGeneration;
     }
+    if (probeLatencyMs !== undefined) {
+      payload.probe_latency_ms = probeLatencyMs;
+    }
     if (payload.qrcode && payload.qr_pending !== true) {
       payload.qr_pending = false;
     }
 
     return payload;
+  }
+
+  private async enforceOnlineNotificationReadiness(
+    payload: IBaileysConnectionState,
+    workerStatusId: EWorkerStatus
+  ): Promise<EWorkerStatus> {
+    if (workerStatusId !== EWorkerStatus.online) {
+      return workerStatusId;
+    }
+
+    if (payload.session_ready === true) {
+      return workerStatusId;
+    }
+
+    const workerType = payload.worker_type_id;
+    if (workerType) {
+      try {
+        const health = await this.workerBaileysGrpcClientService.runtimeHealth(
+          payload.worker_id,
+          { worker_id: payload.worker_id },
+          workerType
+        );
+
+        if (this.isConnectedRuntimeHealth(health, workerType)) {
+          payload.session_ready = true;
+          payload.can_send = health?.can_send === true;
+          payload.can_receive_runtime = health?.can_receive_runtime === true;
+          payload.authenticated = health?.authenticated === true;
+          payload.provider_state = health?.provider_state || undefined;
+          payload.degraded_reason = health?.degraded_reason || undefined;
+          payload.last_probe_at = health?.last_probe_at || undefined;
+          payload.probe_latency_ms = this.normalizeNotifyOptionalNumber(
+            health?.probe_latency_ms
+          );
+          return workerStatusId;
+        }
+      } catch (error) {
+        this.logDebug('service.notify_status.session_ready_probe_failed', {
+          trace_id: payload.debug_trace_id,
+          layer: 'service',
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: workerType,
+          connection_attempt_id: payload.connection_attempt_id,
+          runtime_generation: payload.runtime_generation,
+          status: payload.status,
+          code: payload.code,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    payload.worker_status_id = EWorkerStatus.disponible;
+    payload.status = EBaileysConnectionStatus.connecting;
+    payload.code = ECodeMessage.awaitConnection;
+    payload.session_ready = false;
+    payload.can_send = false;
+    payload.degraded_reason ??= 'online_without_session_ready';
+
+    this.logDebug(
+      'service.notify_status.online_rejected_without_session_ready',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        status: payload.status,
+        code: payload.code,
+        reason: payload.degraded_reason,
+      }
+    );
+
+    return EWorkerStatus.disponible;
   }
 
   private normalizeNotifyCode(code: unknown): ECodeMessage {
@@ -3838,9 +3943,10 @@ export class WorkerCommandHandlerService {
     state: IBaileysConnectionState | undefined
   ): boolean {
     return (
-      state?.worker_status_id === EWorkerStatus.online ||
-      state?.status === EBaileysConnectionStatus.connected ||
-      state?.code === ECodeMessage.connectionEstablished
+      state?.session_ready === true &&
+      (state?.worker_status_id === EWorkerStatus.online ||
+        state?.status === EBaileysConnectionStatus.connected ||
+        state?.code === ECodeMessage.connectionEstablished)
     );
   }
 
@@ -3849,10 +3955,9 @@ export class WorkerCommandHandlerService {
     workerType: EWorkerType
   ): boolean {
     return (
-      health?.ready === true &&
+      health?.session_ready === true &&
       health?.activated === true &&
       health?.standby !== true &&
-      health?.has_session === true &&
       (!health.worker_type_id || health.worker_type_id === workerType) &&
       !health.error
     );
@@ -3882,6 +3987,16 @@ export class WorkerCommandHandlerService {
           worker_id: data.worker_id,
           account_id: data.account_id,
           worker_status_id: EWorkerStatus.online,
+          session_ready: true,
+          can_send: health?.can_send,
+          can_receive_runtime: health?.can_receive_runtime,
+          authenticated: health?.authenticated,
+          provider_state: health?.provider_state,
+          degraded_reason: health?.degraded_reason,
+          last_probe_at: health?.last_probe_at,
+          probe_latency_ms: this.normalizeNotifyOptionalNumber(
+            health?.probe_latency_ms
+          ),
         },
       };
     } catch {
@@ -3924,12 +4039,7 @@ export class WorkerCommandHandlerService {
           payload,
           workerType
         );
-      const current = await this.workerService.viewWorkerForMonitor(
-        data.worker_id
-      );
-      const connected =
-        this.isConnectedConnectionState(response) ||
-        current?.worker_status_id === EWorkerStatus.online;
+      const connected = this.isConnectedConnectionState(response);
 
       if (!connected) {
         const delayedConnection =
@@ -3955,6 +4065,14 @@ export class WorkerCommandHandlerService {
           phone: response?.phone,
           worker_status_id: EWorkerStatus.online,
           debug_trace_id: data.debug_trace_id,
+          session_ready: true,
+          can_send: response?.can_send,
+          can_receive_runtime: response?.can_receive_runtime,
+          authenticated: response?.authenticated,
+          provider_state: response?.provider_state,
+          degraded_reason: response?.degraded_reason,
+          last_probe_at: response?.last_probe_at,
+          probe_latency_ms: response?.probe_latency_ms,
         },
       };
     } catch {
@@ -3976,23 +4094,6 @@ export class WorkerCommandHandlerService {
 
       if (healthReconciliation) {
         return healthReconciliation;
-      }
-
-      const current = await this.workerService.viewWorkerForMonitor(
-        data.worker_id
-      );
-
-      if (current?.worker_status_id === EWorkerStatus.online) {
-        return {
-          workerStatusId: EWorkerStatus.online,
-          connectionState: {
-            code: ECodeMessage.connectionEstablished,
-            status: EBaileysConnectionStatus.connected,
-            worker_id: data.worker_id,
-            account_id: data.account_id,
-            worker_status_id: EWorkerStatus.online,
-          },
-        };
       }
 
       if (Date.now() > deadline) {

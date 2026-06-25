@@ -53,6 +53,14 @@ interface HealthCheckResult {
   detectedStatus: Status;
   workerStatus: EWorkerStatus;
   waState?: WAState;
+  session_ready: boolean;
+  can_send: boolean;
+  can_receive_runtime: boolean;
+  authenticated: boolean;
+  provider_state: string;
+  degraded_reason?: string;
+  last_probe_at: string;
+  probe_latency_ms: number;
 }
 
 interface WwebjsHealthCheckConfig {
@@ -62,6 +70,7 @@ interface WwebjsHealthCheckConfig {
   reconnect: (input: IBaileysConnection) => void;
   isConnected: () => boolean;
   hasSession: () => boolean;
+  isEventBridgeAttached?: (client?: Client) => boolean;
   onStatusMismatch?: (detected: Status, workerStatus: EWorkerStatus) => void;
 }
 
@@ -77,6 +86,9 @@ export class WwebjsHealthCheckService {
   private reconnectAction: ((input: IBaileysConnection) => void) | undefined;
   private isConnectedAction: (() => boolean) | undefined;
   private hasSessionAction: (() => boolean) | undefined;
+  private isEventBridgeAttachedAction:
+    | ((client?: Client) => boolean)
+    | undefined;
   private onStatusMismatch:
     | ((detected: Status, workerStatus: EWorkerStatus) => void)
     | undefined;
@@ -84,6 +96,20 @@ export class WwebjsHealthCheckService {
   private bootstrapLock = false;
   private bootstrapFallbackTimer: NodeJS.Timeout | undefined;
   private transientDisconnectFailures = 0;
+  private lastResult: HealthCheckResult = {
+    isHealthy: false,
+    reason: 'Health check not run',
+    detectedStatus: Status.initial,
+    workerStatus: EWorkerStatus.disponible,
+    session_ready: false,
+    can_send: false,
+    can_receive_runtime: false,
+    authenticated: false,
+    provider_state: 'initial',
+    degraded_reason: 'health_check_not_run',
+    last_probe_at: '',
+    probe_latency_ms: 0,
+  };
 
   constructor(
     @inject(CentrifugoService)
@@ -101,6 +127,7 @@ export class WwebjsHealthCheckService {
     this.reconnectAction = options.reconnect;
     this.isConnectedAction = options.isConnected;
     this.hasSessionAction = options.hasSession;
+    this.isEventBridgeAttachedAction = options.isEventBridgeAttached;
     this.onStatusMismatch = options.onStatusMismatch;
   }
 
@@ -152,12 +179,14 @@ export class WwebjsHealthCheckService {
   }
 
   async notifyDisconnected(reason?: string): Promise<void> {
-    const result: HealthCheckResult = {
+    const result = this.buildResult({
       isHealthy: false,
       reason: reason ?? 'Connection closed',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
-    };
+      providerState: 'disconnected',
+    });
+    this.lastResult = result;
 
     if (
       result.detectedStatus !== this.lastKnownStatus ||
@@ -179,14 +208,48 @@ export class WwebjsHealthCheckService {
     this.lastKnownWorkerStatus = EWorkerStatus.disponible;
   }
 
-  async runHealthCheck(): Promise<HealthCheckResult> {
-    if (!this.clientGetter || !this.statusGetter) {
-      return {
+  getReadinessSnapshot(): HealthCheckResult {
+    return this.lastResult;
+  }
+
+  async verifyCurrentSession(): Promise<HealthCheckResult> {
+    if (!this.clientGetter) {
+      const result = this.buildResult({
         isHealthy: false,
         reason: 'Health check not configured',
         detectedStatus: Status.disconnected,
         workerStatus: EWorkerStatus.offline,
-      };
+        providerState: 'not_configured',
+      });
+      this.lastResult = result;
+      return result;
+    }
+
+    const result = await this.checkConnectivity(
+      this.clientGetter(),
+      Status.connected
+    );
+    this.lastResult = result;
+    return result;
+  }
+
+  markStatusPublished(result: HealthCheckResult): void {
+    this.lastResult = result;
+    this.lastKnownStatus = result.detectedStatus;
+    this.lastKnownWorkerStatus = result.workerStatus;
+  }
+
+  async runHealthCheck(): Promise<HealthCheckResult> {
+    if (!this.clientGetter || !this.statusGetter) {
+      const result = this.buildResult({
+        isHealthy: false,
+        reason: 'Health check not configured',
+        detectedStatus: Status.disconnected,
+        workerStatus: EWorkerStatus.offline,
+        providerState: 'not_configured',
+      });
+      this.lastResult = result;
+      return result;
     }
 
     const client = this.clientGetter();
@@ -200,6 +263,7 @@ export class WwebjsHealthCheckService {
       connectivityResult,
       reportedStatus
     );
+    this.lastResult = result;
 
     if (
       result.detectedStatus !== this.lastKnownStatus ||
@@ -357,6 +421,14 @@ export class WwebjsHealthCheckService {
       worker_id: getWorker(),
       account_id: getAccount(),
       worker_status_id: EWorkerStatus.disponible,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'bootstrap',
+      degraded_reason: reason,
+      last_probe_at: new Date().toISOString(),
+      probe_latency_ms: 0,
     };
 
     try {
@@ -378,54 +450,52 @@ export class WwebjsHealthCheckService {
     reportedStatus: Status
   ): Promise<HealthCheckResult> {
     if (!client) {
-      return {
+      return this.buildResult({
         isHealthy: false,
         reason: 'No client instance',
         detectedStatus: Status.disconnected,
         workerStatus: EWorkerStatus.offline,
-      };
+        providerState: 'missing_client',
+      });
     }
 
     let waState: WAState | undefined;
     try {
       waState = await this.getStateWithTimeout(client);
     } catch (error) {
-      return {
+      return this.buildResult({
         isHealthy: false,
         reason: `Failed to get state: ${error instanceof Error ? error.message : String(error)}`,
         detectedStatus: Status.disconnected,
         workerStatus: EWorkerStatus.offline,
-      };
+        providerState: 'state_error',
+      });
     }
 
     if (!waState) {
       if (reportedStatus === Status.connecting) {
-        return {
+        return this.buildResult({
           isHealthy: true,
           reason: 'Connecting (state not yet available)',
           detectedStatus: Status.connecting,
           workerStatus: EWorkerStatus.disponible,
-        };
+          providerState: 'state_unavailable',
+        });
       }
 
-      return {
+      return this.buildResult({
         isHealthy: false,
         reason: 'State not available',
         detectedStatus: Status.disconnected,
         workerStatus: EWorkerStatus.offline,
-      };
+        providerState: 'state_unavailable',
+      });
     }
 
     const stateResult = this.mapWAStateToStatus(waState);
 
-    if (stateResult.detectedStatus === Status.connected && !client.info) {
-      return {
-        isHealthy: false,
-        reason: 'Connected state but no client info',
-        detectedStatus: Status.disconnected,
-        workerStatus: EWorkerStatus.offline,
-        waState,
-      };
+    if (stateResult.detectedStatus === Status.connected) {
+      return this.probeConnectedClient(client, waState);
     }
 
     return {
@@ -439,18 +509,7 @@ export class WwebjsHealthCheckService {
     reportedStatus: Status
   ): HealthCheckResult {
     if (this.isTransientDisconnectResult(result, reportedStatus)) {
-      this.transientDisconnectFailures += 1;
-
-      if (this.transientDisconnectFailures < TRANSIENT_DISCONNECT_THRESHOLD) {
-        return {
-          ...result,
-          isHealthy: true,
-          reason: `Transient health check failure ignored (${this.transientDisconnectFailures}/${TRANSIENT_DISCONNECT_THRESHOLD}): ${result.reason ?? 'unknown'}`,
-          detectedStatus: Status.connected,
-          workerStatus: EWorkerStatus.online,
-        };
-      }
-
+      this.transientDisconnectFailures = TRANSIENT_DISCONNECT_THRESHOLD;
       return result;
     }
 
@@ -504,81 +563,303 @@ export class WwebjsHealthCheckService {
   private mapWAStateToStatus(state: WAState): HealthCheckResult {
     switch (state) {
       case 'CONNECTED':
-        return {
+        return this.buildResult({
           isHealthy: true,
           reason: 'Connected',
           detectedStatus: Status.connected,
           workerStatus: EWorkerStatus.online,
-        };
+          providerState: state,
+        });
 
       case 'OPENING':
       case 'PAIRING':
-        return {
+        return this.buildResult({
           isHealthy: true,
           reason: `State: ${state}`,
           detectedStatus: Status.connecting,
           workerStatus: EWorkerStatus.disponible,
-        };
+          providerState: state,
+        });
 
       case 'UNPAIRED':
       case 'UNPAIRED_IDLE':
-        return {
+        return this.buildResult({
           isHealthy: false,
           reason: `Not paired: ${state}`,
           detectedStatus: Status.disconnected,
           workerStatus: EWorkerStatus.disponible,
-        };
+          providerState: state,
+        });
 
       case 'CONFLICT':
-        return {
+        return this.buildResult({
           isHealthy: false,
           reason: 'Session conflict - another device connected',
           detectedStatus: Status.disconnected,
           workerStatus: EWorkerStatus.mismatched,
-        };
+          providerState: state,
+        });
 
       case 'DEPRECATED_VERSION':
-        return {
+        return this.buildResult({
           isHealthy: false,
           reason: 'Deprecated WhatsApp Web version',
           detectedStatus: Status.disconnected,
           workerStatus: EWorkerStatus.mismatched,
-        };
+          providerState: state,
+        });
 
       case 'TIMEOUT':
-        return {
+        return this.buildResult({
           isHealthy: false,
           reason: 'Connection timeout',
           detectedStatus: Status.disconnected,
           workerStatus: EWorkerStatus.offline,
-        };
+          providerState: state,
+        });
 
       case 'PROXYBLOCK':
       case 'TOS_BLOCK':
       case 'SMB_TOS_BLOCK':
-        return {
+        return this.buildResult({
           isHealthy: false,
           reason: `Blocked: ${state}`,
           detectedStatus: Status.disconnected,
           workerStatus: EWorkerStatus.mismatched,
-        };
+          providerState: state,
+        });
 
       case 'UNLAUNCHED':
-        return {
+        return this.buildResult({
           isHealthy: false,
           reason: 'Client not launched',
           detectedStatus: Status.disconnected,
           workerStatus: EWorkerStatus.offline,
-        };
+          providerState: state,
+        });
 
       default:
-        return {
+        return this.buildResult({
           isHealthy: false,
           reason: `Unknown state: ${state}`,
           detectedStatus: Status.disconnected,
           workerStatus: EWorkerStatus.offline,
-        };
+          providerState: state,
+        });
     }
+  }
+
+  private async probeConnectedClient(
+    client: Client,
+    waState: WAState
+  ): Promise<HealthCheckResult> {
+    const probeStartedAt = Date.now();
+    const lastProbeAt = new Date().toISOString();
+    const selfJid = client.info?.wid?._serialized;
+    const eventBridgeAttached =
+      this.isEventBridgeAttachedAction?.(client) === true;
+
+    if (!selfJid) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: 'Connected state but no client info',
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: waState,
+        degradedReason: 'missing_client_info',
+        canReceiveRuntime: eventBridgeAttached,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    if (!eventBridgeAttached) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: 'Connected state but event bridge is not attached',
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: waState,
+        degradedReason: 'event_bridge_not_attached',
+        authenticated: true,
+        canReceiveRuntime: false,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    if (!this.hasSessionAction?.()) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: 'Connected state but local session is missing',
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: waState,
+        degradedReason: 'missing_local_session',
+        authenticated: false,
+        canReceiveRuntime: true,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    if (!(await this.isStoreReady(client))) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: 'Connected state but Store WWebJS is not ready',
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: waState,
+        degradedReason: 'store_wwebjs_not_ready',
+        authenticated: true,
+        canReceiveRuntime: true,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    try {
+      await this.runProbe(client, selfJid);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return this.buildResult({
+        isHealthy: true,
+        reason: `Session probe failed: ${reason}`,
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: waState,
+        degradedReason: reason,
+        authenticated: true,
+        canReceiveRuntime: true,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    return this.buildResult({
+      isHealthy: true,
+      reason: 'Session ready',
+      detectedStatus: Status.connected,
+      workerStatus: EWorkerStatus.online,
+      waState,
+      sessionReady: true,
+      canSend: true,
+      canReceiveRuntime: true,
+      authenticated: true,
+      providerState: waState,
+      lastProbeAt,
+      probeLatencyMs: Date.now() - probeStartedAt,
+    });
+  }
+
+  private async isStoreReady(client: Client): Promise<boolean> {
+    const page = (client as unknown as { pupPage?: unknown }).pupPage as
+      | { evaluate?: (fn: () => boolean) => Promise<boolean> }
+      | undefined;
+
+    if (!page || typeof page.evaluate !== 'function') {
+      return false;
+    }
+
+    try {
+      return await this.withProbeTimeout(
+        Promise.resolve(
+          page.evaluate(() => Boolean((globalThis as any).Store?.WWebJS))
+        ),
+        'store_wwebjs'
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async runProbe(client: Client, selfJid: string): Promise<void> {
+    const selfPhone = getPhoneNumber(selfJid);
+    const probeClient = client as Client & {
+      getNumberId?: (phone: string) => Promise<unknown>;
+      isRegisteredUser?: (jid: string) => Promise<boolean>;
+    };
+
+    if (selfPhone && typeof probeClient.getNumberId === 'function') {
+      const numberId = await this.withProbeTimeout(
+        Promise.resolve(probeClient.getNumberId(selfPhone)),
+        'getNumberId'
+      );
+
+      if (!numberId) {
+        throw new Error('self_number_not_registered');
+      }
+      return;
+    }
+
+    if (typeof probeClient.isRegisteredUser === 'function') {
+      const registered = await this.withProbeTimeout(
+        Promise.resolve(probeClient.isRegisteredUser(selfJid)),
+        'isRegisteredUser'
+      );
+
+      if (registered !== true) {
+        throw new Error('self_jid_not_registered');
+      }
+      return;
+    }
+
+    throw new Error('registration_probe_unavailable');
+  }
+
+  private withProbeTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`${label}_timeout`));
+      }, STATE_CHECK_TIMEOUT_MS);
+
+      promise
+        .then((value) => {
+          clearTimeout(timeout);
+          resolve(value);
+        })
+        .catch((error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    });
+  }
+
+  private buildResult(input: {
+    isHealthy: boolean;
+    reason?: string;
+    detectedStatus: Status;
+    workerStatus: EWorkerStatus;
+    waState?: WAState;
+    sessionReady?: boolean;
+    canSend?: boolean;
+    canReceiveRuntime?: boolean;
+    authenticated?: boolean;
+    providerState: string;
+    degradedReason?: string;
+    lastProbeAt?: string;
+    probeLatencyMs?: number;
+  }): HealthCheckResult {
+    const sessionReady = input.sessionReady === true;
+    const degradedReason =
+      input.degradedReason ??
+      (sessionReady ? undefined : (input.reason ?? input.providerState));
+
+    return {
+      isHealthy: input.isHealthy,
+      reason: input.reason,
+      detectedStatus: input.detectedStatus,
+      workerStatus: input.workerStatus,
+      waState: input.waState,
+      session_ready: sessionReady,
+      can_send: input.canSend ?? sessionReady,
+      can_receive_runtime: input.canReceiveRuntime ?? false,
+      authenticated: input.authenticated ?? false,
+      provider_state: input.providerState,
+      degraded_reason: degradedReason,
+      last_probe_at: input.lastProbeAt ?? new Date().toISOString(),
+      probe_latency_ms: input.probeLatencyMs ?? 0,
+    };
   }
 
   private async notifyStatusChange(
@@ -589,12 +870,21 @@ export class WwebjsHealthCheckService {
       status: result.detectedStatus,
       worker_id: getWorker(),
       account_id: getAccount(),
-      code:
-        result.detectedStatus === Status.connected
-          ? ECodeMessage.connectionEstablished
+      code: result.session_ready
+        ? ECodeMessage.connectionEstablished
+        : result.detectedStatus === Status.connecting
+          ? ECodeMessage.awaitConnection
           : ECodeMessage.connectionLost,
       phone: getPhoneNumber(client?.info?.wid?._serialized),
       worker_status_id: result.workerStatus,
+      session_ready: result.session_ready,
+      can_send: result.can_send,
+      can_receive_runtime: result.can_receive_runtime,
+      authenticated: result.authenticated,
+      provider_state: result.provider_state,
+      degraded_reason: result.degraded_reason,
+      last_probe_at: result.last_probe_at,
+      probe_latency_ms: result.probe_latency_ms,
     };
 
     try {
@@ -614,7 +904,7 @@ export class WwebjsHealthCheckService {
       );
     }
 
-    const isConnected = result.detectedStatus === Status.connected;
+    const isConnected = result.session_ready;
     const phone = getPhoneNumber(client?.info?.wid?._serialized);
 
     await this.saveLogWppConnection({

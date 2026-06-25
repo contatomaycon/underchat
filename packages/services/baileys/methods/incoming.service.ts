@@ -1725,6 +1725,14 @@ export class BaileysIncomingMessageService {
     } catch {}
   }
 
+  isBoundTo(socket?: WASocket): boolean {
+    if (!this.currentSocket) {
+      return false;
+    }
+
+    return socket ? this.currentSocket === socket : true;
+  }
+
   unbind() {
     if (!this.currentSocket) return;
     try {

@@ -85,6 +85,14 @@ message NotifyWorkerStatusRequest {
   int32 runtime_generation = 27;
   string warm_pool_id = 28;
   string debug_trace_id = 29;
+  bool session_ready = 30;
+  bool can_send = 31;
+  bool can_receive_runtime = 32;
+  bool authenticated = 33;
+  string provider_state = 34;
+  string degraded_reason = 35;
+  string last_probe_at = 36;
+  int32 probe_latency_ms = 37;
 }
 
 message ResolveIncomingCallActionRequest {

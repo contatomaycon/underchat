@@ -664,7 +664,7 @@ export class WorkerMonitorService {
       const rawOutput = outputs.map((r) => r.output).join('');
       const health = this.parseHttpResponse(rawOutput);
       const code = health.code;
-      const healthy = code === 200;
+      const healthy = code === 200 && this.hasSessionReadyBody(health.body);
       if (!healthy) {
       }
       return healthy;
@@ -712,6 +712,19 @@ export class WorkerMonitorService {
     } catch {
       return raw;
     }
+  };
+
+  private readonly hasSessionReadyBody = (body: unknown): boolean => {
+    if (!body || typeof body !== 'object') {
+      return false;
+    }
+
+    const payload = body as {
+      session_ready?: unknown;
+      connected?: unknown;
+    };
+
+    return payload.session_ready === true && payload.connected === true;
   };
 
   private readonly readKafkaUnhealthy = (body: unknown): boolean => {

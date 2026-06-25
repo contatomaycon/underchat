@@ -18,6 +18,7 @@ import { buildWppConnectionDocumentId } from '@core/common/functions/buildWppCon
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
 
 const DEFAULT_HEALTH_CHECK_INTERVAL_MS = 30_000;
+const DEFAULT_PROBE_TIMEOUT_MS = 10_000;
 
 function getChannel(): string {
   return workerCentrifugoQueue(baileysEnvironment.baileysAccountId);
@@ -36,6 +37,14 @@ interface HealthCheckResult {
   reason?: string;
   detectedStatus: Status;
   workerStatus: EWorkerStatus;
+  session_ready: boolean;
+  can_send: boolean;
+  can_receive_runtime: boolean;
+  authenticated: boolean;
+  provider_state: string;
+  degraded_reason?: string;
+  last_probe_at: string;
+  probe_latency_ms: number;
 }
 
 type SocketStateName = 'open' | 'connecting' | 'closing' | 'closed' | 'unknown';
@@ -47,6 +56,7 @@ interface BaileysHealthCheckConfig {
   reconnect: (input: IBaileysConnection) => void;
   isConnected: () => boolean;
   hasSession: () => boolean;
+  isIncomingBound?: (socket?: WASocket) => boolean;
   onStatusMismatch?: (detected: Status, workerStatus: EWorkerStatus) => void;
 }
 
@@ -62,11 +72,26 @@ export class BaileysHealthCheckService {
   private reconnectAction: ((input: IBaileysConnection) => void) | undefined;
   private isConnectedAction: (() => boolean) | undefined;
   private hasSessionAction: (() => boolean) | undefined;
+  private isIncomingBoundAction: ((socket?: WASocket) => boolean) | undefined;
   private onStatusMismatch:
     | ((detected: Status, workerStatus: EWorkerStatus) => void)
     | undefined;
   private bootstrapPromise: Promise<void> | undefined;
   private bootstrapLock = false;
+  private lastResult: HealthCheckResult = {
+    isHealthy: false,
+    reason: 'Health check not run',
+    detectedStatus: Status.initial,
+    workerStatus: EWorkerStatus.disponible,
+    session_ready: false,
+    can_send: false,
+    can_receive_runtime: false,
+    authenticated: false,
+    provider_state: 'initial',
+    degraded_reason: 'health_check_not_run',
+    last_probe_at: '',
+    probe_latency_ms: 0,
+  };
 
   constructor(
     @inject(CentrifugoService)
@@ -84,6 +109,7 @@ export class BaileysHealthCheckService {
     this.reconnectAction = options.reconnect;
     this.isConnectedAction = options.isConnected;
     this.hasSessionAction = options.hasSession;
+    this.isIncomingBoundAction = options.isIncomingBound;
     this.onStatusMismatch = options.onStatusMismatch;
   }
 
@@ -133,12 +159,14 @@ export class BaileysHealthCheckService {
   }
 
   async notifyDisconnected(reason?: string): Promise<void> {
-    const result: HealthCheckResult = {
+    const result = this.buildResult({
       isHealthy: false,
       reason: reason ?? 'Connection closed',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
-    };
+      providerState: 'disconnected',
+    });
+    this.lastResult = result;
 
     if (
       result.detectedStatus !== this.lastKnownStatus ||
@@ -160,20 +188,55 @@ export class BaileysHealthCheckService {
     this.lastKnownWorkerStatus = EWorkerStatus.disponible;
   }
 
-  async runHealthCheck(): Promise<HealthCheckResult> {
-    if (!this.socketGetter || !this.statusGetter) {
-      return {
+  getReadinessSnapshot(): HealthCheckResult {
+    return this.lastResult;
+  }
+
+  async verifyCurrentSession(): Promise<HealthCheckResult> {
+    if (!this.socketGetter) {
+      const result = this.buildResult({
         isHealthy: false,
         reason: 'Health check not configured',
         detectedStatus: Status.disconnected,
         workerStatus: EWorkerStatus.offline,
-      };
+        providerState: 'not_configured',
+      });
+      this.lastResult = result;
+      return result;
+    }
+
+    const result = await this.checkConnectivity(
+      this.socketGetter(),
+      Status.connected
+    );
+    this.lastResult = result;
+    return result;
+  }
+
+  markStatusPublished(result: HealthCheckResult): void {
+    this.lastResult = result;
+    this.lastKnownStatus = result.detectedStatus;
+    this.lastKnownWorkerStatus = result.workerStatus;
+  }
+
+  async runHealthCheck(): Promise<HealthCheckResult> {
+    if (!this.socketGetter || !this.statusGetter) {
+      const result = this.buildResult({
+        isHealthy: false,
+        reason: 'Health check not configured',
+        detectedStatus: Status.disconnected,
+        workerStatus: EWorkerStatus.offline,
+        providerState: 'not_configured',
+      });
+      this.lastResult = result;
+      return result;
     }
 
     const socket = this.socketGetter();
     const reportedStatus = this.statusGetter();
 
     const result = await this.checkConnectivity(socket, reportedStatus);
+    this.lastResult = result;
 
     if (
       result.detectedStatus !== this.lastKnownStatus ||
@@ -265,6 +328,14 @@ export class BaileysHealthCheckService {
       worker_id: getWorker(),
       account_id: getAccount(),
       worker_status_id: EWorkerStatus.disponible,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'bootstrap',
+      degraded_reason: reason,
+      last_probe_at: new Date().toISOString(),
+      probe_latency_ms: 0,
     };
 
     try {
@@ -286,39 +357,26 @@ export class BaileysHealthCheckService {
     reportedStatus: Status
   ): Promise<HealthCheckResult> {
     if (!socket) {
-      return {
+      return this.buildResult({
         isHealthy: false,
         reason: 'No socket instance',
         detectedStatus: Status.disconnected,
         workerStatus: EWorkerStatus.offline,
-      };
+        providerState: 'missing_socket',
+      });
     }
 
     const socketState = this.inspectSocketState(socket);
 
     if (socketState.state === 'open') {
-      if (reportedStatus === Status.connecting) {
-        return {
-          isHealthy: true,
-          reason: `Connecting (${socketState.reason})`,
-          detectedStatus: Status.connecting,
-          workerStatus: EWorkerStatus.disponible,
-        };
-      }
-
-      return {
-        isHealthy: true,
-        reason: `Connection healthy (${socketState.reason})`,
-        detectedStatus: Status.connected,
-        workerStatus: EWorkerStatus.online,
-      };
+      return this.probeOpenSocket(socket, socketState.reason);
     }
 
     if (
       socketState.state === 'connecting' ||
       reportedStatus === Status.connecting
     ) {
-      return {
+      return this.buildResult({
         isHealthy: true,
         reason:
           socketState.state === 'connecting'
@@ -326,26 +384,204 @@ export class BaileysHealthCheckService {
             : 'Connecting (reported by service)',
         detectedStatus: Status.connecting,
         workerStatus: EWorkerStatus.disponible,
-      };
+        providerState: 'connecting',
+      });
     }
 
-    if (
-      socketState.state === 'unknown' &&
-      reportedStatus === Status.connected
-    ) {
-      return {
-        isHealthy: true,
-        reason: `Connected (reported by service, ${socketState.reason})`,
-        detectedStatus: Status.connected,
-        workerStatus: EWorkerStatus.online,
-      };
-    }
-
-    return {
+    return this.buildResult({
       isHealthy: false,
       reason: socketState.reason,
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      providerState: socketState.state,
+    });
+  }
+
+  private async probeOpenSocket(
+    socket: WASocket,
+    socketReason: string
+  ): Promise<HealthCheckResult> {
+    const probeStartedAt = Date.now();
+    const lastProbeAt = new Date().toISOString();
+    const userId = socket.user?.id;
+    const hasSession = this.hasSessionAction?.() === true;
+    const incomingBound = this.isIncomingBoundAction?.(socket) === true;
+
+    if (!userId) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: `Verifying session (${socketReason})`,
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: 'open',
+        degradedReason: 'missing_sock_user',
+        authenticated: false,
+        canReceiveRuntime: incomingBound,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    if (!hasSession) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: `Verifying session (${socketReason})`,
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: 'open',
+        degradedReason: 'missing_local_session',
+        authenticated: false,
+        canReceiveRuntime: incomingBound,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    if (!incomingBound) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: `Verifying session (${socketReason})`,
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: 'open',
+        degradedReason: 'incoming_bridge_not_bound',
+        authenticated: true,
+        canReceiveRuntime: false,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    const selfPhone = getPhoneNumber(userId);
+    if (!selfPhone) {
+      return this.buildResult({
+        isHealthy: true,
+        reason: `Verifying session (${socketReason})`,
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: 'open',
+        degradedReason: 'missing_self_phone',
+        authenticated: true,
+        canReceiveRuntime: true,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    try {
+      await this.runProbe(socket, selfPhone);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return this.buildResult({
+        isHealthy: true,
+        reason: `Session probe failed: ${reason}`,
+        detectedStatus: Status.connecting,
+        workerStatus: EWorkerStatus.disponible,
+        providerState: 'open',
+        degradedReason: reason,
+        authenticated: true,
+        canReceiveRuntime: true,
+        lastProbeAt,
+        probeLatencyMs: Date.now() - probeStartedAt,
+      });
+    }
+
+    return this.buildResult({
+      isHealthy: true,
+      reason: `Session ready (${socketReason})`,
+      detectedStatus: Status.connected,
+      workerStatus: EWorkerStatus.online,
+      sessionReady: true,
+      canSend: true,
+      canReceiveRuntime: true,
+      authenticated: true,
+      providerState: 'open',
+      lastProbeAt,
+      probeLatencyMs: Date.now() - probeStartedAt,
+    });
+  }
+
+  private async runProbe(socket: WASocket, selfPhone: string): Promise<void> {
+    const probeSocket = socket as WASocket & {
+      fetchPrivacySettings?: (force?: boolean) => Promise<unknown>;
+      onWhatsApp?: (phone: string) => Promise<Array<{ exists?: boolean }>>;
+    };
+
+    if (typeof probeSocket.fetchPrivacySettings !== 'function') {
+      throw new Error('fetchPrivacySettings_unavailable');
+    }
+    if (typeof probeSocket.onWhatsApp !== 'function') {
+      throw new Error('onWhatsApp_unavailable');
+    }
+
+    await this.withProbeTimeout(
+      Promise.resolve(probeSocket.fetchPrivacySettings(true)),
+      'fetchPrivacySettings'
+    );
+    const registered = await this.withProbeTimeout(
+      Promise.resolve(probeSocket.onWhatsApp(selfPhone)),
+      'onWhatsApp'
+    );
+
+    const selfExists =
+      Array.isArray(registered) &&
+      registered.some((item) => item && item.exists !== false);
+
+    if (!selfExists) {
+      throw new Error('self_number_not_registered');
+    }
+  }
+
+  private withProbeTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`${label}_timeout`));
+      }, DEFAULT_PROBE_TIMEOUT_MS);
+
+      promise
+        .then((value) => {
+          clearTimeout(timeout);
+          resolve(value);
+        })
+        .catch((error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    });
+  }
+
+  private buildResult(input: {
+    isHealthy: boolean;
+    reason?: string;
+    detectedStatus: Status;
+    workerStatus: EWorkerStatus;
+    sessionReady?: boolean;
+    canSend?: boolean;
+    canReceiveRuntime?: boolean;
+    authenticated?: boolean;
+    providerState: string;
+    degradedReason?: string;
+    lastProbeAt?: string;
+    probeLatencyMs?: number;
+  }): HealthCheckResult {
+    const sessionReady = input.sessionReady === true;
+    const degradedReason =
+      input.degradedReason ??
+      (sessionReady ? undefined : (input.reason ?? input.providerState));
+
+    return {
+      isHealthy: input.isHealthy,
+      reason: input.reason,
+      detectedStatus: input.detectedStatus,
+      workerStatus: input.workerStatus,
+      session_ready: sessionReady,
+      can_send: input.canSend ?? sessionReady,
+      can_receive_runtime: input.canReceiveRuntime ?? false,
+      authenticated: input.authenticated ?? false,
+      provider_state: input.providerState,
+      degraded_reason: degradedReason,
+      last_probe_at: input.lastProbeAt ?? new Date().toISOString(),
+      probe_latency_ms: input.probeLatencyMs ?? 0,
     };
   }
 
@@ -357,12 +593,21 @@ export class BaileysHealthCheckService {
       status: result.detectedStatus,
       worker_id: getWorker(),
       account_id: getAccount(),
-      code:
-        result.detectedStatus === Status.connected
-          ? ECodeMessage.connectionEstablished
+      code: result.session_ready
+        ? ECodeMessage.connectionEstablished
+        : result.detectedStatus === Status.connecting
+          ? ECodeMessage.awaitConnection
           : ECodeMessage.connectionLost,
       phone: getPhoneNumber(socket?.user?.id),
       worker_status_id: result.workerStatus,
+      session_ready: result.session_ready,
+      can_send: result.can_send,
+      can_receive_runtime: result.can_receive_runtime,
+      authenticated: result.authenticated,
+      provider_state: result.provider_state,
+      degraded_reason: result.degraded_reason,
+      last_probe_at: result.last_probe_at,
+      probe_latency_ms: result.probe_latency_ms,
     };
 
     try {
@@ -382,7 +627,7 @@ export class BaileysHealthCheckService {
       );
     }
 
-    const isConnected = result.detectedStatus === Status.connected;
+    const isConnected = result.session_ready;
     const phone = getPhoneNumber(socket?.user?.id);
 
     await this.saveLogWppConnection({

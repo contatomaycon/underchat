@@ -1457,6 +1457,14 @@ export class WwebjsIncomingMessageService {
     );
   }
 
+  isEventBridgeAttached(client?: Client): boolean {
+    if (!this.currentClient) {
+      return false;
+    }
+
+    return client ? this.currentClient === client : true;
+  }
+
   public markConnectionReady(): void {
     if (!this.currentClient) {
       return;

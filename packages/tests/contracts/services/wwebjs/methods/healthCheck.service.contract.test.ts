@@ -93,11 +93,12 @@ describe('WwebjsHealthCheckService', () => {
   it('starts/stops and handles unconfigured run', async () => {
     const { service } = makeService();
 
-    await expect(service.runHealthCheck()).resolves.toEqual({
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
       isHealthy: false,
       reason: 'Health check not configured',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     jest.useFakeTimers();
@@ -150,6 +151,10 @@ describe('WwebjsHealthCheckService', () => {
         },
       },
       getState: jest.fn(async () => 'CONNECTED'),
+      pupPage: {
+        evaluate: jest.fn(async () => true),
+      },
+      getNumberId: jest.fn(async () => ({ _serialized: '5511777777777@c.us' })),
     };
 
     service.configure({
@@ -159,15 +164,19 @@ describe('WwebjsHealthCheckService', () => {
       reconnect: jest.fn(),
       isConnected: () => false,
       hasSession: () => true,
+      isEventBridgeAttached: () => true,
       onStatusMismatch: mismatch,
     });
 
-    await expect(service.runHealthCheck()).resolves.toEqual({
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
       isHealthy: true,
-      reason: 'Connected',
+      reason: 'Session ready',
       detectedStatus: Status.connected,
       workerStatus: EWorkerStatus.online,
-      waState: 'CONNECTED',
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
     });
 
     expect(mismatch).toHaveBeenCalledWith(
@@ -181,6 +190,7 @@ describe('WwebjsHealthCheckService', () => {
         worker_status_id: EWorkerStatus.online,
         code: ECodeMessage.connectionEstablished,
         phone: '5511777777777',
+        session_ready: true,
       })
     );
     expect(
@@ -197,7 +207,7 @@ describe('WwebjsHealthCheckService', () => {
     expect(notifyStatusChangeSpy).not.toHaveBeenCalled();
   });
 
-  it('does not disconnect on the first transient state check failure while reported connected', async () => {
+  it('disconnects immediately on state check failure while reported connected', async () => {
     const { service } = makeService();
 
     const mismatch = jest.fn();
@@ -225,21 +235,13 @@ describe('WwebjsHealthCheckService', () => {
     (service as any).lastKnownStatus = Status.connected;
     (service as any).lastKnownWorkerStatus = EWorkerStatus.online;
 
-    await expect(service.runHealthCheck()).resolves.toEqual({
-      isHealthy: true,
-      reason:
-        "Transient health check failure ignored (1/2): Failed to get state: Cannot read properties of null (reading 'evaluate')",
-      detectedStatus: Status.connected,
-      workerStatus: EWorkerStatus.online,
-    });
-    expect(mismatch).not.toHaveBeenCalled();
-
-    await expect(service.runHealthCheck()).resolves.toEqual({
+    await expect(service.runHealthCheck()).resolves.toMatchObject({
       isHealthy: false,
       reason:
         "Failed to get state: Cannot read properties of null (reading 'evaluate')",
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
     expect(mismatch).toHaveBeenCalledWith(
       Status.disconnected,
@@ -418,11 +420,12 @@ describe('WwebjsHealthCheckService', () => {
 
     await expect(
       sut.checkConnectivity(undefined, Status.disconnected)
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: false,
       reason: 'No client instance',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     jest
@@ -436,56 +439,42 @@ describe('WwebjsHealthCheckService', () => {
 
     await expect(
       sut.checkConnectivity({ info: {} }, Status.disconnected)
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: false,
       reason: 'Failed to get state: state down',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     await expect(
       sut.checkConnectivity({ info: {} }, Status.connecting)
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: true,
       reason: 'Connecting (state not yet available)',
       detectedStatus: Status.connecting,
       workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
     });
 
     await expect(
       sut.checkConnectivity({ info: {} }, Status.disconnected)
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: false,
       reason: 'State not available',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
+      session_ready: false,
     });
 
     await expect(
       sut.checkConnectivity({}, Status.disconnected)
-    ).resolves.toEqual({
-      isHealthy: false,
-      reason: 'Connected state but no client info',
-      detectedStatus: Status.disconnected,
-      workerStatus: EWorkerStatus.offline,
-      waState: 'CONNECTED',
-    });
-
-    await expect(
-      sut.checkConnectivity(
-        {
-          info: {
-            wid: { _serialized: '55119999@c.us' },
-          },
-        },
-        Status.disconnected
-      )
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       isHealthy: true,
-      reason: 'Connected',
-      detectedStatus: Status.connected,
-      workerStatus: EWorkerStatus.online,
-      waState: 'CONNECTED',
+      reason: 'Connected state but no client info',
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
     });
 
     await expect(
@@ -497,85 +486,103 @@ describe('WwebjsHealthCheckService', () => {
         },
         Status.disconnected
       )
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
+      isHealthy: true,
+      reason: 'Connected state but event bridge is not attached',
+      detectedStatus: Status.connecting,
+      workerStatus: EWorkerStatus.disponible,
+      session_ready: false,
+      degraded_reason: 'event_bridge_not_attached',
+    });
+
+    await expect(
+      sut.checkConnectivity(
+        {
+          info: {
+            wid: { _serialized: '55119999@c.us' },
+          },
+        },
+        Status.disconnected
+      )
+    ).resolves.toMatchObject({
       isHealthy: false,
       reason: 'Not paired: UNPAIRED',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.disponible,
-      waState: 'UNPAIRED',
+      session_ready: false,
     });
 
-    expect(sut.mapWAStateToStatus('OPENING')).toEqual({
+    expect(sut.mapWAStateToStatus('OPENING')).toMatchObject({
       isHealthy: true,
       reason: 'State: OPENING',
       detectedStatus: Status.connecting,
       workerStatus: EWorkerStatus.disponible,
     });
 
-    expect(sut.mapWAStateToStatus('PAIRING')).toEqual({
+    expect(sut.mapWAStateToStatus('PAIRING')).toMatchObject({
       isHealthy: true,
       reason: 'State: PAIRING',
       detectedStatus: Status.connecting,
       workerStatus: EWorkerStatus.disponible,
     });
 
-    expect(sut.mapWAStateToStatus('UNPAIRED_IDLE')).toEqual({
+    expect(sut.mapWAStateToStatus('UNPAIRED_IDLE')).toMatchObject({
       isHealthy: false,
       reason: 'Not paired: UNPAIRED_IDLE',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.disponible,
     });
 
-    expect(sut.mapWAStateToStatus('CONFLICT')).toEqual({
+    expect(sut.mapWAStateToStatus('CONFLICT')).toMatchObject({
       isHealthy: false,
       reason: 'Session conflict - another device connected',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.mismatched,
     });
 
-    expect(sut.mapWAStateToStatus('DEPRECATED_VERSION')).toEqual({
+    expect(sut.mapWAStateToStatus('DEPRECATED_VERSION')).toMatchObject({
       isHealthy: false,
       reason: 'Deprecated WhatsApp Web version',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.mismatched,
     });
 
-    expect(sut.mapWAStateToStatus('TIMEOUT')).toEqual({
+    expect(sut.mapWAStateToStatus('TIMEOUT')).toMatchObject({
       isHealthy: false,
       reason: 'Connection timeout',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
     });
 
-    expect(sut.mapWAStateToStatus('PROXYBLOCK')).toEqual({
+    expect(sut.mapWAStateToStatus('PROXYBLOCK')).toMatchObject({
       isHealthy: false,
       reason: 'Blocked: PROXYBLOCK',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.mismatched,
     });
 
-    expect(sut.mapWAStateToStatus('TOS_BLOCK')).toEqual({
+    expect(sut.mapWAStateToStatus('TOS_BLOCK')).toMatchObject({
       isHealthy: false,
       reason: 'Blocked: TOS_BLOCK',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.mismatched,
     });
 
-    expect(sut.mapWAStateToStatus('SMB_TOS_BLOCK')).toEqual({
+    expect(sut.mapWAStateToStatus('SMB_TOS_BLOCK')).toMatchObject({
       isHealthy: false,
       reason: 'Blocked: SMB_TOS_BLOCK',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.mismatched,
     });
 
-    expect(sut.mapWAStateToStatus('UNLAUNCHED')).toEqual({
+    expect(sut.mapWAStateToStatus('UNLAUNCHED')).toMatchObject({
       isHealthy: false,
       reason: 'Client not launched',
       detectedStatus: Status.disconnected,
       workerStatus: EWorkerStatus.offline,
     });
 
-    expect(sut.mapWAStateToStatus('UNKNOWN' as never)).toEqual({
+    expect(sut.mapWAStateToStatus('UNKNOWN' as never)).toMatchObject({
       isHealthy: false,
       reason: 'Unknown state: UNKNOWN',
       detectedStatus: Status.disconnected,
