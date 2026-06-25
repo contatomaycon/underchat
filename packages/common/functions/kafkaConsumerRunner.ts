@@ -7,6 +7,8 @@ import { handleConsumerError } from './handleConsumerError';
 import { resolveKafkaTopicConfig } from './kafkaTopicConfig';
 import type {
   KafkaConsumerRunnerContext,
+  KafkaConsumerRunnerDiscardReason,
+  KafkaConsumerRunnerErrorDecision,
   KafkaConsumerRunnerOptions,
   KafkaRunnerMessage,
 } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
@@ -357,12 +359,14 @@ export class KafkaConsumerRunner<TPayload> {
         'Kafka consumer runner parser failed'
       );
       await this.runInvalidMessageHook(message);
+      this.logInvalidPayloadDiscarded(message, error);
       await this.completeOffset(message.partition, message.offset);
       return;
     }
 
     if (!payload) {
       await this.runInvalidMessageHook(message);
+      this.logInvalidPayloadDiscarded(message, null);
       await this.completeOffset(message.partition, message.offset);
       return;
     }
@@ -395,6 +399,7 @@ export class KafkaConsumerRunner<TPayload> {
     const kafkaKey = keyToString(message.key);
 
     let lastError: unknown;
+    let lastContext: KafkaConsumerRunnerContext<TPayload> | null = null;
     for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
       const context: KafkaConsumerRunnerContext<TPayload> = {
         topic: this.options.topic,
@@ -407,6 +412,7 @@ export class KafkaConsumerRunner<TPayload> {
         attempt,
         payload,
       };
+      lastContext = context;
 
       try {
         await withTimeout(
@@ -421,6 +427,18 @@ export class KafkaConsumerRunner<TPayload> {
         lastError = error;
         await this.runFailedHook(payload, context, error);
 
+        if (this.resolveErrorDecision(payload, context, error) === 'terminal') {
+          this.logTerminalErrorDiscarded(payload, message, entityKey, error);
+          await this.runDiscardedHook(
+            payload,
+            context,
+            error,
+            'terminal_error'
+          );
+          await this.completeOffset(message.partition, message.offset);
+          return;
+        }
+
         if (attempt < this.maxRetries) {
           const delayMs =
             this.retryDelaysMs[attempt - 1] ??
@@ -432,6 +450,14 @@ export class KafkaConsumerRunner<TPayload> {
     }
 
     this.logRetriesExhausted(payload, message, entityKey, lastError);
+    if (lastContext) {
+      await this.runDiscardedHook(
+        payload,
+        lastContext,
+        lastError,
+        'retry_exhausted'
+      );
+    }
     await this.completeOffset(message.partition, message.offset);
   }
 
@@ -494,6 +520,94 @@ export class KafkaConsumerRunner<TPayload> {
         'Kafka consumer runner onFailed hook failed'
       );
     }
+  }
+
+  private resolveErrorDecision(
+    payload: TPayload,
+    context: KafkaConsumerRunnerContext<TPayload>,
+    error: unknown
+  ): KafkaConsumerRunnerErrorDecision {
+    try {
+      return (
+        this.options.classifyError?.(payload, context, error) ?? 'retryable'
+      );
+    } catch (hookError) {
+      this.options.logger?.error?.(
+        {
+          err: hookError,
+          handlerErr: error,
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+          partition: context.partition,
+          offset: context.offset,
+        },
+        'Kafka consumer runner classifyError hook failed'
+      );
+      return 'retryable';
+    }
+  }
+
+  private async runDiscardedHook(
+    payload: TPayload,
+    context: KafkaConsumerRunnerContext<TPayload>,
+    handlerError: unknown,
+    reason: KafkaConsumerRunnerDiscardReason
+  ): Promise<void> {
+    try {
+      await this.options.onDiscarded?.(payload, context, handlerError, reason);
+    } catch (error) {
+      this.options.logger?.error?.(
+        {
+          err: error,
+          handlerErr: handlerError,
+          reason,
+          topic: this.options.topic,
+          groupId: this.options.groupId,
+          partition: context.partition,
+          offset: context.offset,
+        },
+        'Kafka consumer runner onDiscarded hook failed'
+      );
+    }
+  }
+
+  private logInvalidPayloadDiscarded(
+    message: KafkaRunnerMessage,
+    error: unknown
+  ): void {
+    this.options.logger?.warn?.(
+      {
+        err: error,
+        topic: this.options.topic,
+        groupId: this.options.groupId,
+        partition: message.partition,
+        offset: message.offset,
+        kafkaKey: keyToString(message.key),
+        reason: 'invalid_payload',
+      },
+      'Kafka consumer runner discarded invalid payload'
+    );
+  }
+
+  private logTerminalErrorDiscarded(
+    payload: TPayload,
+    message: KafkaRunnerMessage,
+    entityKey: string,
+    error: unknown
+  ): void {
+    this.options.logger?.warn?.(
+      {
+        err: error,
+        topic: this.options.topic,
+        groupId: this.options.groupId,
+        partition: message.partition,
+        offset: message.offset,
+        kafkaKey: keyToString(message.key),
+        entityKey,
+        payload,
+      },
+      'Kafka consumer runner discarded terminal message'
+    );
   }
 
   private logRetriesExhausted(

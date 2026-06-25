@@ -748,6 +748,10 @@ export class WwebjsIncomingMessageService {
   private readonly KAFKA_RETRY_MAX_DELAY_MS = 30_000;
   private readonly KAFKA_RETRY_BATCH_SIZE = 100;
   private readonly KAFKA_RETRY_QUEUE_MAX_SIZE = 50_000;
+  private readonly KAFKA_RETRY_MAX_ATTEMPTS = readPositiveIntEnv(
+    'WWEBJS_KAFKA_RETRY_MAX_ATTEMPTS',
+    12
+  );
   private readonly LID_PHONE_CACHE = new Map<
     string,
     { phone: string | null; ts: number }
@@ -842,30 +846,7 @@ export class WwebjsIncomingMessageService {
       ? item.payload
       : undefined;
     if (this.kafkaRetryQueue.length >= this.KAFKA_RETRY_QUEUE_MAX_SIZE) {
-      this.logEvent('kafka_send_retry_queue_full', {
-        queueSize: this.kafkaRetryQueue.length,
-        maxQueueSize: this.KAFKA_RETRY_QUEUE_MAX_SIZE,
-        event: item.metadata.event,
-        messageId: item.metadata.messageId,
-        messageKeyId: item.metadata.messageKeyId,
-      });
-      if (lifecyclePayload) {
-        this.logLifecycleForUpsert(lifecyclePayload, {
-          stage: 'wwebjs.kafka.retry_queue.full',
-          decision: 'queue_retry',
-          outcome: 'dropped',
-          reason: 'retry_queue_full',
-          level: 'error',
-          topic: item.topic,
-          kafka_key:
-            typeof item.kafkaKey === 'string'
-              ? item.kafkaKey
-              : item.metadata.messageId,
-          metadata_event: item.metadata.event,
-          queue_size: this.kafkaRetryQueue.length,
-          max_queue_size: this.KAFKA_RETRY_QUEUE_MAX_SIZE,
-        });
-      }
+      this.discardKafkaRetryItem(item, 'retry_queue_full');
       return false;
     }
 
@@ -968,6 +949,13 @@ export class WwebjsIncomingMessageService {
           });
         } catch (error) {
           const nextAttempts = item.attempts + 1;
+          if (nextAttempts >= this.KAFKA_RETRY_MAX_ATTEMPTS) {
+            this.discardKafkaRetryItem(item, 'retry_exhausted', error, {
+              attempts: nextAttempts,
+            });
+            continue;
+          }
+
           const delayMs = this.computeKafkaRetryDelayMs(nextAttempts);
           const nextAttemptAt = Date.now() + delayMs;
           const requeued: IKafkaRetryQueueItem = {
@@ -1030,6 +1018,69 @@ export class WwebjsIncomingMessageService {
         this.scheduleKafkaRetryProcessing(this.KAFKA_RETRY_BASE_DELAY_MS);
       }
     }
+  }
+
+  private discardKafkaRetryItem(
+    item: IKafkaRetryQueueItem,
+    reason: string,
+    error?: unknown,
+    details: Record<string, unknown> = {}
+  ): void {
+    const lifecyclePayload = isUpsertMessagePayload(item.payload)
+      ? item.payload
+      : undefined;
+    const kafkaKey =
+      typeof item.kafkaKey === 'string'
+        ? item.kafkaKey
+        : item.metadata.messageId;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    this.logEvent('kafka_send_retry_discarded', {
+      reason,
+      queueSize: this.kafkaRetryQueue.length,
+      maxQueueSize: this.KAFKA_RETRY_QUEUE_MAX_SIZE,
+      maxAttempts: this.KAFKA_RETRY_MAX_ATTEMPTS,
+      event: item.metadata.event,
+      messageId: item.metadata.messageId,
+      messageKeyId: item.metadata.messageKeyId,
+      attempts: item.attempts,
+      error: error ? errorMessage : undefined,
+      ...details,
+    });
+
+    if (lifecyclePayload) {
+      lifecyclePayload.source_provider = 'wwebjs';
+      this.logLifecycleForUpsert(lifecyclePayload, {
+        stage: 'wwebjs.kafka.retry_queue.discard',
+        decision: 'discard_after_retry',
+        outcome: 'discarded',
+        reason,
+        level: 'error',
+        topic: item.topic,
+        kafka_key: kafkaKey,
+        metadata_event: item.metadata.event,
+        queue_size: this.kafkaRetryQueue.length,
+        max_queue_size: this.KAFKA_RETRY_QUEUE_MAX_SIZE,
+        attempts: item.attempts,
+        max_attempts: this.KAFKA_RETRY_MAX_ATTEMPTS,
+        error: error ? errorMessage : undefined,
+        ...details,
+      });
+    }
+
+    console.error('[wwebjs] Discarding kafka retry item:', {
+      reason,
+      topic: item.topic,
+      kafka_key: kafkaKey,
+      event: item.metadata.event,
+      message_id: item.metadata.messageId,
+      message_key_id: item.metadata.messageKeyId,
+      attempts: item.attempts,
+      max_attempts: this.KAFKA_RETRY_MAX_ATTEMPTS,
+      queue_size: this.kafkaRetryQueue.length,
+      error: error ? errorMessage : undefined,
+      ...details,
+    });
   }
 
   private async sendToKafkaWithRetry(

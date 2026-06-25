@@ -557,10 +557,7 @@ export class BaileysIncomingMessageService {
           if (item.retries < this.MAX_RETRIES) {
             this.pendingQueue.push(item);
           } else {
-            console.error(
-              `[CRITICAL] Message lost after ${this.MAX_RETRIES} retries:`,
-              item.messageKey
-            );
+            this.discardPendingMessage(item, 'retry_exhausted', result.reason);
           }
         }
       }
@@ -575,6 +572,42 @@ export class BaileysIncomingMessageService {
     } finally {
       this.isProcessingQueue = false;
     }
+  }
+
+  private discardPendingMessage(
+    item: IBaileysPendingMessage,
+    reason: string,
+    error?: unknown
+  ): void {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const message = item.inputUpsert.message as WAMessage | undefined;
+
+    this.logLifecycle(message, {
+      stage: 'baileys.queue.discard',
+      decision: 'discard_after_retry',
+      outcome: 'discarded',
+      reason,
+      level: 'error',
+      topic: item.topic,
+      kafka_key: item.kafkaKey ?? item.messageKey,
+      retry_count: item.retries,
+      max_retries: this.MAX_RETRIES,
+      queue_size: this.pendingQueue.length,
+      error: error ? errorMessage : undefined,
+    });
+
+    console.error('[BaileysIncoming] Discarding pending message:', {
+      reason,
+      topic: item.topic,
+      kafka_key: item.kafkaKey ?? item.messageKey,
+      message_key: item.messageKey,
+      account_id: item.inputUpsert.account_id,
+      worker_id: item.inputUpsert.worker_id,
+      message_key_id: item.inputUpsert.message?.key?.id,
+      retries: item.retries,
+      max_retries: this.MAX_RETRIES,
+      error: error ? errorMessage : undefined,
+    });
   }
 
   private async sendToKafkaWithRetry(
@@ -663,21 +696,27 @@ export class BaileysIncomingMessageService {
     }
 
     if (this.pendingQueue.length >= this.MAX_QUEUE_SIZE) {
-      console.error(
-        `[CRITICAL] Queue full (${this.MAX_QUEUE_SIZE}), dropping oldest messages`
-      );
-      const dropCount = Math.floor(this.MAX_QUEUE_SIZE * 0.1);
-      this.pendingQueue.splice(0, dropCount);
       this.logLifecycle(inputUpsert.message as WAMessage, {
         stage: 'baileys.queue.full',
-        decision: 'drop_oldest',
+        decision: 'reject_enqueue',
         outcome: 'dropped',
         reason: 'queue_full',
+        level: 'error',
         topic,
         kafka_key: messageKey,
-        drop_count: dropCount,
         queue_size: this.pendingQueue.length,
+        max_queue_size: this.MAX_QUEUE_SIZE,
       });
+      console.error('[BaileysIncoming] Queue full, discarding new message:', {
+        topic,
+        kafka_key: messageKey,
+        account_id: inputUpsert.account_id,
+        worker_id: inputUpsert.worker_id,
+        message_key_id: inputUpsert.message?.key?.id,
+        queue_size: this.pendingQueue.length,
+        max_queue_size: this.MAX_QUEUE_SIZE,
+      });
+      return null;
     }
 
     const kafkaKey = buildUpsertMessageKafkaKey(inputUpsert, messageKey);

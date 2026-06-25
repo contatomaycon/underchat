@@ -29,6 +29,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+const inboundKafkaPublishMaxAttempts = 3
+const inboundKafkaPublishBaseDelay = 250 * time.Millisecond
+const inboundKafkaPublishMaxDelay = 2 * time.Second
+
 type WhatsAppManager struct {
 	cfg        Config
 	kafka      *KafkaClient
@@ -1980,8 +1984,7 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 	}
 	upsert.SourceProvider = "whatsmeow"
 	key := incomingUpsertKafkaKey(m.cfg, upsert)
-	if err := m.kafka.SendJSON(ctx, topicUpsertMessage, key, upsert); err != nil {
-		log.Printf("failed to publish incoming message: %v", err)
+	if err := m.sendInboundKafkaJSONWithRetry(ctx, topicUpsertMessage, key, upsert, "incoming_message", incomingChatString(evt), incomingMessageID(evt)); err != nil {
 		return
 	}
 	hasMediaURL, mediaFailed := mediaContentPublishStatus(upsert.Content, upsert.Type)
@@ -2066,8 +2069,7 @@ func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.His
 		upsert.SourceProvider = "whatsmeow"
 
 		key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
-		if err := m.kafka.SendJSON(ctx, topicUpsertMessageHistory, key, upsert); err != nil {
-			log.Printf("whatsmeow history sync publish failed worker_id=%s chat=%s key=%s error=%v", m.cfg.WorkerID, chatJID.String(), key, err)
+		if err := m.sendInboundKafkaJSONWithRetry(ctx, topicUpsertMessageHistory, key, upsert, "history_sync", chatJID.String(), incomingMessageID(messageEvent)); err != nil {
 			continue
 		}
 		published++
@@ -2076,6 +2078,74 @@ func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.His
 	if published > 0 {
 		log.Printf("whatsmeow history sync candidates published worker_id=%s count=%d", m.cfg.WorkerID, published)
 	}
+}
+
+func (m *WhatsAppManager) sendInboundKafkaJSONWithRetry(ctx context.Context, topic string, key string, value any, event string, chat string, messageID string) error {
+	var lastErr error
+	for attempt := 1; attempt <= inboundKafkaPublishMaxAttempts; attempt++ {
+		err := m.kafka.SendJSON(ctx, topic, key, value)
+		if err == nil {
+			if attempt > 1 {
+				log.Printf(
+					"whatsmeow inbound kafka publish recovered worker_id=%s event=%s topic=%s key=%s chat=%s id=%s attempt=%d",
+					m.cfg.WorkerID,
+					event,
+					topic,
+					key,
+					chat,
+					messageID,
+					attempt,
+				)
+			}
+			return nil
+		}
+
+		lastErr = err
+		if attempt >= inboundKafkaPublishMaxAttempts {
+			break
+		}
+
+		delay := inboundKafkaPublishBaseDelay * time.Duration(1<<(attempt-1))
+		if delay > inboundKafkaPublishMaxDelay {
+			delay = inboundKafkaPublishMaxDelay
+		}
+		log.Printf(
+			"whatsmeow inbound kafka publish failed worker_id=%s event=%s topic=%s key=%s chat=%s id=%s attempt=%d max_attempts=%d next_retry_ms=%d error=%v",
+			m.cfg.WorkerID,
+			event,
+			topic,
+			key,
+			chat,
+			messageID,
+			attempt,
+			inboundKafkaPublishMaxAttempts,
+			delay.Milliseconds(),
+			err,
+		)
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+
+	log.Printf(
+		"whatsmeow inbound kafka publish discarded worker_id=%s event=%s topic=%s key=%s chat=%s id=%s attempts=%d error=%v",
+		m.cfg.WorkerID,
+		event,
+		topic,
+		key,
+		chat,
+		messageID,
+		inboundKafkaPublishMaxAttempts,
+		lastErr,
+	)
+	return lastErr
 }
 
 func selectLatestHistorySyncCandidates(candidates []historySyncCandidate, limit int) []historySyncCandidate {
@@ -2193,8 +2263,8 @@ func (m *WhatsAppManager) handleCallOffer(ctx context.Context, callFrom types.JI
 		},
 	}
 	kafkaKey := incomingUpsertKafkaKey(m.cfg, &upsert)
-	if err := m.kafka.SendJSON(ctx, topicUpsertMessage, kafkaKey, upsert); err != nil {
-	} else {
+	if err := m.sendInboundKafkaJSONWithRetry(ctx, topicUpsertMessage, kafkaKey, upsert, "call_event", callJID, callID); err != nil {
+		log.Printf("whatsmeow call event upsert discarded worker_id=%s key=%s error=%v", m.cfg.WorkerID, kafkaKey, err)
 	}
 
 	reject, showMessage, text, err := m.balance.ResolveIncomingCallAction(ctx, m.cfg.WorkerID, m.cfg.AccountID, callJID, callPhone, isVideo)

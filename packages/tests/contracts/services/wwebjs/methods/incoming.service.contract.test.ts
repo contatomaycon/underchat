@@ -56,6 +56,9 @@ type WwebjsIncomingMessageServicePrivate = {
     msg: unknown,
     resolvedJids: { remoteJid: string; remoteJidAlt?: string }
   ) => Promise<string | undefined>;
+  KAFKA_RETRY_MAX_ATTEMPTS: number;
+  kafkaRetryQueue: unknown[];
+  processKafkaRetryQueue: () => Promise<void>;
 };
 
 describe('WwebjsIncomingMessageService profile photo cache', () => {
@@ -68,8 +71,11 @@ describe('WwebjsIncomingMessageService profile photo cache', () => {
         return 'OK';
       }),
     };
+    const streamProducerService = {
+      send: jest.fn(async () => undefined),
+    };
     const service = new WwebjsIncomingMessageService(
-      { send: jest.fn(async () => undefined) } as never,
+      streamProducerService as never,
       { upsertMessage: jest.fn(() => 'upsert-message') } as never,
       redis as never,
       { enrich: jest.fn(async () => undefined) } as never,
@@ -86,6 +92,7 @@ describe('WwebjsIncomingMessageService profile photo cache', () => {
       service: service as unknown as WwebjsIncomingMessageServicePrivate,
       redis,
       redisStore,
+      streamProducerService,
     };
   };
 
@@ -214,6 +221,55 @@ describe('WwebjsIncomingMessageService profile photo cache', () => {
     expect(redisStore.get(`photo:jid:${phoneJid}`)).toBeUndefined();
     expect(redisStore.get(`photo:no-photo:wwebjs:jid:${phoneJid}`)).toBe(
       '__no_photo__'
+    );
+  });
+
+  it('discards retry queue items after the configured publish attempts', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const { service, streamProducerService } = makeService();
+    streamProducerService.send.mockRejectedValueOnce(new Error('kafka_down'));
+    service.KAFKA_RETRY_MAX_ATTEMPTS = 4;
+    service.kafkaRetryQueue = [
+      {
+        topic: 'upsert-message',
+        payload: {
+          worker_id: 'worker-w',
+          account_id: 'account-w',
+          source_provider: 'wwebjs',
+          type: EMessageType.text,
+          has_quoted: false,
+          message: {
+            key: {
+              id: 'message-1',
+              remoteJid: '5511999999999@s.whatsapp.net',
+              fromMe: false,
+            },
+            message: { conversation: 'Oi' },
+          },
+        },
+        kafkaKey: 'account-w:worker-w:5511999999999@s.whatsapp.net',
+        metadata: {
+          event: 'incoming_upsert',
+          messageId: 'message-1',
+          messageKeyId: 'message-1',
+        },
+        attempts: 3,
+        nextAttemptAt: Date.now() - 1,
+      },
+    ];
+
+    await service.processKafkaRetryQueue();
+
+    expect(streamProducerService.send).toHaveBeenCalledTimes(1);
+    expect(service.kafkaRetryQueue).toHaveLength(0);
+    expect(console.error).toHaveBeenCalledWith(
+      '[wwebjs] Discarding kafka retry item:',
+      expect.objectContaining({
+        reason: 'retry_exhausted',
+        attempts: 4,
+        max_attempts: 4,
+      })
     );
   });
 });

@@ -116,6 +116,75 @@ describe('BaileysIncomingMessageService', () => {
     jest.restoreAllMocks();
   });
 
+  it('does not drop older queued messages when the retry queue is full', () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const { service } = makeService();
+    const sut = service as unknown as {
+      MAX_QUEUE_SIZE: number;
+      pendingQueue: unknown[];
+      enqueueMessage: (
+        inputUpsert: unknown,
+        messageKey: string,
+        topic: string
+      ) => unknown;
+    };
+    sut.MAX_QUEUE_SIZE = 1;
+    const existingItem = {
+      inputUpsert: {
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: 'old-message',
+            remoteJid: '5511999999999@s.whatsapp.net',
+            fromMe: false,
+          },
+          message: { conversation: 'old' },
+        },
+        photo: null,
+        has_quoted: false,
+      },
+      messageKey: 'old-key',
+      topic: 'upsert-message',
+      retries: 0,
+      addedAt: Date.now(),
+    };
+    sut.pendingQueue.push(existingItem);
+
+    const result = sut.enqueueMessage(
+      {
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        type: EMessageType.text,
+        message: {
+          key: {
+            id: 'new-message',
+            remoteJid: '5511888888888@s.whatsapp.net',
+            fromMe: false,
+          },
+          message: { conversation: 'new' },
+        },
+        photo: null,
+        has_quoted: false,
+      },
+      'new-key',
+      'upsert-message'
+    );
+
+    expect(result).toBeNull();
+    expect(sut.pendingQueue).toEqual([existingItem]);
+    expect(console.error).toHaveBeenCalledWith(
+      '[BaileysIncoming] Queue full, discarding new message:',
+      expect.objectContaining({
+        kafka_key: 'new-key',
+        queue_size: 1,
+        max_queue_size: 1,
+      })
+    );
+  });
+
   it('resolves the Baileys profile photo before publishing the upsert', async () => {
     const { service, streamProducerService } = makeService();
     const sut = service as unknown as {

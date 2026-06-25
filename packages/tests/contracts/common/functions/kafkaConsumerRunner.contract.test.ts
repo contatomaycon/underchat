@@ -344,6 +344,106 @@ describe('KafkaConsumerRunner', () => {
     await runner.close();
   });
 
+  it('commits and reports terminal errors without retrying them', async () => {
+    const fakeConsumer = new FakeConsumer();
+    (createConsumer as jest.Mock).mockReturnValue(fakeConsumer);
+
+    const handle = jest.fn(async () => {
+      throw new Error('terminal_payload');
+    });
+    const onDiscarded = jest.fn();
+
+    const runner = new KafkaConsumerRunner({
+      kafka: { createConsumer: jest.fn(), getBroker: jest.fn() } as never,
+      topic: 'upsert.message',
+      groupId: 'group-test',
+      parse: (message) => ({ offset: message.offset }),
+      handle,
+      classifyError: () => 'terminal',
+      onDiscarded,
+      maxRetries: 5,
+      maxInFlightTotal: 4,
+      maxInFlightPerPartition: 4,
+      logger: { warn: jest.fn() },
+    });
+
+    await runner.start();
+    fakeConsumer.emit('data', {
+      value: Buffer.from('{}'),
+      partition: 0,
+      offset: 7,
+    });
+    await flushPromises();
+
+    expect(handle).toHaveBeenCalledTimes(1);
+    expect(onDiscarded).toHaveBeenCalledWith(
+      { offset: 7 },
+      expect.objectContaining({
+        partition: 0,
+        offset: 7,
+        attempt: 1,
+      }),
+      expect.any(Error),
+      'terminal_error'
+    );
+    expect(commitOffset).toHaveBeenCalledWith(
+      fakeConsumer,
+      'upsert.message',
+      0,
+      7
+    );
+
+    await runner.close();
+  });
+
+  it('reports retry exhaustion before committing the failed offset', async () => {
+    const fakeConsumer = new FakeConsumer();
+    (createConsumer as jest.Mock).mockReturnValue(fakeConsumer);
+
+    const onDiscarded = jest.fn();
+    const runner = new KafkaConsumerRunner({
+      kafka: { createConsumer: jest.fn(), getBroker: jest.fn() } as never,
+      topic: 'upsert.message',
+      groupId: 'group-test',
+      parse: (message) => ({ offset: message.offset }),
+      handle: async () => {
+        throw new Error('still_failing');
+      },
+      onDiscarded,
+      maxRetries: 1,
+      maxInFlightTotal: 4,
+      maxInFlightPerPartition: 4,
+      logger: { error: jest.fn() },
+    });
+
+    await runner.start();
+    fakeConsumer.emit('data', {
+      value: Buffer.from('{}'),
+      partition: 0,
+      offset: 9,
+    });
+    await flushPromises(8);
+
+    expect(onDiscarded).toHaveBeenCalledWith(
+      { offset: 9 },
+      expect.objectContaining({
+        partition: 0,
+        offset: 9,
+        attempt: 1,
+      }),
+      expect.any(Error),
+      'retry_exhausted'
+    );
+    expect(commitOffset).toHaveBeenCalledWith(
+      fakeConsumer,
+      'upsert.message',
+      0,
+      9
+    );
+
+    await runner.close();
+  });
+
   it('does not block close forever when a task is stuck', async () => {
     const fakeConsumer = new FakeConsumer();
     (createConsumer as jest.Mock).mockReturnValue(fakeConsumer);

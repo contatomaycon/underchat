@@ -29,6 +29,13 @@ export interface KafkaConsumerRunnerLogger {
   error?: (obj: unknown, msg?: string) => void;
 }
 
+export type KafkaConsumerRunnerErrorDecision = 'retryable' | 'terminal';
+
+export type KafkaConsumerRunnerDiscardReason =
+  | 'invalid_payload'
+  | 'terminal_error'
+  | 'retry_exhausted';
+
 export interface KafkaConsumerRunnerOptions<TPayload> {
   kafka: KafkaClient;
   topic: string;
@@ -59,5 +66,16 @@ export interface KafkaConsumerRunnerOptions<TPayload> {
     payload: TPayload,
     context: KafkaConsumerRunnerContext<TPayload>,
     error: unknown
+  ) => Promise<void> | void;
+  classifyError?: (
+    payload: TPayload,
+    context: KafkaConsumerRunnerContext<TPayload>,
+    error: unknown
+  ) => KafkaConsumerRunnerErrorDecision;
+  onDiscarded?: (
+    payload: TPayload,
+    context: KafkaConsumerRunnerContext<TPayload>,
+    error: unknown,
+    reason: KafkaConsumerRunnerDiscardReason
   ) => Promise<void> | void;
 }

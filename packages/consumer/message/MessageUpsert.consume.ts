@@ -86,7 +86,10 @@ import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/co
 import { ActiveWhatsappValidationService } from '@core/services/activeWhatsappValidation.service';
 import { MessageHistoryReceiptCacheService } from '@core/services/messageHistoryReceiptCache.service';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
-import type { KafkaRunnerMessage } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
+import type {
+  KafkaConsumerRunnerContext,
+  KafkaRunnerMessage,
+} from '@core/common/interfaces/KafkaConsumerRunnerOptions';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
@@ -158,6 +161,7 @@ export class MessageUpsertConsume {
   private isRunning = false;
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_DELAYS = [100, 500, 2000];
+  private readonly PROCESS_RETRY_DELAYS = [3000, 3000, 5000];
   private readonly MESSAGE_PROCESSING_TIMEOUT_MS = 120000;
   private readonly MAX_CONSECUTIVE_FAILURES = 10;
   private readonly OUTSIDE_HOURS_DEBOUNCE_SECONDS = 5;
@@ -5661,9 +5665,11 @@ export class MessageUpsertConsume {
           topic,
           data,
           context.partition,
-          context.offset
+          context.offset,
+          context
         ),
-      maxRetries: 1,
+      maxRetries: this.MAX_CONSECUTIVE_FAILURES,
+      retryDelaysMs: this.PROCESS_RETRY_DELAYS,
       logger: console,
     });
 
@@ -5678,9 +5684,17 @@ export class MessageUpsertConsume {
     topic: string,
     data: IUpsertMessage,
     partition: number,
-    offset: number
+    offset: number,
+    context: KafkaConsumerRunnerContext<IUpsertMessage>
   ): Promise<void> {
-    await this.processMessageWithLifecycle(t, topic, data, partition, offset);
+    await this.processMessageWithLifecycle(
+      t,
+      topic,
+      data,
+      partition,
+      offset,
+      context
+    );
   }
 
   private async processMessageWithLifecycle(
@@ -5688,7 +5702,8 @@ export class MessageUpsertConsume {
     topic: string,
     data: IUpsertMessage,
     partition: number,
-    offset: number
+    offset: number,
+    context: KafkaConsumerRunnerContext<IUpsertMessage>
   ): Promise<void> {
     this.logLifecycle(data, {
       stage: 'message_upsert.consume.received',
@@ -5697,49 +5712,43 @@ export class MessageUpsertConsume {
       topic,
       partition,
       offset,
+      attempt: context.attempt,
+      max_attempts: this.MAX_CONSECUTIVE_FAILURES,
     });
 
-    let consecutiveFailureCount = 0;
-    while (true) {
-      let timeoutLogged = false;
-      const timeout = this.startMessageProcessingTimeout(
+    let timeoutLogged = false;
+    const timeout = this.startMessageProcessingTimeout(
+      data,
+      partition,
+      offset,
+      () => {
+        timeoutLogged = true;
+      }
+    );
+
+    try {
+      const processed = await this.processKafkaUpsertOnce(
+        t,
+        data,
+        partition,
+        offset
+      );
+      clearTimeout(timeout);
+
+      if (!processed) {
+        throw new Error('Message processing returned false');
+      }
+    } catch (error) {
+      clearTimeout(timeout);
+      await this.handleProcessRetry(
         data,
         partition,
         offset,
-        () => {
-          timeoutLogged = true;
-        }
+        context.attempt,
+        this.MAX_CONSECUTIVE_FAILURES,
+        timeoutLogged,
+        error
       );
-
-      try {
-        const processed = await this.processKafkaUpsertOnce(
-          t,
-          data,
-          partition,
-          offset
-        );
-        clearTimeout(timeout);
-
-        if (!processed) {
-          throw new Error('Message processing returned false');
-        }
-
-        return;
-      } catch (error) {
-        clearTimeout(timeout);
-        consecutiveFailureCount += 1;
-        const sentToDlq = await this.handleProcessRetry(
-          data,
-          partition,
-          offset,
-          consecutiveFailureCount,
-          timeoutLogged,
-          error
-        );
-        if (sentToDlq) {
-          return;
-        }
-      }
     }
   }
 
@@ -5875,11 +5884,17 @@ export class MessageUpsertConsume {
     data: IUpsertMessage,
     partition: number,
     offset: number,
-    consecutiveFailureCount: number,
+    attempt: number,
+    maxAttempts: number,
     timeoutLogged: boolean,
     error: unknown
-  ): Promise<boolean> {
-    if (this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error)) {
+  ): Promise<void> {
+    const isLastAttempt = attempt >= maxAttempts;
+    const isElasticReadOnly =
+      this.elasticDatabaseService.isReadOnlyAllowDeleteBlockError(error);
+    const lockTimeout = this.isLockAcquisitionTimeoutError(error);
+
+    if (!isLastAttempt && isElasticReadOnly) {
       this.logLifecycle(data, {
         stage: 'message_upsert.process.retry',
         decision: 'process_message',
@@ -5888,20 +5903,18 @@ export class MessageUpsertConsume {
         level: 'error',
         partition,
         offset,
+        attempt,
+        max_attempts: maxAttempts,
       });
-      await delay(3000);
-      return false;
+      throw error instanceof Error ? error : new Error(String(error));
     }
 
-    const lockTimeout = this.isLockAcquisitionTimeoutError(error);
-
-    if (
-      lockTimeout ||
-      consecutiveFailureCount >= this.MAX_CONSECUTIVE_FAILURES
-    ) {
-      const reason = lockTimeout
-        ? 'lock_acquisition_timeout'
-        : 'consecutive_failures_exhausted';
+    if (isLastAttempt) {
+      const reason = isElasticReadOnly
+        ? 'elastic_read_only_allow_delete'
+        : lockTimeout
+          ? 'lock_acquisition_timeout'
+          : 'consecutive_failures_exhausted';
       this.logLifecycle(data, {
         stage: 'message_upsert.process.discard',
         decision: 'process_message',
@@ -5910,12 +5923,12 @@ export class MessageUpsertConsume {
         level: 'error',
         partition,
         offset,
-        retry_count: this.MAX_RETRIES,
-        consecutive_failure_count: consecutiveFailureCount,
+        retry_count: attempt,
+        max_attempts: maxAttempts,
         error: error instanceof Error ? error.message : String(error),
       });
 
-      return this.discardTerminalMessage(
+      this.discardTerminalMessage(
         data,
         error,
         reason,
@@ -5923,10 +5936,11 @@ export class MessageUpsertConsume {
         offset,
         'error',
         {
-          retry_count: lockTimeout ? this.MAX_RETRIES : consecutiveFailureCount,
-          consecutive_failure_count: consecutiveFailureCount,
+          retry_count: attempt,
+          max_attempts: maxAttempts,
         }
       );
+      return;
     }
     this.logLifecycle(data, {
       stage: timeoutLogged
@@ -5938,11 +5952,12 @@ export class MessageUpsertConsume {
       level: 'error',
       partition,
       offset,
+      attempt,
+      max_attempts: maxAttempts,
       error: error instanceof Error ? error.message : String(error),
     });
 
-    await delay(timeoutLogged ? 5000 : 3000);
-    return false;
+    throw error instanceof Error ? error : new Error(String(error));
   }
 
   public async close(): Promise<void> {

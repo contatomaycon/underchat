@@ -34,10 +34,16 @@ function makeUpsert(messageTimestamp: number): IUpsertMessage {
 }
 
 function makeConsumer() {
+  const redisMulti = {
+    sadd: jest.fn().mockReturnThis(),
+    expire: jest.fn().mockReturnThis(),
+    exec: jest.fn(async () => []),
+  };
   const redis = {
     sismember: jest.fn(async () => 0),
     set: jest.fn(async () => 'OK'),
     del: jest.fn(async () => undefined),
+    multi: jest.fn(() => redisMulti),
   };
   const workerService = {
     viewWorker: jest.fn(async () => ({
@@ -65,6 +71,8 @@ function makeConsumer() {
       workerService as never,
       streamProducerService as never
     ),
+    redis,
+    redisMulti,
     streamProducerService,
   };
 }
@@ -105,7 +113,8 @@ describe('MessageHistorySyncConsume', () => {
   });
 
   it('publishes missing recent history inside the 60 minute window', async () => {
-    const { consumer, streamProducerService } = makeConsumer();
+    const { consumer, redis, redisMulti, streamProducerService } =
+      makeConsumer();
     const nowSeconds = Math.floor(Date.now() / 1000);
 
     await (consumer as any).handleHistoryMessage(
@@ -121,5 +130,22 @@ describe('MessageHistorySyncConsume', () => {
       }),
       expect.any(String)
     );
+    expect(redis.multi).toHaveBeenCalled();
+    expect(redisMulti.sadd).toHaveBeenCalled();
+    expect(redis.del).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases inflight and does not mark known when republish fails', async () => {
+    const { consumer, redis, redisMulti, streamProducerService } =
+      makeConsumer();
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    streamProducerService.send.mockRejectedValueOnce(new Error('kafka_down'));
+
+    await expect(
+      (consumer as any).handleHistoryMessage(makeUpsert(nowSeconds - 59 * 60))
+    ).rejects.toThrow('kafka_down');
+
+    expect(redisMulti.sadd).not.toHaveBeenCalled();
+    expect(redis.del).toHaveBeenCalledTimes(1);
   });
 });

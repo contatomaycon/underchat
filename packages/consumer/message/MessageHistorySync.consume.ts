@@ -25,6 +25,8 @@ export class MessageHistorySyncConsume {
 
   private readonly HISTORY_RECONCILIATION_ENABLED =
     process.env.HISTORY_RECONCILIATION_ENABLED !== 'false';
+  private readonly MAX_RETRIES = 3;
+  private readonly RETRY_DELAYS_MS = [500, 2000, 5000];
   private readonly HISTORY_WINDOW_MS = 60 * 60 * 1000;
   private readonly WORKER_DATES_CACHE_TTL_MS = 60 * 1000;
   private workerDatesCache: Map<string, ICachedWorkerDates> = new Map();
@@ -94,6 +96,8 @@ export class MessageHistorySyncConsume {
           context.partition,
           context.offset
         ),
+      maxRetries: this.MAX_RETRIES,
+      retryDelaysMs: this.RETRY_DELAYS_MS,
       logger: console,
     });
 
@@ -138,6 +142,7 @@ export class MessageHistorySyncConsume {
         worker_id: data.worker_id,
         message_key_id: data.message?.key?.id,
       });
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -241,37 +246,41 @@ export class MessageHistorySyncConsume {
       return;
     }
 
-    const exists = await this.messageExistsInElastic(data);
-    if (exists) {
-      this.logLifecycle(data, {
-        stage: 'message_history_sync.skip',
-        decision: 'elastic_existing_message',
-        outcome: 'skipped',
-        reason: 'message_already_exists',
-      });
+    try {
+      const exists = await this.messageExistsInElastic(data);
+      if (exists) {
+        this.logLifecycle(data, {
+          stage: 'message_history_sync.skip',
+          decision: 'elastic_existing_message',
+          outcome: 'skipped',
+          reason: 'message_already_exists',
+        });
+        await this.receiptCache.markKnown(data);
+        return;
+      }
+
+      const payload: IUpsertMessage = {
+        ...data,
+        from_history_sync: true,
+      };
+      const kafkaKey = buildUpsertMessageKafkaKey(payload, data.message.key.id);
+
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.upsertMessage(),
+        payload,
+        kafkaKey
+      );
       await this.receiptCache.markKnown(data);
+      this.logLifecycle(payload, {
+        stage: 'message_history_sync.kafka.publish',
+        decision: 'publish_history_upsert',
+        outcome: 'published',
+        topic: this.kafkaServiceQueueService.upsertMessage(),
+        kafka_key: kafkaKey,
+      });
+    } finally {
       await this.receiptCache.releaseInflight(data);
-      return;
     }
-
-    const payload: IUpsertMessage = {
-      ...data,
-      from_history_sync: true,
-    };
-    const kafkaKey = buildUpsertMessageKafkaKey(payload, data.message.key.id);
-
-    await this.streamProducerService.send(
-      this.kafkaServiceQueueService.upsertMessage(),
-      payload,
-      kafkaKey
-    );
-    this.logLifecycle(payload, {
-      stage: 'message_history_sync.kafka.publish',
-      decision: 'publish_history_upsert',
-      outcome: 'published',
-      topic: this.kafkaServiceQueueService.upsertMessage(),
-      kafka_key: kafkaKey,
-    });
   }
 
   private getMessageTimestampMs(
