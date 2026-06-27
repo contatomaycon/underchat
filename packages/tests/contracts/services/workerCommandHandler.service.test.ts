@@ -2621,6 +2621,71 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
+  it('waits for runtime health before leaving a recreated disponible worker disponible', async () => {
+    const deps = buildHandler();
+    (deps.handler as any).recreateOnlineReconciliationWaitMs = 25;
+    (deps.handler as any).recreateOnlineReconciliationPollIntervalMs = 1;
+    deps.workerBaileysGrpcClientService.runtimeHealth
+      .mockResolvedValueOnce({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        activated: true,
+        ready: true,
+        session_ready: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+        standby: false,
+        has_session: true,
+        runtime_state: 'active',
+        qr_stream_ready: true,
+        provider_state: 'CONNECTING',
+        phone: '',
+      })
+      .mockResolvedValueOnce({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        activated: true,
+        ready: true,
+        session_ready: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
+        standby: false,
+        has_session: true,
+        runtime_state: 'active',
+        qr_stream_ready: true,
+        provider_state: 'CONNECTED',
+        phone: '556192037138',
+      });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      previous_worker_status_id: EWorkerStatus.disponible,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.requestConnection
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).toHaveBeenCalledTimes(2);
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        container_id: 'container-1',
+        number: '556192037138',
+      })
+    );
+  });
+
   it('skips stale recreate operations before removing or creating containers', async () => {
     const deps = buildHandler();
     deps.workerService.viewWorkerForMonitor.mockResolvedValueOnce({

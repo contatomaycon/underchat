@@ -54,10 +54,19 @@ type WwebjsConnectionServicePrivate = {
   client: unknown;
   status: Status;
   connecting: boolean;
+  qrReadSessionActive: boolean;
+  activeConnectionAttemptId?: number;
+  connectionAttemptStartedAtMs: number;
   currentPromise?: Promise<IBaileysConnectionState>;
   connectionEstablished: boolean;
-  markConnected: (...args: unknown[]) => void;
   startConnectionStateProbe: (...args: unknown[]) => void;
+  confirmReadyAndMarkConnected: (...args: unknown[]) => Promise<boolean>;
+  shouldResolveQrAttemptTimeoutAsFailure: () => boolean;
+  resolveQrAttemptTimeout: (...args: unknown[]) => IBaileysConnectionState;
+  withConnectionAttemptGuardTimeout: (
+    promise: Promise<IBaileysConnectionState>,
+    attemptId: number
+  ) => Promise<IBaileysConnectionState>;
   handleHealthCheckMismatch: (detectedStatus: Status) => void;
   cancelAttempt: (skipDestroy?: boolean) => void;
   waitForPendingTeardown: () => Promise<void>;
@@ -135,9 +144,9 @@ describe('WwebjsConnectionService', () => {
       attachEventListeners: jest.fn(async () => undefined),
     };
 
-    const markConnectedSpy = jest
-      .spyOn(servicePrivate, 'markConnected')
-      .mockImplementation(() => undefined);
+    const confirmReadySpy = jest
+      .spyOn(servicePrivate, 'confirmReadyAndMarkConnected')
+      .mockResolvedValue(true);
 
     servicePrivate.client = client;
     servicePrivate.status = Status.connecting;
@@ -148,12 +157,12 @@ describe('WwebjsConnectionService', () => {
     await jest.advanceTimersByTimeAsync(25_000);
 
     expect(client.attachEventListeners).not.toHaveBeenCalled();
-    expect(markConnectedSpy).not.toHaveBeenCalled();
+    expect(confirmReadySpy).not.toHaveBeenCalled();
 
     await jest.advanceTimersByTimeAsync(5_000);
 
     expect(client.attachEventListeners).toHaveBeenCalledTimes(1);
-    expect(markConnectedSpy).toHaveBeenCalledWith(
+    expect(confirmReadySpy).toHaveBeenCalledWith(
       client,
       1,
       null,
@@ -218,6 +227,47 @@ describe('WwebjsConnectionService', () => {
     });
 
     expect(startConnectionSpy).toHaveBeenCalled();
+  });
+
+  it('does not treat restore attempts as first QR timeout failures', () => {
+    const { servicePrivate } = makeService();
+
+    servicePrivate.qrReadSessionActive = false;
+
+    expect(servicePrivate.shouldResolveQrAttemptTimeoutAsFailure()).toBe(false);
+
+    servicePrivate.qrReadSessionActive = true;
+
+    expect(servicePrivate.shouldResolveQrAttemptTimeoutAsFailure()).toBe(true);
+  });
+
+  it('does not resolve restore guard timeouts as QR failures', async () => {
+    const { servicePrivate } = makeService();
+
+    servicePrivate.status = Status.connecting;
+    servicePrivate.connectionEstablished = false;
+    servicePrivate.qrReadSessionActive = false;
+    servicePrivate.activeConnectionAttemptId = 1;
+    servicePrivate.connectionAttemptStartedAtMs = Date.now();
+
+    const resolveQrTimeoutSpy = jest.spyOn(
+      servicePrivate,
+      'resolveQrAttemptTimeout'
+    );
+    const pendingRestore = new Promise<IBaileysConnectionState>(() => {});
+    const guarded = servicePrivate.withConnectionAttemptGuardTimeout(
+      pendingRestore,
+      1
+    );
+
+    await jest.advanceTimersByTimeAsync(30_000);
+
+    await expect(guarded).resolves.toEqual(
+      expect.objectContaining({
+        status: Status.connecting,
+      })
+    );
+    expect(resolveQrTimeoutSpy).not.toHaveBeenCalled();
   });
 
   it('tears down the active client before reconnecting after a health-check disconnect', () => {

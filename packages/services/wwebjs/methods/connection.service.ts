@@ -787,11 +787,16 @@ export class WwebjsConnectionService {
           return;
         }
 
-        const payload = this.resolveQrAttemptTimeout(
-          startedAtMs,
-          'connection_attempt_guard_timeout'
-        );
-        settle(payload);
+        if (this.shouldResolveQrAttemptTimeoutAsFailure()) {
+          const payload = this.resolveQrAttemptTimeout(
+            startedAtMs,
+            'connection_attempt_guard_timeout'
+          );
+          settle(payload);
+          return;
+        }
+
+        settle(this.state());
       }, deadlineMs);
 
       promise.then(settle).catch((error) => {
@@ -1246,6 +1251,10 @@ export class WwebjsConnectionService {
           this.connectionEstablished ||
           this.status !== Status.connecting
         ) {
+          return;
+        }
+
+        if (!this.shouldResolveQrAttemptTimeoutAsFailure()) {
           return;
         }
 
@@ -1732,6 +1741,10 @@ export class WwebjsConnectionService {
         void this.handleInitializeError(msg, client);
       });
     });
+  }
+
+  private shouldResolveQrAttemptTimeoutAsFailure(): boolean {
+    return this.qrReadSessionActive;
   }
 
   private async logConnectionIpInLocal(

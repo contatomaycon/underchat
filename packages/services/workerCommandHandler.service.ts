@@ -4333,6 +4333,7 @@ export class WorkerCommandHandlerService {
           status: EBaileysConnectionStatus.connected,
           worker_id: data.worker_id,
           account_id: data.account_id,
+          phone: health?.phone,
           worker_status_id: EWorkerStatus.online,
           session_ready: true,
           can_send: health?.can_send,
@@ -4367,6 +4368,17 @@ export class WorkerCommandHandlerService {
 
       if (healthReconciliation) {
         return healthReconciliation;
+      }
+
+      const hasPreviousWorkerStatus =
+        data.previous_worker_status_id !== undefined &&
+        data.previous_worker_status_id !== null;
+      const delayedConnection = hasPreviousWorkerStatus
+        ? await this.waitForRecreatedWorkerOnlineConfirmation(data, workerType)
+        : null;
+
+      if (delayedConnection) {
+        return delayedConnection;
       }
 
       return { workerStatusId: EWorkerStatus.disponible };
