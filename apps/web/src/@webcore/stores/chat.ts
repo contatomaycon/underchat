@@ -606,6 +606,18 @@ const normalizeSummaryComparableValue = (value: unknown): string => {
   }
 };
 
+const PINNABLE_CHAT_STATUSES = new Set<string>([
+  EChatStatus.queue,
+  EChatStatus.in_chat,
+  EChatStatus.ura,
+  EChatStatus.ura_output,
+  EChatStatus.ura_schedule,
+  EChatStatus.ura_webhook,
+]);
+
+const isPinnableChatStatus = (status: string | null | undefined): boolean =>
+  !!status && PINNABLE_CHAT_STATUSES.has(status);
+
 export const useChatStore = defineStore('chat', {
   state: () => ({
     snackbar: {
@@ -623,6 +635,9 @@ export const useChatStore = defineStore('chat', {
     loadingMoreMessages: false,
     pendingStatusUpdateChatId: null as string | null,
     activeChat: null as ListChatsResult | null,
+    pinnedChats: [] as ListChatsResult[],
+    loadingPinnedChats: false,
+    pinningChatIds: [] as string[],
     listMessages: [] as ListMessageResult[],
     listQueue: [] as ListChatsResult[],
     listInChat: [] as ListChatsResult[],
@@ -902,6 +917,188 @@ export const useChatStore = defineStore('chat', {
         chat_user: chatUser,
       };
       setUser(this.user);
+    },
+    isChatPinned(chatId?: string | null): boolean {
+      return !!chatId && this.pinnedChats.some((chat) => chat.chat_id === chatId);
+    },
+    setPinningChat(chatId: string, isLoading: boolean): void {
+      if (!chatId) {
+        return;
+      }
+
+      if (isLoading) {
+        if (!this.pinningChatIds.includes(chatId)) {
+          this.pinningChatIds = [...this.pinningChatIds, chatId];
+        }
+        return;
+      }
+
+      this.pinningChatIds = this.pinningChatIds.filter((id) => id !== chatId);
+    },
+    setPinnedChats(chats: ListChatsResult[]): void {
+      this.pinnedChats = chats
+        .filter((chat) => isPinnableChatStatus(chat.status))
+        .map((chat) =>
+          this.createUpdatedActiveChat(
+            chat,
+            this.activeChat?.chat_id === chat.chat_id
+          )
+        );
+    },
+    addPinnedChat(chat: ListChatsResult): void {
+      if (!isPinnableChatStatus(chat.status)) {
+        return;
+      }
+
+      const normalizedChat = this.createUpdatedActiveChat(
+        chat,
+        this.activeChat?.chat_id === chat.chat_id
+      );
+
+      this.pinnedChats = [
+        normalizedChat,
+        ...this.pinnedChats.filter(
+          (pinnedChat) => pinnedChat.chat_id !== chat.chat_id
+        ),
+      ];
+    },
+    clearPinnedChatIfMatches(chatId?: string | null): void {
+      if (!chatId || !this.isChatPinned(chatId)) {
+        return;
+      }
+
+      this.pinnedChats = this.pinnedChats.filter(
+        (chat) => chat.chat_id !== chatId
+      );
+    },
+    updatePinnedChatSnapshot(chat: ListChatsResult): void {
+      if (!this.isChatPinned(chat.chat_id)) {
+        return;
+      }
+
+      if (!isPinnableChatStatus(chat.status)) {
+        this.clearPinnedChatIfMatches(chat.chat_id);
+        return;
+      }
+
+      this.pinnedChats = this.pinnedChats.map((pinnedChat) =>
+        pinnedChat.chat_id === chat.chat_id
+          ? this.createUpdatedActiveChat(
+              chat,
+              this.activeChat?.chat_id === chat.chat_id
+            )
+          : pinnedChat
+      );
+    },
+    async loadPinnedChats(): Promise<ListChatsResult[]> {
+      if (this.loadingPinnedChats) {
+        return this.pinnedChats;
+      }
+
+      try {
+        this.loadingPinnedChats = true;
+        const response =
+          await axios.get<IApiResponse<ListChatsResult[]>>('/chat/pinned');
+        const data = response?.data;
+
+        if (!data?.status || !Array.isArray(data.data)) {
+          this.setPinnedChats([]);
+          return [];
+        }
+
+        this.setPinnedChats(data.data);
+        return this.pinnedChats;
+      } catch {
+        return this.pinnedChats;
+      } finally {
+        this.loadingPinnedChats = false;
+      }
+    },
+    async pinChat(chat: ListChatsResult): Promise<boolean> {
+      if (!chat.chat_id || !isPinnableChatStatus(chat.status)) {
+        this.showSnackbar(this.i18n.global.t('chat_pin_error'), EColor.error);
+        return false;
+      }
+
+      const previousPinnedChats = [...this.pinnedChats];
+
+      this.setPinningChat(chat.chat_id, true);
+      this.addPinnedChat(chat);
+
+      try {
+        const response = await axios.post<IApiResponse<null>>(
+          `/chat/pinned/${chat.chat_id}`
+        );
+        const data = response?.data;
+
+        if (!data?.status) {
+          this.pinnedChats = previousPinnedChats;
+          this.showSnackbar(
+            data?.message || this.i18n.global.t('chat_pin_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_pin_success'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('chat_pin_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.pinnedChats = previousPinnedChats;
+        this.showSnackbar(errorMessage, EColor.error);
+        return false;
+      } finally {
+        this.setPinningChat(chat.chat_id, false);
+      }
+    },
+    async unpinChat(chatId?: string | null): Promise<boolean> {
+      const targetChatId = chatId ?? null;
+      if (!targetChatId) {
+        return false;
+      }
+
+      const previousPinnedChats = [...this.pinnedChats];
+
+      this.setPinningChat(targetChatId, true);
+      this.clearPinnedChatIfMatches(targetChatId);
+
+      try {
+        const response = await axios.delete<IApiResponse<null>>(
+          `/chat/pinned/${targetChatId}`
+        );
+        const data = response?.data;
+
+        if (!data?.status) {
+          this.pinnedChats = previousPinnedChats;
+          this.showSnackbar(
+            data?.message || this.i18n.global.t('chat_unpin_error'),
+            EColor.error
+          );
+          return false;
+        }
+
+        this.showSnackbar(
+          this.i18n.global.t('chat_unpin_success'),
+          EColor.success
+        );
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('chat_unpin_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.pinnedChats = previousPinnedChats;
+        this.showSnackbar(errorMessage, EColor.error);
+        return false;
+      } finally {
+        this.setPinningChat(targetChatId, false);
+      }
     },
     updateUser() {
       this.user = getUser();
@@ -1272,6 +1469,8 @@ export const useChatStore = defineStore('chat', {
       if (this.activeChat?.chat_id === chat.chat_id) {
         this.activeChat = null;
       }
+
+      this.clearPinnedChatIfMatches(chat.chat_id);
     },
 
     removeChatIfNotAuthorized(chat: IChat): void {
@@ -1737,6 +1936,7 @@ export const useChatStore = defineStore('chat', {
         forward_to_output_chatbot: resolvedChat.forward_to_output_chatbot,
       };
 
+      this.updatePinnedChatSnapshot(input);
       this.updateActiveChatSummaryIfNeeded(resolvedChat, isActiveChat);
 
       if (this.pendingStatusUpdateChatId === resolvedChat.chat_id) {
@@ -3889,7 +4089,7 @@ export const useChatStore = defineStore('chat', {
       ]);
     },
 
-    async updateChatsUser(input: UpdateChatsUserRequest): Promise<void> {
+    async updateChatsUser(input: UpdateChatsUserRequest): Promise<boolean> {
       try {
         this.loading = true;
 
@@ -3907,12 +4107,13 @@ export const useChatStore = defineStore('chat', {
             data?.message || this.i18n.global.t('chat_config_update_error');
           this.showSnackbar(errorMessage, EColor.error);
 
-          return;
+          return false;
         }
 
         this.patchChatUser(
           input as Partial<NonNullable<AuthUserResponse['chat_user']>>
         );
+        return true;
       } catch {
         this.loading = false;
 
@@ -3920,6 +4121,7 @@ export const useChatStore = defineStore('chat', {
           this.i18n.global.t('chat_config_update_error'),
           EColor.error
         );
+        return false;
       }
     },
 
@@ -4306,6 +4508,10 @@ export const useChatStore = defineStore('chat', {
 
           if (isActiveChat && isClosing) {
             this.activeChat = null;
+          }
+
+          if (isClosing) {
+            this.clearPinnedChatIfMatches(chatId);
           }
 
           if (isActiveChat && !isClosing) {

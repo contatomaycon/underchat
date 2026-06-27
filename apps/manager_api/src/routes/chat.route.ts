@@ -2,6 +2,11 @@ import { FastifyInstance } from 'fastify';
 import { container } from 'tsyringe';
 import { listChatsSchema } from '@core/schema/chat/listChats';
 import { listKanbanSchema } from '@core/schema/chat/listKanban';
+import {
+  pinChatSchema,
+  unpinChatSchema,
+  viewPinnedChatSchema,
+} from '@core/schema/chat/viewPinnedChat';
 import { viewChatUnreadSummarySchema } from '@core/schema/chat/unreadSummary';
 import ChatController from '@/controllers/chat';
 import { planGuard } from '@/plugins/planGuard';
@@ -89,6 +94,39 @@ export default function chatRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, kanbanPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/pinned', {
+    schema: viewPinnedChatSchema,
+    handler: chatController.viewPinnedChat,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/chat/pinned/:chat_id', {
+    schema: pinChatSchema,
+    handler: chatController.pinChat,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatReadPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.delete('/chat/pinned/:chat_id', {
+    schema: unpinChatSchema,
+    handler: chatController.unpinChat,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatReadPermissions),
       planGuard,
       planStatus,
     ],
