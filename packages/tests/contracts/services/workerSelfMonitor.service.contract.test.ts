@@ -180,11 +180,13 @@ describe('WorkerSelfMonitorService', () => {
     deps.monitor.stop();
   });
 
-  it('uses WORKER_DAILY_MAINTENANCE_HOUR for the daily maintenance window', async () => {
+  it('uses WORKER_DAILY_MAINTENANCE_HOUR with HH:mm for the daily maintenance window', async () => {
     const previousHour = process.env.WORKER_DAILY_MAINTENANCE_HOUR;
-    process.env.WORKER_DAILY_MAINTENANCE_HOUR = '3';
+    const previousTime = process.env.WORKER_DAILY_MAINTENANCE_TIME;
+    process.env.WORKER_DAILY_MAINTENANCE_HOUR = '13:40';
+    delete process.env.WORKER_DAILY_MAINTENANCE_TIME;
     jest.useFakeTimers();
-    jest.setSystemTime(new Date('2026-06-27T03:15:00.000Z'));
+    jest.setSystemTime(new Date('2026-06-27T13:40:00.000Z'));
     const deps = buildMonitor();
 
     try {
@@ -217,13 +219,20 @@ describe('WorkerSelfMonitorService', () => {
       } else {
         process.env.WORKER_DAILY_MAINTENANCE_HOUR = previousHour;
       }
+      if (previousTime === undefined) {
+        delete process.env.WORKER_DAILY_MAINTENANCE_TIME;
+      } else {
+        process.env.WORKER_DAILY_MAINTENANCE_TIME = previousTime;
+      }
       jest.useRealTimers();
     }
   });
 
   it('defaults daily maintenance to 02:00 when no env is configured', async () => {
     const previousHour = process.env.WORKER_DAILY_MAINTENANCE_HOUR;
+    const previousTime = process.env.WORKER_DAILY_MAINTENANCE_TIME;
     delete process.env.WORKER_DAILY_MAINTENANCE_HOUR;
+    delete process.env.WORKER_DAILY_MAINTENANCE_TIME;
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-06-27T02:15:00.000Z'));
     const deps = buildMonitor();
@@ -254,6 +263,11 @@ describe('WorkerSelfMonitorService', () => {
         delete process.env.WORKER_DAILY_MAINTENANCE_HOUR;
       } else {
         process.env.WORKER_DAILY_MAINTENANCE_HOUR = previousHour;
+      }
+      if (previousTime === undefined) {
+        delete process.env.WORKER_DAILY_MAINTENANCE_TIME;
+      } else {
+        process.env.WORKER_DAILY_MAINTENANCE_TIME = previousTime;
       }
       jest.useRealTimers();
     }

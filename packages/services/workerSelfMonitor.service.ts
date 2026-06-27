@@ -47,6 +47,7 @@ export interface WorkerSelfMonitorOptions {
   failureThreshold?: number;
   recoveryWindowSeconds?: number;
   dailyMaintenanceHour?: number;
+  dailyMaintenanceMinute?: number;
   timeZone?: string;
 }
 
@@ -109,8 +110,9 @@ export class WorkerSelfMonitorService {
           Number(process.env.WORKER_SELF_HEAL_RECOVERY_WINDOW_SECONDS) ||
             10 * 60
         ),
-      dailyMaintenanceHour: this.resolveDailyMaintenanceHour(
-        options.dailyMaintenanceHour
+      ...this.resolveDailyMaintenanceSchedule(
+        options.dailyMaintenanceHour,
+        options.dailyMaintenanceMinute
       ),
       timeZone:
         options.timeZone ??
@@ -334,8 +336,10 @@ export class WorkerSelfMonitorService {
       return;
     }
 
-    const parts = this.localDateHour(options.timeZone ?? 'America/Sao_Paulo');
-    if (parts.hour !== (options.dailyMaintenanceHour ?? 2)) {
+    const parts = this.localDateTime(options.timeZone ?? 'America/Sao_Paulo');
+    const scheduledHour = options.dailyMaintenanceHour ?? 2;
+    const scheduledMinute = options.dailyMaintenanceMinute ?? 0;
+    if (parts.hour !== scheduledHour || parts.minute < scheduledMinute) {
       return;
     }
 
@@ -386,22 +390,29 @@ export class WorkerSelfMonitorService {
     });
   }
 
-  private localDateHour(timeZone: string): { date: string; hour: number } {
+  private localDateTime(timeZone: string): {
+    date: string;
+    hour: number;
+    minute: number;
+  } {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
+      minute: '2-digit',
       hour12: false,
     }).formatToParts(new Date());
     const get = (type: string): string =>
       parts.find((part) => part.type === type)?.value ?? '';
     const date = `${get('year')}-${get('month')}-${get('day')}`;
     const hour = Number.parseInt(get('hour'), 10);
+    const minute = Number.parseInt(get('minute'), 10);
     return {
       date,
       hour: Number.isFinite(hour) ? hour : -1,
+      minute: Number.isFinite(minute) ? minute : -1,
     };
   }
 
@@ -410,18 +421,47 @@ export class WorkerSelfMonitorService {
     return `self-heal:${source}:${options?.workerId ?? 'unknown'}:${Date.now()}`;
   }
 
-  private resolveDailyMaintenanceHour(optionHour?: number): number {
+  private resolveDailyMaintenanceSchedule(
+    optionHour?: number,
+    optionMinute?: number
+  ): { dailyMaintenanceHour: number; dailyMaintenanceMinute: number } {
     if (optionHour !== undefined) {
-      return optionHour;
+      return {
+        dailyMaintenanceHour: optionHour,
+        dailyMaintenanceMinute: optionMinute ?? 0,
+      };
     }
 
-    const raw = process.env.WORKER_DAILY_MAINTENANCE_HOUR?.trim();
+    const raw = (
+      process.env.WORKER_DAILY_MAINTENANCE_TIME ??
+      process.env.WORKER_DAILY_MAINTENANCE_HOUR
+    )?.trim();
     if (!raw) {
-      return 2;
+      return { dailyMaintenanceHour: 2, dailyMaintenanceMinute: 0 };
     }
 
-    const parsed = Number.parseInt(raw, 10);
-    return Number.isInteger(parsed) && parsed >= 0 && parsed <= 23 ? parsed : 2;
+    const parts = raw.split(':');
+    if (parts.length > 2) {
+      return { dailyMaintenanceHour: 2, dailyMaintenanceMinute: 0 };
+    }
+
+    const hour = Number.parseInt(parts[0] ?? '', 10);
+    const minute = parts.length === 2 ? Number.parseInt(parts[1] ?? '', 10) : 0;
+    if (
+      !Number.isInteger(hour) ||
+      hour < 0 ||
+      hour > 23 ||
+      !Number.isInteger(minute) ||
+      minute < 0 ||
+      minute > 59
+    ) {
+      return { dailyMaintenanceHour: 2, dailyMaintenanceMinute: 0 };
+    }
+
+    return {
+      dailyMaintenanceHour: hour,
+      dailyMaintenanceMinute: minute,
+    };
   }
 
   private logError(error: unknown): void {

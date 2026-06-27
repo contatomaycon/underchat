@@ -146,7 +146,7 @@ func selfMonitorShouldEscalate(health map[string]any, kafkaUnhealthy bool) bool 
 
 func (w *Worker) maybeRequestDailyMaintenance(ctx context.Context, health map[string]any, kafkaUnhealthy bool) {
 	now := time.Now().In(selfMonitorLocation())
-	if now.Hour() != w.cfg.DailyMaintenanceHour {
+	if now.Hour() != w.cfg.DailyMaintenanceHour || now.Minute() < w.cfg.DailyMaintenanceMinute {
 		return
 	}
 

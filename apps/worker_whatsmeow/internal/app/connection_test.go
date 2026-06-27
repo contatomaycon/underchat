@@ -111,20 +111,26 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if cfg.DailyMaintenanceHour != 2 {
 		t.Fatalf("unexpected daily maintenance hour %d", cfg.DailyMaintenanceHour)
 	}
+	if cfg.DailyMaintenanceMinute != 0 {
+		t.Fatalf("unexpected daily maintenance minute %d", cfg.DailyMaintenanceMinute)
+	}
 }
 
 func TestDailyMaintenanceHourConfigFromEnv(t *testing.T) {
 	t.Setenv("WORKER_ID", "worker-1")
 	t.Setenv("ACCOUNT_ID", "account-1")
 	t.Setenv("KAFKA_BROKER", "localhost:9092")
-	t.Setenv("WORKER_DAILY_MAINTENANCE_HOUR", "4")
+	t.Setenv("WORKER_DAILY_MAINTENANCE_HOUR", "13:40")
 
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.DailyMaintenanceHour != 4 {
+	if cfg.DailyMaintenanceHour != 13 {
 		t.Fatalf("unexpected daily maintenance hour %d", cfg.DailyMaintenanceHour)
+	}
+	if cfg.DailyMaintenanceMinute != 40 {
+		t.Fatalf("unexpected daily maintenance minute %d", cfg.DailyMaintenanceMinute)
 	}
 }
 

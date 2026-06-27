@@ -68,6 +68,7 @@ type Config struct {
 	SelfMonitorFailureThreshold          int
 	SelfHealRecoveryWindow               time.Duration
 	DailyMaintenanceHour                 int
+	DailyMaintenanceMinute               int
 
 	KafkaSendConsumerIdleRecreateInterval time.Duration
 	KafkaHandlerErrorBackoff              time.Duration
@@ -91,6 +92,7 @@ func LoadConfig() (Config, error) {
 		return Config{}, err
 	}
 	kafkaConsumerStallTimeout := envMillisDurationDefault("KAFKA_CONSUMER_STALL_MS", 5*time.Minute)
+	dailyMaintenanceHour, dailyMaintenanceMinute := envDailyMaintenanceSchedule()
 
 	cfg := Config{
 		WorkerID:          strings.TrimSpace(os.Getenv("WORKER_ID")),
@@ -193,7 +195,8 @@ func LoadConfig() (Config, error) {
 		SelfMonitorInitialDelay:               envMillisDurationDefault("WORKER_SELF_MONITOR_INITIAL_DELAY_MS", 15*time.Second),
 		SelfMonitorFailureThreshold:           envIntDefault("WORKER_SELF_MONITOR_FAILURE_THRESHOLD", 3),
 		SelfHealRecoveryWindow:                time.Duration(envIntDefault("WORKER_SELF_HEAL_RECOVERY_WINDOW_SECONDS", 10*60)) * time.Second,
-		DailyMaintenanceHour:                  envIntDefault("WORKER_DAILY_MAINTENANCE_HOUR", 2),
+		DailyMaintenanceHour:                  dailyMaintenanceHour,
+		DailyMaintenanceMinute:                dailyMaintenanceMinute,
 		KafkaSendConsumerIdleRecreateInterval: envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
 		KafkaHandlerErrorBackoff:              envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
 		KafkaConsumerStallTimeout:             kafkaConsumerStallTimeout,
@@ -284,6 +287,9 @@ func LoadConfig() (Config, error) {
 	if cfg.DailyMaintenanceHour < 0 || cfg.DailyMaintenanceHour > 23 {
 		cfg.DailyMaintenanceHour = 2
 	}
+	if cfg.DailyMaintenanceMinute < 0 || cfg.DailyMaintenanceMinute > 59 {
+		cfg.DailyMaintenanceMinute = 0
+	}
 	if cfg.SendIdempotencyInProgressTTL <= 0 {
 		cfg.SendIdempotencyInProgressTTL = 10 * time.Minute
 	}
@@ -335,6 +341,36 @@ func envIntDefault(key string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func envDailyMaintenanceSchedule() (int, int) {
+	raw := strings.TrimSpace(os.Getenv("WORKER_DAILY_MAINTENANCE_TIME"))
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("WORKER_DAILY_MAINTENANCE_HOUR"))
+	}
+	if raw == "" {
+		return 2, 0
+	}
+
+	parts := strings.Split(raw, ":")
+	if len(parts) > 2 {
+		return 2, 0
+	}
+
+	hour, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	if err != nil || hour < 0 || hour > 23 {
+		return 2, 0
+	}
+
+	minute := 0
+	if len(parts) == 2 {
+		minute, err = strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil || minute < 0 || minute > 59 {
+			return 2, 0
+		}
+	}
+
+	return hour, minute
 }
 
 func envFloatDefault(key string, fallback float64) float64 {
