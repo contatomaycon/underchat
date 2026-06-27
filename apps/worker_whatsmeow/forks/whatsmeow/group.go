@@ -290,7 +290,7 @@ func (cli *Client) UpdateGroupRequestParticipants(ctx context.Context, jid types
 // The avatar should be a JPEG photo, other formats may be rejected with ErrInvalidImageFormat.
 // The bytes can be nil to remove the photo. Returns the new picture ID.
 func (cli *Client) SetGroupPhoto(ctx context.Context, jid types.JID, avatar []byte) (string, error) {
-	var content interface{}
+	var content any
 	if avatar != nil {
 		content = []waBinary.Node{{
 			Tag:     "picture",
@@ -323,7 +323,7 @@ func (cli *Client) SetGroupPhoto(ctx context.Context, jid types.JID, avatar []by
 // SetProfilePhoto updates the current user's profile picture on WhatsApp.
 // The avatar should be a JPEG photo. The bytes can be nil to remove the photo.
 func (cli *Client) SetProfilePhoto(ctx context.Context, avatar []byte) (string, error) {
-	var content interface{}
+	var content any
 	if avatar != nil {
 		content = []waBinary.Node{{
 			Tag:     "picture",
