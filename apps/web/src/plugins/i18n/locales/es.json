@@ -2906,6 +2906,7 @@
   "release_updated_successfully": "¡Informativo actualizado con éxito!",
   "read": "Leído",
   "unread": "No leído",
+  "unread_conversations": "Conversaciones no leídas",
   "recipient": "Destinatario",
   "permission_groups": "Grupos de Permisos",
   "html_editor": "Editor HTML",
