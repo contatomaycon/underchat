@@ -373,10 +373,43 @@ const isChatForCurrentUser = (
   );
 };
 
+const PINNABLE_CHAT_STATUSES = new Set<string>([
+  EChatStatus.queue,
+  EChatStatus.in_chat,
+  EChatStatus.ura,
+  EChatStatus.ura_output,
+  EChatStatus.ura_schedule,
+  EChatStatus.ura_webhook,
+]);
+
+const isPinnableChat = (chat: ListChatsResult | null | undefined): boolean => {
+  return !!chat?.status && PINNABLE_CHAT_STATUSES.has(chat.status);
+};
+
+const pinnedChats = computed(() =>
+  chatStore.pinnedChats.filter((chat) => isPinnableChat(chat))
+);
+
+const pinnedChatIds = computed(
+  () => new Set(pinnedChats.value.map((chat) => chat.chat_id))
+);
+
+const canShowPinnedChat = computed(() => {
+  return !isBulkModeEnabled.value && pinnedChats.value.length > 0;
+});
+
+const removePinnedChatFromList = (chats: ListChatsResult[]) => {
+  if (!canShowPinnedChat.value) {
+    return chats;
+  }
+
+  return chats.filter((chat) => !pinnedChatIds.value.has(chat.chat_id));
+};
+
 const filteredInChat = computed(() => {
   if (activeFilter.value === 'in_chat') {
-    const visibleChats = removeRealtimeHiddenChatsFromList(
-      chatStore.listInChat
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listInChat)
     );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
@@ -388,8 +421,8 @@ const filteredInChat = computed(() => {
     );
   }
   if (activeFilter.value === 'all' && !hasActiveFilters.value) {
-    const visibleChats = removeRealtimeHiddenChatsFromList(
-      chatStore.listInChat
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listInChat)
     );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
@@ -401,8 +434,8 @@ const filteredInChat = computed(() => {
     );
   }
   if (activeFilter.value === 'all' && hasActiveFilters.value) {
-    const visibleChats = removeRealtimeHiddenChatsFromList(
-      chatStore.listInChat
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listInChat)
     );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
@@ -418,7 +451,9 @@ const filteredInChat = computed(() => {
 
 const filteredQueue = computed(() => {
   if (activeFilter.value === 'queue') {
-    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listQueue);
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listQueue)
+    );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
     }
@@ -429,7 +464,9 @@ const filteredQueue = computed(() => {
     );
   }
   if (activeFilter.value === 'all' && !hasActiveFilters.value) {
-    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listQueue);
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listQueue)
+    );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
     }
@@ -440,7 +477,9 @@ const filteredQueue = computed(() => {
     );
   }
   if (activeFilter.value === 'all' && hasActiveFilters.value) {
-    const visibleChats = removeRealtimeHiddenChatsFromList(chatStore.listQueue);
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listQueue)
+    );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
     }
@@ -469,7 +508,9 @@ const filteredMyChats = computed(() => {
       const myChats = allChats.filter((chat) =>
         isChatForCurrentUser(chat, userId)
       );
-      const visibleChats = removeRealtimeHiddenChatsFromList(myChats);
+      const visibleChats = removePinnedChatFromList(
+        removeRealtimeHiddenChatsFromList(myChats)
+      );
       const sortField = sortMyChatsField.value ?? 'summary.last_message';
       const sortOrder = sortMyChatsOrder.value ?? 'desc';
       if (!shouldApplyPerFilterSort.value) {
@@ -482,7 +523,9 @@ const filteredMyChats = computed(() => {
     const myChats = allChats.filter((chat) =>
       isChatForCurrentUser(chat, userId)
     );
-    const visibleChats = removeRealtimeHiddenChatsFromList(myChats);
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(myChats)
+    );
     const sortField = sortMyChatsField.value ?? 'summary.last_message';
     const sortOrder = sortMyChatsOrder.value ?? 'desc';
     if (!shouldApplyPerFilterSort.value) {
@@ -517,11 +560,13 @@ const filteredChatbot = computed(() => {
     !hasAppliedAdvancedFilters.value &&
     !hasSearchTerm.value
   ) {
-    return removeRealtimeHiddenChatsFromList(chatStore.listChatbot);
+    return removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listChatbot)
+    );
   }
   if (activeFilter.value === 'chatbot') {
-    const visibleChats = removeRealtimeHiddenChatsFromList(
-      chatStore.listChatbot
+    const visibleChats = removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listChatbot)
     );
     if (!shouldApplyPerFilterSort.value) {
       return visibleChats;
@@ -551,7 +596,14 @@ const filteredClosed = computed(() => {
     !hasAppliedAdvancedFilters.value &&
     !hasSearchTerm.value
   ) {
-    return removeRealtimeHiddenChatsFromList(chatStore.listClosed);
+    return removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listClosed)
+    );
+  }
+  if (activeFilter.value === 'closed') {
+    return removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listClosed)
+    );
   }
   return [];
 });
@@ -563,10 +615,14 @@ const filteredScheduled = computed(() => {
     !hasAppliedAdvancedFilters.value &&
     !hasSearchTerm.value
   ) {
-    return removeRealtimeHiddenChatsFromList(chatStore.listScheduled);
+    return removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listScheduled)
+    );
   }
   if (activeFilter.value === 'scheduled') {
-    return removeRealtimeHiddenChatsFromList(chatStore.listScheduled);
+    return removePinnedChatFromList(
+      removeRealtimeHiddenChatsFromList(chatStore.listScheduled)
+    );
   }
   return [];
 });
@@ -888,6 +944,23 @@ const handleQueueCardClick = (chat: ListChatsResult, index: number): void => {
   }
 
   handleQueueClick(chat, index);
+};
+
+const getQueueChatOriginalIndex = (chatId: string): number => {
+  return chatStore.listQueue.findIndex((chat) => chat.chat_id === chatId);
+};
+
+const handlePinnedChatClick = (chat: ListChatsResult): void => {
+  emit('openChat', chat.chat_id, { fallbackChat: chat });
+};
+
+const handleTogglePinnedChat = async (chat: ListChatsResult) => {
+  if (chatStore.isChatPinned(chat.chat_id)) {
+    await chatStore.unpinChat(chat.chat_id);
+    return;
+  }
+
+  await chatStore.pinChat(chat);
 };
 
 const resetBulkTransferForm = () => {
@@ -3470,7 +3543,7 @@ const saveNotificationSettings = async (
 };
 
 onMounted(async () => {
-  await loadChatsByFilter();
+  await Promise.all([chatStore.loadPinnedChats(), loadChatsByFilter()]);
 
   globalThis.addEventListener('chat-status-changed', handleChatStatusChanged);
 });
@@ -4168,19 +4241,36 @@ defineExpose({
 
         <template v-else>
           <ChatQueue
-            v-for="chat in chatStore.listChatbot"
+            v-for="pinnedChat in canShowPinnedChat ? pinnedChats : []"
+            :key="`pinned-${pinnedChat.chat_id}`"
+            :user="pinnedChat"
+            is-pinned
+            show-pin-action
+            :pin-loading="
+              chatStore.pinningChatIds.includes(pinnedChat.chat_id)
+            "
+            @toggle-pin="handleTogglePinnedChat(pinnedChat)"
+            @click="handlePinnedChatClick(pinnedChat)"
+          />
+
+          <ChatQueue
+            v-for="chat in filteredChatbot"
             :key="`chatbot-${chat.chat_id}`"
             :user="chat"
             show-chatbot-type-indicator
+            :is-pinned="chatStore.isChatPinned(chat.chat_id)"
+            :show-pin-action="!isBulkModeEnabled && isPinnableChat(chat)"
+            :pin-loading="chatStore.pinningChatIds.includes(chat.chat_id)"
             :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
             :checked="isChatBulkSelected(chat.chat_id)"
             :checkbox-disabled="bulkSelectAllFiltered"
+            @toggle-pin="handleTogglePinnedChat(chat)"
             @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
             @click="handleDefaultChatClick(chat)"
           />
 
           <li
-            v-if="!chatStore.listChatbot.length"
+            v-if="!filteredChatbot.length && !canShowPinnedChat"
             class="no-chat-items-text text-disabled"
           >
             {{ $t('no_chat_in_ura') }}
@@ -4268,18 +4358,35 @@ defineExpose({
 
         <template v-else>
           <ChatQueue
-            v-for="chat in chatStore.listClosed"
+            v-for="pinnedChat in canShowPinnedChat ? pinnedChats : []"
+            :key="`pinned-${pinnedChat.chat_id}`"
+            :user="pinnedChat"
+            is-pinned
+            show-pin-action
+            :pin-loading="
+              chatStore.pinningChatIds.includes(pinnedChat.chat_id)
+            "
+            @toggle-pin="handleTogglePinnedChat(pinnedChat)"
+            @click="handlePinnedChatClick(pinnedChat)"
+          />
+
+          <ChatQueue
+            v-for="chat in filteredClosed"
             :key="`closed-${chat.chat_id}`"
             :user="chat"
+            :is-pinned="chatStore.isChatPinned(chat.chat_id)"
+            :show-pin-action="!isBulkModeEnabled && isPinnableChat(chat)"
+            :pin-loading="chatStore.pinningChatIds.includes(chat.chat_id)"
             :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
             :checked="isChatBulkSelected(chat.chat_id)"
             :checkbox-disabled="bulkSelectAllFiltered"
+            @toggle-pin="handleTogglePinnedChat(chat)"
             @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
             @click="handleDefaultChatClick(chat)"
           />
 
           <li
-            v-if="!chatStore.listClosed.length"
+            v-if="!filteredClosed.length && !canShowPinnedChat"
             class="no-chat-items-text text-disabled"
           >
             {{ $t('no_chat_closed') }}
@@ -4372,18 +4479,35 @@ defineExpose({
 
         <template v-else>
           <ChatQueue
-            v-for="chat in chatStore.listScheduled"
+            v-for="pinnedChat in canShowPinnedChat ? pinnedChats : []"
+            :key="`pinned-${pinnedChat.chat_id}`"
+            :user="pinnedChat"
+            is-pinned
+            show-pin-action
+            :pin-loading="
+              chatStore.pinningChatIds.includes(pinnedChat.chat_id)
+            "
+            @toggle-pin="handleTogglePinnedChat(pinnedChat)"
+            @click="handlePinnedChatClick(pinnedChat)"
+          />
+
+          <ChatQueue
+            v-for="chat in filteredScheduled"
             :key="`scheduled-${chat.chat_id}`"
             :user="chat"
+            :is-pinned="chatStore.isChatPinned(chat.chat_id)"
+            :show-pin-action="!isBulkModeEnabled && isPinnableChat(chat)"
+            :pin-loading="chatStore.pinningChatIds.includes(chat.chat_id)"
             :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
             :checked="isChatBulkSelected(chat.chat_id)"
             :checkbox-disabled="bulkSelectAllFiltered"
+            @toggle-pin="handleTogglePinnedChat(chat)"
             @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
             @click="handleDefaultChatClick(chat)"
           />
 
           <li
-            v-if="!chatStore.listScheduled.length"
+            v-if="!filteredScheduled.length && !canShowPinnedChat"
             class="no-chat-items-text text-disabled"
           >
             {{ $t('no_chat_scheduled') }}
@@ -4476,18 +4600,35 @@ defineExpose({
 
         <template v-else>
           <ChatQueue
+            v-for="pinnedChat in canShowPinnedChat ? pinnedChats : []"
+            :key="`pinned-${pinnedChat.chat_id}`"
+            :user="pinnedChat"
+            is-pinned
+            show-pin-action
+            :pin-loading="
+              chatStore.pinningChatIds.includes(pinnedChat.chat_id)
+            "
+            @toggle-pin="handleTogglePinnedChat(pinnedChat)"
+            @click="handlePinnedChatClick(pinnedChat)"
+          />
+
+          <ChatQueue
             v-for="chat in filteredMyChats"
             :key="`my-chat-${chat.chat_id}`"
             :user="chat"
+            :is-pinned="chatStore.isChatPinned(chat.chat_id)"
+            :show-pin-action="!isBulkModeEnabled && isPinnableChat(chat)"
+            :pin-loading="chatStore.pinningChatIds.includes(chat.chat_id)"
             :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chat)"
             :checked="isChatBulkSelected(chat.chat_id)"
             :checkbox-disabled="bulkSelectAllFiltered"
+            @toggle-pin="handleTogglePinnedChat(chat)"
             @checkbox-change="handleChatQueueCheckboxChange(chat, $event)"
             @click="handleDefaultChatClick(chat)"
           />
 
           <li
-            v-if="!filteredMyChats.length"
+            v-if="!filteredMyChats.length && !canShowPinnedChat"
             class="no-chat-items-text text-disabled"
           >
             {{ $t('no_my_chats', 'Nenhum atendimento encontrado') }}
@@ -4584,17 +4725,34 @@ defineExpose({
         </template>
         <template v-else>
           <ChatQueue
+            v-for="pinnedChat in canShowPinnedChat ? pinnedChats : []"
+            :key="`pinned-${pinnedChat.chat_id}`"
+            :user="pinnedChat"
+            is-pinned
+            show-pin-action
+            :pin-loading="
+              chatStore.pinningChatIds.includes(pinnedChat.chat_id)
+            "
+            @toggle-pin="handleTogglePinnedChat(pinnedChat)"
+            @click="handlePinnedChatClick(pinnedChat)"
+          />
+
+          <ChatQueue
             v-for="inChat in filteredInChat"
             :key="`chat-${inChat.chat_id}`"
             :user="inChat"
+            :is-pinned="chatStore.isChatPinned(inChat.chat_id)"
+            :show-pin-action="!isBulkModeEnabled && isPinnableChat(inChat)"
+            :pin-loading="chatStore.pinningChatIds.includes(inChat.chat_id)"
             :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(inChat)"
             :checked="isChatBulkSelected(inChat.chat_id)"
             :checkbox-disabled="bulkSelectAllFiltered"
+            @toggle-pin="handleTogglePinnedChat(inChat)"
             @checkbox-change="handleChatQueueCheckboxChange(inChat, $event)"
             @click="handleDefaultChatClick(inChat)"
           />
           <li
-            v-if="!filteredInChat.length"
+            v-if="!filteredInChat.length && !canShowPinnedChat"
             class="no-chat-items-text text-disabled"
           >
             {{ $t('no_chat_in_service') }}
@@ -4685,18 +4843,42 @@ defineExpose({
         </template>
         <template v-else>
           <ChatQueue
-            v-for="(queue, index) in filteredQueue"
+            v-for="pinnedChat in canShowPinnedChat ? pinnedChats : []"
+            :key="`pinned-${pinnedChat.chat_id}`"
+            :user="pinnedChat"
+            is-pinned
+            show-pin-action
+            :pin-loading="
+              chatStore.pinningChatIds.includes(pinnedChat.chat_id)
+            "
+            @toggle-pin="handleTogglePinnedChat(pinnedChat)"
+            @click="handlePinnedChatClick(pinnedChat)"
+          />
+
+          <ChatQueue
+            v-for="queue in filteredQueue"
             :key="`chat-${queue.chat_id}`"
             :user="queue"
-            :disabled="!isQueueChatSelectable(index)"
+            :disabled="
+              !isQueueChatSelectable(getQueueChatOriginalIndex(queue.chat_id))
+            "
+            :is-pinned="chatStore.isChatPinned(queue.chat_id)"
+            :show-pin-action="!isBulkModeEnabled && isPinnableChat(queue)"
+            :pin-loading="chatStore.pinningChatIds.includes(queue.chat_id)"
             :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(queue)"
             :checked="isChatBulkSelected(queue.chat_id)"
             :checkbox-disabled="bulkSelectAllFiltered"
+            @toggle-pin="handleTogglePinnedChat(queue)"
             @checkbox-change="handleChatQueueCheckboxChange(queue, $event)"
-            @click="handleQueueCardClick(queue, index)"
+            @click="
+              handleQueueCardClick(
+                queue,
+                getQueueChatOriginalIndex(queue.chat_id)
+              )
+            "
           />
           <li
-            v-if="!filteredQueue.length"
+            v-if="!filteredQueue.length && !canShowPinnedChat"
             class="no-chat-items-text text-disabled"
           >
             {{ $t('no_chat_in_queue') }}
@@ -4773,6 +4955,17 @@ defineExpose({
       </template>
 
       <template v-else>
+        <ChatQueue
+          v-for="pinnedChat in canShowPinnedChat ? pinnedChats : []"
+          :key="`pinned-${pinnedChat.chat_id}`"
+          :user="pinnedChat"
+          is-pinned
+          show-pin-action
+          :pin-loading="chatStore.pinningChatIds.includes(pinnedChat.chat_id)"
+          @toggle-pin="handleTogglePinnedChat(pinnedChat)"
+          @click="handlePinnedChatClick(pinnedChat)"
+        />
+
         <li v-if="showInChatTitle" class="list-none">
           <h5 class="chat-header text-primary text-h5">
             {{ $t('in_service') }}
@@ -4783,9 +4976,13 @@ defineExpose({
           v-for="inChat in filteredInChat"
           :key="`chat-${inChat.chat_id}`"
           :user="inChat"
+          :is-pinned="chatStore.isChatPinned(inChat.chat_id)"
+          :show-pin-action="!isBulkModeEnabled && isPinnableChat(inChat)"
+          :pin-loading="chatStore.pinningChatIds.includes(inChat.chat_id)"
           :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(inChat)"
           :checked="isChatBulkSelected(inChat.chat_id)"
           :checkbox-disabled="bulkSelectAllFiltered"
+          @toggle-pin="handleTogglePinnedChat(inChat)"
           @checkbox-change="handleChatQueueCheckboxChange(inChat, $event)"
           @click="handleDefaultChatClick(inChat)"
         />
@@ -4793,6 +4990,7 @@ defineExpose({
         <li
           v-if="
             !filteredInChat.length &&
+            !canShowPinnedChat &&
             (activeFilter === 'all' || activeFilter === 'in_chat')
           "
           class="no-chat-items-text text-disabled"
@@ -4807,20 +5005,32 @@ defineExpose({
         </li>
 
         <ChatQueue
-          v-for="(queue, index) in filteredQueue"
+          v-for="queue in filteredQueue"
           :key="`chat-${queue.chat_id}`"
           :user="queue"
-          :disabled="!isQueueChatSelectable(index)"
+          :disabled="
+            !isQueueChatSelectable(getQueueChatOriginalIndex(queue.chat_id))
+          "
+          :is-pinned="chatStore.isChatPinned(queue.chat_id)"
+          :show-pin-action="!isBulkModeEnabled && isPinnableChat(queue)"
+          :pin-loading="chatStore.pinningChatIds.includes(queue.chat_id)"
           :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(queue)"
           :checked="isChatBulkSelected(queue.chat_id)"
           :checkbox-disabled="bulkSelectAllFiltered"
+          @toggle-pin="handleTogglePinnedChat(queue)"
           @checkbox-change="handleChatQueueCheckboxChange(queue, $event)"
-          @click="handleQueueCardClick(queue, index)"
+          @click="
+            handleQueueCardClick(
+              queue,
+              getQueueChatOriginalIndex(queue.chat_id)
+            )
+          "
         />
 
         <li
           v-if="
             !filteredQueue.length &&
+            !canShowPinnedChat &&
             (activeFilter === 'all' || activeFilter === 'queue')
           "
           class="no-chat-items-text text-disabled"
@@ -4839,9 +5049,13 @@ defineExpose({
           v-for="chatbot in filteredChatbot"
           :key="`chatbot-all-${chatbot.chat_id}`"
           :user="chatbot"
+          :is-pinned="chatStore.isChatPinned(chatbot.chat_id)"
+          :show-pin-action="!isBulkModeEnabled && isPinnableChat(chatbot)"
+          :pin-loading="chatStore.pinningChatIds.includes(chatbot.chat_id)"
           :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(chatbot)"
           :checked="isChatBulkSelected(chatbot.chat_id)"
           :checkbox-disabled="bulkSelectAllFiltered"
+          @toggle-pin="handleTogglePinnedChat(chatbot)"
           @checkbox-change="handleChatQueueCheckboxChange(chatbot, $event)"
           @click="handleDefaultChatClick(chatbot)"
         />
@@ -4851,6 +5065,7 @@ defineExpose({
             showChatbotTitle &&
             canViewChatbotTab &&
             !filteredChatbot.length &&
+            !canShowPinnedChat &&
             !isLoadingChatbot
           "
           class="no-chat-items-text text-disabled"
@@ -4869,15 +5084,24 @@ defineExpose({
           v-for="closed in filteredClosed"
           :key="`closed-all-${closed.chat_id}`"
           :user="closed"
+          :is-pinned="chatStore.isChatPinned(closed.chat_id)"
+          :show-pin-action="!isBulkModeEnabled && isPinnableChat(closed)"
+          :pin-loading="chatStore.pinningChatIds.includes(closed.chat_id)"
           :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(closed)"
           :checked="isChatBulkSelected(closed.chat_id)"
           :checkbox-disabled="bulkSelectAllFiltered"
+          @toggle-pin="handleTogglePinnedChat(closed)"
           @checkbox-change="handleChatQueueCheckboxChange(closed, $event)"
           @click="handleDefaultChatClick(closed)"
         />
 
         <li
-          v-if="showClosedTitle && !filteredClosed.length && !isLoadingClosed"
+          v-if="
+            showClosedTitle &&
+            !filteredClosed.length &&
+            !canShowPinnedChat &&
+            !isLoadingClosed
+          "
           class="no-chat-items-text text-disabled"
         >
           Nenhum chat fechado
@@ -4894,9 +5118,13 @@ defineExpose({
           v-for="scheduled in filteredScheduled"
           :key="`scheduled-all-${scheduled.chat_id}`"
           :user="scheduled"
+          :is-pinned="chatStore.isChatPinned(scheduled.chat_id)"
+          :show-pin-action="!isBulkModeEnabled && isPinnableChat(scheduled)"
+          :pin-loading="chatStore.pinningChatIds.includes(scheduled.chat_id)"
           :show-checkbox="isBulkModeEnabled && isBulkSelectableChat(scheduled)"
           :checked="isChatBulkSelected(scheduled.chat_id)"
           :checkbox-disabled="bulkSelectAllFiltered"
+          @toggle-pin="handleTogglePinnedChat(scheduled)"
           @checkbox-change="handleChatQueueCheckboxChange(scheduled, $event)"
           @click="handleDefaultChatClick(scheduled)"
         />
@@ -4905,6 +5133,7 @@ defineExpose({
           v-if="
             showScheduledTitle &&
             !filteredScheduled.length &&
+            !canShowPinnedChat &&
             !isLoadingScheduled
           "
           class="no-chat-items-text text-disabled"

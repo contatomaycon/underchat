@@ -1,6 +1,9 @@
 import { injectable } from 'tsyringe';
 import { listChats } from './methods/listChats';
 import { listKanban } from './methods/listKanban';
+import { viewPinnedChat } from './methods/viewPinnedChat';
+import { pinChat } from './methods/pinChat';
+import { unpinChat } from './methods/unpinChat';
 import { viewUnreadSummary } from './methods/viewUnreadSummary';
 import { updateChatsUser } from './methods/updateChatsUser';
 import { viewNotificationSettings } from './methods/viewNotificationSettings';
@@ -59,6 +62,9 @@ import { listChannelsStatus } from '@/controllers/dashboard/methods/listChannels
 class ChatController {
   public listChats = listChats;
   public listKanban = listKanban;
+  public viewPinnedChat = viewPinnedChat;
+  public pinChat = pinChat;
+  public unpinChat = unpinChat;
   public viewUnreadSummary = viewUnreadSummary;
   public listMessageChats = listMessageChats;
   public updateChatsUser = updateChatsUser;

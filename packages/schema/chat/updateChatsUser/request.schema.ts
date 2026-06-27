@@ -4,7 +4,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const updateChatsUserRequestSchema = Type.Object({
   about: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   status: Type.Optional(Type.String({ enum: Object.values(EChatUserStatus) })),
-  notifications: Type.Boolean(),
+  notifications: Type.Optional(Type.Boolean()),
   notifications_sound: Type.Optional(Type.Boolean()),
   notifications_toast: Type.Optional(Type.Boolean()),
   notifications_browser: Type.Optional(Type.Boolean()),

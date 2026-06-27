@@ -3,6 +3,10 @@ import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer
 import { ListChatsUserResponse } from '@core/schema/chat/listChatsUser/response.schema';
 import { ChatUserUpdaterRepository } from '@core/repositories/chat/ChatUserUpdater.repository';
 import { UpdateChatsUserRequest } from '@core/schema/chat/updateChatsUser/request.schema';
+import {
+  ChatUserPinnedChatRow,
+  ChatUserPinnedRepository,
+} from '@core/repositories/chat/ChatUserPinned.repository';
 
 @injectable()
 export class ChatUserService {
@@ -10,7 +14,9 @@ export class ChatUserService {
     @inject(ChatUserViewerRepository)
     private readonly chatUserViewerRepository: ChatUserViewerRepository,
     @inject(ChatUserUpdaterRepository)
-    private readonly chatUserUpdaterRepository: ChatUserUpdaterRepository
+    private readonly chatUserUpdaterRepository: ChatUserUpdaterRepository,
+    @inject(ChatUserPinnedRepository)
+    private readonly chatUserPinnedRepository: ChatUserPinnedRepository
   ) {}
 
   viewChatUser = async (
@@ -24,5 +30,33 @@ export class ChatUserService {
     input: UpdateChatsUserRequest
   ): Promise<boolean> => {
     return this.chatUserUpdaterRepository.updateChatUser(userId, input);
+  };
+
+  listPinnedChatsByUserId = async (
+    userId: string
+  ): Promise<ChatUserPinnedChatRow[]> => {
+    return this.chatUserPinnedRepository.listByUserId(userId);
+  };
+
+  pinChat = async (userId: string, chatId: string): Promise<boolean> => {
+    return this.chatUserPinnedRepository.pinChat(userId, chatId);
+  };
+
+  unpinChat = async (userId: string, chatId: string): Promise<boolean> => {
+    return this.chatUserPinnedRepository.unpinChat(userId, chatId);
+  };
+
+  clearPinnedChatsByChatId = async (chatId: string): Promise<boolean> => {
+    return this.chatUserPinnedRepository.clearPinnedChatsByChatId(chatId);
+  };
+
+  clearPinnedChatsByUserIdAndChatIds = async (
+    userId: string,
+    chatIds: string[]
+  ): Promise<boolean> => {
+    return this.chatUserPinnedRepository.clearPinnedChatsByUserIdAndChatIds(
+      userId,
+      chatIds
+    );
   };
 }
