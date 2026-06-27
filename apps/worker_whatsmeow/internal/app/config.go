@@ -63,6 +63,11 @@ type Config struct {
 	SendQueueTimeout                     time.Duration
 	ConnectionHealthFailOnKafkaUnhealthy bool
 	ConnectionLifecycleDebugEnabled      bool
+	SelfMonitorInterval                  time.Duration
+	SelfMonitorInitialDelay              time.Duration
+	SelfMonitorFailureThreshold          int
+	SelfHealRecoveryWindow               time.Duration
+	DailyMaintenanceHour                 int
 
 	KafkaSendConsumerIdleRecreateInterval time.Duration
 	KafkaHandlerErrorBackoff              time.Duration
@@ -184,6 +189,11 @@ func LoadConfig() (Config, error) {
 		SendQueueTimeout:                      envDurationDefault("WORKER_SEND_QUEUE_TIMEOUT", kafkaConsumerStallTimeout),
 		ConnectionHealthFailOnKafkaUnhealthy:  envBoolDefault("WORKER_CONNECTION_HEALTH_FAIL_ON_KAFKA_UNHEALTHY", false),
 		ConnectionLifecycleDebugEnabled:       envBoolDefault("CONNECTION_LIFECYCLE_DEBUG_ENABLED", false),
+		SelfMonitorInterval:                   envMillisDurationDefault("WORKER_SELF_MONITOR_INTERVAL_MS", 30*time.Second),
+		SelfMonitorInitialDelay:               envMillisDurationDefault("WORKER_SELF_MONITOR_INITIAL_DELAY_MS", 15*time.Second),
+		SelfMonitorFailureThreshold:           envIntDefault("WORKER_SELF_MONITOR_FAILURE_THRESHOLD", 3),
+		SelfHealRecoveryWindow:                time.Duration(envIntDefault("WORKER_SELF_HEAL_RECOVERY_WINDOW_SECONDS", 10*60)) * time.Second,
+		DailyMaintenanceHour:                  envIntDefault("WORKER_DAILY_MAINTENANCE_HOUR", 2),
 		KafkaSendConsumerIdleRecreateInterval: envDurationDefault("WORKER_KAFKA_SEND_CONSUMER_IDLE_RECREATE_INTERVAL", 0),
 		KafkaHandlerErrorBackoff:              envDurationDefault("WORKER_KAFKA_HANDLER_ERROR_BACKOFF", time.Second),
 		KafkaConsumerStallTimeout:             kafkaConsumerStallTimeout,
@@ -258,6 +268,21 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.KafkaConsumerMaxStallRestarts <= 0 {
 		cfg.KafkaConsumerMaxStallRestarts = 3
+	}
+	if cfg.SelfMonitorInterval <= 0 {
+		cfg.SelfMonitorInterval = 30 * time.Second
+	}
+	if cfg.SelfMonitorInitialDelay < 0 {
+		cfg.SelfMonitorInitialDelay = 15 * time.Second
+	}
+	if cfg.SelfMonitorFailureThreshold <= 0 {
+		cfg.SelfMonitorFailureThreshold = 3
+	}
+	if cfg.SelfHealRecoveryWindow <= 0 {
+		cfg.SelfHealRecoveryWindow = 10 * time.Minute
+	}
+	if cfg.DailyMaintenanceHour < 0 || cfg.DailyMaintenanceHour > 23 {
+		cfg.DailyMaintenanceHour = 2
 	}
 	if cfg.SendIdempotencyInProgressTTL <= 0 {
 		cfg.SendIdempotencyInProgressTTL = 10 * time.Minute

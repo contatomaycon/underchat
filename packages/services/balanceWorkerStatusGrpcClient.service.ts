@@ -14,6 +14,7 @@ import { IResolveIncomingCallActionResponseProto } from '@core/common/interfaces
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
 import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/IGetTypingSimulationConfigRequestProto';
 import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
+import { IWorkerSelfHealingRequestProto } from '@core/common/interfaces/IWorkerSelfHealingRequestProto';
 import { normalizeTypingSimulationConfig } from '@core/common/functions/typingSimulationConfig';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
@@ -226,6 +227,83 @@ export class BalanceWorkerStatusGrpcClientService {
     await new Promise<void>((resolve, reject) => {
       (client as any).RegisterS3BackupFallbackUpload(
         protoPayload,
+        { deadline },
+        (err: ServiceError | null) => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
+  }
+
+  async requestWorkerSelfHealing(
+    payload: IWorkerSelfHealingRequestProto
+  ): Promise<void> {
+    const client = this.createClient();
+    const workerId = payload.worker_id?.trim();
+    const accountId = payload.account_id?.trim();
+    const workerTypeId = payload.worker_type_id?.trim();
+
+    if (!workerId || !accountId || !workerTypeId) {
+      client.close();
+      throw new Error(
+        'RequestWorkerSelfHealing requires worker_id, account_id and worker_type_id'
+      );
+    }
+
+    const runtimeGeneration =
+      typeof payload.runtime_generation === 'number'
+        ? payload.runtime_generation
+        : Number.parseInt(String(payload.runtime_generation ?? '0'), 10);
+    const recoveryWindowSeconds =
+      typeof payload.recovery_window_seconds === 'number'
+        ? payload.recovery_window_seconds
+        : Number.parseInt(String(payload.recovery_window_seconds ?? '0'), 10);
+
+    const protoPayload: IWorkerSelfHealingRequestProto = {
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: workerTypeId,
+      source: payload.source ?? '',
+      reason: payload.reason ?? '',
+      provider_state: payload.provider_state ?? '',
+      degraded_reason: payload.degraded_reason ?? '',
+      kafka_unhealthy: payload.kafka_unhealthy === true,
+      runtime_generation: Number.isFinite(runtimeGeneration)
+        ? Math.trunc(runtimeGeneration)
+        : 0,
+      debug_trace_id: payload.debug_trace_id ?? '',
+      recovery_window_seconds: Number.isFinite(recoveryWindowSeconds)
+        ? Math.trunc(recoveryWindowSeconds)
+        : 0,
+    };
+
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const metadata = new Metadata();
+
+    logLocalConnectionStatus('worker.self_heal_grpc.call', {
+      layer: payload.worker_type_id ?? 'worker',
+      provider: payload.worker_type_id,
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: workerTypeId,
+      source: protoPayload.source,
+      reason: protoPayload.reason,
+      provider_state: protoPayload.provider_state,
+      degraded_reason: protoPayload.degraded_reason,
+      kafka_unhealthy: protoPayload.kafka_unhealthy,
+      runtime_generation: protoPayload.runtime_generation,
+      recovery_window_seconds: protoPayload.recovery_window_seconds,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      (client as any).RequestWorkerSelfHealing(
+        protoPayload,
+        metadata,
         { deadline },
         (err: ServiceError | null) => {
           client.close();

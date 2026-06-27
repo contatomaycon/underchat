@@ -41,6 +41,7 @@ import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
+import { IWorkerSelfHealingRequestProto } from '@core/common/interfaces/IWorkerSelfHealingRequestProto';
 import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
@@ -74,6 +75,14 @@ import {
   ConnectionLifecycleDebugService,
 } from '@core/services/connectionLifecycleDebug.service';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
+import {
+  WorkerSelfHealRecoveryState,
+  parseWorkerSelfHealRecoveryState,
+  workerRecreateServerSlotKey,
+  workerSelfHealCooldownKey,
+  workerSelfHealInflightKey,
+  workerSelfHealRecoveryKey,
+} from '@core/common/functions/workerSelfHealingKeys';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -155,6 +164,24 @@ export class WorkerCommandHandlerService {
   private readonly qrAttemptTtlSeconds = 180;
   private readonly qrCacheTtlSeconds = 115;
   private readonly qrMaxAgeMs = 120_000;
+  private readonly selfHealInflightTtlSeconds = 20 * 60;
+  private readonly selfHealCooldownSeconds = 30 * 60;
+  private readonly selfHealRecoveryWindowSeconds = Math.max(
+    60,
+    Number(process.env.WORKER_SELF_HEAL_RECOVERY_WINDOW_SECONDS) || 10 * 60
+  );
+  private readonly recreateServerSlotCount = Math.max(
+    1,
+    Number(process.env.WORKER_RECREATE_SERVER_SLOT_COUNT) || 2
+  );
+  private readonly recreateServerSlotTtlMs = Math.max(
+    60_000,
+    Number(process.env.WORKER_RECREATE_SERVER_SLOT_TTL_MS) || 20 * 60_000
+  );
+  private readonly recreateServerSlotWaitMs = Math.max(
+    60_000,
+    Number(process.env.WORKER_RECREATE_SERVER_SLOT_WAIT_MS) || 30 * 60_000
+  );
   private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
   private connectionRequestAttempts = new Map<string, number>();
   private connectionRequestPayloads = new Map<
@@ -228,6 +255,51 @@ export class WorkerCommandHandlerService {
     }
 
     return undefined;
+  }
+
+  private normalizePositiveInt(value: unknown, fallback: number): number {
+    const parsed =
+      typeof value === 'number'
+        ? value
+        : Number.parseInt(String(value ?? ''), 10);
+
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.trunc(parsed)
+      : fallback;
+  }
+
+  private async redisSetNxSeconds(
+    key: string,
+    value: string,
+    ttlSeconds: number
+  ): Promise<boolean> {
+    const result = await this.redis.set(key, value, 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
+  private async redisSetNxMs(
+    key: string,
+    value: string,
+    ttlMs: number
+  ): Promise<boolean> {
+    const result = await this.redis.set(key, value, 'PX', ttlMs, 'NX');
+    return result === 'OK';
+  }
+
+  private isSelfHealingBlockedStatus(
+    status: EWorkerStatus | undefined
+  ): boolean {
+    return (
+      !status ||
+      [
+        EWorkerStatus.delete,
+        EWorkerStatus.deleting,
+        EWorkerStatus.creating,
+        EWorkerStatus.recreating,
+        EWorkerStatus.stopped,
+        EWorkerStatus.new,
+      ].includes(status)
+    );
   }
 
   private isTopicOrPartitionMissing(err: unknown): boolean {
@@ -1054,6 +1126,208 @@ export class WorkerCommandHandlerService {
     await this.notifyWorkerStatusWithLifecycle(input, workerStatusId);
   }
 
+  async requestWorkerSelfHealing(
+    input: IWorkerSelfHealingRequestProto
+  ): Promise<void> {
+    const workerId = input.worker_id?.trim();
+    const accountId = input.account_id?.trim();
+    const workerTypeId = input.worker_type_id?.trim() as
+      | EWorkerType
+      | undefined;
+
+    if (!workerId || !accountId || !workerTypeId) {
+      throw new Error(
+        'Missing required fields: worker_id, account_id, worker_type_id'
+      );
+    }
+
+    if (!Object.values(EWorkerType).includes(workerTypeId)) {
+      throw new Error('Invalid worker_type_id');
+    }
+
+    const current = await this.workerService.viewWorkerForMonitor(workerId);
+    if (
+      !current ||
+      current.account_id !== accountId ||
+      current.worker_type_id !== workerTypeId ||
+      current.deleted_at ||
+      current.lifecycle_operation_id ||
+      this.isSelfHealingBlockedStatus(current.worker_status_id as EWorkerStatus)
+    ) {
+      this.logDebug('service.self_heal.skipped_worker_not_eligible', {
+        trace_id: input.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerTypeId,
+        status: current?.worker_status_id,
+        lifecycle_operation_id: current?.lifecycle_operation_id ?? undefined,
+        source: input.source,
+        reason: input.reason,
+      });
+      return;
+    }
+
+    const inspection = await this.workerService
+      .inspectContainerWorkerById(workerId)
+      .catch(() => null);
+    if (!inspection?.exists || inspection.running !== true) {
+      this.logDebug('service.self_heal.skipped_container_not_running', {
+        trace_id: input.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerTypeId,
+        source: input.source,
+        reason: input.reason,
+      });
+      return;
+    }
+
+    const cooldownKey = workerSelfHealCooldownKey(workerId);
+    if (await this.redis.get(cooldownKey)) {
+      this.logDebug('service.self_heal.skipped_cooldown', {
+        trace_id: input.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerTypeId,
+        source: input.source,
+        reason: input.reason,
+      });
+      return;
+    }
+
+    const operationId = uuidv7();
+    const inflightKey = workerSelfHealInflightKey(workerId);
+    const inflightAcquired = await this.redisSetNxSeconds(
+      inflightKey,
+      operationId,
+      this.selfHealInflightTtlSeconds
+    );
+    if (!inflightAcquired) {
+      this.logDebug('service.self_heal.skipped_inflight', {
+        trace_id: input.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: workerTypeId,
+        source: input.source,
+        reason: input.reason,
+      });
+      return;
+    }
+
+    const recoveryWindowSeconds = this.normalizePositiveInt(
+      input.recovery_window_seconds,
+      this.selfHealRecoveryWindowSeconds
+    );
+    const now = new Date();
+    const deadline = new Date(now.getTime() + recoveryWindowSeconds * 1000);
+    const recoveryState: WorkerSelfHealRecoveryState = {
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: workerTypeId,
+      source: input.source || 'health_monitor',
+      reason: input.reason || 'worker_self_heal_requested',
+      provider_state: input.provider_state || undefined,
+      degraded_reason: input.degraded_reason || undefined,
+      kafka_unhealthy: input.kafka_unhealthy === true,
+      runtime_generation: this.optionalRuntimeGeneration(
+        input.runtime_generation
+      ),
+      operation_id: operationId,
+      requested_at: now.toISOString(),
+      deadline_at: deadline.toISOString(),
+      recovery_window_seconds: recoveryWindowSeconds,
+      debug_trace_id: input.debug_trace_id || undefined,
+    };
+
+    await this.redis.setex(
+      workerSelfHealRecoveryKey(workerId),
+      recoveryWindowSeconds + 10 * 60,
+      JSON.stringify(recoveryState)
+    );
+
+    const updateInput: IUpdateWorker = {
+      worker_id: workerId,
+      worker_status_id: EWorkerStatus.recreating,
+      lifecycle_operation_id: operationId,
+    };
+
+    const updated = await this.workerService.updateWorkerById(
+      accountId,
+      updateInput
+    );
+    if (!updated) {
+      await this.redis.del(inflightKey, workerSelfHealRecoveryKey(workerId));
+      return;
+    }
+
+    const payload: IWorkerPayload = {
+      action: EWorkerAction.recreate,
+      worker_id: workerId,
+      account_id: accountId,
+      server_id: current.server_id,
+      worker_status_id: EWorkerStatus.recreating,
+      worker_type_id: workerTypeId,
+      previous_worker_status_id: current.worker_status_id as EWorkerStatus,
+      lifecycle_operation_id: operationId,
+      debug_trace_id: input.debug_trace_id,
+    };
+
+    const statusPayload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: workerTypeId,
+      worker_status_id: EWorkerStatus.recreating,
+      provider_state: input.provider_state || undefined,
+      degraded_reason: input.degraded_reason || input.reason || undefined,
+      debug_trace_id: input.debug_trace_id,
+    };
+
+    await Promise.all([
+      this.centrifugoPublish(statusPayload),
+      this.centrifugoService.publish(channelsConfigCentrifugo(), payload),
+    ]).catch((error) => {
+      console.error('Failed to publish self-heal recreating status', {
+        workerId,
+        accountId,
+        error: getErrorMessage(error),
+      });
+    });
+
+    this.logDebug('service.self_heal.accepted', {
+      trace_id: input.debug_trace_id,
+      layer: 'service',
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: workerTypeId,
+      lifecycle_operation_id: operationId,
+      source: recoveryState.source,
+      reason: recoveryState.reason,
+      recovery_deadline_at: recoveryState.deadline_at,
+    });
+
+    void this.handle(payload)
+      .catch((error) => {
+        console.error('Worker self-heal recreate failed', {
+          workerId,
+          accountId,
+          workerTypeId,
+          error: getErrorMessage(error),
+        });
+      })
+      .finally(() => {
+        void this.redis
+          .setex(cooldownKey, this.selfHealCooldownSeconds, operationId)
+          .catch(() => undefined);
+        void this.redis.del(inflightKey).catch(() => undefined);
+      });
+  }
+
   private async notifyWorkerStatusWithLifecycle(
     input: INotifyWorkerStatusRequestProto,
     workerStatusId: EWorkerStatus | undefined
@@ -1256,6 +1530,7 @@ export class WorkerCommandHandlerService {
       connection_date: connectionDate,
     });
     await this.clearQrAttemptAfterSuccessfulTerminal(payload);
+    await this.clearSelfHealRecoveryAfterNotification(payload, workerStatusId);
     this.logDebug('service.notify_status.db_update', {
       trace_id: payload.debug_trace_id,
       layer: 'service',
@@ -1446,7 +1721,7 @@ export class WorkerCommandHandlerService {
       return workerStatusId;
     }
 
-    if (payload.session_ready === true) {
+    if (this.isStrictConnectedPayload(payload)) {
       await this.enrichConnectedPayloadFromRuntimeHealth(payload);
       this.logDebug('service.notify_status.session_ready_payload_accepted', {
         trace_id: payload.debug_trace_id,
@@ -1590,8 +1865,9 @@ export class WorkerCommandHandlerService {
       health.probe_latency_ms
     );
 
-    if (health.phone?.trim()) {
-      payload.phone = health.phone.trim();
+    const healthPhone = this.normalizeConnectionPhone(health.phone);
+    if (healthPhone) {
+      payload.phone = healthPhone;
     }
   }
 
@@ -3944,6 +4220,25 @@ export class WorkerCommandHandlerService {
   }
 
   private async recreateWorker(data: IWorkerPayload): Promise<PublishResult> {
+    try {
+      return await this.runWithRecreateServerSlot(data, () =>
+        this.performRecreateWorker(data)
+      );
+    } catch (error) {
+      await this.updateWorkerErrorStatus(
+        data.worker_id,
+        data.account_id,
+        data.action,
+        data.server_id,
+        data.lifecycle_operation_id
+      ).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async performRecreateWorker(
+    data: IWorkerPayload
+  ): Promise<PublishResult> {
     this.logDebug('service.recreate_worker.start', {
       trace_id: data.debug_trace_id,
       layer: 'service',
@@ -4253,6 +4548,68 @@ export class WorkerCommandHandlerService {
     return result;
   }
 
+  private async runWithRecreateServerSlot<T>(
+    data: IWorkerPayload,
+    callback: () => Promise<T>
+  ): Promise<T> {
+    const token = `${data.worker_id}:${data.lifecycle_operation_id ?? uuidv7()}`;
+    const startedAt = Date.now();
+    let slotKey: string | null = null;
+
+    while (Date.now() - startedAt <= this.recreateServerSlotWaitMs) {
+      for (let slot = 0; slot < this.recreateServerSlotCount; slot++) {
+        const key = workerRecreateServerSlotKey(data.server_id, slot);
+        if (await this.redisSetNxMs(key, token, this.recreateServerSlotTtlMs)) {
+          slotKey = key;
+          this.logDebug('service.recreate_worker.server_slot_acquired', {
+            trace_id: data.debug_trace_id,
+            layer: 'service',
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_type_id: data.worker_type_id,
+            lifecycle_operation_id: data.lifecycle_operation_id,
+            server_id: data.server_id,
+            slot,
+            wait_ms: Date.now() - startedAt,
+          });
+          break;
+        }
+      }
+
+      if (slotKey) {
+        break;
+      }
+
+      await this.sleep(1000);
+    }
+
+    if (!slotKey) {
+      throw new Error(
+        `Timed out waiting for recreate slot on server ${data.server_id}`
+      );
+    }
+
+    try {
+      return await callback();
+    } finally {
+      await this.releaseRecreateServerSlot(slotKey, token);
+    }
+  }
+
+  private async releaseRecreateServerSlot(
+    slotKey: string,
+    token: string
+  ): Promise<void> {
+    try {
+      const current = await this.redis.get(slotKey);
+      if (current === token) {
+        await this.redis.del(slotKey);
+      }
+    } catch {
+      await this.redis.del(slotKey).catch(() => undefined);
+    }
+  }
+
   private async publishWorkerDisponible(
     data: IWorkerPayload
   ): Promise<PublishResult> {
@@ -4290,7 +4647,7 @@ export class WorkerCommandHandlerService {
     state: IBaileysConnectionState | undefined
   ): boolean {
     return (
-      state?.session_ready === true &&
+      this.isStrictConnectedPayload(state ?? {}) &&
       (state?.worker_status_id === EWorkerStatus.online ||
         state?.status === EBaileysConnectionStatus.connected ||
         state?.code === ECodeMessage.connectionEstablished)
@@ -4303,11 +4660,81 @@ export class WorkerCommandHandlerService {
   ): boolean {
     return (
       health?.session_ready === true &&
+      health.can_send === true &&
+      health.can_receive_runtime === true &&
+      health.authenticated === true &&
       health?.activated === true &&
       health?.standby !== true &&
       (!health.worker_type_id || health.worker_type_id === workerType) &&
       !health.error
     );
+  }
+
+  private isStrictConnectedPayload(
+    payload: Partial<IBaileysConnectionState>
+  ): boolean {
+    return (
+      payload.session_ready === true &&
+      payload.can_send === true &&
+      payload.can_receive_runtime === true &&
+      payload.authenticated === true
+    );
+  }
+
+  private normalizeConnectionPhone(
+    phone: string | null | undefined
+  ): string | undefined {
+    const normalized = phone?.trim();
+    return normalized ? normalized : undefined;
+  }
+
+  private async clearSelfHealRecoveryAfterNotification(
+    payload: IBaileysConnectionState,
+    workerStatusId: EWorkerStatus
+  ): Promise<void> {
+    const workerId = payload.worker_id;
+    if (!workerId) {
+      return;
+    }
+
+    if (
+      workerStatusId === EWorkerStatus.online &&
+      this.isStrictConnectedPayload(payload)
+    ) {
+      await this.redis.del(
+        workerSelfHealRecoveryKey(workerId),
+        workerSelfHealInflightKey(workerId)
+      );
+      this.logDebug('service.self_heal.recovery_cleared_healthy', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        status: payload.status,
+        worker_status_id: workerStatusId,
+      });
+      return;
+    }
+
+    if (
+      workerStatusId === EWorkerStatus.offline &&
+      payload.degraded_reason === 'self_heal_recovery_timeout'
+    ) {
+      const recoveryRaw = await this.redis.get(
+        workerSelfHealRecoveryKey(workerId)
+      );
+      const recovery = parseWorkerSelfHealRecoveryState(recoveryRaw);
+      await this.redis.del(
+        workerSelfHealRecoveryKey(workerId),
+        workerSelfHealInflightKey(workerId)
+      );
+      await this.redis.setex(
+        workerSelfHealCooldownKey(workerId),
+        this.selfHealCooldownSeconds,
+        recovery?.operation_id ?? payload.debug_trace_id ?? 'timeout'
+      );
+    }
   }
 
   private async probeRecreatedWorkerRuntimeHealth(
@@ -4333,7 +4760,8 @@ export class WorkerCommandHandlerService {
           status: EBaileysConnectionStatus.connected,
           worker_id: data.worker_id,
           account_id: data.account_id,
-          phone: health?.phone,
+          worker_type_id: workerType,
+          phone: this.normalizeConnectionPhone(health?.phone),
           worker_status_id: EWorkerStatus.online,
           session_ready: true,
           can_send: health?.can_send,
@@ -4411,32 +4839,83 @@ export class WorkerCommandHandlerService {
         return { workerStatusId: EWorkerStatus.disponible };
       }
 
+      const connectionState =
+        await this.enrichRecreatedConnectionStateFromRuntimeHealth(
+          data,
+          workerType,
+          {
+            code: response?.code ?? ECodeMessage.connectionEstablished,
+            status:
+              response?.status === EBaileysConnectionStatus.connected
+                ? response.status
+                : EBaileysConnectionStatus.connected,
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            phone: this.normalizeConnectionPhone(response?.phone),
+            worker_status_id: EWorkerStatus.online,
+            debug_trace_id: data.debug_trace_id,
+            session_ready: true,
+            can_send: response?.can_send,
+            can_receive_runtime: response?.can_receive_runtime,
+            authenticated: response?.authenticated,
+            provider_state: response?.provider_state,
+            degraded_reason: response?.degraded_reason,
+            last_probe_at: response?.last_probe_at,
+            probe_latency_ms: response?.probe_latency_ms,
+          }
+        );
+
       return {
         workerStatusId: EWorkerStatus.online,
-        connectionState: {
-          code: response?.code ?? ECodeMessage.connectionEstablished,
-          status:
-            response?.status === EBaileysConnectionStatus.connected
-              ? response.status
-              : EBaileysConnectionStatus.connected,
-          worker_id: data.worker_id,
-          account_id: data.account_id,
-          phone: response?.phone,
-          worker_status_id: EWorkerStatus.online,
-          debug_trace_id: data.debug_trace_id,
-          session_ready: true,
-          can_send: response?.can_send,
-          can_receive_runtime: response?.can_receive_runtime,
-          authenticated: response?.authenticated,
-          provider_state: response?.provider_state,
-          degraded_reason: response?.degraded_reason,
-          last_probe_at: response?.last_probe_at,
-          probe_latency_ms: response?.probe_latency_ms,
-        },
+        connectionState,
       };
     } catch {
       return { workerStatusId: EWorkerStatus.disponible };
     }
+  }
+
+  private async enrichRecreatedConnectionStateFromRuntimeHealth(
+    data: IWorkerPayload,
+    workerType: EWorkerType,
+    connectionState: IBaileysConnectionState
+  ): Promise<IBaileysConnectionState> {
+    const healthReconciliation = await this.probeRecreatedWorkerRuntimeHealth(
+      data,
+      workerType
+    );
+    const healthState = healthReconciliation?.connectionState;
+    const responsePhone = this.normalizeConnectionPhone(connectionState.phone);
+    const healthPhone = this.normalizeConnectionPhone(healthState?.phone);
+
+    if (!healthState) {
+      return {
+        ...connectionState,
+        phone: responsePhone,
+      };
+    }
+
+    return {
+      ...connectionState,
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id:
+        connectionState.worker_type_id ?? healthState.worker_type_id,
+      phone: healthPhone ?? responsePhone,
+      worker_status_id: EWorkerStatus.online,
+      debug_trace_id: connectionState.debug_trace_id ?? data.debug_trace_id,
+      session_ready: true,
+      can_send: healthState.can_send ?? connectionState.can_send,
+      can_receive_runtime:
+        healthState.can_receive_runtime ?? connectionState.can_receive_runtime,
+      authenticated: healthState.authenticated ?? connectionState.authenticated,
+      provider_state:
+        healthState.provider_state ?? connectionState.provider_state,
+      degraded_reason:
+        healthState.degraded_reason ?? connectionState.degraded_reason,
+      last_probe_at: healthState.last_probe_at ?? connectionState.last_probe_at,
+      probe_latency_ms:
+        healthState.probe_latency_ms ?? connectionState.probe_latency_ms,
+    };
   }
 
   private async waitForRecreatedWorkerOnlineConfirmation(
@@ -4488,8 +4967,11 @@ export class WorkerCommandHandlerService {
 
     if (reconciliation.workerStatusId === EWorkerStatus.online) {
       inputUpdate.connection_date = currentTime();
-      if (reconciliation.connectionState?.phone) {
-        inputUpdate.number = reconciliation.connectionState.phone;
+      const phone = this.normalizeConnectionPhone(
+        reconciliation.connectionState?.phone
+      );
+      if (phone) {
+        inputUpdate.number = phone;
       }
     }
 
@@ -4511,8 +4993,23 @@ export class WorkerCommandHandlerService {
       status: EBaileysConnectionStatus.connected,
       worker_id: data.worker_id,
       account_id: data.account_id,
-      phone: reconciliation.connectionState?.phone,
+      worker_type_id:
+        data.worker_type_id ?? reconciliation.connectionState?.worker_type_id,
+      phone: this.normalizeConnectionPhone(
+        reconciliation.connectionState?.phone
+      ),
       worker_status_id: EWorkerStatus.online,
+      debug_trace_id:
+        reconciliation.connectionState?.debug_trace_id ?? data.debug_trace_id,
+      session_ready: true,
+      can_send: reconciliation.connectionState?.can_send ?? true,
+      can_receive_runtime:
+        reconciliation.connectionState?.can_receive_runtime ?? true,
+      authenticated: reconciliation.connectionState?.authenticated ?? true,
+      provider_state: reconciliation.connectionState?.provider_state,
+      degraded_reason: reconciliation.connectionState?.degraded_reason,
+      last_probe_at: reconciliation.connectionState?.last_probe_at,
+      probe_latency_ms: reconciliation.connectionState?.probe_latency_ms,
     };
 
     const [result] = await Promise.all([

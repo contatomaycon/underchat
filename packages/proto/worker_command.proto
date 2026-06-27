@@ -9,6 +9,7 @@ service WorkerCommand {
   rpc CleanupWorker(WorkerPayload) returns (WorkerCommandResponse);
   rpc ChangeConnectionStatus(ChangeConnectionStatusRequest) returns (WorkerCommandResponse);
   rpc NotifyWorkerStatus(NotifyWorkerStatusRequest) returns (WorkerCommandResponse);
+  rpc RequestWorkerSelfHealing(WorkerSelfHealingRequest) returns (WorkerCommandResponse);
   rpc ResolveIncomingCallAction(ResolveIncomingCallActionRequest) returns (ResolveIncomingCallActionResponse);
   rpc GetTypingSimulationConfig(GetTypingSimulationConfigRequest) returns (GetTypingSimulationConfigResponse);
   rpc RegisterS3BackupFallbackUpload(RegisterS3BackupFallbackUploadRequest) returns (WorkerCommandResponse);
@@ -94,6 +95,20 @@ message NotifyWorkerStatusRequest {
   string last_probe_at = 36;
   int32 probe_latency_ms = 37;
   string worker_type_id = 38;
+}
+
+message WorkerSelfHealingRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string worker_type_id = 3;
+  string source = 4;
+  string reason = 5;
+  string provider_state = 6;
+  string degraded_reason = 7;
+  bool kafka_unhealthy = 8;
+  int32 runtime_generation = 9;
+  string debug_trace_id = 10;
+  int32 recovery_window_seconds = 11;
 }
 
 message ResolveIncomingCallActionRequest {

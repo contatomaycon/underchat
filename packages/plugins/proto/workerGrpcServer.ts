@@ -26,6 +26,7 @@ import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
+import { IWorkerSelfHealingRequestProto } from '@core/common/interfaces/IWorkerSelfHealingRequestProto';
 import {
   IActivateWarmWorkerRequestProto,
   ICreateWarmWorkerRequestProto,
@@ -322,6 +323,41 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleRequestWorkerSelfHealing = (
+    call: ServerUnaryCall<IWorkerSelfHealingRequestProto, unknown>,
+    callback: sendUnaryData<unknown>
+  ) => {
+    const req = call.request;
+
+    logLocalConnectionStatus('service.command_grpc.self_heal_received', {
+      layer: 'service.grpc',
+      worker_id: req.worker_id,
+      account_id: req.account_id,
+      worker_type_id: req.worker_type_id,
+      source: req.source,
+      reason: req.reason,
+      provider_state: req.provider_state,
+      degraded_reason: req.degraded_reason,
+      kafka_unhealthy: req.kafka_unhealthy,
+      runtime_generation: req.runtime_generation,
+      recovery_window_seconds: req.recovery_window_seconds,
+    });
+
+    handler
+      .requestWorkerSelfHealing(req)
+      .then(() => {
+        callback(null, {});
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id },
+          'RequestWorkerSelfHealing gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   const handleRegisterS3BackupFallbackUpload = (
     call: ServerUnaryCall<IRegisterS3BackupFallbackUploadRequestProto, unknown>,
     callback: sendUnaryData<unknown>
@@ -494,6 +530,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     ) => handleUnary(call, cb, 'cleanup'),
     ChangeConnectionStatus: handleChangeConnectionStatus,
     NotifyWorkerStatus: handleNotifyWorkerStatus,
+    RequestWorkerSelfHealing: handleRequestWorkerSelfHealing,
     ResolveIncomingCallAction: handleResolveIncomingCallAction,
     GetTypingSimulationConfig: handleGetTypingSimulationConfig,
     RegisterS3BackupFallbackUpload: handleRegisterS3BackupFallbackUpload,

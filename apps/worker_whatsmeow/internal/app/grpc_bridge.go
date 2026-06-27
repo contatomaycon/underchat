@@ -482,6 +482,27 @@ func (c *BalanceGRPCClient) NotifyWorkerStatus(ctx context.Context, state Connec
 	return nil
 }
 
+func (c *BalanceGRPCClient) RequestWorkerSelfHealing(ctx context.Context, payload SelfHealingRequest) error {
+	descs, err := getDescriptors()
+	if err != nil {
+		return err
+	}
+	req := newDynamicMessage(descs.commandSelfHealingReq)
+	setDynamicString(req, "worker_id", payload.WorkerID)
+	setDynamicString(req, "account_id", payload.AccountID)
+	setDynamicString(req, "worker_type_id", payload.WorkerTypeID)
+	setDynamicString(req, "source", payload.Source)
+	setDynamicString(req, "reason", payload.Reason)
+	setDynamicString(req, "provider_state", payload.ProviderState)
+	setDynamicString(req, "degraded_reason", payload.DegradedReason)
+	setDynamicBool(req, "kafka_unhealthy", payload.KafkaUnhealthy)
+	setDynamicInt32(req, "runtime_generation", int32(payload.RuntimeGeneration))
+	setDynamicString(req, "debug_trace_id", payload.DebugTraceID)
+	setDynamicInt32(req, "recovery_window_seconds", int32(payload.RecoveryWindowSeconds))
+
+	return c.invoke(ctx, "/worker_command.WorkerCommand/RequestWorkerSelfHealing", req, newDynamicMessage(descs.commandResponse))
+}
+
 func (c *BalanceGRPCClient) RegisterS3BackupFallbackUpload(ctx context.Context, payload S3BackupFallbackUpload) error {
 	descs, err := getDescriptors()
 	if err != nil {

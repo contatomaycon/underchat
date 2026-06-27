@@ -439,6 +439,110 @@ describe('WorkerCommandHandlerService connection', () => {
     jest.restoreAllMocks();
   });
 
+  it('accepts self-heal requests by scheduling recreate without removing session or volume', async () => {
+    const deps = buildHandler();
+    const handleSpy = jest
+      .spyOn(deps.handler, 'handle')
+      .mockResolvedValueOnce(undefined);
+
+    await deps.handler.requestWorkerSelfHealing({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      source: 'health_monitor',
+      reason: 'send_probe_failed',
+      provider_state: 'connected',
+      degraded_reason: 'send_probe_failed',
+      kafka_unhealthy: false,
+      runtime_generation: 4,
+      recovery_window_seconds: 600,
+      debug_trace_id: 'trace-1',
+    });
+
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.recreating,
+        lifecycle_operation_id: 'uuid-v7',
+      })
+    );
+    expect(deps.redisStore.get('worker:self-heal:recovery:worker-1')).toContain(
+      'send_probe_failed'
+    );
+    expect(handleSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: EWorkerAction.recreate,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        server_id: 'server-1',
+        worker_type_id: EWorkerType.wwebjs,
+        previous_worker_status_id: EWorkerStatus.disponible,
+        lifecycle_operation_id: 'uuid-v7',
+      })
+    );
+    const recreatePayload = handleSpy.mock.calls[0]?.[0] as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(recreatePayload).not.toHaveProperty('remove_session');
+    expect(recreatePayload).not.toHaveProperty('remove_volume');
+  });
+
+  it('deduplicates self-heal requests when another recreate is inflight', async () => {
+    const deps = buildHandler();
+    const handleSpy = jest.spyOn(deps.handler, 'handle');
+    deps.redisStore.set('worker:self-heal:inflight:worker-1', 'existing');
+
+    await deps.handler.requestWorkerSelfHealing({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      source: 'health_monitor',
+      reason: 'kafka_unhealthy',
+      kafka_unhealthy: true,
+    });
+
+    expect(handleSpy).not.toHaveBeenCalled();
+    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
+  });
+
+  it('uses and releases a per-server recreate slot in the real recreate flow', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.wwebjs,
+      previous_worker_status_id: EWorkerStatus.online,
+    });
+
+    expect(deps.redis.set).toHaveBeenCalledWith(
+      'worker:recreate:server:server-1:slot:0',
+      expect.stringContaining('worker-1:'),
+      'PX',
+      expect.any(Number),
+      'NX'
+    );
+    expect(deps.redis.del).toHaveBeenCalledWith(
+      'worker:recreate:server:server-1:slot:0'
+    );
+    expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
+      expect.any(String),
+      'worker-1',
+      'account-1',
+      false,
+      expect.any(String),
+      expect.any(Number),
+      undefined,
+      expect.objectContaining({ workerTypeId: EWorkerType.wwebjs }),
+      'worker-1',
+      { requireExistingVolume: true }
+    );
+  });
+
   it('rejects legacy QR status changes without publishing a connection intent', async () => {
     const deps = buildHandler();
 
@@ -736,6 +840,67 @@ describe('WorkerCommandHandlerService connection', () => {
         account_id: 'account-1',
         worker_type_id: EWorkerType.whatsmeow,
         worker_status_id: EWorkerStatus.online,
+        session_ready: true,
+      })
+    );
+  });
+
+  it('backfills the phone from runtime health when a strict online notification arrives without a phone', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.runtimeHealth.mockResolvedValueOnce({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      activated: true,
+      ready: true,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      standby: false,
+      has_session: true,
+      runtime_state: 'active',
+      qr_stream_ready: true,
+      provider_state: 'CONNECTED',
+      phone: '5561888887777',
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.online,
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      { worker_id: 'worker-1' },
+      EWorkerType.wwebjs
+    );
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        number: '5561888887777',
+        connection_date: expect.any(String),
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        phone: '5561888887777',
         session_ready: true,
       })
     );
@@ -2449,6 +2614,72 @@ describe('WorkerCommandHandlerService connection', () => {
         worker_id: 'worker-1',
         account_id: 'account-1',
         worker_status_id: EWorkerStatus.online,
+      })
+    );
+  });
+
+  it('backfills the phone from runtime health when a recreated worker reconnects without a phone in the connection response', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.requestConnection.mockResolvedValueOnce(
+      {
+        ...buildConnectedState(),
+        phone: '',
+      }
+    );
+    deps.workerBaileysGrpcClientService.runtimeHealth.mockResolvedValueOnce({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      activated: true,
+      ready: true,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      standby: false,
+      has_session: true,
+      runtime_state: 'active',
+      qr_stream_ready: true,
+      provider_state: 'CONNECTED',
+      phone: '5561999999999',
+    });
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      previous_worker_status_id: EWorkerStatus.online,
+    });
+
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).toHaveBeenCalledWith(
+      'worker-1',
+      { worker_id: 'worker-1' },
+      EWorkerType.wwebjs
+    );
+    expect(deps.workerService.updateWorkerById).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.online,
+        container_id: 'container-1',
+        number: '5561999999999',
+        connection_date: expect.any(String),
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      expect.stringContaining('account-1'),
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_status_id: EWorkerStatus.online,
+        phone: '5561999999999',
+        session_ready: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
       })
     );
   });

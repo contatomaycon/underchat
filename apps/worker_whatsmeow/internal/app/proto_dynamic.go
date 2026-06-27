@@ -29,6 +29,7 @@ type dynamicDescriptors struct {
 	commandTypingSimulationReq      protoreflect.MessageDescriptor
 	commandTypingSimulationResp     protoreflect.MessageDescriptor
 	commandRegisterS3BackupFallback protoreflect.MessageDescriptor
+	commandSelfHealingReq           protoreflect.MessageDescriptor
 }
 
 var (
@@ -222,6 +223,19 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				int32Field("probe_latency_ms", 37),
 				stringField("worker_type_id", 38),
 			),
+			message("WorkerSelfHealingRequest",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				stringField("worker_type_id", 3),
+				stringField("source", 4),
+				stringField("reason", 5),
+				stringField("provider_state", 6),
+				stringField("degraded_reason", 7),
+				boolField("kafka_unhealthy", 8),
+				int32Field("runtime_generation", 9),
+				stringField("debug_trace_id", 10),
+				int32Field("recovery_window_seconds", 11),
+			),
 			message("ResolveIncomingCallActionRequest",
 				stringField("worker_id", 1),
 				stringField("account_id", 2),
@@ -275,6 +289,7 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 			Name: proto.String("WorkerCommand"),
 			Method: []*descriptorpb.MethodDescriptorProto{
 				method("NotifyWorkerStatus", ".worker_command.NotifyWorkerStatusRequest", ".worker_command.WorkerCommandResponse"),
+				method("RequestWorkerSelfHealing", ".worker_command.WorkerSelfHealingRequest", ".worker_command.WorkerCommandResponse"),
 				method("ResolveIncomingCallAction", ".worker_command.ResolveIncomingCallActionRequest", ".worker_command.ResolveIncomingCallActionResponse"),
 				method("GetTypingSimulationConfig", ".worker_command.GetTypingSimulationConfigRequest", ".worker_command.GetTypingSimulationConfigResponse"),
 				method("RegisterS3BackupFallbackUpload", ".worker_command.RegisterS3BackupFallbackUploadRequest", ".worker_command.WorkerCommandResponse"),
@@ -302,6 +317,7 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 		commandTypingSimulationReq:        commandFile.Messages().ByName("GetTypingSimulationConfigRequest"),
 		commandTypingSimulationResp:       commandFile.Messages().ByName("GetTypingSimulationConfigResponse"),
 		commandRegisterS3BackupFallback:   commandFile.Messages().ByName("RegisterS3BackupFallbackUploadRequest"),
+		commandSelfHealingReq:             commandFile.Messages().ByName("WorkerSelfHealingRequest"),
 	}, nil
 }
 

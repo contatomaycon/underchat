@@ -681,9 +681,7 @@ export class WorkerMonitorService {
       this.normalizePhone(connectionHealth.phone) ??
       this.normalizePhone(view?.number) ??
       null;
-    const connectionDate = phone
-      ? currentTime()
-      : (view?.connection_date ?? null);
+    const connectionDate = currentTime();
 
     await this.workerService.updateWorkerPhoneStatusConnectionDate({
       worker_id: worker.worker_id,
@@ -941,9 +939,20 @@ export class WorkerMonitorService {
     const record = payload as {
       session_ready?: unknown;
       connected?: unknown;
+      can_send?: unknown;
+      can_receive_runtime?: unknown;
+      authenticated?: unknown;
+      kafka_unhealthy?: unknown;
     };
 
-    return record.session_ready === true && record.connected === true;
+    return (
+      record.session_ready === true &&
+      record.connected === true &&
+      record.can_send === true &&
+      record.can_receive_runtime === true &&
+      record.authenticated === true &&
+      record.kafka_unhealthy !== true
+    );
   };
 
   private readonly getConnectionHealthPayload = (body: unknown): unknown => {

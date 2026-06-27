@@ -185,6 +185,20 @@ type WorkerRuntimeHealthResponse struct {
 	Error             string `json:"error,omitempty"`
 }
 
+type SelfHealingRequest struct {
+	WorkerID              string `json:"worker_id"`
+	AccountID             string `json:"account_id"`
+	WorkerTypeID          string `json:"worker_type_id"`
+	Source                string `json:"source"`
+	Reason                string `json:"reason,omitempty"`
+	ProviderState         string `json:"provider_state,omitempty"`
+	DegradedReason        string `json:"degraded_reason,omitempty"`
+	KafkaUnhealthy        bool   `json:"kafka_unhealthy,omitempty"`
+	RuntimeGeneration     int    `json:"runtime_generation,omitempty"`
+	DebugTraceID          string `json:"debug_trace_id,omitempty"`
+	RecoveryWindowSeconds int    `json:"recovery_window_seconds,omitempty"`
+}
+
 type MessageKey struct {
 	RemoteJID       string `json:"remote_jid,omitempty"`
 	RemoteJIDAlt    string `json:"remote_jid_alt,omitempty"`

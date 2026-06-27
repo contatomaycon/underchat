@@ -11,8 +11,12 @@ import fp from 'fastify-plugin';
 import { container } from 'tsyringe';
 import { BaileysHealthCheckService } from '@core/services/baileys/methods/healthCheck.service';
 import { BaileysService } from '@core/services/baileys';
+import { WorkerSelfMonitorService } from '@core/services/workerSelfMonitor.service';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import {
+  getKafkaConsumerHealthSnapshots,
   getWorkerConsumers,
+  hasUnhealthyKafkaConsumer,
   registerWorkerConsumer,
   startKafkaConsumerSupervisor,
 } from './registry';
@@ -37,6 +41,24 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
 
   void startDeferredConsumers(server);
   startKafkaConsumerSupervisor(server.log);
+  startWorkerSelfMonitor(server);
+}
+
+function startWorkerSelfMonitor(server: FastifyInstance): void {
+  const monitor = container.resolve(WorkerSelfMonitorService);
+  const healthCheckService = container.resolve(BaileysHealthCheckService);
+  monitor.start({
+    provider: EWorkerType.baileys,
+    workerId: baileysEnvironment.baileysWorkerId,
+    accountId: baileysEnvironment.baileysAccountId,
+    workerTypeId: EWorkerType.baileys,
+    runtimeGeneration: baileysEnvironment.runtimeGeneration,
+    warmStandby: baileysEnvironment.isWarmStandby,
+    getReadiness: () => healthCheckService.verifyCurrentSession(),
+    hasUnhealthyKafkaConsumer,
+    getKafkaConsumerHealthSnapshots,
+    log: server.log,
+  });
 }
 
 async function startDeferredConsumers(server: FastifyInstance): Promise<void> {
@@ -129,6 +151,7 @@ const baileysConsumersOnListenHook = fp(async (fastify) => {
 
   fastify.addHook('onClose', async () => {
     const baileysService = container.resolve(BaileysService);
+    container.resolve(WorkerSelfMonitorService).stop();
     await Promise.allSettled(
       getWorkerConsumers()
         .map((consumer) => consumer?.close?.() ?? Promise.resolve())

@@ -231,6 +231,7 @@ func (w *Worker) startActivatedRuntimeLocked(ctx context.Context) error {
 			log.Printf("whatsmeow kafka consumers async start failed worker_id=%s error=%v", w.cfg.WorkerID, err)
 		}
 	}()
+	go w.startSelfMonitor(ctx)
 	return nil
 }
 

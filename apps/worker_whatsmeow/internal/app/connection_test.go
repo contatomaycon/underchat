@@ -108,6 +108,24 @@ func TestOutboundReliabilityConfigDefaults(t *testing.T) {
 	if cfg.KafkaHandlerErrorBackoff != time.Second {
 		t.Fatalf("unexpected kafka handler error backoff %s", cfg.KafkaHandlerErrorBackoff)
 	}
+	if cfg.DailyMaintenanceHour != 2 {
+		t.Fatalf("unexpected daily maintenance hour %d", cfg.DailyMaintenanceHour)
+	}
+}
+
+func TestDailyMaintenanceHourConfigFromEnv(t *testing.T) {
+	t.Setenv("WORKER_ID", "worker-1")
+	t.Setenv("ACCOUNT_ID", "account-1")
+	t.Setenv("KAFKA_BROKER", "localhost:9092")
+	t.Setenv("WORKER_DAILY_MAINTENANCE_HOUR", "4")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.DailyMaintenanceHour != 4 {
+		t.Fatalf("unexpected daily maintenance hour %d", cfg.DailyMaintenanceHour)
+	}
 }
 
 func TestOutboundClaimStaleDetection(t *testing.T) {
@@ -379,5 +397,43 @@ func TestLinkedDeviceProfileMatchesBaileysDesktopMacOS(t *testing.T) {
 	}
 	if whatsmeowPairClientDesktop != whatsmeow.PairClientElectron {
 		t.Fatalf("expected pairing client type to be electron, got %q", whatsmeowPairClientDesktop)
+	}
+}
+
+func TestSelfMonitorHealthReadyRequiresRuntimeAndKafkaHealth(t *testing.T) {
+	health := map[string]any{
+		"session_ready":       true,
+		"can_send":            true,
+		"can_receive_runtime": true,
+		"authenticated":       true,
+	}
+
+	if !selfMonitorHealthReady(health, false) {
+		t.Fatal("expected strict runtime health to be ready")
+	}
+	if selfMonitorHealthReady(health, true) {
+		t.Fatal("kafka degradation must make self monitor unhealthy")
+	}
+
+	health["can_send"] = false
+	if selfMonitorHealthReady(health, false) {
+		t.Fatal("send capability is required for healthy status")
+	}
+}
+
+func TestSelfMonitorEscalationRules(t *testing.T) {
+	waitingForQR := map[string]any{
+		"provider_state":      "awaiting_qr",
+		"degraded_reason":     "no_session",
+		"session_ready":       false,
+		"can_send":            false,
+		"can_receive_runtime": false,
+		"authenticated":       false,
+	}
+	if selfMonitorShouldEscalate(waitingForQR, false) {
+		t.Fatal("waiting for user QR should not recreate the container")
+	}
+	if !selfMonitorShouldEscalate(waitingForQR, true) {
+		t.Fatal("persistent kafka degradation should be self-heal eligible")
 	}
 }
