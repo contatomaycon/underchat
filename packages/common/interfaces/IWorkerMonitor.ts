@@ -3,6 +3,7 @@ import { EWorkerType } from '../enums/EWorkerType';
 
 export interface IWorkerMonitor {
   worker_id: string;
+  name: string;
   account_id: string;
   server_id: string;
   worker_status_id: EWorkerStatus;

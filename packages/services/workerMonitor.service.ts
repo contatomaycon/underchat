@@ -318,7 +318,9 @@ export class WorkerMonitorService {
       code: ECodeMessage.info,
       status: EBaileysConnectionStatus.info,
       worker_id: worker.worker_id,
+      worker_name: worker.name,
       account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
       worker_status_id: EWorkerStatus.delete,
     };
 
@@ -347,6 +349,18 @@ export class WorkerMonitorService {
       server_id: server.server_id,
       account_id: worker.account_id,
       worker_status_id: EWorkerStatus.recreating,
+      worker_type_id: worker.worker_type_id,
+      name: worker.name,
+      worker_name: worker.name,
+    };
+    const statusPayload: IBaileysConnectionState = {
+      code: ECodeMessage.info,
+      status: EBaileysConnectionStatus.info,
+      worker_id: worker.worker_id,
+      worker_name: worker.name,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      worker_status_id: EWorkerStatus.recreating,
     };
 
     await this.workerService.updateStatusWorker(
@@ -356,7 +370,7 @@ export class WorkerMonitorService {
 
     await this.centrifugoService.publishSub(
       workerCentrifugoQueue(worker.account_id),
-      payload
+      statusPayload
     );
 
     await this.centrifugoService.publish(channelsConfigCentrifugo(), payload);
@@ -634,7 +648,9 @@ export class WorkerMonitorService {
       code,
       status: connectionStatus,
       worker_id: worker.worker_id,
+      worker_name: worker.name,
       account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
       worker_status_id: status,
     };
 
@@ -699,6 +715,7 @@ export class WorkerMonitorService {
       code: ECodeMessage.connectionEstablished,
       status: EBaileysConnectionStatus.connected,
       worker_id: worker.worker_id,
+      worker_name: worker.name,
       account_id: worker.account_id,
       worker_type_id: worker.worker_type_id,
       phone: phone ?? undefined,
@@ -916,27 +933,42 @@ export class WorkerMonitorService {
   };
 
   private readonly hasSessionReadyBody = (body: unknown): boolean => {
-    if (!body || typeof body !== 'object') {
+    const payload = this.getConnectionHealthPayload(body);
+    if (!payload || typeof payload !== 'object') {
       return false;
     }
 
-    const payload = body as {
+    const record = payload as {
       session_ready?: unknown;
       connected?: unknown;
     };
 
-    return payload.session_ready === true && payload.connected === true;
+    return record.session_ready === true && record.connected === true;
+  };
+
+  private readonly getConnectionHealthPayload = (body: unknown): unknown => {
+    if (!body || typeof body !== 'object') {
+      return body;
+    }
+
+    const data = (body as Record<string, unknown>).data;
+    if (data && typeof data === 'object') {
+      return data;
+    }
+
+    return body;
   };
 
   private readonly readBooleanBody = (
     body: unknown,
     key: string
   ): boolean | undefined => {
-    if (!body || typeof body !== 'object') {
+    const payload = this.getConnectionHealthPayload(body);
+    if (!payload || typeof payload !== 'object') {
       return undefined;
     }
 
-    const value = (body as Record<string, unknown>)[key];
+    const value = (payload as Record<string, unknown>)[key];
     return typeof value === 'boolean' ? value : undefined;
   };
 
@@ -944,11 +976,12 @@ export class WorkerMonitorService {
     body: unknown,
     key: string
   ): string | undefined => {
-    if (!body || typeof body !== 'object') {
+    const payload = this.getConnectionHealthPayload(body);
+    if (!payload || typeof payload !== 'object') {
       return undefined;
     }
 
-    const value = (body as Record<string, unknown>)[key];
+    const value = (payload as Record<string, unknown>)[key];
     return typeof value === 'string' ? value : undefined;
   };
 
@@ -956,11 +989,12 @@ export class WorkerMonitorService {
     body: unknown,
     key: string
   ): number | undefined => {
-    if (!body || typeof body !== 'object') {
+    const payload = this.getConnectionHealthPayload(body);
+    if (!payload || typeof payload !== 'object') {
       return undefined;
     }
 
-    const value = (body as Record<string, unknown>)[key];
+    const value = (payload as Record<string, unknown>)[key];
     return typeof value === 'number' && Number.isFinite(value)
       ? value
       : undefined;
@@ -1006,11 +1040,11 @@ export class WorkerMonitorService {
       return true;
     }
 
-    const data = record.data;
+    const payload = this.getConnectionHealthPayload(body);
     return (
-      !!data &&
-      typeof data === 'object' &&
-      (data as Record<string, unknown>).kafka_unhealthy === true
+      !!payload &&
+      typeof payload === 'object' &&
+      (payload as Record<string, unknown>).kafka_unhealthy === true
     );
   };
 
@@ -1221,7 +1255,9 @@ export class WorkerMonitorService {
       code: ECodeMessage.info,
       status: EBaileysConnectionStatus.info,
       worker_id: worker.worker_id,
+      worker_name: worker.name,
       account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
       worker_status_id: EWorkerStatus.stopped,
     };
 

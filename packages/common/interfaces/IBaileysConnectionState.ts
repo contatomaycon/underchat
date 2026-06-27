@@ -7,6 +7,7 @@ export interface IBaileysConnectionState {
   code: ECodeMessage;
   status: EBaileysConnectionStatus;
   worker_id: string;
+  worker_name?: string;
   account_id: string;
   worker_type_id?: EWorkerType;
   qrcode?: string;

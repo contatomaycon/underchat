@@ -8,7 +8,11 @@ import { AxiosError } from 'axios';
 import { GetDashboardStatsResponse } from '@core/schema/dashboard/getDashboardStats/response.schema';
 import { GetDashboardConversationsResponse } from '@core/schema/dashboard/getDashboardConversations/response.schema';
 import { GetDashboardAdditionalResponse } from '@core/schema/dashboard/getDashboardAdditional/response.schema';
-import { ListOfflineChannelsFinalResponse } from '@core/schema/dashboard/listOfflineChannels/response.schema';
+import {
+  ListOfflineChannelsFinalResponse,
+  ListOfflineChannelsResponse,
+} from '@core/schema/dashboard/listOfflineChannels/response.schema';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 const DASHBOARD_OFFLINE_CHANNELS_CACHE_TTL_MS = 3000;
 
@@ -16,6 +20,36 @@ let dashboardOfflineChannelsRequestInFlight: Promise<ListOfflineChannelsFinalRes
   null;
 let dashboardOfflineChannelsLastFetchedAt = 0;
 let dashboardOfflineChannelsHasFetched = false;
+
+interface ApplyOfflineChannelStatusEventInput {
+  channelId: string;
+  channelName?: string | null;
+  statusId?: string | null;
+  statusName?: string | null;
+}
+
+const shouldRemoveFromOfflineChannels = (
+  statusId: string | null | undefined
+): boolean => {
+  return (
+    !statusId ||
+    statusId === EWorkerStatus.online ||
+    statusId === EWorkerStatus.delete ||
+    statusId === EWorkerStatus.deleting
+  );
+};
+
+const normalizeOfflineChannels = (
+  channels: ListOfflineChannelsFinalResponse
+): ListOfflineChannelsFinalResponse => {
+  const byId = new Map<string, ListOfflineChannelsResponse>();
+
+  for (const channel of channels) {
+    byId.set(channel.id, channel);
+  }
+
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+};
 
 export const useDashboardStore = defineStore('dashboard', {
   state: () => ({
@@ -150,10 +184,10 @@ export const useDashboardStore = defineStore('dashboard', {
           >('/dashboard/offline-channels');
 
           if (response.data.status && response.data.data) {
-            this.offlineChannels = response.data.data;
+            this.offlineChannels = normalizeOfflineChannels(response.data.data);
             dashboardOfflineChannelsHasFetched = true;
             dashboardOfflineChannelsLastFetchedAt = Date.now();
-            return response.data.data;
+            return this.offlineChannels;
           }
 
           return null;
@@ -174,16 +208,46 @@ export const useDashboardStore = defineStore('dashboard', {
 
       return dashboardOfflineChannelsRequestInFlight;
     },
+    applyOfflineChannelStatusEvent(input: ApplyOfflineChannelStatusEventInput) {
+      if (shouldRemoveFromOfflineChannels(input.statusId)) {
+        this.removeOfflineChannel(input.channelId);
+        return;
+      }
+
+      const existing = this.offlineChannels.find(
+        (ch) => ch.id === input.channelId
+      );
+      const channelName = input.channelName?.trim() || existing?.name;
+
+      if (!channelName) {
+        return;
+      }
+
+      const nextChannel: ListOfflineChannelsResponse = {
+        id: input.channelId,
+        name: channelName,
+        status: input.statusId
+          ? { id: input.statusId, name: input.statusName ?? null }
+          : null,
+      };
+
+      this.offlineChannels = normalizeOfflineChannels([
+        ...this.offlineChannels.filter((ch) => ch.id !== input.channelId),
+        nextChannel,
+      ]);
+    },
     updateOfflineChannelStatus(
       channelId: string,
       statusId: string | null,
-      statusName: string | null
+      statusName: string | null,
+      channelName?: string | null
     ) {
-      const channel = this.offlineChannels.find((ch) => ch.id === channelId);
-      if (channel) {
-        channel.status =
-          statusId && statusName ? { id: statusId, name: statusName } : null;
-      }
+      this.applyOfflineChannelStatusEvent({
+        channelId,
+        channelName,
+        statusId,
+        statusName,
+      });
     },
     removeOfflineChannel(channelId: string) {
       this.offlineChannels = this.offlineChannels.filter(

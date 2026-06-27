@@ -14,6 +14,7 @@ describe('WorkerMonitorViewerRepository', () => {
     const rows = [
       {
         worker_id: 'w-1',
+        name: 'Canal 1',
         account_id: 'a-1',
         server_id: 's-1',
         worker_status_id: 'online',
@@ -41,6 +42,7 @@ describe('WorkerMonitorViewerRepository', () => {
   it('viewWorker returns first row when worker exists', async () => {
     const row = {
       worker_id: 'w-1',
+      name: 'Canal 1',
       account_id: 'a-1',
       server_id: 's-1',
       worker_status_id: 'online',

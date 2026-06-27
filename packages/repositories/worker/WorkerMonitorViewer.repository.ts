@@ -16,6 +16,7 @@ export class WorkerMonitorViewerRepository {
     const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
+        name: worker.name,
         account_id: worker.account_id,
         server_id: worker.server_id,
         worker_status_id: worker.worker_status_id,
@@ -48,6 +49,7 @@ export class WorkerMonitorViewerRepository {
     const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
+        name: worker.name,
         account_id: worker.account_id,
         server_id: worker.server_id,
         worker_status_id: worker.worker_status_id,

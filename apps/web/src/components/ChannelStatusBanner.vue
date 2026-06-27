@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, shallowRef } from 'vue';
 import { useRouter } from 'vue-router';
 import { isAxiosError } from 'axios';
 import { useChatStore } from '@/@webcore/stores/chat';
@@ -10,28 +10,34 @@ import { useI18n } from 'vue-i18n';
 import { onMessage, unsubscribe } from '@/@webcore/centrifugo';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
-import { getUser, getChannels } from '@/@webcore/localStorage/user';
+import {
+  getUser,
+  getChannels,
+  USER_CHANNELS_UPDATED_EVENT,
+} from '@/@webcore/localStorage/user';
 import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
-
-const POLLING_INTERVAL_MS = 60_000;
 
 const { t } = useI18n();
 const router = useRouter();
 const chatStore = useChatStore();
 const dashboardStore = useDashboardStore();
 
-const userChannelIds = ref<Set<string>>(
-  new Set(getChannels().map((ch) => ch.id))
+const createUserChannelMap = (): Map<string, string> => {
+  return new Map(getChannels().map((ch) => [ch.id, ch.name]));
+};
+
+const userChannelsById = shallowRef<Map<string, string>>(
+  createUserChannelMap()
 );
 
 const refreshUserChannels = () => {
-  userChannelIds.value = new Set(getChannels().map((ch) => ch.id));
+  userChannelsById.value = createUserChannelMap();
 };
 
 const offlineChannels = computed(() => {
-  if (userChannelIds.value.size === 0) return dashboardStore.offlineChannels;
+  if (userChannelsById.value.size === 0) return dashboardStore.offlineChannels;
   return dashboardStore.offlineChannels.filter((ch) =>
-    userChannelIds.value.has(ch.id)
+    userChannelsById.value.has(ch.id)
   );
 });
 
@@ -87,6 +93,8 @@ const getChannelStatus = (statusId: string | undefined | null) => {
     return { color: EColor.error, text: t('error') };
   if (statusId === EWorkerStatus.mismatched)
     return { color: EColor.error, text: t('mismatched') };
+  if (statusId === EWorkerStatus.recreating)
+    return { color: EColor.warning, text: t('recreating') };
   if (statusId === EWorkerStatus.stopped)
     return { color: EColor.warning, text: t('stopped') };
 
@@ -112,6 +120,7 @@ const getStatusName = (statusId: string | undefined | null): string | null => {
   if (statusId === EWorkerStatus.mismatched) return t('mismatched');
   if (statusId === EWorkerStatus.stopped) return t('stopped');
   if (statusId === EWorkerStatus.creating) return t('creating');
+  if (statusId === EWorkerStatus.recreating) return t('recreating');
   if (statusId === EWorkerStatus.new) return t('new');
 
   return null;
@@ -119,10 +128,21 @@ const getStatusName = (statusId: string | undefined | null): string | null => {
 
 const user = getUser();
 
+const handleUserChannelsUpdated = () => {
+  refreshUserChannels();
+};
+
+const handleStorage = (event: StorageEvent) => {
+  if (event.key === 'channels') {
+    refreshUserChannels();
+  }
+};
+
 const workerStatusHandler = (data: IBaileysConnectionState) => {
   logLocalConnectionStatus('web.status_banner.worker_status.received', {
     layer: 'web.status_banner',
     worker_id: data.worker_id,
+    worker_name: data.worker_name,
     account_id: data.account_id,
     worker_type_id: data.worker_type_id,
     worker_status_id: data.worker_status_id,
@@ -138,9 +158,24 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
     connection_attempt_id: data.connection_attempt_id,
     runtime_generation: data.runtime_generation,
   });
+
+  const statusId = data.worker_status_id;
+  if (!statusId) {
+    logLocalConnectionStatus('web.status_banner.worker_status.ignored', {
+      layer: 'web.status_banner',
+      worker_id: data.worker_id,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      status: data.status,
+      code: data.code,
+      reason: 'missing_worker_status_id',
+    });
+    return;
+  }
+
   if (
-    userChannelIds.value.size > 0 &&
-    !userChannelIds.value.has(data.worker_id)
+    userChannelsById.value.size > 0 &&
+    !userChannelsById.value.has(data.worker_id)
   ) {
     logLocalConnectionStatus('web.status_banner.worker_status.ignored', {
       layer: 'web.status_banner',
@@ -156,33 +191,51 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
   }
 
   if (
-    data.worker_status_id === EWorkerStatus.online &&
-    data.session_ready === true
+    statusId === EWorkerStatus.delete ||
+    statusId === EWorkerStatus.deleting
   ) {
+    dashboardStore.removeOfflineChannel(data.worker_id);
+    logLocalConnectionStatus('web.status_banner.worker_status.removed', {
+      layer: 'web.status_banner',
+      worker_id: data.worker_id,
+      worker_name: data.worker_name,
+      account_id: data.account_id,
+      worker_type_id: data.worker_type_id,
+      worker_status_id: statusId,
+      status: data.status,
+      code: data.code,
+      reason: 'deleted_or_deleting',
+    });
+    return;
+  }
+
+  if (statusId === EWorkerStatus.online && data.session_ready === true) {
     logLocalConnectionStatus('web.status_banner.worker_status.online_removed', {
       layer: 'web.status_banner',
       worker_id: data.worker_id,
+      worker_name: data.worker_name,
       account_id: data.account_id,
       worker_type_id: data.worker_type_id,
-      worker_status_id: data.worker_status_id,
+      worker_status_id: statusId,
       status: data.status,
       code: data.code,
       session_ready: data.session_ready,
       phone: data.phone,
     });
-    dashboardStore.updateOfflineChannelStatus(data.worker_id, null, null);
+    dashboardStore.removeOfflineChannel(data.worker_id);
     return;
   }
 
-  if (data.worker_status_id === EWorkerStatus.online) {
+  if (statusId === EWorkerStatus.online) {
     logLocalConnectionStatus(
       'web.status_banner.worker_status.weak_online_ignored',
       {
         layer: 'web.status_banner',
         worker_id: data.worker_id,
+        worker_name: data.worker_name,
         account_id: data.account_id,
         worker_type_id: data.worker_type_id,
-        worker_status_id: data.worker_status_id,
+        worker_status_id: statusId,
         status: data.status,
         code: data.code,
         session_ready: data.session_ready,
@@ -192,34 +245,37 @@ const workerStatusHandler = (data: IBaileysConnectionState) => {
     return;
   }
 
-  const statusId = data.worker_status_id ?? null;
-  const statusName = getStatusName(data.worker_status_id);
+  const channelName =
+    data.worker_name ?? userChannelsById.value.get(data.worker_id);
+  const statusName = getStatusName(statusId);
 
-  dashboardStore.updateOfflineChannelStatus(
-    data.worker_id,
+  dashboardStore.applyOfflineChannelStatusEvent({
+    channelId: data.worker_id,
+    channelName,
     statusId,
-    statusName
-  );
+    statusName,
+  });
   logLocalConnectionStatus('web.status_banner.worker_status.offline_applied', {
     layer: 'web.status_banner',
     worker_id: data.worker_id,
+    worker_name: channelName,
     account_id: data.account_id,
     worker_type_id: data.worker_type_id,
-    worker_status_id: data.worker_status_id,
+    worker_status_id: statusId,
     status: data.status,
     code: data.code,
     session_ready: data.session_ready,
     status_name: statusName,
   });
-
-  if (!dashboardStore.offlineChannels.find((ch) => ch.id === data.worker_id)) {
-    void dashboardStore.getDashboardOfflineChannels(true).catch(() => {});
-  }
 };
 
-let pollingTimer: ReturnType<typeof setInterval> | null = null;
-
 onMounted(async () => {
+  window.addEventListener(
+    USER_CHANNELS_UPDATED_EVENT,
+    handleUserChannelsUpdated
+  );
+  window.addEventListener('storage', handleStorage);
+
   try {
     await loadChannelsIfNeeded();
   } catch (error) {
@@ -250,18 +306,14 @@ onMounted(async () => {
       }
     }
   }
-
-  pollingTimer = setInterval(() => {
-    refreshUserChannels();
-    void dashboardStore.getDashboardOfflineChannels().catch(() => {});
-  }, POLLING_INTERVAL_MS);
 });
 
 onUnmounted(async () => {
-  if (pollingTimer) {
-    clearInterval(pollingTimer);
-    pollingTimer = null;
-  }
+  window.removeEventListener(
+    USER_CHANNELS_UPDATED_EVENT,
+    handleUserChannelsUpdated
+  );
+  window.removeEventListener('storage', handleStorage);
 
   if (user?.account_id) {
     await unsubscribe(

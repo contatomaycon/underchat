@@ -188,9 +188,15 @@ function buildHandler(
       worker_type_id: EWorkerType.wwebjs,
     })),
     viewWorker: jest.fn(async () => ({
+      id: 'worker-1',
+      name: 'Canal 1',
       server: { id: 'server-1' },
       type: { id: EWorkerType.wwebjs },
       status: { id: EWorkerStatus.disponible },
+    })),
+    viewWorkerNameAndId: jest.fn(async () => ({
+      id: 'worker-1',
+      name: 'Canal 1',
     })),
     viewWorkerPhoneConnectionDate: jest.fn(async () => ({
       id: 'worker-1',
@@ -200,6 +206,7 @@ function buildHandler(
     updateWorkerPhoneStatusConnectionDate: jest.fn(async () => true),
     viewWorkerForMonitor: jest.fn<Promise<any>, [string]>(async () => ({
       worker_id: 'worker-1',
+      name: 'Canal 1',
       account_id: 'account-1',
       server_id: 'server-1',
       worker_status_id: EWorkerStatus.disponible,
@@ -565,6 +572,8 @@ describe('WorkerCommandHandlerService connection', () => {
   it('defers disponible worker notifications while lifecycle readiness is pending', async () => {
     const deps = buildHandler();
     deps.workerService.viewWorker.mockResolvedValueOnce({
+      id: 'worker-1',
+      name: 'Canal 1',
       server: { id: 'server-1' },
       type: { id: EWorkerType.wwebjs },
       status: { id: EWorkerStatus.creating },
@@ -613,6 +622,62 @@ describe('WorkerCommandHandlerService connection', () => {
         code: ECodeMessage.awaitConnection,
         session_ready: false,
         degraded_reason: 'online_without_session_ready',
+      })
+    );
+  });
+
+  it('enriches worker status notifications with worker name before publishing', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_status_id: EWorkerStatus.disponible,
+      disconnected_user: true,
+    });
+
+    expect(deps.workerService.viewWorkerNameAndId).toHaveBeenCalledWith(
+      'account-1',
+      'worker-1'
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_name: 'Canal 1',
+        worker_status_id: EWorkerStatus.disponible,
+      })
+    );
+  });
+
+  it('publishes worker status notifications when worker name lookup fails', async () => {
+    const deps = buildHandler();
+    deps.workerService.viewWorkerNameAndId.mockRejectedValueOnce(
+      new Error('database unavailable')
+    );
+
+    await expect(
+      deps.handler.notifyWorkerStatus({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_status_id: EWorkerStatus.disponible,
+        disconnected_user: true,
+      })
+    ).resolves.toBeUndefined();
+
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_status_id: EWorkerStatus.disponible,
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.not.objectContaining({
+        worker_name: expect.any(String),
       })
     );
   });

@@ -11,6 +11,7 @@ import { normalizeUserChannels } from '@core/common/functions/extractUserChannel
 
 const PLAN_STATUS_KEY = 'plan_is_active';
 const PLAN_PRODUCTS_KEY = 'plan_products';
+export const USER_CHANNELS_UPDATED_EVENT = 'user-channels-updated';
 
 type AuthContext = Pick<ITokenJwtData, 'account_id' | 'user_id'>;
 
@@ -53,9 +54,13 @@ export const getSectors = (): string[] => {
 };
 
 export const setChannels = (channels: IUserChannel[]): void => {
-  localStorage.setItem(
-    'channels',
-    JSON.stringify(normalizeUserChannels(channels))
+  const normalizedChannels = normalizeUserChannels(channels);
+
+  localStorage.setItem('channels', JSON.stringify(normalizedChannels));
+  window.dispatchEvent(
+    new CustomEvent(USER_CHANNELS_UPDATED_EVENT, {
+      detail: normalizedChannels,
+    })
   );
 };
 

@@ -25,6 +25,8 @@ jest.mock('@core/services/account.service', () => ({
 import { WorkerMonitorService } from '@core/services/workerMonitor.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
 
 function makeService(
@@ -50,6 +52,7 @@ function makeWorker(overrides: Partial<IWorkerMonitor> = {}): IWorkerMonitor {
 
   return {
     worker_id: 'worker-1',
+    name: 'Canal 1',
     account_id: 'account-1',
     server_id: 'server-1',
     worker_status_id: EWorkerStatus.disponible,
@@ -128,6 +131,56 @@ describe('WorkerMonitorService', () => {
     expect(shouldCheck).toBe(true);
   });
 
+  it('treats enveloped TypeScript worker health as session ready', async () => {
+    const body = {
+      status: true,
+      message: '',
+      data: {
+        session_ready: true,
+        connected: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
+        provider_state: 'CONNECTED',
+        last_probe_at: '2026-06-27T13:17:51.090Z',
+        probe_latency_ms: 216,
+        phone: '556192037138',
+        kafka_unhealthy: false,
+      },
+    };
+    const sshService = {
+      runCommands: jest.fn(async () => [
+        {
+          output: `${JSON.stringify(body)}__HTTP_STATUS__200`,
+        },
+      ]),
+    };
+    const service = makeService({ sshService });
+
+    const result = await (service as any).checkConnection(
+      makeWorker({ worker_status_id: EWorkerStatus.online }),
+      'server-1',
+      {} as never
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        healthy: true,
+        code: 200,
+        session_ready: true,
+        connected: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
+        provider_state: 'CONNECTED',
+        last_probe_at: '2026-06-27T13:17:51.090Z',
+        probe_latency_ms: 216,
+        phone: '556192037138',
+        kafka_unhealthy: false,
+      })
+    );
+  });
+
   it('promotes a disponible worker to online when health proves session readiness', async () => {
     const workerService = {
       updateWorkerLastConnectionCheckAt: jest.fn(async () => true),
@@ -167,7 +220,7 @@ describe('WorkerMonitorService', () => {
 
     expect(
       workerService.updateWorkerLastConnectionCheckAt
-    ).not.toHaveBeenCalled();
+    ).toHaveBeenCalledWith('worker-1');
     expect(
       workerService.updateWorkerPhoneStatusConnectionDate
     ).toHaveBeenCalledWith({
@@ -182,6 +235,8 @@ describe('WorkerMonitorService', () => {
         code: 200,
         status: 'connected',
         worker_id: 'worker-1',
+        worker_name: 'Canal 1',
+        worker_type_id: EWorkerType.wwebjs,
         worker_status_id: EWorkerStatus.online,
         session_ready: true,
         phone: '556192037138',
@@ -191,8 +246,92 @@ describe('WorkerMonitorService', () => {
       expect.any(String),
       expect.objectContaining({
         worker_id: 'worker-1',
+        worker_name: 'Canal 1',
+        worker_type_id: EWorkerType.wwebjs,
         worker_status_id: EWorkerStatus.online,
         session_ready: true,
+      })
+    );
+  });
+
+  it('publishes complete offline status when connection failures reach the threshold', async () => {
+    const workerService = {
+      updateStatusWorker: jest.fn(async () => true),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => true),
+    };
+    const service = makeService({ workerService, centrifugoService });
+    const worker = makeWorker({ worker_status_id: EWorkerStatus.online });
+
+    await (service as any).syncConnectionStatusWithFailureTracking(
+      worker,
+      {
+        healthy: false,
+        code: 503,
+        body: {},
+        session_ready: false,
+        connected: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+        provider_state: 'DISCONNECTED',
+        degraded_reason: 'probe_failed',
+        kafka_unhealthy: false,
+      },
+      'server-1',
+      {} as never
+    );
+    await (service as any).syncConnectionStatusWithFailureTracking(
+      worker,
+      {
+        healthy: false,
+        code: 503,
+        body: {},
+        session_ready: false,
+        connected: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+        provider_state: 'DISCONNECTED',
+        degraded_reason: 'probe_failed',
+        kafka_unhealthy: false,
+      },
+      'server-1',
+      {} as never
+    );
+    await (service as any).syncConnectionStatusWithFailureTracking(
+      worker,
+      {
+        healthy: false,
+        code: 503,
+        body: {},
+        session_ready: false,
+        connected: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+        provider_state: 'DISCONNECTED',
+        degraded_reason: 'probe_failed',
+        kafka_unhealthy: false,
+      },
+      'server-1',
+      {} as never
+    );
+
+    expect(workerService.updateStatusWorker).toHaveBeenCalledWith(
+      'worker-1',
+      EWorkerStatus.offline
+    );
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        code: ECodeMessage.info,
+        status: EBaileysConnectionStatus.info,
+        worker_id: 'worker-1',
+        worker_name: 'Canal 1',
+        worker_type_id: EWorkerType.wwebjs,
+        worker_status_id: EWorkerStatus.offline,
       })
     );
   });
@@ -226,7 +365,7 @@ describe('WorkerMonitorService', () => {
 
     expect(
       workerService.updateWorkerLastConnectionCheckAt
-    ).toHaveBeenCalledWith('worker-1');
+    ).not.toHaveBeenCalled();
     expect(workerService.updateStatusWorker).not.toHaveBeenCalled();
     expect(
       workerService.updateWorkerPhoneStatusConnectionDate

@@ -1073,10 +1073,12 @@ export class WorkerCommandHandlerService {
       accountId,
       workerStatusId
     );
+    await this.enrichWorkerStatusPayloadWithName(payload, accountId, workerId);
     this.logDebug('service.notify_status.received', {
       trace_id: payload.debug_trace_id,
       layer: 'service',
       worker_id: workerId,
+      worker_name: payload.worker_name,
       account_id: accountId,
       worker_type_id: payload.worker_type_id,
       connection_attempt_id: payload.connection_attempt_id,
@@ -1313,6 +1315,24 @@ export class WorkerCommandHandlerService {
         code: payload.code,
         reason: payload.reason,
       });
+    }
+  }
+
+  private async enrichWorkerStatusPayloadWithName(
+    payload: IBaileysConnectionState,
+    accountId: string,
+    workerId: string
+  ): Promise<void> {
+    try {
+      const worker = await this.workerService.viewWorkerNameAndId(
+        accountId,
+        workerId
+      );
+      if (worker?.name) {
+        payload.worker_name = worker.name;
+      }
+    } catch {
+      // Worker status publication must continue even when display metadata is unavailable.
     }
   }
 
