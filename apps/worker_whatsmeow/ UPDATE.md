@@ -1,4 +1,4 @@
-COMMIT_URL = "https://github.com/tulir/whatsmeow/commit/eaa388b4e53760cc906ce8c6c3165a15d1d39912"
+COMMIT_URL = "https://github.com/tulir/whatsmeow/commit/5eeb02b11f0c2bdade0e9dba6a5e59266a61021f"
 
 Você é um engenheiro sênior responsável por “portar” exatamente o commit referenciado em COMMIT_URL do repositório upstream para o meu projeto (um fork).
 
