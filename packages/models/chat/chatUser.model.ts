@@ -5,6 +5,7 @@ import {
   uuid,
   boolean,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { user } from '@core/models';
@@ -50,7 +51,9 @@ export const chatUser = pgTable(
       withTimezone: true,
     }).defaultNow(),
   },
-  (table) => [index('chat_user_user_id_idx').on(table.user_id)]
+  (table) => [
+    index('chat_user_user_id_idx').on(table.user_id),
+  ]
 );
 
 export const chatUserRelations = relations(chatUser, ({ one }) => ({
@@ -59,3 +62,41 @@ export const chatUserRelations = relations(chatUser, ({ one }) => ({
     references: [user.user_id],
   }),
 }));
+
+export const chatUserPinnedChat = pgTable(
+  'chat_user_pinned_chat',
+  {
+    chat_user_pinned_chat_id: uuid().primaryKey().notNull(),
+    user_id: uuid()
+      .references(() => user.user_id, { onDelete: 'cascade' })
+      .notNull(),
+    chat_id: uuid().notNull(),
+    pinned_at: timestamp({
+      mode: 'string',
+      withTimezone: true,
+    })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('chat_user_pinned_chat_user_chat_uidx').on(
+      table.user_id,
+      table.chat_id
+    ),
+    index('chat_user_pinned_chat_user_pinned_at_idx').on(
+      table.user_id,
+      table.pinned_at
+    ),
+    index('chat_user_pinned_chat_chat_id_idx').on(table.chat_id),
+  ]
+);
+
+export const chatUserPinnedChatRelations = relations(
+  chatUserPinnedChat,
+  ({ one }) => ({
+    cupcu: one(user, {
+      fields: [chatUserPinnedChat.user_id],
+      references: [user.user_id],
+    }),
+  })
+);

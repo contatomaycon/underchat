@@ -36,6 +36,7 @@ import { isMasterOrAdministratorRole } from '@core/common/functions/isMasterOrAd
 import { PushNotificationService } from '@core/services/pushNotification.service';
 import { ChatClosureCommentCreatorRepository } from '@core/repositories/chat/ChatClosureCommentCreator.repository';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
+import { ChatUserService } from '@core/services/chatUser.service';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -66,7 +67,9 @@ export class ChatStatusUpdaterUseCase {
     @inject(ChatClosureCommentCreatorRepository)
     private readonly chatClosureCommentCreatorRepository: ChatClosureCommentCreatorRepository,
     @inject(AttendanceInactivityService)
-    private readonly attendanceInactivityService: AttendanceInactivityService
+    private readonly attendanceInactivityService: AttendanceInactivityService,
+    @inject(ChatUserService)
+    private readonly chatUserService: ChatUserService
   ) {}
 
   private async sendProtocolMessage(
@@ -832,6 +835,10 @@ export class ChatStatusUpdaterUseCase {
         comment: closureComment,
         closedAt: closedAt || currentDate,
       });
+    }
+
+    if (finalStatus === EChatStatus.closed) {
+      await this.chatUserService.clearPinnedChatsByChatId(params.chat_id);
     }
 
     if (

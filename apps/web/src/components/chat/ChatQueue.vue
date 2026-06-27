@@ -19,6 +19,7 @@ const channelsStore = useChannelsStore();
 
 const emit = defineEmits<{
   (e: 'checkbox-change', checked: boolean): void;
+  (e: 'toggle-pin'): void;
 }>();
 
 const props = withDefaults(
@@ -29,12 +30,18 @@ const props = withDefaults(
     showCheckbox?: boolean;
     checked?: boolean;
     checkboxDisabled?: boolean;
+    isPinned?: boolean;
+    showPinAction?: boolean;
+    pinLoading?: boolean;
   }>(),
   {
     showChatbotTypeIndicator: false,
     showCheckbox: false,
     checked: false,
     checkboxDisabled: false,
+    isPinned: false,
+    showPinAction: false,
+    pinLoading: false,
   }
 );
 
@@ -280,7 +287,9 @@ const isOperatorReplyPendingAlertTriggered = computed(() => {
     return false;
   }
 
-  return operatorReplyPendingElapsedMs.value >= operatorReplyPendingThresholdMs.value;
+  return (
+    operatorReplyPendingElapsedMs.value >= operatorReplyPendingThresholdMs.value
+  );
 });
 
 const loadWorkerConfig = async (workerId?: string | null) => {
@@ -324,6 +333,8 @@ onBeforeUnmount(() => {
         'chat-active': isChatContactActive,
         'chat-disabled': props.disabled,
         'chat-with-checkbox': props.showCheckbox,
+        'chat-with-pin-action': props.showPinAction,
+        'chat-pinned': props.isPinned,
         'chat-has-label':
           (showWorkerNameLabel && workerName) || chatLabelForList,
         'chat-has-sector': sectorName,
@@ -428,6 +439,28 @@ onBeforeUnmount(() => {
       >
         {{ attendantLabel }}
       </div>
+      <VBtn
+        v-if="props.showPinAction"
+        class="chat-pin-btn"
+        :class="{ 'chat-pin-btn--pinned': props.isPinned }"
+        :loading="props.pinLoading"
+        :aria-label="
+          props.isPinned ? t('unpin_conversation') : t('pin_conversation')
+        "
+        icon
+        variant="text"
+        density="comfortable"
+        size="x-small"
+        @click.stop="emit('toggle-pin')"
+      >
+        <VIcon
+          size="17"
+          :icon="props.isPinned ? 'tabler-pinned-off' : 'tabler-pin'"
+        />
+        <VTooltip activator="parent" location="top">
+          {{ props.isPinned ? t('unpin_conversation') : t('pin_conversation') }}
+        </VTooltip>
+      </VBtn>
       <VAvatar
         size="40"
         :variant="
@@ -580,6 +613,19 @@ onBeforeUnmount(() => {
     padding-inline-start: 44px;
   }
 
+  &.chat-with-pin-action {
+    padding-inline-end: 44px;
+  }
+
+  &.chat-has-attendant.chat-with-pin-action {
+    padding-inline-end: calc(44px + var(--chat-attendant-label-size));
+  }
+
+  &.chat-pinned:not(.chat-active) {
+    border-color: rgba(var(--v-theme-primary), 0.45);
+    background-color: rgba(var(--v-theme-primary), 0.04);
+  }
+
   &.chat-pending-reply-alert:not(.chat-active) {
     border-color: rgba(var(--v-theme-error), 0.9);
     box-shadow: inset 0 0 0 1px rgba(var(--v-theme-error), 0.45);
@@ -607,6 +653,54 @@ onBeforeUnmount(() => {
   left: 8px;
   top: 8px;
   z-index: 4;
+}
+
+.chat-pin-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 8;
+  inline-size: 30px;
+  block-size: 30px;
+  min-inline-size: 30px;
+  color: rgb(var(--v-theme-primary));
+  background-color: transparent !important;
+  box-shadow: none !important;
+  opacity: 1;
+  transition:
+    background-color 0.16s ease,
+    transform 0.16s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+    background-color: rgba(var(--v-theme-primary), 0.08);
+  }
+
+  .v-btn__content {
+    color: currentColor;
+    opacity: 1;
+  }
+
+  .v-icon {
+    color: currentColor;
+    opacity: 1;
+  }
+}
+
+.chat-pin-btn--pinned {
+  color: rgb(var(--v-theme-primary));
+}
+
+.chat.chat-active .chat-pin-btn {
+  color: #fff !important;
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.14) !important;
+  }
+}
+
+.chat-has-attendant .chat-pin-btn {
+  right: calc(var(--chat-attendant-label-size) + 6px);
 }
 
 .chat-sector-label {
