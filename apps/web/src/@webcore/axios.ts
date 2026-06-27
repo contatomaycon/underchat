@@ -136,7 +136,7 @@ const getNotAuthorizedHref = (): string => {
 };
 
 const redirectToLoginWithFallback = async (): Promise<void> => {
-  if (router.currentRoute.value?.name === 'login') {
+  if (String(router.currentRoute.value?.name ?? '') === 'login') {
     return;
   }
 
@@ -149,13 +149,13 @@ const redirectToLoginWithFallback = async (): Promise<void> => {
     return;
   }
 
-  if (router.currentRoute.value?.name !== 'login') {
+  if (String(router.currentRoute.value?.name ?? '') !== 'login') {
     globalThis.location.replace(loginHref);
   }
 };
 
 const redirectToNotAuthorizedWithFallback = async (): Promise<void> => {
-  if (router.currentRoute.value?.name === 'not-authorized') {
+  if (String(router.currentRoute.value?.name ?? '') === 'not-authorized') {
     return;
   }
 
@@ -168,7 +168,7 @@ const redirectToNotAuthorizedWithFallback = async (): Promise<void> => {
     return;
   }
 
-  if (router.currentRoute.value?.name !== 'not-authorized') {
+  if (String(router.currentRoute.value?.name ?? '') !== 'not-authorized') {
     globalThis.location.replace(notAuthorizedHref);
   }
 };
@@ -299,8 +299,7 @@ axiosAuth.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config as
-      | (InternalAxiosRequestConfig & { _retry?: boolean })
-      | undefined;
+      (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
 
     if (error.response?.status === 403) {
       const blockedData = error?.response?.data

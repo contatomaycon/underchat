@@ -771,8 +771,12 @@ export class NfseCentiEmissionService {
 
     const contentTypeHeader = response.headers['content-type'];
     const contentType = Array.isArray(contentTypeHeader)
-      ? contentTypeHeader[0]
-      : contentTypeHeader || null;
+      ? (contentTypeHeader[0] ?? null)
+      : typeof contentTypeHeader === 'string'
+        ? contentTypeHeader
+        : contentTypeHeader === null || contentTypeHeader === undefined
+          ? null
+          : String(contentTypeHeader);
 
     const body =
       typeof response.data === 'string'

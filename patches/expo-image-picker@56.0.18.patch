@@ -1,11 +1,11 @@
 diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
-index 58e2df1c145828aa9c15fc2fa856beeed5fe00ab..0c9a4c83e82a50dbb19fddd441d4cdaf43af42aa 100644
+index 22b6e29697d8243ef6eeacb1b605c0c759d8b3e7..b7e93fde26d7fb3026fe6e7ac4e6d7f2c33f0ea8 100644
 --- a/android/src/main/AndroidManifest.xml
 +++ b/android/src/main/AndroidManifest.xml
-@@ -24,8 +24,7 @@
+@@ -21,8 +21,7 @@
      <activity
        android:name="expo.modules.imagepicker.ExpoCropImageActivity"
-       android:theme="@style/Base.Theme.AppCompat"
+       android:theme="@style/Theme.AppCompat.DayNight"
 -      android:exported="false"
 -      tools:replace="android:exported" />
 +      android:exported="false" />

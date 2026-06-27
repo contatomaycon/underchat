@@ -4,8 +4,8 @@ import { hexToRgb } from '@webcore/utils/colorConverter';
 const colorVariables = (
   themeColors: ThemeInstance['themes']['value']['colors']
 ) => {
-  const themeSecondaryTextColor = `rgba(${hexToRgb(themeColors.colors['on-surface'])},${themeColors.variables['medium-emphasis-opacity']})`;
-  const themeDisabledTextColor = `rgba(${hexToRgb(themeColors.colors['on-surface'])},${themeColors.variables['disabled-opacity']})`;
+  const themeSecondaryTextColor = `rgba(${hexToRgb(String(themeColors.colors['on-surface']))},${themeColors.variables['medium-emphasis-opacity']})`;
+  const themeDisabledTextColor = `rgba(${hexToRgb(String(themeColors.colors['on-surface']))},${themeColors.variables['disabled-opacity']})`;
   const themeBorderColor = `rgba(${hexToRgb(String(themeColors.variables['border-color']))},${themeColors.variables['border-opacity']})`;
 
   return {

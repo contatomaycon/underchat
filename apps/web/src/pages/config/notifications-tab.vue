@@ -274,9 +274,10 @@ const openWorkerModal = async (type: NotificationTypeKey) => {
 
 const filterWorkers = (value: string, query: string, item: any) => {
   const searchQuery = query.toLowerCase();
+  const worker = item.raw ?? item;
   return (
-    item.raw.name.toLowerCase().includes(searchQuery) ||
-    (item.raw.number && item.raw.number.toLowerCase().includes(searchQuery))
+    worker.name.toLowerCase().includes(searchQuery) ||
+    (worker.number && worker.number.toLowerCase().includes(searchQuery))
   );
 };
 
@@ -1386,9 +1387,9 @@ onMounted(async () => {
                   <template #prepend>
                     <VIcon icon="tabler-device-mobile" class="me-2" />
                   </template>
-                  <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
-                  <VListItemSubtitle v-if="item.raw.number">
-                    {{ item.raw.number }}
+                  <VListItemTitle>{{ item.name }}</VListItemTitle>
+                  <VListItemSubtitle v-if="item.number">
+                    {{ item.number }}
                   </VListItemSubtitle>
                 </VListItem>
               </template>

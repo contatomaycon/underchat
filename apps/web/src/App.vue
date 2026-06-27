@@ -183,7 +183,7 @@ onUnmounted(async () => {
 <template>
   <VLocaleProvider :rtl="configStore.isAppRTL">
     <VApp
-      :style="`--v-global-theme-primary: ${hexToRgb(global.current.value.colors.primary)}`"
+      :style="`--v-global-theme-primary: ${hexToRgb(String(global.current.value.colors.primary))}`"
     >
       <RouterView />
       <AppAttendanceGuardLock />

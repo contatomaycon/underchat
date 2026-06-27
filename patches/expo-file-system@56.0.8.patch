@@ -1,5 +1,5 @@
 diff --git a/android/src/main/AndroidManifest.xml b/android/src/main/AndroidManifest.xml
-index f4659f439ac118c80693801aaf7f47e25c06d49f..77d685d9a160df2940ac365cd354d8925f735be4 100644
+index 5aca1f4148a7c30e13cadfbd390793e7cc34d7a7..142929eb48a0a06489b9808f74dc395a7d071fc2 100644
 --- a/android/src/main/AndroidManifest.xml
 +++ b/android/src/main/AndroidManifest.xml
 @@ -3,7 +3,7 @@

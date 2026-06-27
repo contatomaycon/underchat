@@ -109,7 +109,7 @@ const theme = useTheme();
 const getThemeColor = (colorName: string): string => {
   const color = theme.current.value.colors[colorName];
   if (!color) return '#000000';
-  const rgb = hexToRgb(color);
+  const rgb = hexToRgb(String(color));
   return `rgb(${rgb})`;
 };
 

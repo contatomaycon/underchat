@@ -28,7 +28,7 @@ RUN mkdir -p /.cache/node/corepack && \
     chmod -R 777 /.cache
 
 RUN corepack enable && \
-    corepack prepare pnpm@10.14.0 --activate
+    corepack prepare pnpm@11.9.0 --activate
 
 RUN curl -sSf https://atlasgo.sh | sh
 

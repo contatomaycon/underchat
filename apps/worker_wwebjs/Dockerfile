@@ -27,7 +27,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && \
-    corepack prepare pnpm@10.28.2 --activate && \
+    corepack prepare pnpm@11.9.0 --activate && \
     npm add -g turbo
  
 FROM turbo AS pruned

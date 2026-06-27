@@ -49,6 +49,187 @@ $card-spacer-content: 16px;
   }
 }
 
+@each $color-name in variables.$theme-colors-name {
+  .text-#{$color-name} {
+    color: rgb(var(--v-theme-#{$color-name})) !important;
+  }
+
+  .bg-#{$color-name} {
+    background-color: rgb(var(--v-theme-#{$color-name})) !important;
+    color: rgb(var(--v-theme-on-#{$color-name})) !important;
+  }
+}
+
+.text-high-emphasis {
+  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity)) !important;
+}
+
+.text-medium-emphasis {
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity)) !important;
+}
+
+.text-disabled {
+  color: rgba(var(--v-theme-on-surface), var(--v-disabled-opacity)) !important;
+}
+
+$spacing-utilities: (
+  0: 0,
+  1: 0.25rem,
+  2: 0.5rem,
+  3: 0.75rem,
+  4: 1rem,
+  5: 1.25rem,
+  6: 1.5rem,
+  7: 1.75rem,
+  8: 2rem,
+  9: 2.25rem,
+  10: 2.5rem,
+  11: 2.75rem,
+  12: 3rem,
+  13: 3.25rem,
+  14: 3.5rem,
+  15: 3.75rem,
+  16: 4rem,
+) !default;
+
+@each $size, $value in $spacing-utilities {
+  .ma-#{$size} {
+    margin: $value !important;
+  }
+
+  .pa-#{$size} {
+    padding: $value !important;
+  }
+
+  .px-#{$size} {
+    padding-inline: $value !important;
+  }
+
+  .py-#{$size} {
+    padding-block: $value !important;
+  }
+
+  .pt-#{$size} {
+    padding-block-start: $value !important;
+  }
+
+  .pb-#{$size} {
+    padding-block-end: $value !important;
+  }
+
+  .ps-#{$size} {
+    padding-inline-start: $value !important;
+  }
+
+  .pe-#{$size} {
+    padding-inline-end: $value !important;
+  }
+
+  .pl-#{$size} {
+    padding-left: $value !important;
+  }
+
+  .pr-#{$size} {
+    padding-right: $value !important;
+  }
+
+  .mt-#{$size} {
+    margin-block-start: $value !important;
+  }
+
+  .mb-#{$size} {
+    margin-block-end: $value !important;
+  }
+
+  .ms-#{$size} {
+    margin-inline-start: $value !important;
+  }
+
+  .me-#{$size} {
+    margin-inline-end: $value !important;
+  }
+
+  .ml-#{$size} {
+    margin-left: $value !important;
+  }
+
+  .mr-#{$size} {
+    margin-right: $value !important;
+  }
+
+  .mx-#{$size} {
+    margin-inline: $value !important;
+  }
+
+  .my-#{$size} {
+    margin-block: $value !important;
+  }
+}
+
+.d-none {
+  display: none !important;
+}
+
+.d-block {
+  display: block !important;
+}
+
+.d-flex {
+  display: flex !important;
+}
+
+.d-inline-block {
+  display: inline-block !important;
+}
+
+.d-inline-flex {
+  display: inline-flex !important;
+}
+
+@media print {
+  .d-print-none {
+    display: none !important;
+  }
+}
+
+@media (min-width: 600px) {
+  .d-sm-none {
+    display: none !important;
+  }
+
+  .d-sm-flex {
+    display: flex !important;
+  }
+
+  .d-sm-inline {
+    display: inline !important;
+  }
+}
+
+@media (min-width: 960px) {
+  .d-md-none {
+    display: none !important;
+  }
+
+  .d-md-block {
+    display: block !important;
+  }
+
+  .d-md-flex {
+    display: flex !important;
+  }
+}
+
+@media (min-width: 1280px) {
+  .d-lg-none {
+    display: none !important;
+  }
+
+  .d-lg-block {
+    display: block !important;
+  }
+}
+
 .bg-var-theme-background {
   background-color: rgba(
     var(--v-theme-on-background),

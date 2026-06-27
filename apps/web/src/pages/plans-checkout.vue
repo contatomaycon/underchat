@@ -3051,24 +3051,21 @@ onMounted(async () => {
                         "
                       >
                         <template #item="{ item, props: itemProps }">
-                          <VListItem v-bind="itemProps" :title="item.raw.title">
+                          <VListItem v-bind="itemProps" :title="item.title">
                             <template #prepend>
                               <VAvatar
-                                v-if="
-                                  item.raw.brand &&
-                                  getBrandLogoUrl(item.raw.brand)
-                                "
+                                v-if="item.brand && getBrandLogoUrl(item.brand)"
                                 size="32"
                                 class="mr-2"
                               >
                                 <VImg
-                                  :src="getBrandLogoUrl(item.raw.brand) || ''"
-                                  :alt="item.raw.brand || ''"
+                                  :src="getBrandLogoUrl(item.brand) || ''"
+                                  :alt="item.brand || ''"
                                   cover
                                 />
                               </VAvatar>
                               <VIcon
-                                v-else-if="item.raw.value"
+                                v-else-if="item.value"
                                 icon="tabler-credit-card"
                                 size="24"
                                 class="mr-2"
@@ -3079,26 +3076,23 @@ onMounted(async () => {
                         <template #selection="{ item }">
                           <div class="d-flex align-center">
                             <VAvatar
-                              v-if="
-                                item.raw.brand &&
-                                getBrandLogoUrl(item.raw.brand)
-                              "
+                              v-if="item.brand && getBrandLogoUrl(item.brand)"
                               size="24"
                               class="mr-2"
                             >
                               <VImg
-                                :src="getBrandLogoUrl(item.raw.brand) || ''"
-                                :alt="item.raw.brand || ''"
+                                :src="getBrandLogoUrl(item.brand) || ''"
+                                :alt="item.brand || ''"
                                 cover
                               />
                             </VAvatar>
                             <VIcon
-                              v-else-if="item.raw.value"
+                              v-else-if="item.value"
                               icon="tabler-credit-card"
                               size="20"
                               class="mr-2"
                             />
-                            <span>{{ item.raw.title }}</span>
+                            <span>{{ item.title }}</span>
                           </div>
                         </template>
                       </VSelect>

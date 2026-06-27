@@ -542,6 +542,18 @@ onBeforeUnmount(() => {
     --v-theme-on-background: #fff;
   }
 
+  &.chat-active {
+    .text-high-emphasis,
+    .text-medium-emphasis,
+    .text-disabled,
+    .text-body-1,
+    .text-body-2,
+    .chat-name,
+    .chat-message-preview {
+      color: #fff !important;
+    }
+  }
+
   .v-badge--bordered .v-badge__badge::after {
     color: #fff;
   }

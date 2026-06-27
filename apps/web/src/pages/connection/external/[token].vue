@@ -26,7 +26,7 @@ definePage({
   },
 });
 
-const route = useRoute();
+const route = useRoute<'connection-external-token'>();
 const channelStore = useChannelsStore();
 
 const token = computed(() => {

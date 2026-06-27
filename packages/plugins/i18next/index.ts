@@ -23,7 +23,6 @@ async function i18nextPlugin(fastify: FastifyInstance) {
     .use(LanguageDetector)
     .init({
       fallbackLng: 'pt',
-      showSupportNotice: false,
       backend: {
         loadPath: localesPath,
       },

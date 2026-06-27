@@ -1513,11 +1513,9 @@ onMounted(async () => {
                       <template #selection="{ item }">
                         <div class="d-flex align-center gap-2">
                           <img
-                            v-if="
-                              item.raw?.brand && getBrandLogoUrl(item.raw.brand)
-                            "
-                            :src="getBrandLogoUrl(item.raw.brand) || ''"
-                            :alt="item.raw.brand"
+                            v-if="item.brand && getBrandLogoUrl(item.brand)"
+                            :src="getBrandLogoUrl(item.brand) || ''"
+                            :alt="item.brand"
                             class="brand-logo"
                           />
                           <span>{{ item.title }}</span>

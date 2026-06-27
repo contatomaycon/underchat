@@ -18,7 +18,6 @@ export async function createI18nInstance(
   await instance.use(Backend).init({
     lng: language,
     fallbackLng: 'pt',
-    showSupportNotice: false,
     backend: {
       loadPath: localesPath,
     },
@@ -28,7 +27,7 @@ export async function createI18nInstance(
     returnNull: false,
     returnEmptyString: false,
     returnObjects: false,
-    initImmediate: false,
+    initAsync: false,
   });
 
   await instance.loadLanguages(language);

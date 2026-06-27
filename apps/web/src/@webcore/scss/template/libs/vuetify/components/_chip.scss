@@ -18,11 +18,11 @@
     }
   }
 
-  &:not(.v-chip--variant-elevated) {
+  &:not(.v-chip--variant-elevated, [class*="text-"]) {
     color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
   }
 
-  &.v-chip--variant-elevated {
+  &.v-chip--variant-elevated:not([class*="text-"]) {
     background-color: rgba(var(--v-theme-on-surface), var(--v-activated-opacity));
     color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
   }

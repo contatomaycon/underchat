@@ -68,11 +68,11 @@ const _syncInitialLoaderTheme = () => {
       useStorage<string | null>(
         namespaceConfig('initial-loader-bg'),
         null
-      ).value = vuetifyTheme.current.value.colors.surface;
+      ).value = String(vuetifyTheme.current.value.colors.surface);
       useStorage<string | null>(
         namespaceConfig('initial-loader-color'),
         null
-      ).value = vuetifyTheme.current.value.colors.primary;
+      ).value = String(vuetifyTheme.current.value.colors.primary);
     },
     { immediate: true }
   );
