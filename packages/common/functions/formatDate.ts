@@ -1,13 +1,12 @@
 import moment from 'moment-timezone';
-
-const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 export function formatDate(input: string | Date | null): string {
   if (!input) return '';
 
   if (typeof input === 'string') {
-    return moment(input).tz(BRAZIL_TIMEZONE).format('DD/MM/YYYY');
+    return moment(input).tz(APP_TIMEZONE).format('DD/MM/YYYY');
   }
 
-  return moment(input).tz(BRAZIL_TIMEZONE).format('DD/MM/YYYY');
+  return moment(input).tz(APP_TIMEZONE).format('DD/MM/YYYY');
 }

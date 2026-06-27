@@ -14,6 +14,7 @@ import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
 import moment from 'moment-timezone';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
 import { formatDateToISO } from '@core/common/functions/formatDateToISO';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 @injectable()
 export class ScheduleCreatorUseCase {
@@ -99,14 +100,13 @@ export class ScheduleCreatorUseCase {
       throw new Error(t('send_date_required'));
     }
 
-    const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
-    const date = moment.tz(sendDate, 'YYYY-MM-DD HH:mm', true, BRAZIL_TIMEZONE);
+    const date = moment.tz(sendDate, 'YYYY-MM-DD HH:mm', true, APP_TIMEZONE);
 
     if (!date.isValid()) {
       throw new Error(t('send_date_invalid_format'));
     }
 
-    const now = moment.tz(BRAZIL_TIMEZONE);
+    const now = moment.tz(APP_TIMEZONE);
 
     if (date.isBefore(now)) {
       throw new Error(t('send_date_must_be_future'));

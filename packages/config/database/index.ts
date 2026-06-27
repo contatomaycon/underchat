@@ -6,9 +6,11 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '@core/models';
 import { container } from 'tsyringe';
 import { FastifyInstance } from 'fastify';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 async function dbConnector(fastify: FastifyInstance) {
   const sslMode = databaseEnvironment.dbSslMode;
+  const postgresSessionOptions = `-c timezone=${APP_TIMEZONE}`;
   const ssl =
     sslMode === 'disable'
       ? false
@@ -30,6 +32,7 @@ async function dbConnector(fastify: FastifyInstance) {
     keepAlive: true,
     keepAliveInitialDelayMillis: 5000,
     allowExitOnIdle: true,
+    options: postgresSessionOptions,
     ssl,
   });
 
@@ -46,6 +49,7 @@ async function dbConnector(fastify: FastifyInstance) {
     keepAlive: true,
     keepAliveInitialDelayMillis: 5000,
     allowExitOnIdle: true,
+    options: postgresSessionOptions,
     ssl,
   });
 

@@ -1,5 +1,8 @@
 FROM node:24.12.0-bookworm-slim AS base
 
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
+
 FROM base AS turbo
 
 ENV TURBO_TELEMETRY_DISABLED=1
@@ -72,6 +75,9 @@ RUN ulimit -n 1048576 || true && \
 FROM nginx:1.27-alpine AS runner
 
 WORKDIR /usr/share/nginx/html
+
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
 
 RUN rm -rf ./* && \
     rm -rf /docker-entrypoint.d/* && \

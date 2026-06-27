@@ -26,6 +26,7 @@ import type {
   IPlanReleaseReleasedPlanAccount,
   IPlanReleaseUpdatePaymentStatusInput,
 } from '@core/common/interfaces/IPlanReleaseService';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 @injectable()
 export class PlanReleaseService {
@@ -921,7 +922,7 @@ export class PlanReleaseService {
 
   private readonly getCurrentDateInSaoPaulo = (): string => {
     const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Sao_Paulo',
+      timeZone: APP_TIMEZONE,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

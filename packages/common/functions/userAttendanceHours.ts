@@ -4,8 +4,9 @@ import {
   IUserAttendanceHoursRule,
   UserAttendanceHoursWeekday,
 } from '@core/common/interfaces/IUserAttendanceHours';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
-export const USER_ATTENDANCE_HOURS_TIMEZONE = 'America/Sao_Paulo';
+export const USER_ATTENDANCE_HOURS_TIMEZONE = APP_TIMEZONE;
 export const USER_ATTENDANCE_HOURS_BLOCK_REASON =
   'user_attendance_hours_blocked';
 

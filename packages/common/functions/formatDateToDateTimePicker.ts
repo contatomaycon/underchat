@@ -1,13 +1,12 @@
 import moment from 'moment-timezone';
-
-const BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 export function formatDateToDateTimePicker(
   input: string | null
 ): string | null {
   if (!input) return null;
 
-  const date = moment(input).tz(BRAZIL_TIMEZONE);
+  const date = moment(input).tz(APP_TIMEZONE);
 
   if (!date.isValid()) {
     return null;

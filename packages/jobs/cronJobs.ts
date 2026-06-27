@@ -18,8 +18,9 @@ import {
   LockAcquisitionTimeoutError,
   withLock,
 } from '@core/common/functions/withLock';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
-const JOB_TIMEZONE = 'America/Sao_Paulo';
+const JOB_TIMEZONE = APP_TIMEZONE;
 const WORKER_CREATION_CONCURRENCY = 10;
 const JOB_LOCK_TTL_MS = 60000;
 const JOB_LOCK_MAX_WAIT_MS = 500;

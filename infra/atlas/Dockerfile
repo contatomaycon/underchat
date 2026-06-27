@@ -1,5 +1,8 @@
 FROM node:24.12.0-bookworm-slim
 
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
+
 WORKDIR /app
 
 RUN apt-get update && \

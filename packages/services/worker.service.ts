@@ -52,6 +52,7 @@ import { WorkerUpdatedAtUpdaterRepository } from '@core/repositories/worker/Work
 import { WorkerLastConnectionCheckUpdaterRepository } from '@core/repositories/worker/WorkerLastConnectionCheckUpdater.repository';
 import Redis from 'ioredis';
 import { EProxyProtocol } from '@core/common/enums/EProxyProtocol';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 export interface WorkerContainerInspection {
   exists: boolean;
@@ -170,6 +171,8 @@ export class WorkerService {
     'WARM_STANDBY',
     'WARM_POOL_ID',
     'SESSION_VOLUME_NAME',
+    'TZ',
+    'PGTZ',
   ]);
   private readonly inspectedLabelKeys = new Set<string>([
     'underchat.worker_id',
@@ -275,6 +278,9 @@ export class WorkerService {
       const value = envEntry.slice(separatorIndex + 1);
       envMap.set(key, value);
     }
+
+    envMap.set('TZ', APP_TIMEZONE);
+    envMap.set('PGTZ', APP_TIMEZONE);
 
     return [...envMap.entries()].map(([key, value]) => `${key}=${value}`);
   }

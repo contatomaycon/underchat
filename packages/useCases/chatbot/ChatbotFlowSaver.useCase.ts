@@ -899,7 +899,7 @@ export class ChatbotFlowSaverUseCase {
     }
 
     if (!data.timezone || String(data.timezone).trim().length === 0) {
-      data.timezone = 'America/Sao_Paulo';
+      data.timezone = CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE;
     }
 
     if (!Array.isArray(data.options) || data.options.length !== 7) {

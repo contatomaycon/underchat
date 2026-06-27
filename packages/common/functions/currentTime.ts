@@ -1,8 +1,8 @@
 import moment from 'moment-timezone';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 export function currentTime(): string {
-  const timeZone = 'America/Sao_Paulo';
-  const nowInTimeZone = moment.tz(new Date(), timeZone);
+  const nowInTimeZone = moment.tz(new Date(), APP_TIMEZONE);
 
-  return nowInTimeZone.format('YYYY-MM-DD HH:mm:ss');
+  return nowInTimeZone.format('YYYY-MM-DDTHH:mm:ss.SSSZ');
 }

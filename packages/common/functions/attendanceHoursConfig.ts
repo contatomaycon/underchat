@@ -6,8 +6,9 @@ import {
   MessageOnlyDestinationStatus,
   OutsideHoursAction,
 } from '../interfaces/IAttendanceHours';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
-export const ATTENDANCE_HOURS_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
+export const ATTENDANCE_HOURS_DEFAULT_TIMEZONE = APP_TIMEZONE;
 export const ATTENDANCE_HOURS_DEFAULT_OUTSIDE_ACTION: OutsideHoursAction =
   'message_only';
 export const ATTENDANCE_HOURS_DEFAULT_MESSAGE_ONLY_DESTINATION: MessageOnlyDestinationStatus =

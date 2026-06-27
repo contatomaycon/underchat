@@ -1,5 +1,8 @@
 FROM node:24.12.0-bookworm-slim AS base
 
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
+
 FROM base AS turbo
 
 ENV TURBO_TELEMETRY_DISABLED=1
@@ -67,6 +70,9 @@ COPY packages/plugins/i18next/locales /build_locales
 FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
+
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
 
 COPY --from=builder /app/apps/schedule_api/dist ./
 COPY --from=builder /app/node_modules ./node_modules

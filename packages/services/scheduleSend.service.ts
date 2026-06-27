@@ -60,10 +60,11 @@ import {
 } from '@core/common/functions/securityKeyConfig';
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
 @injectable()
 export class ScheduleSendService {
-  private readonly BRAZIL_TIMEZONE = 'America/Sao_Paulo';
+  private readonly BRAZIL_TIMEZONE = APP_TIMEZONE;
   private readonly STATUS_POLL_INTERVAL_MS = 2000;
 
   constructor(

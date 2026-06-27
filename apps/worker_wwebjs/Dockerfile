@@ -1,5 +1,8 @@
 FROM node:24.12.0-bookworm-slim AS base
 
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
+
 FROM base AS turbo
 
 ENV TURBO_TELEMETRY_DISABLED=1
@@ -64,6 +67,9 @@ RUN pnpm build:worker_wwebjs
 FROM node:24.12.0-bookworm-slim
 
 WORKDIR /app
+
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
 
 COPY --from=builder /app/apps/worker_wwebjs/dist ./
 COPY --from=builder /app/node_modules ./node_modules

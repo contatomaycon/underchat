@@ -1,5 +1,8 @@
 FROM golang:1.26.2-bookworm AS builder
 
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
+
 WORKDIR /app/apps/worker_whatsmeow
 
 RUN apt-get update \
@@ -14,6 +17,9 @@ COPY apps/worker_whatsmeow ./
 RUN CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
 FROM debian:bookworm-slim AS runner
+
+ENV TZ=America/Sao_Paulo \
+    PGTZ=America/Sao_Paulo
 
 WORKDIR /app/apps/worker_whatsmeow
 

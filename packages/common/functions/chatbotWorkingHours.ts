@@ -3,8 +3,9 @@ import {
   ChatbotWorkingHoursWeekday,
   IChatbotWorkingHoursRule,
 } from '@core/common/interfaces/IChatbotWorkingHours';
+import { APP_TIMEZONE } from '@core/common/constants/timezone';
 
-export const CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE = 'America/Sao_Paulo';
+export const CHATBOT_WORKING_HOURS_DEFAULT_TIMEZONE = APP_TIMEZONE;
 
 const CHATBOT_WORKING_HOURS_TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
