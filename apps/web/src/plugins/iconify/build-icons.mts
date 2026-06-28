@@ -32,7 +32,7 @@ const ignoredSourceDirectories = new Set([
   'dist',
   'node_modules',
 ]);
-const dynamicFallbackTablerIcons = ['rocket'];
+const dynamicFallbackTablerIcons = ['pinned-off', 'rocket'];
 
 interface BundleScriptCustomSVGConfig {
   dir: string;
