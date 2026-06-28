@@ -20,7 +20,10 @@ type PushEnableResult = {
   reason: 'permission_denied' | 'token_unavailable' | 'server_error' | null;
 };
 
-const ANDROID_CHANNEL_ID = 'underchat-messages';
+const ANDROID_CHANNEL_SOUND_VIBRATE = 'underchat-messages';
+const ANDROID_CHANNEL_SOUND = 'underchat-messages-sound';
+const ANDROID_CHANNEL_VIBRATE = 'underchat-messages-vibrate';
+const ANDROID_CHANNEL_SILENT = 'underchat-messages-silent';
 let initialized = false;
 let responseSubscription: Notifications.EventSubscription | null = null;
 
@@ -203,15 +206,39 @@ export function isAnyMobilePushPreferenceEnabled(user: unknown): boolean {
   return customerChatEnabled || internalChatEnabled;
 }
 
-async function ensureAndroidChannel(): Promise<void> {
+async function ensureAndroidChannels(): Promise<void> {
   if (Platform.OS !== 'android') return;
 
-  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-    name: 'Mensagens',
-    importance: Notifications.AndroidImportance.MAX,
-    vibrationPattern: [0, 250, 250, 250],
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-  });
+  await Promise.all([
+    Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_SOUND_VIBRATE, {
+      name: 'Mensagens',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      enableVibrate: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    }),
+    Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_SOUND, {
+      name: 'Mensagens com som',
+      importance: Notifications.AndroidImportance.MAX,
+      enableVibrate: false,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    }),
+    Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_VIBRATE, {
+      name: 'Mensagens vibrando',
+      importance: Notifications.AndroidImportance.MAX,
+      sound: null,
+      vibrationPattern: [0, 250, 250, 250],
+      enableVibrate: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    }),
+    Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_SILENT, {
+      name: 'Mensagens silenciosas',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: null,
+      enableVibrate: false,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    }),
+  ]);
 }
 
 function getProjectId(): string | null {
@@ -367,7 +394,7 @@ export async function initializePushNotifications(options: {
       }),
     });
 
-    await ensureAndroidChannel();
+    await ensureAndroidChannels();
     initialized = true;
   }
 
@@ -425,7 +452,7 @@ export async function enableMobilePushNotifications(): Promise<PushEnableResult>
     return { ok: false, reason: 'permission_denied' };
   }
 
-  await ensureAndroidChannel();
+  await ensureAndroidChannels();
 
   const platform = getMobilePushPlatform();
   if (!platform) {

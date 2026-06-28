@@ -1,67 +1,28 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import axiosAuth from '@/@webcore/axios';
 import { useInternalChatStore } from '@/@webcore/stores/internalChat';
 import { useChatNotificationToast } from '@/composables/useChatNotificationToast';
 import { formatNotificationBody } from '@/composables/useChatNotifications';
+import {
+  postWebNotificationClientState,
+  registerWebServiceWorker,
+  requestWebNotificationPermission,
+  syncWebPushSubscription,
+  unsubscribeFromWebPushNotifications,
+} from '@/composables/useWebPushSubscription';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { EInternalChatConversationType } from '@core/common/enums/internalChat/EInternalChatConversationType';
 import type { ListMessagesResponse } from '@core/schema/internalChat/listMessages/response.schema';
 
 type InternalMessage = ListMessagesResponse['data']['results'][number];
 
-const VAPID_PUBLIC_KEY_CACHE_TTL_MS = 30 * 60 * 1000;
-
 let activeMessageHandler: ((message: InternalMessage) => void) | null = null;
-let cachedVapidPublicKey: string | null = null;
-let cachedVapidPublicKeyExpiresAt = 0;
-let pendingVapidPublicKeyRequest: Promise<string> | null = null;
 
 export function emitInternalChatNotificationMessage(
   message: InternalMessage
 ): void {
   activeMessageHandler?.(message);
-}
-
-function clearCachedVapidPublicKey(): void {
-  cachedVapidPublicKey = null;
-  cachedVapidPublicKeyExpiresAt = 0;
-}
-
-async function getCachedVapidPublicKey(): Promise<string> {
-  const now = Date.now();
-
-  if (cachedVapidPublicKey && now < cachedVapidPublicKeyExpiresAt) {
-    return cachedVapidPublicKey;
-  }
-
-  if (pendingVapidPublicKeyRequest) {
-    return pendingVapidPublicKeyRequest;
-  }
-
-  pendingVapidPublicKeyRequest = (async () => {
-    const response = await axiosAuth.get('/push/public-key');
-    const publicKey = response?.data?.data?.public_key;
-
-    if (typeof publicKey !== 'string' || publicKey.length === 0) {
-      throw new Error('Invalid push public key response');
-    }
-
-    cachedVapidPublicKey = publicKey;
-    cachedVapidPublicKeyExpiresAt = Date.now() + VAPID_PUBLIC_KEY_CACHE_TTL_MS;
-
-    return publicKey;
-  })();
-
-  try {
-    return await pendingVapidPublicKeyRequest;
-  } catch (error) {
-    clearCachedVapidPublicKey();
-    throw error;
-  } finally {
-    pendingVapidPublicKeyRequest = null;
-  }
 }
 
 function playAlertSound(): void {
@@ -73,27 +34,6 @@ function playAlertSound(): void {
   } catch {
     return;
   }
-}
-
-function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding)
-    .replace(/\-/g, '+')
-    .replace(/_/g, '/');
-
-  const rawData = globalThis.atob(base64);
-  const bytes = Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-  return bytes.buffer;
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer | null): string {
-  if (!buffer) return '';
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return globalThis.btoa(binary);
 }
 
 export const useInternalChatNotifications = () => {
@@ -109,6 +49,7 @@ export const useInternalChatNotifications = () => {
   const isSyncingNotificationSettings = ref(false);
   const hasPendingNotificationSync = ref(false);
   let serviceWorkerMessageHandler: EventListener | null = null;
+  let notificationSyncInterval: number | null = null;
 
   const getChatUser = () => internalChatStore.user?.chat_user ?? null;
 
@@ -132,6 +73,19 @@ export const useInternalChatNotifications = () => {
   const isPushNotificationsEnabled = () =>
     isMasterNotificationsEnabled() &&
     getChatUser()?.notifications_internal_chat_push !== false;
+
+  const isChatPushNotificationsEnabled = () => {
+    const chatUser = getChatUser();
+
+    return (
+      chatUser?.notifications !== false &&
+      chatUser?.notifications_push !== false
+    );
+  };
+
+  const shouldKeepPushSubscription = () => {
+    return isPushNotificationsEnabled() || isChatPushNotificationsEnabled();
+  };
 
   const isDirectNotificationsEnabled = () =>
     isMasterNotificationsEnabled() &&
@@ -175,12 +129,7 @@ export const useInternalChatNotifications = () => {
   };
 
   const postNotificationClientState = () => {
-    if (!('serviceWorker' in navigator)) {
-      return;
-    }
-
-    navigator.serviceWorker.controller?.postMessage({
-      type: 'notificationClientState',
+    postWebNotificationClientState({
       internalChatConversationId:
         internalChatStore.activeConversation?.conversation_id ?? null,
       isVisible: !document.hidden,
@@ -267,21 +216,13 @@ export const useInternalChatNotifications = () => {
   };
 
   async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-    if (!('serviceWorker' in navigator)) {
-      return null;
-    }
+    return registerWebServiceWorker(serviceWorkerRegistration);
+  }
 
-    try {
-      const registration = await navigator.serviceWorker.register(
-        '/service-worker.js',
-        { scope: '/', updateViaCache: 'none' }
-      );
-
-      serviceWorkerRegistration.value = registration;
-      return registration;
-    } catch {
-      return null;
-    }
+  async function unsubscribeFromPushNotificationsInternal(): Promise<void> {
+    await unsubscribeFromWebPushNotifications({
+      serviceWorkerRegistration,
+    });
   }
 
   async function subscribeToPushNotifications(): Promise<void> {
@@ -289,88 +230,23 @@ export const useInternalChatNotifications = () => {
       return;
     }
 
-    if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
-      return;
-    }
-
-    if (
-      !('Notification' in globalThis) ||
-      Notification.permission !== 'granted'
-    ) {
-      return;
-    }
-
     isSubscribing.value = true;
 
     try {
-      let registration =
-        serviceWorkerRegistration.value ??
-        (await navigator.serviceWorker.getRegistration()) ??
-        (await registerServiceWorker());
-
-      if (!registration || !isPushNotificationsEnabled()) {
-        return;
-      }
-
-      serviceWorkerRegistration.value = registration;
-      const existingSubscription =
-        await registration.pushManager.getSubscription();
-
-      if (existingSubscription) {
-        return;
-      }
-
-      const publicKey = await getCachedVapidPublicKey();
-      const convertedVapidKey = urlBase64ToUint8Array(publicKey);
-
-      if (!isPushNotificationsEnabled()) {
-        return;
-      }
-
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey,
-      });
-
-      if (!isPushNotificationsEnabled()) {
-        await subscription.unsubscribe().catch(() => {});
-        return;
-      }
-
-      await axiosAuth.post('/push/subscribe', {
-        endpoint: subscription.endpoint,
-        keys: {
-          p256dh: arrayBufferToBase64(subscription.getKey('p256dh')),
-          auth: arrayBufferToBase64(subscription.getKey('auth')),
-        },
-        user_agent: navigator.userAgent,
+      await syncWebPushSubscription({
+        serviceWorkerRegistration,
+        isPushEnabled: isPushNotificationsEnabled,
+        shouldKeepSubscription: shouldKeepPushSubscription,
       });
     } catch {
-      clearCachedVapidPublicKey();
+      return;
     } finally {
       isSubscribing.value = false;
     }
   }
 
   async function requestNotificationPermission(): Promise<boolean> {
-    if (!('Notification' in globalThis)) {
-      return false;
-    }
-
-    if (Notification.permission === 'granted') {
-      return true;
-    }
-
-    if (Notification.permission === 'default') {
-      try {
-        const permission = await Notification.requestPermission();
-        return permission === 'granted';
-      } catch {
-        return false;
-      }
-    }
-
-    return false;
+    return requestWebNotificationPermission();
   }
 
   async function handleNewMessage(message: InternalMessage): Promise<void> {
@@ -429,6 +305,9 @@ export const useInternalChatNotifications = () => {
   function handleVisibilityChange() {
     isPageVisible.value = !document.hidden;
     postNotificationClientState();
+    if (!document.hidden) {
+      void runNotificationSettingsSync();
+    }
   }
 
   async function syncNotificationSettings(): Promise<void> {
@@ -436,6 +315,9 @@ export const useInternalChatNotifications = () => {
     const shouldUsePushNotifications = isPushNotificationsEnabled();
 
     if (!('Notification' in globalThis)) {
+      if (!shouldKeepPushSubscription()) {
+        await unsubscribeFromPushNotificationsInternal();
+      }
       return;
     }
 
@@ -446,6 +328,9 @@ export const useInternalChatNotifications = () => {
     }
 
     if (!shouldUsePushNotifications) {
+      if (!shouldKeepPushSubscription()) {
+        await unsubscribeFromPushNotificationsInternal();
+      }
       return;
     }
 
@@ -476,15 +361,25 @@ export const useInternalChatNotifications = () => {
     }
   }
 
+  function handleNotificationRepairTrigger(): void {
+    void runNotificationSettingsSync();
+  }
+
   onMounted(async () => {
     isPageVisible.value = !document.hidden;
     activeMessageHandler = (message) => {
       void handleNewMessage(message);
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleNotificationRepairTrigger);
     postNotificationClientState();
 
     if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        handleNotificationRepairTrigger
+      );
+
       if (isPushNotificationsEnabled()) {
         await registerServiceWorker();
       }
@@ -508,24 +403,46 @@ export const useInternalChatNotifications = () => {
         serviceWorkerMessageHandler
       );
     }
+
+    notificationSyncInterval = window.setInterval(
+      handleNotificationRepairTrigger,
+      5 * 60 * 1000
+    );
   });
 
   onUnmounted(() => {
+    if (notificationSyncInterval) {
+      window.clearInterval(notificationSyncInterval);
+      notificationSyncInterval = null;
+    }
+    window.removeEventListener('online', handleNotificationRepairTrigger);
     if (activeMessageHandler) {
       activeMessageHandler = null;
     }
     if ('serviceWorker' in navigator && serviceWorkerMessageHandler) {
       navigator.serviceWorker.removeEventListener(
+        'controllerchange',
+        handleNotificationRepairTrigger
+      );
+      navigator.serviceWorker.removeEventListener(
         'message',
         serviceWorkerMessageHandler
       );
       serviceWorkerMessageHandler = null;
+    } else if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.removeEventListener(
+        'controllerchange',
+        handleNotificationRepairTrigger
+      );
     }
     document.removeEventListener('visibilitychange', handleVisibilityChange);
   });
 
   watch(
     [
+      () => internalChatStore.user?.user_id,
+      () => internalChatStore.user?.chat_user?.notifications,
+      () => internalChatStore.user?.chat_user?.notifications_push,
       () => internalChatStore.user?.chat_user?.notifications_internal_chat,
       () => internalChatStore.user?.chat_user?.notifications_internal_chat_push,
       () =>

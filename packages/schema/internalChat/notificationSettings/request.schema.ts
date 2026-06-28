@@ -5,6 +5,7 @@ export const internalChatNotificationSettingsRequestSchema = Type.Object({
   notifications_internal_chat_direct: Type.Optional(Type.Boolean()),
   notifications_internal_chat_group: Type.Optional(Type.Boolean()),
   notifications_internal_chat_sound: Type.Optional(Type.Boolean()),
+  notifications_internal_chat_vibrate: Type.Optional(Type.Boolean()),
   notifications_internal_chat_toast: Type.Optional(Type.Boolean()),
   notifications_internal_chat_browser: Type.Optional(Type.Boolean()),
   notifications_internal_chat_push: Type.Optional(Type.Boolean()),

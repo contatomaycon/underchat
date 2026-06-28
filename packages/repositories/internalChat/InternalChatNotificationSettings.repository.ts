@@ -38,6 +38,8 @@ export class InternalChatNotificationSettingsRepository {
           chatUser.notifications_internal_chat_group,
         notifications_internal_chat_sound:
           chatUser.notifications_internal_chat_sound,
+        notifications_internal_chat_vibrate:
+          chatUser.notifications_internal_chat_vibrate,
         notifications_internal_chat_toast:
           chatUser.notifications_internal_chat_toast,
         notifications_internal_chat_browser:
@@ -76,6 +78,11 @@ export class InternalChatNotificationSettingsRepository {
         input.notifications_internal_chat_sound;
     }
 
+    if (input.notifications_internal_chat_vibrate !== undefined) {
+      updateInput.notifications_internal_chat_vibrate =
+        input.notifications_internal_chat_vibrate;
+    }
+
     if (input.notifications_internal_chat_toast !== undefined) {
       updateInput.notifications_internal_chat_toast =
         input.notifications_internal_chat_toast;
@@ -95,6 +102,7 @@ export class InternalChatNotificationSettingsRepository {
       updateInput.notifications_internal_chat_direct = false;
       updateInput.notifications_internal_chat_group = false;
       updateInput.notifications_internal_chat_sound = false;
+      updateInput.notifications_internal_chat_vibrate = false;
       updateInput.notifications_internal_chat_toast = false;
       updateInput.notifications_internal_chat_browser = false;
       updateInput.notifications_internal_chat_push = false;
@@ -119,6 +127,8 @@ export class InternalChatNotificationSettingsRepository {
         row.notifications_internal_chat_group !== false,
       notifications_internal_chat_sound:
         row.notifications_internal_chat_sound !== false,
+      notifications_internal_chat_vibrate:
+        row.notifications_internal_chat_vibrate === true,
       notifications_internal_chat_toast:
         row.notifications_internal_chat_toast !== false,
       notifications_internal_chat_browser:
@@ -201,6 +211,7 @@ export class InternalChatNotificationSettingsRepository {
         user_id: userId,
         notifications: true,
         notifications_sound: true,
+        notifications_vibrate: false,
         notifications_toast: true,
         notifications_browser: true,
         notifications_push: true,
@@ -212,6 +223,7 @@ export class InternalChatNotificationSettingsRepository {
         notifications_internal_chat_direct: true,
         notifications_internal_chat_group: true,
         notifications_internal_chat_sound: true,
+        notifications_internal_chat_vibrate: false,
         notifications_internal_chat_toast: true,
         notifications_internal_chat_browser: true,
         notifications_internal_chat_push: true,

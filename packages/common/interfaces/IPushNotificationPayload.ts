@@ -5,5 +5,6 @@ export interface IPushNotificationPayload {
   badge?: string;
   tag?: string;
   sound?: boolean;
+  vibrate?: boolean;
   data?: Record<string, unknown>;
 }

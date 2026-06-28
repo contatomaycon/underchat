@@ -4,6 +4,7 @@ export const chatNotificationSettingsDataSchema = Type.Object({
   chat_user_id: Type.String({ format: 'uuid' }),
   notifications: Type.Boolean(),
   notifications_sound: Type.Boolean(),
+  notifications_vibrate: Type.Boolean(),
   notifications_toast: Type.Boolean(),
   notifications_browser: Type.Boolean(),
   notifications_push: Type.Boolean(),

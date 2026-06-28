@@ -14,6 +14,7 @@ const settings = {
   chat_user_id: 'chat-user-1',
   notifications: true,
   notifications_sound: true,
+  notifications_vibrate: false,
   notifications_toast: true,
   notifications_browser: true,
   notifications_push: true,

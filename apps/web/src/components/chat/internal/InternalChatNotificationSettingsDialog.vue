@@ -37,6 +37,7 @@ const draft = reactive<Required<InternalChatNotificationSettingsRequest>>({
   notifications_internal_chat_direct: true,
   notifications_internal_chat_group: true,
   notifications_internal_chat_sound: true,
+  notifications_internal_chat_vibrate: false,
   notifications_internal_chat_toast: true,
   notifications_internal_chat_browser: true,
   notifications_internal_chat_push: true,
@@ -100,6 +101,8 @@ function syncDraft() {
     settings?.notifications_internal_chat_group !== false;
   draft.notifications_internal_chat_sound =
     settings?.notifications_internal_chat_sound !== false;
+  draft.notifications_internal_chat_vibrate =
+    settings?.notifications_internal_chat_vibrate === true;
   draft.notifications_internal_chat_toast =
     settings?.notifications_internal_chat_toast !== false;
   draft.notifications_internal_chat_browser =

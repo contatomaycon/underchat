@@ -3,6 +3,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const chatNotificationSettingsRequestSchema = Type.Object({
   notifications: Type.Optional(Type.Boolean()),
   notifications_sound: Type.Optional(Type.Boolean()),
+  notifications_vibrate: Type.Optional(Type.Boolean()),
   notifications_toast: Type.Optional(Type.Boolean()),
   notifications_browser: Type.Optional(Type.Boolean()),
   notifications_push: Type.Optional(Type.Boolean()),

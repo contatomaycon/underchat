@@ -10,6 +10,7 @@ export type ChatNotificationPreferences = {
   notifications?: boolean | null;
   notifications_push?: boolean | null;
   notifications_sound?: boolean | null;
+  notifications_vibrate?: boolean | null;
   notifications_message_queue?: boolean | null;
   notifications_message_in_chat?: boolean | null;
   notifications_message_chatbot?: boolean | null;
@@ -20,6 +21,7 @@ export type InternalChatNotificationPreferences = {
   notifications_internal_chat?: boolean | null;
   notifications_internal_chat_push?: boolean | null;
   notifications_internal_chat_sound?: boolean | null;
+  notifications_internal_chat_vibrate?: boolean | null;
   notifications_internal_chat_direct?: boolean | null;
   notifications_internal_chat_group?: boolean | null;
 };
@@ -27,6 +29,7 @@ export type InternalChatNotificationPreferences = {
 export type PushNotificationRecipient = {
   user_id: string;
   notifications_sound: boolean;
+  notifications_vibrate: boolean;
 };
 
 export function isChatbotNotificationStatus(status?: EChatStatus): boolean {
@@ -126,6 +129,7 @@ export class UsersWithNotificationsListerRepository {
       .select({
         user_id: user.user_id,
         notifications_sound: chatUser.notifications_sound,
+        notifications_vibrate: chatUser.notifications_vibrate,
       })
       .from(user)
       .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
@@ -139,6 +143,7 @@ export class UsersWithNotificationsListerRepository {
     return result.map((row) => ({
       user_id: row.user_id,
       notifications_sound: row.notifications_sound !== false,
+      notifications_vibrate: row.notifications_vibrate === true,
     }));
   };
 
@@ -154,6 +159,7 @@ export class UsersWithNotificationsListerRepository {
       .select({
         user_id: user.user_id,
         notifications_sound: chatUser.notifications_sound,
+        notifications_vibrate: chatUser.notifications_vibrate,
       })
       .from(user)
       .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
@@ -172,6 +178,7 @@ export class UsersWithNotificationsListerRepository {
     return result.map((row) => ({
       user_id: row.user_id,
       notifications_sound: row.notifications_sound !== false,
+      notifications_vibrate: row.notifications_vibrate === true,
     }));
   };
 
@@ -193,6 +200,7 @@ export class UsersWithNotificationsListerRepository {
       .select({
         user_id: user.user_id,
         notifications_sound: chatUser.notifications_internal_chat_sound,
+        notifications_vibrate: chatUser.notifications_internal_chat_vibrate,
       })
       .from(user)
       .innerJoin(chatUser, eq(chatUser.user_id, user.user_id))
@@ -211,6 +219,7 @@ export class UsersWithNotificationsListerRepository {
     return result.map((row) => ({
       user_id: row.user_id,
       notifications_sound: row.notifications_sound !== false,
+      notifications_vibrate: row.notifications_vibrate === true,
     }));
   };
 }

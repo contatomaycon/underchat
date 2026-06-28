@@ -235,7 +235,11 @@ export class PushNotificationService {
     const promises = allowedRecipients.map((recipient) =>
       this.sendNotificationToUser(
         recipient.user_id,
-        this.withRecipientSound(payload, recipient.notifications_sound)
+        this.withRecipientDelivery(
+          payload,
+          recipient.notifications_sound,
+          recipient.notifications_vibrate
+        )
       ).catch(() => {})
     );
 
@@ -319,7 +323,11 @@ export class PushNotificationService {
     const promises = allowedRecipients.map((recipient) =>
       this.sendNotificationToUser(
         recipient.user_id,
-        this.withRecipientSound(payload, recipient.notifications_sound)
+        this.withRecipientDelivery(
+          payload,
+          recipient.notifications_sound,
+          recipient.notifications_vibrate
+        )
       ).catch(() => {})
     );
 
@@ -389,7 +397,11 @@ export class PushNotificationService {
     const promises = recipients.map((recipient) =>
       this.sendNotificationToUser(
         recipient.user_id,
-        this.withRecipientSound(payload, recipient.notifications_sound)
+        this.withRecipientDelivery(
+          payload,
+          recipient.notifications_sound,
+          recipient.notifications_vibrate
+        )
       ).catch(() => {})
     );
 
@@ -568,13 +580,15 @@ export class PushNotificationService {
     );
   }
 
-  private withRecipientSound(
+  private withRecipientDelivery(
     payload: IPushNotificationPayload,
-    notificationsSound: boolean
+    notificationsSound: boolean,
+    notificationsVibrate: boolean
   ): IPushNotificationPayload {
     return {
       ...payload,
       sound: notificationsSound,
+      vibrate: notificationsVibrate,
     };
   }
 

@@ -33,6 +33,10 @@ export class ChatUserUpdaterRepository {
       inputUpdate.notifications_sound = input.notifications_sound;
     }
 
+    if (input.notifications_vibrate !== undefined) {
+      inputUpdate.notifications_vibrate = input.notifications_vibrate;
+    }
+
     if (input.notifications_toast !== undefined) {
       inputUpdate.notifications_toast = input.notifications_toast;
     }
@@ -66,6 +70,7 @@ export class ChatUserUpdaterRepository {
 
     if (input.notifications === false) {
       inputUpdate.notifications_sound = false;
+      inputUpdate.notifications_vibrate = false;
       inputUpdate.notifications_toast = false;
       inputUpdate.notifications_browser = false;
       inputUpdate.notifications_push = false;
@@ -95,6 +100,11 @@ export class ChatUserUpdaterRepository {
         input.notifications_internal_chat_sound;
     }
 
+    if (input.notifications_internal_chat_vibrate !== undefined) {
+      inputUpdate.notifications_internal_chat_vibrate =
+        input.notifications_internal_chat_vibrate;
+    }
+
     if (input.notifications_internal_chat_toast !== undefined) {
       inputUpdate.notifications_internal_chat_toast =
         input.notifications_internal_chat_toast;
@@ -114,6 +124,7 @@ export class ChatUserUpdaterRepository {
       inputUpdate.notifications_internal_chat_direct = false;
       inputUpdate.notifications_internal_chat_group = false;
       inputUpdate.notifications_internal_chat_sound = false;
+      inputUpdate.notifications_internal_chat_vibrate = false;
       inputUpdate.notifications_internal_chat_toast = false;
       inputUpdate.notifications_internal_chat_browser = false;
       inputUpdate.notifications_internal_chat_push = false;

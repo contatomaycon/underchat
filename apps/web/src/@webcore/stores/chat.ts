@@ -863,6 +863,10 @@ export const useChatStore = defineStore('chat', {
           input.notifications_sound ??
           existingChatUser?.notifications_sound ??
           true,
+        notifications_vibrate:
+          input.notifications_vibrate ??
+          existingChatUser?.notifications_vibrate ??
+          false,
         notifications_toast:
           input.notifications_toast ??
           existingChatUser?.notifications_toast ??
@@ -907,6 +911,10 @@ export const useChatStore = defineStore('chat', {
           input.notifications_internal_chat_sound ??
           existingChatUser?.notifications_internal_chat_sound ??
           true,
+        notifications_internal_chat_vibrate:
+          input.notifications_internal_chat_vibrate ??
+          existingChatUser?.notifications_internal_chat_vibrate ??
+          false,
         notifications_internal_chat_toast:
           input.notifications_internal_chat_toast ??
           existingChatUser?.notifications_internal_chat_toast ??
@@ -946,7 +954,9 @@ export const useChatStore = defineStore('chat', {
       setUser(this.user);
     },
     isChatPinned(chatId?: string | null): boolean {
-      return !!chatId && this.pinnedChats.some((chat) => chat.chat_id === chatId);
+      return (
+        !!chatId && this.pinnedChats.some((chat) => chat.chat_id === chatId)
+      );
     },
     setPinningChat(chatId: string, isLoading: boolean): void {
       if (!chatId) {
@@ -1242,10 +1252,7 @@ export const useChatStore = defineStore('chat', {
         'chatbot' | 'queue' | 'in_chat' | 'closed',
         {
           list:
-            | 'kanbanChatbot'
-            | 'kanbanQueue'
-            | 'kanbanInChat'
-            | 'kanbanClosed';
+            'kanbanChatbot' | 'kanbanQueue' | 'kanbanInChat' | 'kanbanClosed';
           pagings:
             | 'kanbanChatbotPagings'
             | 'kanbanQueuePagings'
@@ -1624,10 +1631,7 @@ export const useChatStore = defineStore('chat', {
 
     isCurrentUserPrimary(
       chat:
-        | Pick<ListChatsResult, 'user'>
-        | Pick<IChat, 'user'>
-        | null
-        | undefined
+        Pick<ListChatsResult, 'user'> | Pick<IChat, 'user'> | null | undefined
     ): boolean {
       const currentUserId = this.user?.user_id ?? null;
       if (!currentUserId || !chat?.user?.id) {
@@ -3152,6 +3156,8 @@ export const useChatStore = defineStore('chat', {
         about: this.user?.chat_user?.about ?? '',
         notifications: this.user?.chat_user?.notifications ?? true,
         notifications_sound: this.user?.chat_user?.notifications_sound ?? true,
+        notifications_vibrate:
+          this.user?.chat_user?.notifications_vibrate ?? false,
         notifications_toast: this.user?.chat_user?.notifications_toast ?? true,
         notifications_browser:
           this.user?.chat_user?.notifications_browser ?? true,
@@ -3172,6 +3178,8 @@ export const useChatStore = defineStore('chat', {
           this.user?.chat_user?.notifications_internal_chat_group ?? true,
         notifications_internal_chat_sound:
           this.user?.chat_user?.notifications_internal_chat_sound ?? true,
+        notifications_internal_chat_vibrate:
+          this.user?.chat_user?.notifications_internal_chat_vibrate ?? false,
         notifications_internal_chat_toast:
           this.user?.chat_user?.notifications_internal_chat_toast ?? true,
         notifications_internal_chat_browser:
@@ -3185,6 +3193,7 @@ export const useChatStore = defineStore('chat', {
         status: chatUserUpdate.status,
         notifications: chatUserUpdate.notifications,
         notifications_sound: chatUserUpdate.notifications_sound,
+        notifications_vibrate: chatUserUpdate.notifications_vibrate,
         notifications_toast: chatUserUpdate.notifications_toast,
         notifications_browser: chatUserUpdate.notifications_browser,
         notifications_push: chatUserUpdate.notifications_push,
@@ -3194,6 +3203,21 @@ export const useChatStore = defineStore('chat', {
         notifications_message_chatbot:
           chatUserUpdate.notifications_message_chatbot,
         notifications_transfer: chatUserUpdate.notifications_transfer,
+        notifications_internal_chat: chatUserUpdate.notifications_internal_chat,
+        notifications_internal_chat_direct:
+          chatUserUpdate.notifications_internal_chat_direct,
+        notifications_internal_chat_group:
+          chatUserUpdate.notifications_internal_chat_group,
+        notifications_internal_chat_sound:
+          chatUserUpdate.notifications_internal_chat_sound,
+        notifications_internal_chat_vibrate:
+          chatUserUpdate.notifications_internal_chat_vibrate,
+        notifications_internal_chat_toast:
+          chatUserUpdate.notifications_internal_chat_toast,
+        notifications_internal_chat_browser:
+          chatUserUpdate.notifications_internal_chat_browser,
+        notifications_internal_chat_push:
+          chatUserUpdate.notifications_internal_chat_push,
       });
     },
 
@@ -5217,8 +5241,7 @@ export const useChatStore = defineStore('chat', {
         this.kanbanInChat.find((c) => c.chat_id === chatId) ??
         this.kanbanChatbot.find((c) => c.chat_id === chatId) ??
         this.kanbanClosed.find((c) => c.chat_id === chatId)) as
-        | ListChatsResult
-        | undefined;
+        ListChatsResult | undefined;
 
       if (!chat?.chat_id) {
         return;
@@ -6609,9 +6632,7 @@ export const useChatStore = defineStore('chat', {
 
         const body: {
           label_template_ids?:
-            | Array<{ value: string }>
-            | { value: string | null }
-            | undefined;
+            Array<{ value: string }> | { value: string | null } | undefined;
         } = {};
 
         if (labelTemplateIds === null || labelTemplateIds === undefined) {

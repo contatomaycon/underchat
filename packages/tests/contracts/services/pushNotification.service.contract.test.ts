@@ -119,6 +119,7 @@ function makeService(eligibleUserIds: string[] = [memberUserId]) {
   const eligibleRecipients = eligibleUserIds.map((userId) => ({
     user_id: userId,
     notifications_sound: true,
+    notifications_vibrate: false,
   }));
   const usersWithNotificationsListerRepository = {
     listInternalChatUsersWithNotifications: jest
@@ -199,6 +200,8 @@ describe('PushNotificationService internal chat notifications', () => {
         body: 'Author: hello',
         icon: 'https://example.com/group.png',
         tag: `internal-chat-${conversationId}`,
+        sound: true,
+        vibrate: false,
         data: {
           notificationType: 'internal_chat_message',
           internalChatConversationId: conversationId,
@@ -266,7 +269,13 @@ describe('PushNotificationService chat message audiences', () => {
       sendNotificationToUser,
     } = makeService();
     usersWithNotificationsListerRepository.listUsersWithNotifications.mockResolvedValue(
-      [{ user_id: targetUserId, notifications_sound: false }]
+      [
+        {
+          user_id: targetUserId,
+          notifications_sound: false,
+          notifications_vibrate: true,
+        },
+      ]
     );
 
     await service.sendNotificationForChatMessage(
@@ -279,7 +288,7 @@ describe('PushNotificationService chat message audiences', () => {
     ).toHaveBeenCalledWith(accountId, EChatStatus.queue, [targetUserId]);
     expect(sendNotificationToUser).toHaveBeenCalledWith(
       targetUserId,
-      expect.objectContaining({ sound: false })
+      expect.objectContaining({ sound: false, vibrate: true })
     );
   });
 
@@ -347,7 +356,13 @@ describe('PushNotificationService chat message audiences', () => {
       ['sector-user-1']
     );
     usersWithNotificationsListerRepository.listUsersWithNotifications.mockResolvedValue(
-      [{ user_id: 'sector-user-1', notifications_sound: true }]
+      [
+        {
+          user_id: 'sector-user-1',
+          notifications_sound: true,
+          notifications_vibrate: false,
+        },
+      ]
     );
     permissionService.viewPermissionByUserId.mockResolvedValue([]);
 
@@ -509,7 +524,13 @@ describe('PushNotificationService chat transfer notifications', () => {
       sendNotificationToUser,
     } = makeService();
     usersWithNotificationsListerRepository.listUsersWithTransferNotifications.mockResolvedValue(
-      [{ user_id: targetUserId, notifications_sound: true }]
+      [
+        {
+          user_id: targetUserId,
+          notifications_sound: true,
+          notifications_vibrate: true,
+        },
+      ]
     );
     const chat = makeChat();
 
@@ -531,6 +552,8 @@ describe('PushNotificationService chat transfer notifications', () => {
         title: 'Contact',
         body: 'Atendimento transferido para Target - Suporte - WhatsApp',
         tag: 'chat-transfer-chat-1',
+        sound: true,
+        vibrate: true,
         data: expect.objectContaining({
           chatId: 'chat-1',
           notificationType: 'chat_transfer',

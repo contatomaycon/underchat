@@ -58,17 +58,14 @@ export interface ChatUser {
 }
 
 export type ChatUserStatus =
-  | 'online'
-  | 'busy'
-  | 'do_not_disturb'
-  | 'away'
-  | 'offline';
+  'online' | 'busy' | 'do_not_disturb' | 'away' | 'offline';
 
 export type UpdateChatUserPayload = {
   about?: string | null;
   status?: ChatUserStatus;
   notifications?: boolean;
   notifications_sound?: boolean;
+  notifications_vibrate?: boolean;
   notifications_toast?: boolean;
   notifications_browser?: boolean;
   notifications_push?: boolean;
@@ -204,6 +201,7 @@ export interface ChatNotificationSettings {
   chat_user_id?: string;
   notifications: boolean;
   notifications_sound: boolean;
+  notifications_vibrate: boolean;
   notifications_toast: boolean;
   notifications_browser: boolean;
   notifications_push: boolean;
@@ -880,9 +878,7 @@ export async function updateChatLabel(
 
   const body: {
     label_template_ids?:
-      | Array<{ value: string }>
-      | { value: string | null }
-      | undefined;
+      Array<{ value: string }> | { value: string | null } | undefined;
   } = {};
 
   if (labelTemplateIds === null || labelTemplateIds === undefined) {

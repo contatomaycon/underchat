@@ -284,6 +284,10 @@ export const useInternalChatStore = defineStore('internalChat', {
           input.notifications_sound ??
           existingChatUser?.notifications_sound ??
           true,
+        notifications_vibrate:
+          input.notifications_vibrate ??
+          existingChatUser?.notifications_vibrate ??
+          false,
         notifications_toast:
           input.notifications_toast ??
           existingChatUser?.notifications_toast ??
@@ -328,6 +332,10 @@ export const useInternalChatStore = defineStore('internalChat', {
           input.notifications_internal_chat_sound ??
           existingChatUser?.notifications_internal_chat_sound ??
           true,
+        notifications_internal_chat_vibrate:
+          input.notifications_internal_chat_vibrate ??
+          existingChatUser?.notifications_internal_chat_vibrate ??
+          false,
         notifications_internal_chat_toast:
           input.notifications_internal_chat_toast ??
           existingChatUser?.notifications_internal_chat_toast ??

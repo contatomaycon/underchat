@@ -13,6 +13,7 @@ const enabledPreferences = {
   notifications: true,
   notifications_push: true,
   notifications_sound: true,
+  notifications_vibrate: false,
   notifications_message_queue: true,
   notifications_message_in_chat: true,
   notifications_message_chatbot: true,
@@ -103,8 +104,16 @@ describe('isChatbotNotificationStatus', () => {
 describe('UsersWithNotificationsListerRepository', () => {
   it('returns user ids from the query result', async () => {
     const { db, execute } = createSelectDbMock([
-      { user_id: 'user-1', notifications_sound: true },
-      { user_id: 'user-2', notifications_sound: false },
+      {
+        user_id: 'user-1',
+        notifications_sound: true,
+        notifications_vibrate: true,
+      },
+      {
+        user_id: 'user-2',
+        notifications_sound: false,
+        notifications_vibrate: false,
+      },
     ]);
 
     const repository = new UsersWithNotificationsListerRepository(db as never);
@@ -112,8 +121,16 @@ describe('UsersWithNotificationsListerRepository', () => {
     await expect(
       repository.listUsersWithNotifications('account-1')
     ).resolves.toEqual([
-      { user_id: 'user-1', notifications_sound: true },
-      { user_id: 'user-2', notifications_sound: false },
+      {
+        user_id: 'user-1',
+        notifications_sound: true,
+        notifications_vibrate: true,
+      },
+      {
+        user_id: 'user-2',
+        notifications_sound: false,
+        notifications_vibrate: false,
+      },
     ]);
     expect(execute).toHaveBeenCalledTimes(1);
   });
@@ -129,7 +146,11 @@ describe('UsersWithNotificationsListerRepository', () => {
 
   it('executes queries for all message status branches', async () => {
     const { db, where } = createSelectDbMock([
-      { user_id: 'user-1', notifications_sound: true },
+      {
+        user_id: 'user-1',
+        notifications_sound: true,
+        notifications_vibrate: false,
+      },
     ]);
     const repository = new UsersWithNotificationsListerRepository(db as never);
 
@@ -156,8 +177,16 @@ describe('UsersWithNotificationsListerRepository', () => {
 
   it('returns transfer notification user ids from eligible candidates', async () => {
     const { db, execute, where } = createSelectDbMock([
-      { user_id: 'user-1', notifications_sound: true },
-      { user_id: 'user-2', notifications_sound: false },
+      {
+        user_id: 'user-1',
+        notifications_sound: true,
+        notifications_vibrate: true,
+      },
+      {
+        user_id: 'user-2',
+        notifications_sound: false,
+        notifications_vibrate: false,
+      },
     ]);
     const repository = new UsersWithNotificationsListerRepository(db as never);
 
@@ -167,8 +196,16 @@ describe('UsersWithNotificationsListerRepository', () => {
         'user-2',
       ])
     ).resolves.toEqual([
-      { user_id: 'user-1', notifications_sound: true },
-      { user_id: 'user-2', notifications_sound: false },
+      {
+        user_id: 'user-1',
+        notifications_sound: true,
+        notifications_vibrate: true,
+      },
+      {
+        user_id: 'user-2',
+        notifications_sound: false,
+        notifications_vibrate: false,
+      },
     ]);
     expect(where).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);
@@ -190,8 +227,16 @@ describe('UsersWithNotificationsListerRepository', () => {
 
   it('returns internal chat notification user ids from active participants', async () => {
     const { db, execute, where } = createSelectDbMock([
-      { user_id: 'user-1', notifications_sound: true },
-      { user_id: 'user-2', notifications_sound: false },
+      {
+        user_id: 'user-1',
+        notifications_sound: true,
+        notifications_vibrate: true,
+      },
+      {
+        user_id: 'user-2',
+        notifications_sound: false,
+        notifications_vibrate: false,
+      },
     ]);
     const repository = new UsersWithNotificationsListerRepository(db as never);
 
@@ -202,8 +247,16 @@ describe('UsersWithNotificationsListerRepository', () => {
         EInternalChatConversationType.direct
       )
     ).resolves.toEqual([
-      { user_id: 'user-1', notifications_sound: true },
-      { user_id: 'user-2', notifications_sound: false },
+      {
+        user_id: 'user-1',
+        notifications_sound: true,
+        notifications_vibrate: true,
+      },
+      {
+        user_id: 'user-2',
+        notifications_sound: false,
+        notifications_vibrate: false,
+      },
     ]);
     expect(where).toHaveBeenCalledTimes(1);
     expect(execute).toHaveBeenCalledTimes(1);

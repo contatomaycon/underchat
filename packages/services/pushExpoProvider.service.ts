@@ -3,9 +3,13 @@ import {
   IPushDeliveryJob,
   IPushDeliveryResult,
 } from '@core/common/interfaces/IPushDelivery';
+import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 
 const EXPO_PUSH_API_URL = 'https://exp.host/--/api/v2/push/send';
-const CHAT_NOTIFICATION_ANDROID_CHANNEL = 'underchat-messages';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND_VIBRATE = 'underchat-messages';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND = 'underchat-messages-sound';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_VIBRATE = 'underchat-messages-vibrate';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_SILENT = 'underchat-messages-silent';
 
 type ExpoTicket = {
   status?: 'ok' | 'error';
@@ -37,7 +41,7 @@ export class PushExpoProviderService {
       body: job.payload.body,
       ...(job.payload.sound !== false ? { sound: 'default' } : {}),
       priority: 'high',
-      channelId: CHAT_NOTIFICATION_ANDROID_CHANNEL,
+      channelId: getAndroidChannelId(job.payload),
       data: job.payload.data ?? {},
     }));
 
@@ -89,4 +93,23 @@ export class PushExpoProviderService {
       reason: ticket?.details?.error ?? 'expo_ticket_error',
     };
   }
+}
+
+function getAndroidChannelId(payload: IPushNotificationPayload): string {
+  const hasSound = payload.sound !== false;
+  const hasVibration = payload.vibrate === true;
+
+  if (hasSound && hasVibration) {
+    return CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND_VIBRATE;
+  }
+
+  if (hasSound) {
+    return CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND;
+  }
+
+  if (hasVibration) {
+    return CHAT_NOTIFICATION_ANDROID_CHANNEL_VIBRATE;
+  }
+
+  return CHAT_NOTIFICATION_ANDROID_CHANNEL_SILENT;
 }

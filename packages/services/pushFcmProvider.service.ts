@@ -4,10 +4,14 @@ import {
   IPushDeliveryJob,
   IPushDeliveryResult,
 } from '@core/common/interfaces/IPushDelivery';
+import { IPushNotificationPayload } from '@core/common/interfaces/IPushNotificationPayload';
 
 const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
-const CHAT_NOTIFICATION_ANDROID_CHANNEL = 'underchat-messages';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND_VIBRATE = 'underchat-messages';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND = 'underchat-messages-sound';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_VIBRATE = 'underchat-messages-vibrate';
+const CHAT_NOTIFICATION_ANDROID_CHANNEL_SILENT = 'underchat-messages-silent';
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 
 type FcmServiceAccount = {
@@ -67,7 +71,7 @@ export class PushFcmProviderService {
               android: {
                 priority: 'HIGH',
                 notification: {
-                  channel_id: CHAT_NOTIFICATION_ANDROID_CHANNEL,
+                  channel_id: getAndroidChannelId(job.payload),
                   tag: job.payload.tag,
                   ...(job.payload.sound !== false ? { sound: 'default' } : {}),
                 },
@@ -220,4 +224,23 @@ export class PushFcmProviderService {
 
     return statusCode === 400 && reason === 'INVALID_ARGUMENT';
   }
+}
+
+function getAndroidChannelId(payload: IPushNotificationPayload): string {
+  const hasSound = payload.sound !== false;
+  const hasVibration = payload.vibrate === true;
+
+  if (hasSound && hasVibration) {
+    return CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND_VIBRATE;
+  }
+
+  if (hasSound) {
+    return CHAT_NOTIFICATION_ANDROID_CHANNEL_SOUND;
+  }
+
+  if (hasVibration) {
+    return CHAT_NOTIFICATION_ANDROID_CHANNEL_VIBRATE;
+  }
+
+  return CHAT_NOTIFICATION_ANDROID_CHANNEL_SILENT;
 }

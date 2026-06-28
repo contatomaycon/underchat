@@ -22,6 +22,7 @@ describe('mobile notification preferences', () => {
     expect(resolveChatForegroundDelivery(settings)).toEqual({
       showToast: true,
       playSound: true,
+      vibrate: false,
     });
   });
 
@@ -37,6 +38,20 @@ describe('mobile notification preferences', () => {
     expect(resolveChatForegroundDelivery(settings)).toEqual({
       showToast: false,
       playSound: false,
+      vibrate: false,
+    });
+  });
+
+  it('vibrates chat foreground notifications only when enabled', () => {
+    const settings = {
+      ...DEFAULT_MOBILE_CHAT_NOTIFICATION_SETTINGS,
+      notifications_vibrate: true,
+    };
+
+    expect(resolveChatForegroundDelivery(settings)).toEqual({
+      showToast: true,
+      playSound: true,
+      vibrate: true,
     });
   });
 
@@ -68,6 +83,7 @@ describe('mobile notification preferences', () => {
     expect(resolveInternalChatForegroundDelivery(settings)).toEqual({
       showToast: true,
       playSound: true,
+      vibrate: false,
     });
   });
 
@@ -91,6 +107,7 @@ describe('mobile notification preferences', () => {
     expect(resolveInternalChatForegroundDelivery(disabled)).toEqual({
       showToast: false,
       playSound: false,
+      vibrate: false,
     });
     expect(
       shouldNotifyInternalChatMessage(
@@ -104,5 +121,18 @@ describe('mobile notification preferences', () => {
         INTERNAL_CHAT_CONVERSATION_TYPE.group
       )
     ).toBe(true);
+  });
+
+  it('vibrates internal chat foreground notifications only when enabled', () => {
+    const settings = {
+      ...DEFAULT_MOBILE_INTERNAL_CHAT_NOTIFICATION_SETTINGS,
+      notifications_internal_chat_vibrate: true,
+    };
+
+    expect(resolveInternalChatForegroundDelivery(settings)).toEqual({
+      showToast: true,
+      playSound: true,
+      vibrate: true,
+    });
   });
 });

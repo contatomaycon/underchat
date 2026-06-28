@@ -78,9 +78,46 @@ describe('PushFcmProviderService', () => {
     const request = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(request.message.token).toBe('fcm-token');
     expect(request.message.android.notification.channel_id).toBe(
-      'underchat-messages'
+      'underchat-messages-sound'
     );
     expect(request.message.data.chatSnapshot).toBe('{"chat_id":"chat-1"}');
+  });
+
+  it('selects the Android channel from sound and vibration preferences', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn(async () => ({
+          access_token: 'access-token',
+          expires_in: 3600,
+        })),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn(async () => ({ name: 'message-1' })),
+      });
+    const service = new PushFcmProviderService();
+
+    await service.send({
+      id: 'job-1',
+      userId: 'user-1',
+      provider: 'fcm',
+      endpoint: 'fcm-token',
+      attempt: 0,
+      createdAt: Date.now(),
+      payload: {
+        title: 'Title',
+        body: 'Body',
+        sound: false,
+        vibrate: true,
+      },
+    });
+
+    const request = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(request.message.android.notification.channel_id).toBe(
+      'underchat-messages-vibrate'
+    );
+    expect(request.message.android.notification.sound).toBeUndefined();
   });
 
   it('maps unregistered token errors to permanent failures', async () => {

@@ -133,6 +133,7 @@ const DEFAULT_INTERNAL_CHAT_NOTIFICATION_SETTINGS: InternalChatNotificationSetti
     notifications_internal_chat_direct: true,
     notifications_internal_chat_group: true,
     notifications_internal_chat_sound: true,
+    notifications_internal_chat_vibrate: false,
     notifications_internal_chat_toast: true,
     notifications_internal_chat_browser: true,
     notifications_internal_chat_push: true,
@@ -144,6 +145,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readBooleanDefaultTrue(value: unknown): boolean {
   return value !== false;
+}
+
+function readBooleanDefaultFalse(value: unknown): boolean {
+  return value === true;
 }
 
 function readInternalChatNotificationSettingsFromUser(
@@ -168,6 +173,9 @@ function readInternalChatNotificationSettingsFromUser(
     ),
     notifications_internal_chat_sound: readBooleanDefaultTrue(
       chatUser.notifications_internal_chat_sound
+    ),
+    notifications_internal_chat_vibrate: readBooleanDefaultFalse(
+      chatUser.notifications_internal_chat_vibrate
     ),
     notifications_internal_chat_toast: readBooleanDefaultTrue(
       chatUser.notifications_internal_chat_toast
@@ -344,6 +352,13 @@ function InternalChatNotificationSettingsSheet({
             'Som',
             'Tocar alerta sonoro quando disponível.',
             'volume-high-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_internal_chat_vibrate',
+            'Vibrar',
+            'Vibrar o celular quando uma notificação chegar.',
+            'phone-portrait-outline',
             childOptionsDisabled
           )}
           {renderOption(

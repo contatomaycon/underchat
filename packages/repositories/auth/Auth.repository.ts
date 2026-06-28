@@ -72,6 +72,7 @@ export class AuthRepository {
           about: chatUser.about,
           notifications: chatUser.notifications,
           notifications_sound: chatUser.notifications_sound,
+          notifications_vibrate: chatUser.notifications_vibrate,
           notifications_toast: chatUser.notifications_toast,
           notifications_browser: chatUser.notifications_browser,
           notifications_push: chatUser.notifications_push,
@@ -86,6 +87,8 @@ export class AuthRepository {
             chatUser.notifications_internal_chat_group,
           notifications_internal_chat_sound:
             chatUser.notifications_internal_chat_sound,
+          notifications_internal_chat_vibrate:
+            chatUser.notifications_internal_chat_vibrate,
           notifications_internal_chat_toast:
             chatUser.notifications_internal_chat_toast,
           notifications_internal_chat_browser:
@@ -222,6 +225,7 @@ export class AuthRepository {
           about: chatUser.about,
           notifications: chatUser.notifications,
           notifications_sound: chatUser.notifications_sound,
+          notifications_vibrate: chatUser.notifications_vibrate,
           notifications_toast: chatUser.notifications_toast,
           notifications_browser: chatUser.notifications_browser,
           notifications_push: chatUser.notifications_push,
@@ -236,6 +240,8 @@ export class AuthRepository {
             chatUser.notifications_internal_chat_group,
           notifications_internal_chat_sound:
             chatUser.notifications_internal_chat_sound,
+          notifications_internal_chat_vibrate:
+            chatUser.notifications_internal_chat_vibrate,
           notifications_internal_chat_toast:
             chatUser.notifications_internal_chat_toast,
           notifications_internal_chat_browser:
@@ -345,6 +351,7 @@ export class AuthRepository {
           about: chatUser.about,
           notifications: chatUser.notifications,
           notifications_sound: chatUser.notifications_sound,
+          notifications_vibrate: chatUser.notifications_vibrate,
           notifications_toast: chatUser.notifications_toast,
           notifications_browser: chatUser.notifications_browser,
           notifications_push: chatUser.notifications_push,
@@ -359,6 +366,8 @@ export class AuthRepository {
             chatUser.notifications_internal_chat_group,
           notifications_internal_chat_sound:
             chatUser.notifications_internal_chat_sound,
+          notifications_internal_chat_vibrate:
+            chatUser.notifications_internal_chat_vibrate,
           notifications_internal_chat_toast:
             chatUser.notifications_internal_chat_toast,
           notifications_internal_chat_browser:

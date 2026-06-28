@@ -14,6 +14,7 @@ export const DEFAULT_MOBILE_CHAT_NOTIFICATION_SETTINGS: ChatNotificationSettings
   {
     notifications: true,
     notifications_sound: true,
+    notifications_vibrate: false,
     notifications_toast: true,
     notifications_browser: true,
     notifications_push: true,
@@ -29,6 +30,7 @@ export const DEFAULT_MOBILE_INTERNAL_CHAT_NOTIFICATION_SETTINGS: InternalChatNot
     notifications_internal_chat_direct: true,
     notifications_internal_chat_group: true,
     notifications_internal_chat_sound: true,
+    notifications_internal_chat_vibrate: false,
     notifications_internal_chat_toast: true,
     notifications_internal_chat_browser: true,
     notifications_internal_chat_push: true,
@@ -37,6 +39,7 @@ export const DEFAULT_MOBILE_INTERNAL_CHAT_NOTIFICATION_SETTINGS: InternalChatNot
 export type MobileForegroundDelivery = {
   showToast: boolean;
   playSound: boolean;
+  vibrate: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -83,6 +86,7 @@ export function normalizeMobileChatNotificationSettings(
     chat_user_id: readString(input.chat_user_id),
     notifications: readBooleanDefaultTrue(input.notifications),
     notifications_sound: readBooleanDefaultTrue(input.notifications_sound),
+    notifications_vibrate: readBooleanDefaultFalse(input.notifications_vibrate),
     notifications_toast: readBooleanDefaultTrue(input.notifications_toast),
     notifications_browser: readBooleanDefaultTrue(input.notifications_browser),
     notifications_push: readBooleanDefaultTrue(input.notifications_push),
@@ -111,23 +115,20 @@ export function readMobileChatNotificationSettingsFromUser(
     chat_user_id: readString(chatUser.chat_user_id),
     notifications: chatUser.notifications as boolean | undefined,
     notifications_sound: chatUser.notifications_sound as boolean | undefined,
+    notifications_vibrate: chatUser.notifications_vibrate as
+      boolean | undefined,
     notifications_toast: chatUser.notifications_toast as boolean | undefined,
     notifications_browser: chatUser.notifications_browser as
-      | boolean
-      | undefined,
+      boolean | undefined,
     notifications_push: chatUser.notifications_push as boolean | undefined,
     notifications_message_queue: chatUser.notifications_message_queue as
-      | boolean
-      | undefined,
+      boolean | undefined,
     notifications_message_in_chat: chatUser.notifications_message_in_chat as
-      | boolean
-      | undefined,
+      boolean | undefined,
     notifications_message_chatbot: chatUser.notifications_message_chatbot as
-      | boolean
-      | undefined,
+      boolean | undefined,
     notifications_transfer: chatUser.notifications_transfer as
-      | boolean
-      | undefined,
+      boolean | undefined,
   });
 }
 
@@ -140,6 +141,7 @@ export function resolveChatForegroundDelivery(
   return {
     showToast: enabled && normalized.notifications_toast !== false,
     playSound: enabled && normalized.notifications_sound !== false,
+    vibrate: enabled && normalized.notifications_vibrate === true,
   };
 }
 
@@ -194,6 +196,9 @@ export function normalizeMobileInternalChatNotificationSettings(
     notifications_internal_chat_sound: readBooleanDefaultTrue(
       input.notifications_internal_chat_sound
     ),
+    notifications_internal_chat_vibrate: readBooleanDefaultFalse(
+      input.notifications_internal_chat_vibrate
+    ),
     notifications_internal_chat_toast: readBooleanDefaultTrue(
       input.notifications_internal_chat_toast
     ),
@@ -215,14 +220,15 @@ export function readMobileInternalChatNotificationSettingsFromUser(
   return normalizeMobileInternalChatNotificationSettings({
     chat_user_id: readString(chatUser.chat_user_id),
     notifications_internal_chat: chatUser.notifications_internal_chat as
-      | boolean
-      | undefined,
+      boolean | undefined,
     notifications_internal_chat_direct:
       chatUser.notifications_internal_chat_direct as boolean | undefined,
     notifications_internal_chat_group:
       chatUser.notifications_internal_chat_group as boolean | undefined,
     notifications_internal_chat_sound:
       chatUser.notifications_internal_chat_sound as boolean | undefined,
+    notifications_internal_chat_vibrate:
+      chatUser.notifications_internal_chat_vibrate as boolean | undefined,
     notifications_internal_chat_toast:
       chatUser.notifications_internal_chat_toast as boolean | undefined,
     notifications_internal_chat_browser:
@@ -243,6 +249,7 @@ export function resolveInternalChatForegroundDelivery(
       enabled && normalized.notifications_internal_chat_toast !== false,
     playSound:
       enabled && normalized.notifications_internal_chat_sound !== false,
+    vibrate: enabled && normalized.notifications_internal_chat_vibrate === true,
   };
 }
 

@@ -193,6 +193,7 @@ const CHATBOT_FILTER_OPTIONS: Array<{
 const DEFAULT_CHAT_NOTIFICATION_SETTINGS: ChatNotificationSettings = {
   notifications: true,
   notifications_sound: true,
+  notifications_vibrate: false,
   notifications_toast: true,
   notifications_browser: true,
   notifications_push: true,
@@ -246,6 +247,9 @@ function readChatNotificationSettingsFromUser(
         : undefined,
     notifications: readBooleanDefaultTrue(chatUser.notifications),
     notifications_sound: readBooleanDefaultTrue(chatUser.notifications_sound),
+    notifications_vibrate: readBooleanDefaultFalse(
+      chatUser.notifications_vibrate
+    ),
     notifications_toast: readBooleanDefaultTrue(chatUser.notifications_toast),
     notifications_browser: readBooleanDefaultTrue(
       chatUser.notifications_browser
@@ -442,6 +446,13 @@ function ChatNotificationSettingsSheet({
             'Som',
             'Tocar alerta sonoro quando disponível.',
             'volume-high-outline',
+            childOptionsDisabled
+          )}
+          {renderOption(
+            'notifications_vibrate',
+            'Vibrar',
+            'Vibrar o celular quando uma notificação chegar.',
+            'phone-portrait-outline',
             childOptionsDisabled
           )}
           {renderOption(

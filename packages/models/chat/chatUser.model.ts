@@ -20,6 +20,7 @@ export const chatUser = pgTable(
     about: varchar({ length: 200 }),
     notifications: boolean().notNull().default(true),
     notifications_sound: boolean().notNull().default(true),
+    notifications_vibrate: boolean().notNull().default(false),
     notifications_toast: boolean().notNull().default(true),
     notifications_browser: boolean().notNull().default(true),
     notifications_push: boolean().notNull().default(true),
@@ -31,6 +32,7 @@ export const chatUser = pgTable(
     notifications_internal_chat_direct: boolean().notNull().default(true),
     notifications_internal_chat_group: boolean().notNull().default(true),
     notifications_internal_chat_sound: boolean().notNull().default(true),
+    notifications_internal_chat_vibrate: boolean().notNull().default(false),
     notifications_internal_chat_toast: boolean().notNull().default(true),
     notifications_internal_chat_browser: boolean().notNull().default(true),
     notifications_internal_chat_push: boolean().notNull().default(true),
@@ -51,9 +53,7 @@ export const chatUser = pgTable(
       withTimezone: true,
     }).defaultNow(),
   },
-  (table) => [
-    index('chat_user_user_id_idx').on(table.user_id),
-  ]
+  (table) => [index('chat_user_user_id_idx').on(table.user_id)]
 );
 
 export const chatUserRelations = relations(chatUser, ({ one }) => ({

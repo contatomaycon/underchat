@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import type { AppStateStatus } from 'react-native';
+import { Platform, Vibration, type AppStateStatus } from 'react-native';
 import {
   canViewChat,
   isChatParticipant,
@@ -69,6 +69,7 @@ type PendingChatMessage = {
 type Delivery = {
   showToast: boolean;
   playSound: boolean;
+  vibrate: boolean;
 };
 
 type ChatAccessContext = {
@@ -323,9 +324,15 @@ function dispatchForegroundNotification(
   delivery: Delivery,
   notification: InAppNotificationPayload
 ): void {
-  if (!delivery.showToast && !delivery.playSound) return;
+  if (!delivery.showToast && !delivery.playSound && !delivery.vibrate) return;
   if (delivery.playSound) {
     void playInAppNotificationSound();
+  }
+  if (
+    delivery.vibrate &&
+    (Platform.OS === 'android' || Platform.OS === 'ios')
+  ) {
+    Vibration.vibrate([0, 250, 250, 250]);
   }
   if (delivery.showToast) {
     emitInAppNotification(notification);

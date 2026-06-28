@@ -33,6 +33,7 @@ export class ChatNotificationSettingsRepository {
         chat_user_id: chatUser.chat_user_id,
         notifications: chatUser.notifications,
         notifications_sound: chatUser.notifications_sound,
+        notifications_vibrate: chatUser.notifications_vibrate,
         notifications_toast: chatUser.notifications_toast,
         notifications_browser: chatUser.notifications_browser,
         notifications_push: chatUser.notifications_push,
@@ -54,6 +55,7 @@ export class ChatNotificationSettingsRepository {
     const keys = [
       'notifications',
       'notifications_sound',
+      'notifications_vibrate',
       'notifications_toast',
       'notifications_browser',
       'notifications_push',
@@ -71,6 +73,7 @@ export class ChatNotificationSettingsRepository {
 
     if (input.notifications === false) {
       updateInput.notifications_sound = false;
+      updateInput.notifications_vibrate = false;
       updateInput.notifications_toast = false;
       updateInput.notifications_browser = false;
       updateInput.notifications_push = false;
@@ -94,6 +97,7 @@ export class ChatNotificationSettingsRepository {
       chat_user_id: row.chat_user_id,
       notifications: row.notifications !== false,
       notifications_sound: row.notifications_sound !== false,
+      notifications_vibrate: row.notifications_vibrate === true,
       notifications_toast: row.notifications_toast !== false,
       notifications_browser: row.notifications_browser !== false,
       notifications_push: row.notifications_push !== false,
@@ -176,6 +180,7 @@ export class ChatNotificationSettingsRepository {
         user_id: userId,
         notifications: true,
         notifications_sound: true,
+        notifications_vibrate: false,
         notifications_toast: true,
         notifications_browser: true,
         notifications_push: true,
@@ -187,6 +192,7 @@ export class ChatNotificationSettingsRepository {
         notifications_internal_chat_direct: true,
         notifications_internal_chat_group: true,
         notifications_internal_chat_sound: true,
+        notifications_internal_chat_vibrate: false,
         notifications_internal_chat_toast: true,
         notifications_internal_chat_browser: true,
         notifications_internal_chat_push: true,

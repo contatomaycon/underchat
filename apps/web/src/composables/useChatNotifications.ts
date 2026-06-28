@@ -9,59 +9,21 @@ import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { useChatNotificationToast } from './useChatNotificationToast';
-import axiosAuth from '@/@webcore/axios';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import {
+  postWebNotificationClientState,
+  registerWebServiceWorker,
+  requestWebNotificationPermission,
+  syncWebPushSubscription,
+  unsubscribeFromWebPushNotifications,
+} from './useWebPushSubscription';
 
 const MAX_LINE_LENGTH = 70;
-const VAPID_PUBLIC_KEY_CACHE_TTL_MS = 30 * 60 * 1000;
 const CHAT_USERS_CACHE_TTL_MS = 15 * 60 * 1000;
 
-let cachedVapidPublicKey: string | null = null;
-let cachedVapidPublicKeyExpiresAt = 0;
-let pendingVapidPublicKeyRequest: Promise<string> | null = null;
 let cachedChatUsers: Map<string, string> | null = null;
 let cachedChatUsersExpiresAt = 0;
 let pendingChatUsersRequest: Promise<Map<string, string>> | null = null;
-
-function clearCachedVapidPublicKey(): void {
-  cachedVapidPublicKey = null;
-  cachedVapidPublicKeyExpiresAt = 0;
-}
-
-async function getCachedVapidPublicKey(): Promise<string> {
-  const now = Date.now();
-
-  if (cachedVapidPublicKey && now < cachedVapidPublicKeyExpiresAt) {
-    return cachedVapidPublicKey;
-  }
-
-  if (pendingVapidPublicKeyRequest) {
-    return pendingVapidPublicKeyRequest;
-  }
-
-  pendingVapidPublicKeyRequest = (async () => {
-    const response = await axiosAuth.get('/push/public-key');
-    const publicKey = response?.data?.data?.public_key;
-
-    if (typeof publicKey !== 'string' || publicKey.length === 0) {
-      throw new Error('Invalid push public key response');
-    }
-
-    cachedVapidPublicKey = publicKey;
-    cachedVapidPublicKeyExpiresAt = Date.now() + VAPID_PUBLIC_KEY_CACHE_TTL_MS;
-
-    return publicKey;
-  })();
-
-  try {
-    return await pendingVapidPublicKeyRequest;
-  } catch (error) {
-    clearCachedVapidPublicKey();
-    throw error;
-  } finally {
-    pendingVapidPublicKeyRequest = null;
-  }
-}
 
 export function formatNotificationBody(preview: string): string {
   const normalized = preview.trim().replace(/\s+/g, ' ').replace(/\n+/g, ' ');
@@ -263,6 +225,8 @@ export const useChatNotifications = () => {
   const isSubscribing = ref(false);
   const isSyncingNotificationSettings = ref(false);
   const hasPendingNotificationSync = ref(false);
+  let serviceWorkerMessageHandler: EventListener | null = null;
+  let notificationSyncInterval: number | null = null;
 
   const isMasterNotificationsEnabled = () => {
     return chatStore.user?.chat_user?.notifications === true;
@@ -359,12 +323,7 @@ export const useChatNotifications = () => {
   };
 
   const postNotificationClientState = () => {
-    if (!('serviceWorker' in navigator)) {
-      return;
-    }
-
-    navigator.serviceWorker.controller?.postMessage({
-      type: 'notificationClientState',
+    postWebNotificationClientState({
       chatId: chatStore.activeChat?.chat_id ?? null,
       isVisible: !document.hidden,
     });
@@ -518,260 +477,37 @@ export const useChatNotifications = () => {
   };
 
   async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-    if (!('serviceWorker' in navigator)) {
-      return null;
-    }
-
-    try {
-      const registration = await navigator.serviceWorker.register(
-        '/service-worker.js',
-        {
-          scope: '/',
-          updateViaCache: 'none',
-        }
-      );
-
-      serviceWorkerRegistration.value = registration;
-      return registration;
-    } catch {
-      return null;
-    }
-  }
-
-  function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
-    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding)
-      .replace(/\-/g, '+')
-      .replace(/_/g, '/');
-
-    const rawData = globalThis.atob(base64);
-    const bytes = Uint8Array.from(
-      [...rawData].map((char) => char.charCodeAt(0))
-    );
-    return bytes.buffer;
-  }
-
-  function arrayBufferToBase64(buffer: ArrayBuffer | null): string {
-    if (!buffer) return '';
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return globalThis.btoa(binary);
+    return registerWebServiceWorker(serviceWorkerRegistration);
   }
 
   async function unsubscribeFromPushNotificationsInternal(): Promise<void> {
-    if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
-      return;
-    }
-
-    try {
-      let registration: ServiceWorkerRegistration | null = null;
-
-      if (serviceWorkerRegistration.value) {
-        registration = serviceWorkerRegistration.value;
-      } else {
-        const existingRegistration =
-          await navigator.serviceWorker.getRegistration();
-        if (existingRegistration) {
-          registration = existingRegistration;
-        } else {
-          return;
-        }
-      }
-
-      if (!registration) {
-        return;
-      }
-
-      const subscription = await registration.pushManager.getSubscription();
-
-      if (!subscription) {
-        return;
-      }
-
-      const endpoint = subscription.endpoint;
-
-      try {
-        await axiosAuth.delete('/push/unsubscribe', {
-          data: { endpoint },
-        });
-      } catch {}
-
-      try {
-        await subscription.unsubscribe();
-      } catch {
-        return;
-      }
-    } catch {
-      return;
-    }
+    await unsubscribeFromWebPushNotifications({
+      serviceWorkerRegistration,
+    });
   }
 
   async function subscribeToPushNotifications(): Promise<void> {
-    if (isSubscribing.value) {
-      return;
-    }
-
-    if (!isPushNotificationsEnabled()) {
-      return;
-    }
-
-    if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
-      return;
-    }
-
-    if (Notification.permission !== 'granted') {
+    if (isSubscribing.value || !isPushNotificationsEnabled()) {
       return;
     }
 
     isSubscribing.value = true;
 
     try {
-      let registration: ServiceWorkerRegistration | null = null;
-
-      if (serviceWorkerRegistration.value) {
-        registration = serviceWorkerRegistration.value;
-      } else {
-        const existingRegistration =
-          await navigator.serviceWorker.getRegistration();
-        if (existingRegistration) {
-          registration = existingRegistration;
-          serviceWorkerRegistration.value = existingRegistration;
-        } else {
-          if (!isPushNotificationsEnabled()) {
-            isSubscribing.value = false;
-            return;
-          }
-
-          const newRegistration = await registerServiceWorker();
-          if (newRegistration) {
-            registration = newRegistration;
-          } else {
-            isSubscribing.value = false;
-            return;
-          }
-        }
-      }
-
-      if (!registration) {
-        isSubscribing.value = false;
-        return;
-      }
-
-      if (!isPushNotificationsEnabled()) {
-        isSubscribing.value = false;
-        if (!shouldKeepPushSubscription()) {
-          await unsubscribeFromPushNotificationsInternal();
-        }
-        return;
-      }
-
-      const existingSubscription =
-        await registration.pushManager.getSubscription();
-
-      if (existingSubscription) {
-        if (!isPushNotificationsEnabled()) {
-          if (!shouldKeepPushSubscription()) {
-            await unsubscribeFromPushNotificationsInternal();
-          }
-        }
-        isSubscribing.value = false;
-        return;
-      }
-
-      const publicKey = await getCachedVapidPublicKey();
-
-      if (!isPushNotificationsEnabled()) {
-        isSubscribing.value = false;
-        if (!shouldKeepPushSubscription()) {
-          await unsubscribeFromPushNotificationsInternal();
-        }
-        return;
-      }
-
-      let convertedVapidKey: ArrayBuffer;
-
-      try {
-        convertedVapidKey = urlBase64ToUint8Array(publicKey);
-      } catch {
-        clearCachedVapidPublicKey();
-        const refreshedPublicKey = await getCachedVapidPublicKey();
-        convertedVapidKey = urlBase64ToUint8Array(refreshedPublicKey);
-      }
-
-      if (!isPushNotificationsEnabled()) {
-        isSubscribing.value = false;
-        if (!shouldKeepPushSubscription()) {
-          await unsubscribeFromPushNotificationsInternal();
-        }
-        return;
-      }
-
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: convertedVapidKey,
+      await syncWebPushSubscription({
+        serviceWorkerRegistration,
+        isPushEnabled: isPushNotificationsEnabled,
+        shouldKeepSubscription: shouldKeepPushSubscription,
       });
-
-      if (!isPushNotificationsEnabled()) {
-        if (!shouldKeepPushSubscription()) {
-          await subscription.unsubscribe().catch(() => {});
-        }
-        isSubscribing.value = false;
-        if (!shouldKeepPushSubscription()) {
-          return;
-        }
-      }
-
-      const subscriptionData = {
-        endpoint: subscription.endpoint,
-        keys: {
-          p256dh: arrayBufferToBase64(subscription.getKey('p256dh')),
-          auth: arrayBufferToBase64(subscription.getKey('auth')),
-        },
-        user_agent: navigator.userAgent,
-      };
-
-      if (!isPushNotificationsEnabled()) {
-        if (!shouldKeepPushSubscription()) {
-          await subscription.unsubscribe().catch(() => {});
-        }
-        isSubscribing.value = false;
-        if (!shouldKeepPushSubscription()) {
-          return;
-        }
-      }
-
-      await axiosAuth.post('/push/subscribe', subscriptionData);
-
-      isSubscribing.value = false;
     } catch {
-      clearCachedVapidPublicKey();
-      isSubscribing.value = false;
       return;
+    } finally {
+      isSubscribing.value = false;
     }
   }
 
   async function requestNotificationPermission(): Promise<boolean> {
-    if (!('Notification' in globalThis)) {
-      return false;
-    }
-
-    if (Notification.permission === 'granted') {
-      return true;
-    }
-
-    if (Notification.permission === 'default') {
-      try {
-        const permission = await Notification.requestPermission();
-        return permission === 'granted';
-      } catch {
-        return false;
-      }
-    }
-
-    return false;
+    return requestWebNotificationPermission();
   }
 
   async function handleNewMessage(message: IChatMessage): Promise<void> {
@@ -939,6 +675,9 @@ export const useChatNotifications = () => {
   function handleVisibilityChange() {
     isPageVisible.value = !document.hidden;
     postNotificationClientState();
+    if (!document.hidden) {
+      void runNotificationSettingsSync();
+    }
   }
 
   async function syncNotificationSettings(): Promise<void> {
@@ -1001,17 +740,27 @@ export const useChatNotifications = () => {
     }
   }
 
+  function handleNotificationRepairTrigger(): void {
+    void runNotificationSettingsSync();
+  }
+
   onMounted(async () => {
     isPageVisible.value = !document.hidden;
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleNotificationRepairTrigger);
     postNotificationClientState();
 
     if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        handleNotificationRepairTrigger
+      );
+
       if (isPushNotificationsEnabled()) {
         await registerServiceWorker();
       }
 
-      const handleServiceWorkerMessage = (event: Event) => {
+      serviceWorkerMessageHandler = (event: Event) => {
         const messageEvent = event as MessageEvent;
         if (
           messageEvent.data?.type === 'navigateToChat' &&
@@ -1026,26 +775,43 @@ export const useChatNotifications = () => {
         }
       };
 
-      if (navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.addEventListener(
-          'message',
-          handleServiceWorkerMessage as EventListener
-        );
-      }
-
       navigator.serviceWorker.addEventListener(
         'message',
-        handleServiceWorkerMessage as EventListener
+        serviceWorkerMessageHandler
       );
     }
+
+    notificationSyncInterval = window.setInterval(
+      handleNotificationRepairTrigger,
+      5 * 60 * 1000
+    );
   });
 
   onUnmounted(() => {
+    if (notificationSyncInterval) {
+      window.clearInterval(notificationSyncInterval);
+      notificationSyncInterval = null;
+    }
+    window.removeEventListener('online', handleNotificationRepairTrigger);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.removeEventListener(
+        'controllerchange',
+        handleNotificationRepairTrigger
+      );
+      if (serviceWorkerMessageHandler) {
+        navigator.serviceWorker.removeEventListener(
+          'message',
+          serviceWorkerMessageHandler
+        );
+        serviceWorkerMessageHandler = null;
+      }
+    }
     document.removeEventListener('visibilitychange', handleVisibilityChange);
   });
 
   watch(
     [
+      () => chatStore.user?.user_id,
       () => chatStore.user?.chat_user?.notifications,
       () => chatStore.user?.chat_user?.notifications_sound,
       () => chatStore.user?.chat_user?.notifications_toast,
@@ -1083,37 +849,5 @@ export const useChatNotifications = () => {
 };
 
 export async function unsubscribeFromPushNotifications(): Promise<void> {
-  if (!('serviceWorker' in navigator) || !('PushManager' in globalThis)) {
-    return;
-  }
-
-  try {
-    const registration = await navigator.serviceWorker.getRegistration();
-
-    if (!registration) {
-      return;
-    }
-
-    const subscription = await registration.pushManager.getSubscription();
-
-    if (!subscription) {
-      return;
-    }
-
-    const endpoint = subscription.endpoint;
-
-    try {
-      await axiosAuth.delete('/push/unsubscribe', {
-        data: { endpoint },
-      });
-    } catch {}
-
-    try {
-      await subscription.unsubscribe();
-    } catch {
-      return;
-    }
-  } catch {
-    return;
-  }
+  await unsubscribeFromWebPushNotifications();
 }

@@ -29,10 +29,7 @@ export async function getPublicKey(
       public_key: publicKey,
     };
 
-    reply.header(
-      'Cache-Control',
-      'public, max-age=3600, stale-while-revalidate=300'
-    );
+    reply.header('Cache-Control', 'no-store, max-age=0');
     reply.header('Vary', 'Accept-Language');
 
     return sendResponse(reply, {

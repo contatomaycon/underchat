@@ -211,6 +211,7 @@ export interface InternalChatNotificationSettings {
   notifications_internal_chat_direct: boolean;
   notifications_internal_chat_group: boolean;
   notifications_internal_chat_sound: boolean;
+  notifications_internal_chat_vibrate: boolean;
   notifications_internal_chat_toast: boolean;
   notifications_internal_chat_browser: boolean;
   notifications_internal_chat_push: boolean;

@@ -35,6 +35,7 @@ type NotificationOption = {
 const draft = reactive<Required<ChatNotificationSettingsRequest>>({
   notifications: true,
   notifications_sound: true,
+  notifications_vibrate: false,
   notifications_toast: true,
   notifications_browser: true,
   notifications_push: true,
@@ -111,6 +112,7 @@ function syncDraft() {
 
   draft.notifications = settings?.notifications !== false;
   draft.notifications_sound = settings?.notifications_sound !== false;
+  draft.notifications_vibrate = settings?.notifications_vibrate === true;
   draft.notifications_toast = settings?.notifications_toast !== false;
   draft.notifications_browser = settings?.notifications_browser !== false;
   draft.notifications_push = settings?.notifications_push !== false;
