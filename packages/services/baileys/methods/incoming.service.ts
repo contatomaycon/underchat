@@ -45,6 +45,11 @@ import { BaileysDeliveryConfirmationService } from './deliveryConfirmation.servi
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { resolveCallEventJidAndPhone } from '../util/callEventResolver';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
+import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
+
+const UNSUPPORTED_INCOMING_MESSAGE_TEXT =
+  'Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp.';
 
 function readPositiveIntEnv(key: string, fallback: number): number {
   const raw = process.env[key];
@@ -154,10 +159,27 @@ export class BaileysIncomingMessageService {
     @inject(BalanceWorkerStatusGrpcClientService)
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     @inject(BaileysDeliveryConfirmationService)
-    private readonly deliveryConfirmation: BaileysDeliveryConfirmationService
+    private readonly deliveryConfirmation: BaileysDeliveryConfirmationService,
+    @inject(InboundMessageSpoolService)
+    private readonly inboundMessageSpoolService: InboundMessageSpoolService = {
+      startPublisher: () => undefined,
+      publish: async (
+        payload: IInboundMessageSpoolPayload,
+        publisher: (payload: IInboundMessageSpoolPayload) => Promise<void>
+      ) => {
+        await publisher(payload);
+        return true;
+      },
+      parkConsumerMessage: async () => undefined,
+    } as unknown as InboundMessageSpoolService
   ) {
     this.startCleanupInterval();
     this.startQueueProcessor();
+    this.inboundMessageSpoolService.startPublisher(
+      'baileys',
+      baileysEnvironment.baileysWorkerId,
+      (payload) => this.publishSpoolPayload(payload)
+    );
   }
 
   private getMessageKey(m: WAMessage): string | null {
@@ -610,6 +632,21 @@ export class BaileysIncomingMessageService {
     });
   }
 
+  private async publishSpoolPayload(
+    payload: IInboundMessageSpoolPayload
+  ): Promise<void> {
+    const item: IBaileysPendingMessage = {
+      inputUpsert: payload.upsert,
+      messageKey: payload.dedupe_key,
+      kafkaKey: payload.kafka_key,
+      topic: payload.kafka_topic,
+      retries: payload.attempts,
+      addedAt: Date.now(),
+    };
+
+    await this.sendToKafkaWithRetry(item);
+  }
+
   private async sendToKafkaWithRetry(
     item: IBaileysPendingMessage
   ): Promise<void> {
@@ -625,18 +662,46 @@ export class BaileysIncomingMessageService {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
+    try {
+      await this.ensurePhotoResolved(item);
+    } catch (error) {
+      this.logLifecycle(item.inputUpsert.message as WAMessage, {
+        stage: 'baileys.photo.resolve_error',
+        decision: 'photo_resolution',
+        outcome: 'fallback',
+        level: 'warn',
+        topic: item.topic,
+        kafka_key: kafkaKey,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     if (
       !item.inputUpsert.is_call_event &&
       item.inputUpsert.message &&
       (item.inputUpsert.message as WAMessage).message
     ) {
-      await this.ensurePhotoResolved(item);
-      await this.upsertMediaEnricher.enrich(
-        item.inputUpsert,
-        item.inputUpsert.message as WAMessage
-      );
-    } else {
-      await this.ensurePhotoResolved(item);
+      try {
+        await this.upsertMediaEnricher.enrich(
+          item.inputUpsert,
+          item.inputUpsert.message as WAMessage
+        );
+      } catch (error) {
+        item.inputUpsert.content = {
+          ...(item.inputUpsert.content ?? { type: item.inputUpsert.type }),
+          type: item.inputUpsert.type,
+          media_download_failed: true,
+        };
+        this.logLifecycle(item.inputUpsert.message as WAMessage, {
+          stage: 'baileys.media.enrich_error',
+          decision: 'media_enrichment',
+          outcome: 'fallback',
+          level: 'warn',
+          topic: item.topic,
+          kafka_key: kafkaKey,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     this.logLifecycle(item.inputUpsert.message as WAMessage, {
@@ -678,66 +743,53 @@ export class BaileysIncomingMessageService {
     }
   }
 
-  private enqueueMessage(
+  private async enqueueMessage(
     inputUpsert: IUpsertMessage,
     messageKey: string,
     topic: string = this.kafkaServiceQueueService.upsertMessage()
-  ): IBaileysPendingMessage | null {
+  ): Promise<boolean> {
     if (this.isDestroying) {
       this.logLifecycle(inputUpsert.message as WAMessage, {
         stage: 'baileys.queue.enqueue',
         decision: 'enqueue',
-        outcome: 'skipped',
-        reason: 'destroying',
+        outcome: 'accepted',
+        reason: 'destroying_but_spooled',
         topic,
         kafka_key: messageKey,
       });
-      return null;
-    }
-
-    if (this.pendingQueue.length >= this.MAX_QUEUE_SIZE) {
-      this.logLifecycle(inputUpsert.message as WAMessage, {
-        stage: 'baileys.queue.full',
-        decision: 'reject_enqueue',
-        outcome: 'dropped',
-        reason: 'queue_full',
-        level: 'error',
-        topic,
-        kafka_key: messageKey,
-        queue_size: this.pendingQueue.length,
-        max_queue_size: this.MAX_QUEUE_SIZE,
-      });
-      console.error('[BaileysIncoming] Queue full, discarding new message:', {
-        topic,
-        kafka_key: messageKey,
-        account_id: inputUpsert.account_id,
-        worker_id: inputUpsert.worker_id,
-        message_key_id: inputUpsert.message?.key?.id,
-        queue_size: this.pendingQueue.length,
-        max_queue_size: this.MAX_QUEUE_SIZE,
-      });
-      return null;
     }
 
     const kafkaKey = buildUpsertMessageKafkaKey(inputUpsert, messageKey);
-    const item: IBaileysPendingMessage = {
-      inputUpsert,
-      messageKey,
-      kafkaKey,
-      topic,
-      retries: 0,
-      addedAt: Date.now(),
+    const payload: IInboundMessageSpoolPayload = {
+      provider: 'baileys',
+      account_id: inputUpsert.account_id,
+      worker_id: inputUpsert.worker_id,
+      event_source: inputUpsert.from_history_sync
+        ? 'history_reconciliation_upsert'
+        : 'incoming_upsert',
+      dedupe_key: messageKey,
+      kafka_topic: topic,
+      kafka_key: kafkaKey,
+      upsert: inputUpsert,
+      raw_meta: {
+        message_key_id: inputUpsert.message?.key?.id,
+        type: inputUpsert.type,
+      },
+      received_at: new Date().toISOString(),
+      attempts: 0,
     };
-    this.pendingQueue.push(item);
+    const published = await this.inboundMessageSpoolService.publish(
+      payload,
+      (spooledPayload) => this.publishSpoolPayload(spooledPayload)
+    );
     this.logLifecycle(inputUpsert.message as WAMessage, {
       stage: 'baileys.queue.enqueue',
       decision: 'enqueue',
-      outcome: 'queued',
+      outcome: published ? 'published' : 'spooled',
       topic,
       kafka_key: kafkaKey,
-      queue_size: this.pendingQueue.length,
     });
-    return item;
+    return published;
   }
 
   private isDuplicate(messageKey: string): boolean {
@@ -911,7 +963,7 @@ export class BaileysIncomingMessageService {
       return false;
     }
 
-    return Boolean(mapIncomingToType(m));
+    return Boolean(mapIncomingToType(m) || m.message || m.key?.id);
   }
 
   private processIncomingMessage(
@@ -970,26 +1022,29 @@ export class BaileysIncomingMessageService {
         : messageKey;
       if (this.isDuplicate(localDuplicateKey)) {
         this.logLifecycle(m, {
-          stage: 'baileys.incoming.skip',
+          stage: 'baileys.incoming.duplicate',
           decision: 'dedupe',
-          outcome: 'skipped',
-          reason: 'duplicate',
+          outcome: 'continuing',
+          reason: 'duplicate_seen',
           dedupe_key: localDuplicateKey,
         });
-        return;
       }
 
-      const type = mapIncomingToType(m);
-      if (!type) {
-        console.warn('[WARN] Unknown message type, skipping:', messageKey);
+      const mappedType = mapIncomingToType(m);
+      const type = mappedType ?? EMessageType.system;
+      const unsupportedFallback = !mappedType;
+      if (unsupportedFallback) {
+        console.warn(
+          '[WARN] Unknown message type, publishing system fallback:',
+          messageKey
+        );
         this.logLifecycle(m, {
-          stage: 'baileys.incoming.skip',
+          stage: 'baileys.incoming.fallback',
           decision: 'message_type_mapping',
-          outcome: 'skipped',
+          outcome: 'fallback_system_message',
           reason: 'unknown_message_type',
           kafka_key: messageKey,
         });
-        return;
       }
 
       if (
@@ -1024,6 +1079,12 @@ export class BaileysIncomingMessageService {
         source_provider: 'baileys',
         type,
         message: m as unknown as IUpsertMessage['message'],
+        content: unsupportedFallback
+          ? {
+              type: EMessageType.system,
+              message: UNSUPPORTED_INCOMING_MESSAGE_TEXT,
+            }
+          : undefined,
         photo: null,
         has_quoted: hasQuoted,
       };
@@ -1031,8 +1092,26 @@ export class BaileysIncomingMessageService {
         inputUpsert.from_history_sync = true;
       }
 
-      const pendingItem = this.enqueueMessage(inputUpsert, messageKey, topic);
-      if (!pendingItem) return;
+      void this.enqueueMessage(inputUpsert, messageKey, topic).catch(
+        (error) => {
+          this.logLifecycle(m, {
+            stage: 'baileys.inbound_spool.error',
+            decision: 'persist_or_publish',
+            outcome: 'error',
+            level: 'error',
+            reason: error instanceof Error ? error.message : String(error),
+            topic,
+            kafka_key: messageKey,
+          });
+          console.error('[BaileysIncoming] Failed to spool incoming message:', {
+            topic,
+            kafka_key: messageKey,
+            account_id: inputUpsert.account_id,
+            worker_id: inputUpsert.worker_id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      );
 
       this.logLifecycle(m, {
         stage: 'baileys.incoming.mapped',
@@ -1518,8 +1597,8 @@ export class BaileysIncomingMessageService {
       const callText = isVideo
         ? 'Ligacão de vídeo recebida'
         : 'Ligacão recebida';
+      let callPhoto: string | null = null;
 
-      let pendingItem: IBaileysPendingMessage | null = null;
       if (callPhone) {
         const callUpsert: IUpsertMessage = {
           worker_id: baileysEnvironment.baileysWorkerId,
@@ -1547,15 +1626,20 @@ export class BaileysIncomingMessageService {
           call_name: callEvent.callerPn ?? null,
         };
 
-        pendingItem = this.enqueueMessage(callUpsert, callKey);
-        if (pendingItem) {
-          const photo = await this.resolvePhotoForUpsert(
-            socket,
-            pendingItem,
-            callJid
-          );
-          pendingItem.inputUpsert.photo = photo ?? null;
-        }
+        const photo = await this.resolvePhotoForUpsert(
+          socket,
+          {
+            inputUpsert: callUpsert,
+            messageKey: callKey,
+            topic: this.kafkaServiceQueueService.upsertMessage(),
+            retries: 0,
+            addedAt: Date.now(),
+          },
+          callJid
+        );
+        callPhoto = photo ?? null;
+        callUpsert.photo = callPhoto;
+        void this.enqueueMessage(callUpsert, callKey);
       } else {
         console.warn(
           '[WARN] Call event without phone, skipping call upsert only:',
@@ -1602,7 +1686,7 @@ export class BaileysIncomingMessageService {
           text,
           sentMessageId
         );
-        systemMessageUpsert.photo = pendingItem?.inputUpsert.photo ?? null;
+        systemMessageUpsert.photo = callPhoto;
 
         const autoReplyKey = `${callKey}:auto_reply:${sentMessageId ?? Date.now().toString()}`;
         this.enqueueMessage(systemMessageUpsert, autoReplyKey);

@@ -145,7 +145,7 @@ describe('wwebjsMessageToUpsert', () => {
     expect(innerMessage.conversation).toBe(fallbackText);
   });
 
-  it('does not convert unknown WWebJS message types with body into text', async () => {
+  it('converts unknown WWebJS message types with body into system fallback', async () => {
     const upsert = await wwebjsMessageToUpsert({
       ...baseMessage,
       type: 'unknown_reaction_status',
@@ -155,6 +155,9 @@ describe('wwebjsMessageToUpsert', () => {
       },
     } as never);
 
-    expect(upsert).toBeNull();
+    expect(upsert?.type).toBe(EMessageType.system);
+    expect(upsert?.content?.message).toBe(
+      'this should not become a chatbot text trigger'
+    );
   });
 });

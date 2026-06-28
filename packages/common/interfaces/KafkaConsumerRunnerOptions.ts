@@ -32,9 +32,7 @@ export interface KafkaConsumerRunnerLogger {
 export type KafkaConsumerRunnerErrorDecision = 'retryable' | 'terminal';
 
 export type KafkaConsumerRunnerDiscardReason =
-  | 'invalid_payload'
-  | 'terminal_error'
-  | 'retry_exhausted';
+  'invalid_payload' | 'terminal_error' | 'retry_exhausted';
 
 export interface KafkaConsumerRunnerOptions<TPayload> {
   kafka: KafkaClient;
@@ -58,6 +56,7 @@ export interface KafkaConsumerRunnerOptions<TPayload> {
   shutdownDrainTimeoutMs?: number;
   logger?: KafkaConsumerRunnerLogger;
   onInvalidMessage?: (message: KafkaRunnerMessage) => Promise<void> | void;
+  failOnInvalidMessageHookError?: boolean;
   onProcessed?: (
     payload: TPayload,
     context: KafkaConsumerRunnerContext<TPayload>
@@ -78,4 +77,5 @@ export interface KafkaConsumerRunnerOptions<TPayload> {
     error: unknown,
     reason: KafkaConsumerRunnerDiscardReason
   ) => Promise<void> | void;
+  failOnDiscardedHookError?: boolean;
 }

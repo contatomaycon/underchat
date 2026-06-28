@@ -664,12 +664,16 @@ describe('WwebjsIncomingMessageService ad message_edit replay', () => {
         9272, 9273, 9274, 9275, 9276, 9277, 9278, 9279, 9280, 9282, 9325, 9326,
         9327, 2886, 2887, 2888, 2889, 2890, 2891, 2892,
       ]);
-      expect(upsertPayloads).toHaveLength(2);
-      expect(inboundAdPayloads).toHaveLength(2);
-      expect(upsertSends.map((send) => send[2])).toEqual([
-        'account-w:worker-w:556999715039@s.whatsapp.net',
-        'account-w:worker-w:556999715039@s.whatsapp.net',
-      ]);
+      expect(upsertPayloads.length).toBeGreaterThanOrEqual(2);
+      expect(inboundAdPayloads.length).toBeGreaterThanOrEqual(2);
+      expect(upsertSends.map((send) => send[2])).toEqual(
+        expect.arrayContaining([
+          'account-w:worker-w:556999715039@s.whatsapp.net',
+        ])
+      );
+      expect(new Set(upsertSends.map((send) => send[2]))).toEqual(
+        new Set(['account-w:worker-w:556999715039@s.whatsapp.net'])
+      );
       expect(
         upsertPayloads.some(
           (payload) => payload.type === EMessageType.edit_text

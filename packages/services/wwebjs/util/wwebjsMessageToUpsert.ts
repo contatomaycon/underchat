@@ -9,6 +9,8 @@ const E2E_ENCRYPT_NOTIFICATION_TEXT =
   'As mensagens e chamadas são protegidas com criptografia de ponta a ponta. Ninguém fora desta conversa, nem mesmo o WhatsApp, pode ler ou ouvi-las.';
 const CIPHERTEXT_FANOUT_NOTIFICATION_TEXT =
   'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';
+const UNSUPPORTED_INCOMING_MESSAGE_TEXT =
+  'Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp.';
 const SYSTEM_MESSAGE_JID_ALIASES = new Set(['0@c.us', '0@s.whatsapp.net']);
 
 function getMessageId(msg: Message): string | undefined {
@@ -1297,11 +1299,7 @@ export async function wwebjsMessageToUpsert(
   }
 
   const rawType = (msg.type ?? 'chat').toLowerCase();
-  if (
-    rawType === 'notification_template' ||
-    rawType === 'e2e_notification' ||
-    rawType === 'album'
-  ) {
+  if (rawType === 'notification_template' || rawType === 'e2e_notification') {
     return null;
   }
   const rawData = getRawMessageData(msg);
@@ -1325,8 +1323,10 @@ export async function wwebjsMessageToUpsert(
   if (disappearingProtocolMessage) {
     messageType = EMessageType.set_disappearing_messages;
   }
+  const unsupportedFallback = !messageType;
   if (!messageType) {
-    return null;
+    messageType = EMessageType.system;
+    body = body || UNSUPPORTED_INCOMING_MESSAGE_TEXT;
   }
   const isViewOnceUnavailableFanout =
     rawType === 'ciphertext' &&
@@ -1361,6 +1361,12 @@ export async function wwebjsMessageToUpsert(
     innerMessage.extendedTextMessage = {
       text: body,
       ...(extendedTextPreview ?? {}),
+    };
+  }
+  if (messageType === EMessageType.system && body) {
+    innerMessage.conversation = body;
+    innerMessage.extendedTextMessage = {
+      text: body,
     };
   }
   if (rawType === 'document') {
@@ -1433,6 +1439,12 @@ export async function wwebjsMessageToUpsert(
     account_id: wwebjsEnvironment.wwebjsAccountId,
     type: messageType,
     message: envelope,
+    content: unsupportedFallback
+      ? {
+          type: EMessageType.system,
+          message: body || UNSUPPORTED_INCOMING_MESSAGE_TEXT,
+        }
+      : undefined,
     has_quoted: (msg.hasQuotedMsg ?? false) || !!quotedContextInfo,
   };
 }

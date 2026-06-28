@@ -140,6 +140,7 @@ func NewWhatsAppManager(ctx context.Context, cfg Config, kafka *KafkaClient, cen
 	if err := manager.initClient(ctx); err != nil {
 		return nil, err
 	}
+	manager.startInboundSpoolPublisher(ctx)
 	return manager, nil
 }
 
@@ -2386,7 +2387,7 @@ func (m *WhatsAppManager) handleIncomingMessage(ctx context.Context, evt *events
 	}
 	upsert.SourceProvider = "whatsmeow"
 	key := incomingUpsertKafkaKey(m.cfg, upsert)
-	if err := m.sendInboundKafkaJSONWithRetry(ctx, topicUpsertMessage, key, upsert, "incoming_message", incomingChatString(evt), incomingMessageID(evt)); err != nil {
+	if err := m.publishInboundKafkaJSONWithSpool(ctx, topicUpsertMessage, key, upsert, "incoming_message", incomingChatString(evt), incomingMessageID(evt)); err != nil {
 		return
 	}
 	hasMediaURL, mediaFailed := mediaContentPublishStatus(upsert.Content, upsert.Type)
@@ -2471,7 +2472,7 @@ func (m *WhatsAppManager) handleHistorySync(ctx context.Context, evt *events.His
 		upsert.SourceProvider = "whatsmeow"
 
 		key := fmt.Sprintf("%s:%s", m.cfg.AccountID, valueString(upsert.Message["key"], "id"))
-		if err := m.sendInboundKafkaJSONWithRetry(ctx, topicUpsertMessageHistory, key, upsert, "history_sync", chatJID.String(), incomingMessageID(messageEvent)); err != nil {
+		if err := m.publishInboundKafkaJSONWithSpool(ctx, topicUpsertMessageHistory, key, upsert, "history_sync", chatJID.String(), incomingMessageID(messageEvent)); err != nil {
 			continue
 		}
 		published++
@@ -2537,7 +2538,7 @@ func (m *WhatsAppManager) sendInboundKafkaJSONWithRetry(ctx context.Context, top
 	}
 
 	log.Printf(
-		"whatsmeow inbound kafka publish discarded worker_id=%s event=%s topic=%s key=%s chat=%s id=%s attempts=%d error=%v",
+		"whatsmeow inbound kafka publish failed after retries worker_id=%s event=%s topic=%s key=%s chat=%s id=%s attempts=%d error=%v",
 		m.cfg.WorkerID,
 		event,
 		topic,
@@ -2665,8 +2666,8 @@ func (m *WhatsAppManager) handleCallOffer(ctx context.Context, callFrom types.JI
 		},
 	}
 	kafkaKey := incomingUpsertKafkaKey(m.cfg, &upsert)
-	if err := m.sendInboundKafkaJSONWithRetry(ctx, topicUpsertMessage, kafkaKey, upsert, "call_event", callJID, callID); err != nil {
-		log.Printf("whatsmeow call event upsert discarded worker_id=%s key=%s error=%v", m.cfg.WorkerID, kafkaKey, err)
+	if err := m.publishInboundKafkaJSONWithSpool(ctx, topicUpsertMessage, kafkaKey, &upsert, "call_event", callJID, callID); err != nil {
+		log.Printf("whatsmeow call event upsert deferred worker_id=%s key=%s error=%v", m.cfg.WorkerID, kafkaKey, err)
 	}
 
 	reject, showMessage, text, err := m.balance.ResolveIncomingCallAction(ctx, m.cfg.WorkerID, m.cfg.AccountID, callJID, callPhone, isVideo)

@@ -116,10 +116,10 @@ describe('BaileysIncomingMessageService', () => {
     jest.restoreAllMocks();
   });
 
-  it('does not drop older queued messages when the retry queue is full', () => {
+  it('does not drop new messages when the legacy retry queue is full', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const { service } = makeService();
+    const { service, streamProducerService } = makeService();
     const sut = service as unknown as {
       MAX_QUEUE_SIZE: number;
       pendingQueue: unknown[];
@@ -127,7 +127,7 @@ describe('BaileysIncomingMessageService', () => {
         inputUpsert: unknown,
         messageKey: string,
         topic: string
-      ) => unknown;
+      ) => Promise<boolean>;
     };
     sut.MAX_QUEUE_SIZE = 1;
     const existingItem = {
@@ -153,7 +153,7 @@ describe('BaileysIncomingMessageService', () => {
     };
     sut.pendingQueue.push(existingItem);
 
-    const result = sut.enqueueMessage(
+    const result = await sut.enqueueMessage(
       {
         worker_id: 'worker-1',
         account_id: 'account-1',
@@ -173,15 +173,15 @@ describe('BaileysIncomingMessageService', () => {
       'upsert-message'
     );
 
-    expect(result).toBeNull();
+    expect(result).toBe(true);
     expect(sut.pendingQueue).toEqual([existingItem]);
-    expect(console.error).toHaveBeenCalledWith(
-      '[BaileysIncoming] Queue full, discarding new message:',
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert-message',
       expect.objectContaining({
-        kafka_key: 'new-key',
-        queue_size: 1,
-        max_queue_size: 1,
-      })
+        account_id: 'account-1',
+        worker_id: 'worker-1',
+      }),
+      'account-1:worker-1:5511888888888@s.whatsapp.net'
     );
   });
 

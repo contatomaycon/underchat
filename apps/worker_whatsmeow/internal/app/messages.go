@@ -28,6 +28,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const unsupportedIncomingMessageText = "Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp."
+
 type UnsupportedFeatureError struct {
 	Feature string
 }
@@ -682,7 +684,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	}
 	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil {
 		if protocolMsg.Type == nil {
-			return "", nil
+			return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
 		}
 		switch protocolMsg.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
@@ -690,7 +692,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		case waE2E.ProtocolMessage_MESSAGE_EDIT:
 			edited := protocolMsg.GetEditedMessage()
 			if edited == nil {
-				return "", nil
+				return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
 			}
 			message := edited.GetConversation()
 			if message == "" && edited.GetExtendedTextMessage() != nil {
@@ -699,8 +701,10 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 			return m.withIncomingQuoted(evt, msg, MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message})
 		case waE2E.ProtocolMessage_EPHEMERAL_SETTING, waE2E.ProtocolMessage_EPHEMERAL_SYNC_RESPONSE:
 			return m.withIncomingQuoted(evt, msg, MessageTypeSetDisappearingMessages, map[string]any{"type": MessageTypeSetDisappearingMessages})
-		default:
+		case waE2E.ProtocolMessage_HISTORY_SYNC_NOTIFICATION:
 			return "", nil
+		default:
+			return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
 		}
 	}
 	if reaction := msg.GetReactionMessage(); reaction != nil {
@@ -777,7 +781,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		}
 		return m.withIncomingQuoted(evt, msg, MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items})
 	}
-	return "", nil
+	return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
 }
 
 func unwrapIncomingMessage(msg *waE2E.Message) (*waE2E.Message, bool) {

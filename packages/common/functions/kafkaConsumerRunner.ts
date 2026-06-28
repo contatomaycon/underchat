@@ -477,6 +477,9 @@ export class KafkaConsumerRunner<TPayload> {
         },
         'Kafka consumer runner onInvalidMessage hook failed'
       );
+      if (this.options.failOnInvalidMessageHookError) {
+        throw error;
+      }
     }
   }
 
@@ -568,6 +571,9 @@ export class KafkaConsumerRunner<TPayload> {
         },
         'Kafka consumer runner onDiscarded hook failed'
       );
+      if (this.options.failOnDiscardedHookError) {
+        throw error;
+      }
     }
   }
 

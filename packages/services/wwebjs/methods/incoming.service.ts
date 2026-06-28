@@ -32,6 +32,8 @@ import { parseSerializedMessageId } from '@core/common/functions/parseSerialized
 import { WwebjsDeliveryConfirmationService } from './deliveryConfirmation.service';
 import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/MessageDeliveryConfirmationFailedError';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
+import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
 
 const ACK_ERROR = -1;
 const ACK_SERVER = 1;
@@ -143,6 +145,7 @@ interface IWwebjsIncomingMessageOptions {
   topic?: string;
   metadataEvent?: string;
   fromHistorySync?: boolean;
+  eventSource?: WwebjsIncomingEventSource;
 }
 
 interface IWwebjsHistoryAgeStatus {
@@ -774,8 +777,26 @@ export class WwebjsIncomingMessageService {
     @inject(BalanceWorkerStatusGrpcClientService)
     private readonly balanceWorkerStatusGrpcClientService: BalanceWorkerStatusGrpcClientService,
     @inject(WwebjsDeliveryConfirmationService)
-    private readonly deliveryConfirmation: WwebjsDeliveryConfirmationService
-  ) {}
+    private readonly deliveryConfirmation: WwebjsDeliveryConfirmationService,
+    @inject(InboundMessageSpoolService)
+    private readonly inboundMessageSpoolService: InboundMessageSpoolService = {
+      startPublisher: () => undefined,
+      publish: async (
+        payload: IInboundMessageSpoolPayload,
+        publisher: (payload: IInboundMessageSpoolPayload) => Promise<void>
+      ) => {
+        await publisher(payload);
+        return true;
+      },
+      parkConsumerMessage: async () => undefined,
+    } as unknown as InboundMessageSpoolService
+  ) {
+    this.inboundMessageSpoolService.startPublisher(
+      'wwebjs',
+      wwebjsEnvironment.wwebjsWorkerId,
+      (payload) => this.publishSpoolPayload(payload)
+    );
+  }
 
   private logEvent(eventName: string, payload: Record<string, unknown>): void {
     void eventName;
@@ -804,6 +825,86 @@ export class WwebjsIncomingMessageService {
     }
 
     await new Promise<void>((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async publishSpoolPayload(
+    payload: IInboundMessageSpoolPayload
+  ): Promise<void> {
+    payload.upsert.source_provider = 'wwebjs';
+    await this.streamProducerService.send(
+      payload.kafka_topic,
+      payload.upsert,
+      payload.kafka_key
+    );
+  }
+
+  private buildSpoolPayload(
+    topic: string,
+    upsert: IUpsertMessage,
+    metadata: IKafkaSendMetadata,
+    kafkaKey?: string | Buffer
+  ): IInboundMessageSpoolPayload {
+    const resolvedKafkaKey = buildUpsertMessageKafkaKey(
+      upsert,
+      typeof kafkaKey === 'string'
+        ? kafkaKey
+        : (metadata.messageId ?? metadata.messageKeyId)
+    );
+
+    return {
+      provider: 'wwebjs',
+      account_id: upsert.account_id,
+      worker_id: upsert.worker_id,
+      event_source: metadata.event,
+      dedupe_key:
+        typeof kafkaKey === 'string'
+          ? kafkaKey
+          : (metadata.messageId ?? metadata.messageKeyId ?? resolvedKafkaKey),
+      kafka_topic: topic,
+      kafka_key: resolvedKafkaKey,
+      upsert,
+      raw_meta: {
+        message_id: metadata.messageId,
+        message_key_id: metadata.messageKeyId,
+        type: upsert.type,
+      },
+      received_at: new Date().toISOString(),
+      attempts: 0,
+    };
+  }
+
+  private async parkIncomingWithoutUpsert(
+    msg: Message,
+    reason: string,
+    stage: string,
+    details: Record<string, unknown> = {}
+  ): Promise<void> {
+    try {
+      await this.inboundMessageSpoolService.parkConsumerMessage({
+        provider: 'wwebjs',
+        account_id: wwebjsEnvironment.wwebjsAccountId,
+        worker_id: wwebjsEnvironment.wwebjsWorkerId,
+        event_source: 'incoming_message',
+        reason,
+        stage,
+        parked_at: new Date().toISOString(),
+        kafka_key: getMessageIdSerialized(msg),
+        raw_meta: {
+          id: getMessageIdSerialized(msg),
+          from: msg.from,
+          to: msg.to,
+          fromMe: msg.fromMe,
+          type: msg.type,
+          ...details,
+        },
+      });
+    } catch (error) {
+      console.error('[wwebjs] failed to park incoming message:', {
+        id: getMessageIdSerialized(msg),
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private computeKafkaRetryDelayMs(attempt: number): number {
@@ -1112,6 +1213,26 @@ export class WwebjsIncomingMessageService {
             : metadata.messageId,
         metadata_event: metadata.event,
       });
+
+      const spoolPayload = this.buildSpoolPayload(
+        topic,
+        lifecyclePayload,
+        metadata,
+        resolvedKafkaKey
+      );
+      const published = await this.inboundMessageSpoolService.publish(
+        spoolPayload,
+        (payload) => this.publishSpoolPayload(payload)
+      );
+      this.logLifecycleForUpsert(lifecyclePayload, {
+        stage: 'wwebjs.kafka.spool',
+        decision: 'persist_before_publish',
+        outcome: published ? 'published' : 'spooled',
+        topic,
+        kafka_key: spoolPayload.kafka_key,
+        metadata_event: metadata.event,
+      });
+      return published;
     }
 
     for (
@@ -1251,7 +1372,7 @@ export class WwebjsIncomingMessageService {
         raw_payload: msg,
       });
 
-      void this.handleIncomingMessage(msg);
+      void this.handleIncomingMessage(msg, { eventSource: 'message' });
     });
     client.on('message_ciphertext', (msg: Message) => {
       this.logEvent('message_ciphertext', {
@@ -1281,7 +1402,9 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      void this.handleIncomingMessage(msg);
+      void this.handleIncomingMessage(msg, {
+        eventSource: 'message_ciphertext',
+      });
     });
     client.on('message_ciphertext_failed', (msg: Message) => {
       this.logEvent('message_ciphertext_failed', {
@@ -1315,7 +1438,9 @@ export class WwebjsIncomingMessageService {
         return;
       }
 
-      void this.handleIncomingMessage(msg);
+      void this.handleIncomingMessage(msg, {
+        eventSource: 'message_ciphertext',
+      });
     });
     client.on('message_create', (msg: Message) => {
       this.logEvent('message_create', {
@@ -1353,7 +1478,7 @@ export class WwebjsIncomingMessageService {
         raw_payload: msg,
       });
 
-      void this.handleIncomingMessage(msg);
+      void this.handleIncomingMessage(msg, { eventSource: 'message_create' });
     });
     client.on('message_revoke_everyone', (after: Message, before?: Message) => {
       this.logEvent('message_revoke_everyone', {
@@ -2810,22 +2935,34 @@ export class WwebjsIncomingMessageService {
           dedupeKey,
         });
         this.logLifecycleForMessage(msg, {
-          stage: 'wwebjs.incoming.skip',
+          stage: 'wwebjs.incoming.duplicate',
           decision: 'dedupe',
-          outcome: 'skipped',
-          reason: 'duplicate_incoming_message',
+          outcome: 'continuing',
+          reason: 'duplicate_incoming_message_seen',
           event_source: source,
           dedupe_key: dedupeKey,
         });
-        return true;
+        return false;
       }
     }
 
+    return false;
+  }
+
+  private markIncomingMessageProcessed(
+    msg: Message,
+    source: WwebjsIncomingEventSource
+  ): void {
+    const dedupeKeys = this.buildIncomingDedupeKeys(msg, source);
+    if (dedupeKeys.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    this.cleanupProcessedIncomingMessages(now);
     for (const dedupeKey of dedupeKeys) {
       this.processedIncomingMessages.set(dedupeKey, now);
     }
-
-    return false;
   }
 
   private isUnsupportedSystemNotification(msg: Message): boolean {
@@ -3459,6 +3596,11 @@ export class WwebjsIncomingMessageService {
           outcome: 'skipped',
           reason: 'remote_jid_not_resolved',
         });
+        await this.parkIncomingWithoutUpsert(
+          msg,
+          'remote_jid_not_resolved',
+          'wwebjs.incoming.resolve_remote_jids'
+        );
         return;
       }
       if (this.shouldSkipResolvedJids(resolvedJids)) {
@@ -3517,6 +3659,15 @@ export class WwebjsIncomingMessageService {
           remote_jid: resolvedJids.remoteJid,
           remote_jid_alt: resolvedJids.remoteJidAlt,
         });
+        await this.parkIncomingWithoutUpsert(
+          msg,
+          'upsert_mapping_returned_null',
+          'wwebjs.incoming.map_to_upsert',
+          {
+            remote_jid: resolvedJids.remoteJid,
+            remote_jid_alt: resolvedJids.remoteJidAlt,
+          }
+        );
         return;
       }
       upsert.source_provider = 'wwebjs';
@@ -3539,13 +3690,29 @@ export class WwebjsIncomingMessageService {
         photo_resolved: Boolean(photo),
       });
 
-      await this.upsertMediaEnricher.enrich(upsert, msg);
-      this.logLifecycleForUpsert(upsert, {
-        stage: 'wwebjs.media.enrich',
-        decision: 'media_enrichment',
-        outcome: 'completed',
-        provider_message_type: msg.type,
-      });
+      try {
+        await this.upsertMediaEnricher.enrich(upsert, msg);
+        this.logLifecycleForUpsert(upsert, {
+          stage: 'wwebjs.media.enrich',
+          decision: 'media_enrichment',
+          outcome: 'completed',
+          provider_message_type: msg.type,
+        });
+      } catch (error) {
+        upsert.content = {
+          ...(upsert.content ?? { type: upsert.type }),
+          type: upsert.type,
+          media_download_failed: true,
+        };
+        this.logLifecycleForUpsert(upsert, {
+          stage: 'wwebjs.media.enrich',
+          decision: 'media_enrichment',
+          outcome: 'fallback',
+          reason: error instanceof Error ? error.message : String(error),
+          level: 'warn',
+          provider_message_type: msg.type,
+        });
+      }
 
       const topic =
         options.topic ?? this.kafkaServiceQueueService.upsertMessage();
@@ -3560,6 +3727,9 @@ export class WwebjsIncomingMessageService {
         },
         messageId
       );
+      if (sentNow && options.eventSource) {
+        this.markIncomingMessageProcessed(msg, options.eventSource);
+      }
       this.logEvent('incoming_upsert_enqueued', {
         id: messageId,
         fromMe: msg.fromMe,

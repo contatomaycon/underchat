@@ -54,11 +54,13 @@ services:
   under-redis:
     container_name: under-redis
     image: redis:7.2.4
-    command: redis-server --requirepass dY5MRW2^!jxHX
+    command: redis-server --requirepass dY5MRW2^!jxHX --appendonly yes
     environment:
       - TZ=America/Sao_Paulo
     ports:
       - 6379:6379
+    volumes:
+      - redis_data:/data
     restart: always
     networks:
       - underchat
@@ -333,4 +335,5 @@ volumes:
   kafka_data_1:
   kafka_data_2:
   kafka_data_3:
+  redis_data:
   minio_data:

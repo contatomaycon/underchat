@@ -497,6 +497,20 @@ func TestIncomingContentMapsCommonMessageTypes(t *testing.T) {
 	if messageType != "" || content != nil {
 		t.Fatalf("history sync protocol must not be mapped as user message: type=%q content=%#v", messageType, content)
 	}
+
+	messageType, content = manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			ProtocolMessage: &waE2E.ProtocolMessage{
+				Type: waE2E.ProtocolMessage_BOT_FEEDBACK_MESSAGE.Enum(),
+			},
+		},
+	})
+	if messageType != MessageTypeSystem {
+		t.Fatalf("unknown protocol must map to system fallback, got %q", messageType)
+	}
+	if got := content["message"]; got != unsupportedIncomingMessageText {
+		t.Fatalf("unexpected unknown protocol fallback content %#v", content)
+	}
 }
 
 func TestIncomingContentMapsQuotedText(t *testing.T) {

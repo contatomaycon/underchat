@@ -91,6 +91,8 @@ import type {
   KafkaRunnerMessage,
 } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
+import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -216,7 +218,19 @@ export class MessageUpsertConsume {
     @inject(UserService)
     private readonly userService: UserService,
     @inject(ActiveWhatsappValidationService)
-    private readonly activeWhatsappValidationService: ActiveWhatsappValidationService
+    private readonly activeWhatsappValidationService: ActiveWhatsappValidationService,
+    @inject(InboundMessageSpoolService)
+    private readonly inboundMessageSpoolService: InboundMessageSpoolService = {
+      startPublisher: () => undefined,
+      publish: async (
+        payload: IInboundMessageSpoolPayload,
+        publisher: (payload: IInboundMessageSpoolPayload) => Promise<void>
+      ) => {
+        await publisher(payload);
+        return true;
+      },
+      parkConsumerMessage: async () => undefined,
+    } as unknown as InboundMessageSpoolService
   ) {
     this.historyReceiptCache = new MessageHistoryReceiptCacheService(
       this.redis
@@ -239,7 +253,7 @@ export class MessageUpsertConsume {
     );
   }
 
-  private discardTerminalMessage(
+  private async discardTerminalMessage(
     data: IUpsertMessage,
     error: unknown,
     reason: string,
@@ -247,8 +261,27 @@ export class MessageUpsertConsume {
     offset: number,
     level: 'warn' | 'error' = 'warn',
     details: Record<string, unknown> = {}
-  ): boolean {
+  ): Promise<boolean> {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    await this.inboundMessageSpoolService.parkConsumerMessage({
+      provider: 'message_upsert_consumer',
+      account_id: data.account_id,
+      worker_id: data.worker_id || 'message-upsert',
+      event_source: 'message_upsert_consume',
+      reason,
+      stage: 'message_upsert.discard.terminal',
+      parked_at: new Date().toISOString(),
+      partition,
+      offset,
+      retry_count:
+        typeof details.retry_count === 'number'
+          ? details.retry_count
+          : undefined,
+      error: errorMessage,
+      upsert: data,
+      raw_meta: details,
+    });
+
     this.logLifecycle(data, {
       stage: 'message_upsert.discard.terminal',
       decision: 'discard_message',
@@ -4076,6 +4109,35 @@ export class MessageUpsertConsume {
     }
   }
 
+  private async parkInvalidKafkaMessage(
+    topic: string,
+    message: KafkaRunnerMessage
+  ): Promise<void> {
+    const kafkaKey = Buffer.isBuffer(message.key)
+      ? message.key.toString('utf8')
+      : typeof message.key === 'string'
+        ? message.key
+        : null;
+
+    await this.inboundMessageSpoolService.parkConsumerMessage({
+      provider: 'message_upsert_consumer',
+      worker_id: 'message-upsert',
+      event_source: 'invalid_payload',
+      reason: 'invalid_payload',
+      stage: 'message_upsert.consume.invalid_payload',
+      parked_at: new Date().toISOString(),
+      kafka_topic: topic,
+      kafka_key: kafkaKey,
+      partition: message.partition,
+      offset: message.offset,
+      raw_payload: message.value?.toString('utf8') ?? null,
+      raw_meta: {
+        headers: message.headers,
+        timestamp: message.timestamp,
+      },
+    });
+  }
+
   private logLifecycle(
     data: IUpsertMessage | null | undefined,
     event: Record<string, unknown>
@@ -5654,6 +5716,9 @@ export class MessageUpsertConsume {
       topic,
       groupId: 'group-underchat-message-upsert',
       parse: (message) => this.parseMessage(message.value),
+      onInvalidMessage: (message) =>
+        this.parkInvalidKafkaMessage(topic, message),
+      failOnInvalidMessageHookError: true,
       resolveEntityKey: (data, message) =>
         this.resolveUpsertKafkaKey(data, message),
       handle: (data, context) =>
@@ -5925,7 +5990,7 @@ export class MessageUpsertConsume {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      this.discardTerminalMessage(
+      await this.discardTerminalMessage(
         data,
         error,
         reason,
