@@ -13,6 +13,12 @@ describe('worker consumer registry', () => {
           ) => void;
           getWorkerConsumers: () => unknown[];
           getKafkaConsumerHealthSnapshots: () => unknown[];
+          getKafkaConsumerHealthSummary: () => {
+            expected: number;
+            active: number;
+            missing: number;
+            unhealthy: number;
+          };
           hasUnhealthyKafkaConsumer: () => boolean;
         };
 
@@ -27,6 +33,12 @@ describe('worker consumer registry', () => {
 
         expect(registry.getWorkerConsumers()).toContain(qrConsumer);
         expect(registry.getKafkaConsumerHealthSnapshots()).toEqual([]);
+        expect(registry.getKafkaConsumerHealthSummary()).toEqual({
+          expected: 0,
+          active: 0,
+          missing: 0,
+          unhealthy: 0,
+        });
         expect(registry.hasUnhealthyKafkaConsumer()).toBe(false);
       });
     }

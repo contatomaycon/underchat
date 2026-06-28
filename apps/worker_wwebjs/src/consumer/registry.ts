@@ -69,7 +69,7 @@ export function getKafkaConsumerHealthSnapshots(): IKafkaConsumerOwnerHealthSnap
 export function getKafkaConsumerHealthSummary() {
   const snapshots = getKafkaConsumerHealthSnapshots();
   return {
-    expected: consumers.length,
+    expected: snapshots.length,
     active: snapshots.filter((snapshot) => snapshot.missing !== true).length,
     missing: snapshots.filter((snapshot) => snapshot.missing === true).length,
     unhealthy: snapshots.filter((snapshot) => snapshot.unhealthy === true)
