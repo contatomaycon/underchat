@@ -2721,6 +2721,91 @@ const updateFixedDateLabel = (scrollElement: HTMLElement) => {
   }
 };
 
+type TimelineScrollAnchor = {
+  key: string;
+  top: number;
+  scrollHeight: number;
+  scrollTop: number;
+};
+
+const waitForTimelineLayout = async () => {
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+};
+
+const getVisibleTimelineScrollAnchor = (
+  scrollElement: HTMLElement
+): TimelineScrollAnchor | null => {
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const anchorElements = scrollElement.querySelectorAll<HTMLElement>(
+    '[data-chat-timeline-anchor]'
+  );
+
+  for (const element of anchorElements) {
+    const key = element.dataset.chatTimelineAnchor;
+    if (!key) continue;
+
+    const rect = element.getBoundingClientRect();
+    const isVisible =
+      rect.bottom > scrollRect.top + 1 && rect.top < scrollRect.bottom - 1;
+    if (!isVisible) continue;
+
+    return {
+      key,
+      top: rect.top - scrollRect.top,
+      scrollHeight: scrollElement.scrollHeight,
+      scrollTop: scrollElement.scrollTop,
+    };
+  }
+
+  return null;
+};
+
+const findTimelineScrollAnchorElement = (
+  scrollElement: HTMLElement,
+  key: string
+): HTMLElement | null => {
+  const anchorElements = scrollElement.querySelectorAll<HTMLElement>(
+    '[data-chat-timeline-anchor]'
+  );
+
+  for (const element of anchorElements) {
+    if (element.dataset.chatTimelineAnchor === key) {
+      return element;
+    }
+  }
+
+  return null;
+};
+
+const restoreTimelineScrollAnchor = async (
+  scrollElement: HTMLElement,
+  anchor: TimelineScrollAnchor
+) => {
+  await waitForTimelineLayout();
+
+  const anchorElement = findTimelineScrollAnchorElement(
+    scrollElement,
+    anchor.key
+  );
+
+  if (anchorElement) {
+    const scrollRect = scrollElement.getBoundingClientRect();
+    const anchorRect = anchorElement.getBoundingClientRect();
+    scrollElement.scrollTop += anchorRect.top - scrollRect.top - anchor.top;
+    return;
+  }
+
+  const scrollDifference = scrollElement.scrollHeight - anchor.scrollHeight;
+  if (scrollDifference > 0) {
+    scrollElement.scrollTop = anchor.scrollTop + scrollDifference;
+  }
+};
+
 const handleScroll = async (e: Event) => {
   const target = e.target as HTMLElement;
   if (!target) return;
@@ -2758,20 +2843,20 @@ const handleScroll = async (e: Event) => {
     !chatStore.loadingMoreMessages &&
     chatStore.currentPage >= chatStore.totalPages &&
     !isInlineAttendanceHistoryLoading.value &&
-    !isInlineAttendanceHistoryLoadingMore.value
+    !isInlineAttendanceHistoryLoadingMore.value &&
+    (!hasInlineAttendanceHistoryLoaded.value ||
+      hasMoreInlineAttendanceHistory.value)
   ) {
-    const previousScrollHeight = target.scrollHeight;
-    const previousScrollTop = target.scrollTop;
+    const scrollAnchor = getVisibleTimelineScrollAnchor(target) ?? {
+      key: '',
+      top: 0,
+      scrollHeight: target.scrollHeight,
+      scrollTop: target.scrollTop,
+    };
 
     await ensureInlineAttendanceHistoryLoaded();
-
-    await nextTick();
-    const newScrollHeight = target.scrollHeight;
-    const scrollDifference = newScrollHeight - previousScrollHeight;
-    if (scrollDifference > 0) {
-      target.scrollTop = previousScrollTop + scrollDifference;
-      checkIfShouldShowScrollButton(target);
-    }
+    await restoreTimelineScrollAnchor(target, scrollAnchor);
+    checkIfShouldShowScrollButton(target);
   }
 };
 
@@ -3220,6 +3305,7 @@ onUnmounted(() => {
         <ChatInlineAttendanceHistoryMarker
           v-if="item.type === 'history-marker' && item.chat"
           :chat="item.chat"
+          :data-chat-timeline-anchor="`history-marker:${item.chat.chat_id}`"
           :date-label="formatInlineAttendanceDate(item.chat.date)"
           :last-interaction-label="
             formatInlineLastInteractionDate(item.chat.summary?.last_date)
@@ -3277,6 +3363,9 @@ onUnmounted(() => {
           "
           :id="`msg-${item.message.message_id}`"
           :data-message-id="item.message.message_id"
+          :data-chat-timeline-anchor="
+            `message:${item.readonly ? 'history' : 'active'}:${item.message.message_id}`
+          "
           class="chat-group d-flex align-start position-relative"
           :class="[
             {

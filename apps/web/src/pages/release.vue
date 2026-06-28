@@ -609,7 +609,7 @@ void releaseStore.listReleaseNotifications();
                 height="24"
                 class="flex-shrink-0"
               />
-              <div class="flex-grow-1">
+              <div class="release-item-body flex-grow-1 min-w-0">
                 <VSkeletonLoader
                   type="text"
                   width="70%"
@@ -644,9 +644,9 @@ void releaseStore.listReleaseNotifications();
                 {{ t('unread') }}
               </VChip>
 
-              <div class="flex-grow-1">
+              <div class="release-item-body flex-grow-1 min-w-0">
                 <h6
-                  class="text-h6"
+                  class="release-item-title text-body-1 text-high-emphasis"
                   :class="{ 'font-weight-bold': !release.viewed }"
                 >
                   {{ release.title }}
@@ -655,19 +655,21 @@ void releaseStore.listReleaseNotifications();
                   v-if="
                     release.type === EReleaseType.reminder && release.reminder_at
                   "
-                  class="text-caption text-error mb-1"
+                  class="release-item-reminder text-caption text-error"
                 >
                   {{ t('release_reminder_datetime') }}:
                   {{ formatReminderDateTime(release.reminder_at) }}
                 </p>
-                <span class="text-body-2 text-truncate d-block">
+                <span
+                  class="release-item-preview text-body-2 text-medium-emphasis text-truncate d-block"
+                >
                   {{ getMessagePreview(release.message) }}
                 </span>
               </div>
 
               <div
                 v-if="isCreatorFor(release)"
-                class="d-flex align-center gap-1 flex-shrink-0"
+                class="release-item-actions d-flex align-center gap-1 flex-shrink-0"
                 @click.stop
               >
                 <IconBtn @click="openEditDialog(release)">
@@ -706,7 +708,7 @@ void releaseStore.listReleaseNotifications();
                   height="24"
                   class="flex-shrink-0"
                 />
-                <div class="flex-grow-1">
+                <div class="release-item-body flex-grow-1 min-w-0">
                   <VSkeletonLoader
                     type="text"
                     width="70%"
@@ -789,13 +791,23 @@ void releaseStore.listReleaseNotifications();
 }
 
 .release-list {
-  white-space: nowrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: hidden !important;
+  white-space: normal;
 
   .release-item {
+    position: relative;
     block-size: auto;
-    min-block-size: 4.375rem;
-    transition: all 0.2s ease-in-out;
-    will-change: transform, box-shadow;
+    inline-size: 100%;
+    min-block-size: 4.75rem;
+    border-inline-start: 3px solid transparent;
+    background-color: rgb(var(--v-theme-surface));
+    transition:
+      background-color 0.16s ease,
+      border-color 0.16s ease;
+    will-change: background-color, border-color;
 
     & + .release-item {
       border-block-start: 1px solid
@@ -803,13 +815,45 @@ void releaseStore.listReleaseNotifications();
     }
 
     &:hover {
-      transform: translateY(-2px);
-      @include mixins.elevation(4);
+      border-inline-start-color: rgba(var(--v-theme-primary), 0.55);
+      background-color: rgba(var(--v-theme-primary), 0.045);
     }
+  }
+
+  .release-item-body {
+    min-inline-size: 0;
+    overflow: hidden;
+  }
+
+  .release-item-title {
+    margin: 0 0 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .release-item-reminder {
+    margin: 0 0 0.25rem;
+  }
+
+  .release-item-preview {
+    max-inline-size: 100%;
+  }
+
+  .release-item-actions {
+    opacity: 0.72;
+    transition: opacity 0.16s ease;
+  }
+
+  .release-item:hover .release-item-actions,
+  .release-item:focus-within .release-item-actions {
+    opacity: 1;
   }
 
   .release-item .release-meta {
     display: flex;
+    min-inline-size: max-content;
+    margin-inline-start: auto;
   }
 }
 
