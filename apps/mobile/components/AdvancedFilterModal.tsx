@@ -118,13 +118,7 @@ interface AdvancedFilterModalProps {
 }
 
 type PickerKind =
-  | 'tag'
-  | 'worker'
-  | 'user'
-  | 'sector'
-  | 'sort_field'
-  | 'sort_order'
-  | null;
+  'tag' | 'worker' | 'user' | 'sector' | 'sort_field' | 'sort_order' | null;
 
 type DatePickerField = 'start' | 'end' | null;
 
@@ -732,7 +726,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   modalCard: {
     backgroundColor: colors.surface,
@@ -813,7 +807,7 @@ const styles = StyleSheet.create({
     borderLeftColor: colors.grey200,
   },
   pickerOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.2)',
     justifyContent: 'flex-end',
   },

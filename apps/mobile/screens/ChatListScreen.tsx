@@ -208,12 +208,7 @@ function getChatbotFilterKey(filters: ChatbotFilterStatus[]): string {
 
 type TransferDestinationType = 'user' | 'sector';
 type TransferPickerKind =
-  | 'channel'
-  | 'type'
-  | 'user'
-  | 'sector'
-  | 'sector_user'
-  | null;
+  'channel' | 'type' | 'user' | 'sector' | 'sector_user' | null;
 
 type TransferChannelOption = {
   value: string;
@@ -4103,7 +4098,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   transferBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   transferCard: {
     backgroundColor: colors.surface,

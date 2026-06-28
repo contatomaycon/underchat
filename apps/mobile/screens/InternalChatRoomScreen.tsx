@@ -166,12 +166,7 @@ type MediaViewerState = {
   activeIndex: number;
 };
 type InternalAttachmentActionKey =
-  | 'document'
-  | 'photo'
-  | 'video'
-  | 'audio'
-  | 'contact'
-  | 'location';
+  'document' | 'photo' | 'video' | 'audio' | 'contact' | 'location';
 
 type InternalAttachmentAction = {
   key: InternalAttachmentActionKey;
@@ -7261,7 +7256,7 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 42 : 24,
   },
   viewerBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   viewerContent: {
     flex: 1,

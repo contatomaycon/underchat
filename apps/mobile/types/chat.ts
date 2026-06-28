@@ -327,6 +327,7 @@ export interface ListMessageResult {
   deleted?: boolean;
   has_quoted?: boolean;
   hash?: string | null;
+  sent_from_platform?: boolean | null;
 }
 
 export interface ListMessageResponse {

@@ -403,6 +403,8 @@ export const pt = {
   chat_react_error: 'Não foi possível reagir à mensagem.',
   chat_edit_error: 'Não foi possível editar a mensagem.',
   chat_edited: 'Editado',
+  chat_sent_outside_platform_short: 'WhatsApp',
+  chat_sent_outside_platform_label: 'Enviada fora da Underchat',
   chat_view_edits: 'Visualizar edições',
   chat_edit_history: 'Histórico de edições',
   chat_original_message: 'Mensagem original',

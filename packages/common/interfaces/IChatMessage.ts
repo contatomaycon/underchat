@@ -172,4 +172,5 @@ export interface IChatMessage {
   has_quoted?: boolean;
   hash?: string | null;
   send_delay_ms?: number | null;
+  sent_from_platform?: boolean | null;
 }

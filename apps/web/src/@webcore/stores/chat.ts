@@ -327,6 +327,8 @@ const areMessagesEquivalent = (
       stableStringify(second.message_key) &&
     stableStringify(first.user) === stableStringify(second.user) &&
     stableStringify(first.content) === stableStringify(second.content) &&
+    (first.sent_from_platform ?? null) ===
+      (second.sent_from_platform ?? null) &&
     areMessageDeliverySummariesEqual(first.summary, second.summary)
   );
 };
@@ -511,6 +513,27 @@ const mergeMessageDeliverySummary = (
   };
 };
 
+const mergeSentFromPlatform = (
+  incoming?:
+    | ListMessageResult['sent_from_platform']
+    | IChatMessage['sent_from_platform']
+    | null,
+  existing?:
+    | ListMessageResult['sent_from_platform']
+    | IChatMessage['sent_from_platform']
+    | null
+): ListMessageResult['sent_from_platform'] | null => {
+  if (typeof incoming === 'boolean') {
+    return incoming;
+  }
+
+  if (typeof existing === 'boolean') {
+    return existing;
+  }
+
+  return incoming ?? existing ?? null;
+};
+
 const mergeLoadedChatMessages = (
   loadedMessages: ListMessageResult[],
   existingMessages: ListMessageResult[],
@@ -546,6 +569,10 @@ const mergeLoadedChatMessages = (
       return {
         ...message,
         hash: preservedHash,
+        sent_from_platform: mergeSentFromPlatform(
+          message.sent_from_platform,
+          existing?.sent_from_platform
+        ),
         summary: mergeMessageDeliverySummary(
           message.summary,
           existing?.summary
@@ -1323,6 +1350,7 @@ export const useChatStore = defineStore('chat', {
       if (!message.hash) {
         this.listMessages.push({
           ...message,
+          sent_from_platform: message.sent_from_platform ?? null,
           summary: normalizeMessageDeliverySummary(message.summary),
         });
         return;
@@ -1335,6 +1363,10 @@ export const useChatStore = defineStore('chat', {
         const existing = this.listMessages[idx];
         const next: ListMessageResult = {
           ...message,
+          sent_from_platform: mergeSentFromPlatform(
+            message.sent_from_platform,
+            existing.sent_from_platform
+          ),
           summary: mergeMessageDeliverySummary(
             message.summary,
             existing.summary
@@ -1346,6 +1378,7 @@ export const useChatStore = defineStore('chat', {
       }
       this.listMessages.push({
         ...message,
+        sent_from_platform: message.sent_from_platform ?? null,
         summary: normalizeMessageDeliverySummary(message.summary),
       });
     },
@@ -1378,6 +1411,7 @@ export const useChatStore = defineStore('chat', {
         deleted: message.deleted ?? false,
         has_quoted: message.has_quoted ?? false,
         hash: message.hash ?? null,
+        sent_from_platform: message.sent_from_platform ?? null,
       };
 
       let existingIndex = -1;
@@ -1405,6 +1439,10 @@ export const useChatStore = defineStore('chat', {
         const next: ListMessageResult = {
           ...input,
           hash: preservedHash,
+          sent_from_platform: mergeSentFromPlatform(
+            input.sent_from_platform,
+            existing.sent_from_platform
+          ),
           summary: mergeMessageDeliverySummary(input.summary, existing.summary),
         };
 
@@ -4245,6 +4283,10 @@ export const useChatStore = defineStore('chat', {
 
           return {
             ...message,
+            sent_from_platform: mergeSentFromPlatform(
+              message.sent_from_platform,
+              existing?.sent_from_platform
+            ),
             summary: mergeMessageDeliverySummary(
               message.summary,
               existing?.summary

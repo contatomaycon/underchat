@@ -995,7 +995,9 @@ export function UserSidebar({
                             <Switch
                               value={biometricEnabled}
                               onValueChange={handleBiometricToggle}
-                              disabled={!biometricAvailable && !biometricEnabled}
+                              disabled={
+                                !biometricAvailable && !biometricEnabled
+                              }
                               trackColor={{
                                 false: colors.grey300,
                                 true: colors.primary,
@@ -1377,7 +1379,7 @@ const styles = StyleSheet.create({
     elevation: 40,
   },
   photoOverlayBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   photoCard: {

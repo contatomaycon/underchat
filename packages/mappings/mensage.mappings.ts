@@ -40,6 +40,9 @@ export const mensageMappings = () => {
         type_user: {
           type: 'keyword',
         },
+        sent_from_platform: {
+          type: 'boolean',
+        },
         account: {
           type: 'nested',
           properties: {

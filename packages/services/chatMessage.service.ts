@@ -436,6 +436,7 @@ export class ChatMessageService {
   }
 
   private async publishMessage(message: IChatMessage): Promise<boolean> {
+    message.sent_from_platform = true;
     ensureMessageSendHash(message);
     const messageType = message.content?.type;
     const isAnnotation = messageType === EMessageType.annotation;

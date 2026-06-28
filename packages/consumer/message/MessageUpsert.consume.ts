@@ -1771,11 +1771,9 @@ export class MessageUpsertConsume {
     }
 
     const rawMsg = this.getBaseMessage(data)?.message as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const pinMessage = rawMsg?.pinInChatMessage as
-      | { key?: { id?: string }; type?: unknown }
-      | undefined;
+      { key?: { id?: string }; type?: unknown } | undefined;
     const targetMessageId = pinMessage?.key?.id;
     if (!targetMessageId) {
       return;
@@ -2110,8 +2108,7 @@ export class MessageUpsertConsume {
     data: IUpsertMessage
   ): Record<string, unknown> | null {
     const msg = this.getInnerMessage(data) as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (!msg) return null;
 
     const ptv = msg.ptvMessage;
@@ -2124,8 +2121,7 @@ export class MessageUpsertConsume {
     }
 
     const withCaption = msg.videoWithCaptionMessage as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const inner = withCaption?.message as Record<string, unknown> | undefined;
     const videoMessage = inner?.videoMessage;
     if (videoMessage) {
@@ -2539,8 +2535,7 @@ export class MessageUpsertConsume {
   ): Promise<void> {
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const contactMsg = msg?.contactMessage as
-      | { vcard?: string; displayName?: string }
-      | undefined;
+      { vcard?: string; displayName?: string } | undefined;
     if (content.type !== EMessageType.contact_card || !contactMsg?.vcard) {
       return;
     }
@@ -3101,6 +3096,8 @@ export class MessageUpsertConsume {
         isFromMe,
         data
       );
+      const isExternalOwnMessage =
+        isFromMe && typeUser === ETypeUserChat.operator;
 
       const inputChatMessage: IChatMessage = {
         message_id: this.buildDeterministicMessageId(getChat, data),
@@ -3128,6 +3125,7 @@ export class MessageUpsertConsume {
         deleted: false,
         has_quoted: hasQuotedFlag,
         hash: uuidv7(),
+        ...(isExternalOwnMessage ? { sent_from_platform: false } : {}),
       };
 
       const messageId = data.message?.key?.id;
@@ -3722,8 +3720,7 @@ export class MessageUpsertConsume {
     const baseMessage = this.getBaseMessage(data);
     const msg = baseMessage?.message as Record<string, unknown> | undefined;
     const extended = msg?.extendedTextMessage as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     const templateMessage = (msg as any)?.templateMessage?.hydratedTemplate;
 
     const linkPreview = extended

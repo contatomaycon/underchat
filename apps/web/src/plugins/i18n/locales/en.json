@@ -1132,6 +1132,8 @@
   "chat_deleted_message_label": "Removed",
   "chat_edit_message": "Edit message",
   "chat_edited": "Edited",
+  "chat_sent_outside_platform_short": "WhatsApp",
+  "chat_sent_outside_platform_label": "Sent outside Underchat",
   "chat_edit_history": "Edit history",
   "chat_original_message": "Original message",
   "chat_edited_version": "Edited version",

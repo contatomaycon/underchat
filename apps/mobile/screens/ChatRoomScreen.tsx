@@ -45,11 +45,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import {
-  PanGestureHandler,
-  State,
-  Swipeable,
-} from 'react-native-gesture-handler';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import ReanimatedSwipeable, {
+  SwipeDirection,
+  type SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { ChatStackParamList } from '../navigation/types';
 import {
   type ListChatsResult,
@@ -86,7 +86,6 @@ import * as Clipboard from 'expo-clipboard';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Image as ExpoImage } from 'expo-image';
 import Constants from 'expo-constants';
-import { requireOptionalNativeModule } from 'expo-modules-core';
 import VideoTrimModule, {
   showEditor,
   isValidFile,
@@ -701,12 +700,7 @@ type ForwardPickerKind = 'channel' | null;
 type TransferDestinationType = 'user' | 'sector' | null;
 
 type TransferPickerKind =
-  | 'channel'
-  | 'type'
-  | 'user'
-  | 'sector'
-  | 'sector_user'
-  | null;
+  'channel' | 'type' | 'user' | 'sector' | 'sector_user' | null;
 
 type TransferChannelOption = {
   value: string;
@@ -2413,6 +2407,11 @@ function normalizeSocketMessageToListMessage(
   const dateValue = readNonEmptyString((payload as { date?: unknown }).date);
   const deletedValue = (payload as { deleted?: unknown }).deleted;
   const hasQuotedValue = (payload as { has_quoted?: unknown }).has_quoted;
+  const sentFromPlatformValue = (
+    payload as {
+      sent_from_platform?: unknown;
+    }
+  ).sent_from_platform;
 
   return {
     message_id: messageId,
@@ -2443,6 +2442,8 @@ function normalizeSocketMessageToListMessage(
     deleted: typeof deletedValue === 'boolean' ? deletedValue : false,
     has_quoted: typeof hasQuotedValue === 'boolean' ? hasQuotedValue : false,
     hash: readNonEmptyString((payload as { hash?: unknown }).hash),
+    sent_from_platform:
+      typeof sentFromPlatformValue === 'boolean' ? sentFromPlatformValue : null,
   };
 }
 
@@ -2644,6 +2645,19 @@ function mergeMessageSummary(
   };
 }
 
+function mergeSentFromPlatform(
+  previous: ListMessageResult['sent_from_platform'],
+  incoming: ListMessageResult['sent_from_platform']
+): ListMessageResult['sent_from_platform'] {
+  if (typeof incoming === 'boolean') {
+    return incoming;
+  }
+  if (typeof previous === 'boolean') {
+    return previous;
+  }
+  return incoming ?? previous ?? null;
+}
+
 function createPendingMessageSummary(
   isSentToInternal: boolean
 ): NonNullable<ListMessageResult['summary']> {
@@ -2697,6 +2711,10 @@ function mergeMessageLists(
             ...incoming.user,
           }
         : previous.user;
+    const mergedSentFromPlatform = mergeSentFromPlatform(
+      previous.sent_from_platform,
+      incoming.sent_from_platform
+    );
 
     const merged = {
       ...previous,
@@ -2705,6 +2723,7 @@ function mergeMessageLists(
       summary: mergedSummary,
       message_key: mergedMessageKey,
       user: mergedUser,
+      sent_from_platform: mergedSentFromPlatform,
       hash:
         readNonEmptyString(incoming.hash) ?? readNonEmptyString(previous.hash),
     };
@@ -2821,6 +2840,10 @@ function mergeSnapshotMessagesWithCurrent(
           content: mergeMessageContent(previous.content, message.content),
           hash: hash ?? readNonEmptyString(previous.hash),
           summary: mergedSummary,
+          sent_from_platform: mergeSentFromPlatform(
+            previous.sent_from_platform,
+            message.sent_from_platform
+          ),
         }
       : message;
     next = mergeMessageLists(next, reconciledMessage);
@@ -5313,6 +5336,15 @@ function resolveMessageFeedbackIcon(
   };
 }
 
+function isExternalWhatsAppSend(message: ListMessageResult): boolean {
+  return (
+    message.sent_from_platform === false &&
+    message.message_key?.from_me === true &&
+    message.content?.type !== EMessageType.system &&
+    message.content?.type !== EMessageType.annotation
+  );
+}
+
 function MessageBubble({
   msg,
   fromMe,
@@ -5450,6 +5482,7 @@ function MessageBubble({
     width: documentBubbleWidth,
     maxWidth: documentBubbleWidth,
   };
+  const showExternalWhatsAppBadge = isExternalWhatsAppSend(msg);
 
   if (!content || !hasContent) {
     return (
@@ -5497,6 +5530,14 @@ function MessageBubble({
             </View>
           ) : null}
           <View style={styles.bubbleMeta}>
+            {showExternalWhatsAppBadge ? (
+              <View
+                style={styles.externalWhatsAppBadge}
+                accessibilityLabel={pt.chat_sent_outside_platform_label}
+              >
+                <Ionicons name="logo-whatsapp" size={11} color="#128C52" />
+              </View>
+            ) : null}
             {timeStr ? (
               <Text
                 style={[
@@ -5631,6 +5672,14 @@ function MessageBubble({
               {pt.chat_edited}
             </Text>
           ) : null}
+          {showExternalWhatsAppBadge ? (
+            <View
+              style={styles.externalWhatsAppBadge}
+              accessibilityLabel={pt.chat_sent_outside_platform_label}
+            >
+              <Ionicons name="logo-whatsapp" size={11} color="#128C52" />
+            </View>
+          ) : null}
           {timeStr ? (
             <Text
               style={[
@@ -5695,7 +5744,7 @@ type ChatMessageListRowProps = {
   documentBubbleWidth: number;
   disableTemplateButtons: boolean;
   obfuscateContent: boolean;
-  openedMessageSwipeableRef: { current: Swipeable | null };
+  openedMessageSwipeableRef: { current: SwipeableMethods | null };
   onOpenActions: (message: ListMessageResult) => void;
   onPressQuotedMessage: (messageId: string) => void;
   onReplyFromMessage: (message: ListMessageResult) => void;
@@ -5749,46 +5798,20 @@ function ChatMessageListRow({
     onPressQuotedMessage(quotedTargetId);
   }, [onPressQuotedMessage, quotedTargetId]);
 
-  const renderSwipeReplyAction = useCallback(
-    (
-      progress: Animated.AnimatedInterpolation<number>,
-      dragX: Animated.AnimatedInterpolation<number>
-    ) => {
-      const translateX = dragX.interpolate({
-        inputRange: [0, MESSAGE_SWIPE_REPLY_ACTION_WIDTH],
-        outputRange: [-MESSAGE_SWIPE_REPLY_ACTION_WIDTH, 0],
-        extrapolate: 'clamp',
-      });
-      const opacity = progress.interpolate({
-        inputRange: [0, 0.35, 1],
-        outputRange: [0.1, 0.65, 1],
-        extrapolate: 'clamp',
-      });
-
-      return (
-        <Animated.View
-          style={[
-            styles.messageSwipeRightAction,
-            {
-              width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
-              opacity,
-              transform: [{ translateX }],
-            },
-          ]}
-        >
-          <View style={styles.messageSwipeRightActionInner}>
-            <Ionicons
-              name="arrow-undo-outline"
-              size={18}
-              color={colors.primary}
-            />
-            <Text style={styles.messageSwipeRightActionText}>{pt.reply}</Text>
-          </View>
-        </Animated.View>
-      );
-    },
-    []
-  );
+  const renderSwipeReplyAction = useCallback(() => {
+    return (
+      <View style={styles.messageSwipeRightAction}>
+        <View style={styles.messageSwipeRightActionInner}>
+          <Ionicons
+            name="arrow-undo-outline"
+            size={18}
+            color={colors.primary}
+          />
+          <Text style={styles.messageSwipeRightActionText}>{pt.reply}</Text>
+        </View>
+      </View>
+    );
+  }, []);
 
   if (item.type === 'separator') {
     return <MemoizedDateSeparator label={item.separatorLabel} />;
@@ -5827,20 +5850,20 @@ function ChatMessageListRow({
     return bubble;
   }
 
-  let rowSwipeable: Swipeable | null = null;
+  let rowSwipeable: SwipeableMethods | null = null;
 
   return (
-    <Swipeable
+    <ReanimatedSwipeable
       ref={(instance) => {
         rowSwipeable = instance;
       }}
       friction={MESSAGE_SWIPE_FRICTION}
       leftThreshold={MESSAGE_SWIPE_REPLY_THRESHOLD}
       overshootLeft={false}
-      dragOffsetFromLeftEdge={MESSAGE_SWIPE_DRAG_OFFSET}
+      dragOffsetFromLeft={MESSAGE_SWIPE_DRAG_OFFSET}
       containerStyle={styles.messageSwipeContainer}
       onSwipeableWillOpen={(direction) => {
-        if (direction !== 'left') return;
+        if (direction !== SwipeDirection.LEFT) return;
         if (
           openedMessageSwipeableRef.current &&
           openedMessageSwipeableRef.current !== rowSwipeable
@@ -5849,14 +5872,14 @@ function ChatMessageListRow({
         }
       }}
       onSwipeableOpen={(direction) => {
-        if (direction !== 'left') return;
+        if (direction !== SwipeDirection.LEFT) return;
         openedMessageSwipeableRef.current = rowSwipeable;
         rowSwipeable?.close();
         onReplyFromMessage(message);
       }}
       onSwipeableClose={(direction) => {
         if (
-          direction === 'left' &&
+          direction === SwipeDirection.LEFT &&
           openedMessageSwipeableRef.current === rowSwipeable
         ) {
           openedMessageSwipeableRef.current = null;
@@ -5865,7 +5888,7 @@ function ChatMessageListRow({
       renderLeftActions={renderSwipeReplyAction}
     >
       {bubble}
-    </Swipeable>
+    </ReanimatedSwipeable>
   );
 }
 
@@ -5930,7 +5953,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { width: viewportWidth } = useWindowDimensions();
   const listRef = useRef<FlatList<MessageWithSeparator> | null>(null);
-  const openedMessageSwipeableRef = useRef<Swipeable | null>(null);
+  const openedMessageSwipeableRef = useRef<SwipeableMethods | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micPressActiveRef = useRef(false);
   const micStartXRef = useRef<number | null>(null);
@@ -17411,6 +17434,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   messageSwipeRightAction: {
+    width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
     marginVertical: 5,
     justifyContent: 'center',
     alignItems: 'center',
@@ -17632,6 +17656,21 @@ const styles = StyleSheet.create({
   },
   bubbleTimeRight: {
     color: colors.bubbleSentTime,
+  },
+  externalWhatsAppBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 16,
+    height: 16,
+    minHeight: 16,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 8,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: 'rgba(37, 211, 102, 0.22)',
+    backgroundColor: 'rgba(37, 211, 102, 0.1)',
   },
   bubbleWrapCenter: {
     alignItems: 'center',
@@ -17922,7 +17961,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   imageGalleryHiddenOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.42)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -18516,7 +18555,7 @@ const styles = StyleSheet.create({
     paddingVertical: Platform.OS === 'ios' ? 42 : 24,
   },
   viewerBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   viewerContent: {
     flex: 1,
@@ -19355,18 +19394,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   messageOverlayInlineHost: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 90,
     elevation: 90,
   },
   messageOverlayBackdropPress: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   messageOverlayBlur: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   messageOverlayDim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   messageOverlayDimWithBlur: {
     backgroundColor:
@@ -19567,7 +19606,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   editHistoryBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.35)',
   },
   editHistoryCard: {
@@ -19828,7 +19867,7 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   videoEditorOpeningOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 50,
     elevation: 50,
     backgroundColor: 'rgba(0, 0, 0, 0.22)',

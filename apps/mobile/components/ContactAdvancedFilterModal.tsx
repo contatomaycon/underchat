@@ -54,12 +54,7 @@ import { formatLocalPhone, normalizePhoneDigits } from '../utils/phoneFormat';
 import { SelectField, SelectSheet, type SelectOption } from './select';
 
 type PickerKind =
-  | 'label'
-  | 'phoneDdi'
-  | 'user'
-  | 'sortField'
-  | 'sortOrder'
-  | null;
+  'label' | 'phoneDdi' | 'user' | 'sortField' | 'sortOrder' | null;
 
 const SORT_FIELD_OPTIONS: Array<{ value: ContactSortField; label: string }> = [
   { value: 'name', label: pt.name },
@@ -679,7 +674,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   modal: {
     backgroundColor: colors.surface,
@@ -760,7 +755,7 @@ const styles = StyleSheet.create({
     borderLeftColor: colors.grey200,
   },
   pickerOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.2)',
     justifyContent: 'flex-end',
   },

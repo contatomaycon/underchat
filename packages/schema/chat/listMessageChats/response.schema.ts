@@ -314,6 +314,7 @@ export const listMessageResultSchema = Type.Object({
   deleted: Type.Optional(Type.Boolean()),
   has_quoted: Type.Optional(Type.Boolean()),
   hash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  sent_from_platform: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
 export const listMessageResponseSchema = Type.Object({

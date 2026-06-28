@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(47, 43, 61, 0.08)',
   },
   locationMapImage: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: '100%',
     height: '100%',
   },
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   locationMapFallback: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(47, 43, 61, 0.08)',

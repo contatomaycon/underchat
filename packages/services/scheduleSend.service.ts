@@ -531,6 +531,7 @@ export class ScheduleSendService {
         is_view_once: false,
       },
       type_user: ETypeUserChat.system,
+      sent_from_platform: true,
       account: {
         id: schedule.account_id,
         name: schedule.account_name,
@@ -604,6 +605,7 @@ export class ScheduleSendService {
       chat_id: '',
       message_key: null,
       type_user: ETypeUserChat.system,
+      sent_from_platform: true,
       account: {
         id: schedule.account_id,
         name: schedule.account_name,
@@ -1252,6 +1254,7 @@ export class ScheduleSendService {
         is_view_once: false,
       },
       type_user: ETypeUserChat.system,
+      sent_from_platform: true,
       account: { id: schedule.account_id, name: schedule.account_name },
       worker: { id: schedule.worker_id, name: schedule.worker_name },
       user: null,

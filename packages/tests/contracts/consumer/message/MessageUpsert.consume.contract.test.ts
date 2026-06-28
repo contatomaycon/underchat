@@ -693,12 +693,13 @@ describe('MessageUpsertConsume edit fallback', () => {
         makeTextUpsert(),
         17,
         63535,
-        1,
+        3,
+        3,
         true,
         error
       );
 
-      expect(discarded).toBe(true);
+      expect(discarded).toBeUndefined();
       expect(streamProducerService.send).not.toHaveBeenCalled();
       expect(consoleSpy).toHaveBeenCalledWith(
         '[MessageUpsert] Discarding terminal message:',
@@ -737,12 +738,31 @@ describe('MessageUpsertConsume edit fallback', () => {
       })
     );
     expect(createdMessage.type_user).toBe(ETypeUserChat.client);
+    expect(createdMessage.sent_from_platform).toBeUndefined();
     expect(createdMessage.content).toEqual(
       expect.objectContaining({
         type: EMessageType.text,
         message: adBody,
       })
     );
+  });
+
+  it('marks a new own provider message as sent outside the platform', async () => {
+    const { consumer, chat, chatService } = makeConsumer();
+
+    const result = await (consumer as any).createChatMessage(
+      chat,
+      makeTextUpsert('Resposta pelo WhatsApp', { fromMe: true })
+    );
+
+    expect(result.handled).toBe(true);
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+
+    const createdMessage = chatService.createMessageIdempotent.mock
+      .calls[0][0] as IChatMessage;
+    expect(createdMessage.type_user).toBe(ETypeUserChat.operator);
+    expect(createdMessage.message_key?.from_me).toBe(true);
+    expect(createdMessage.sent_from_platform).toBe(false);
   });
 
   it('keeps normal edit behavior when the target message exists', async () => {
@@ -786,7 +806,10 @@ describe('MessageUpsertConsume edit fallback', () => {
   });
 
   it('replaces a ciphertext system fallback when the real text arrives with the same key', async () => {
-    const existingMessage = makeExistingCiphertextSystemMessage();
+    const existingMessage = {
+      ...makeExistingCiphertextSystemMessage(),
+      sent_from_platform: true,
+    };
     const { consumer, chat, chatService } = makeConsumer(
       elasticHit(existingMessage)
     );
@@ -810,6 +833,7 @@ describe('MessageUpsertConsume edit fallback', () => {
         message: adBody,
       })
     );
+    expect(updatedMessage.sent_from_platform).toBe(true);
   });
 
   it('deduplicates an incoming message already stored in a closed chat before creating another chat', async () => {

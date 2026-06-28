@@ -210,6 +210,15 @@ const isOutgoingMessage = (message: ListMessageResult): boolean => {
   return message.type_user === ETypeUserChat.operator;
 };
 
+const isExternalWhatsAppSend = (message: ListMessageResult): boolean => {
+  return (
+    message.sent_from_platform === false &&
+    message.message_key?.from_me === true &&
+    message.content?.type !== EMessageType.system &&
+    message.content?.type !== EMessageType.annotation
+  );
+};
+
 const canViewChatContent = () => {
   const permissions = [
     EGeneralPermissions.full_access,
@@ -814,8 +823,7 @@ const loadForwardTargets = async (append = false) => {
     const response = await chatStore.searchForwardTargetChats({
       filter_worker_id: selectedForwardChannel.value,
       status: selectedForwardStatus.value as
-        | EChatStatus.in_chat
-        | EChatStatus.queue,
+        EChatStatus.in_chat | EChatStatus.queue,
       search,
       current_page: nextPage,
       per_page: 20,
@@ -3363,9 +3371,7 @@ onUnmounted(() => {
           "
           :id="`msg-${item.message.message_id}`"
           :data-message-id="item.message.message_id"
-          :data-chat-timeline-anchor="
-            `message:${item.readonly ? 'history' : 'active'}:${item.message.message_id}`
-          "
+          :data-chat-timeline-anchor="`message:${item.readonly ? 'history' : 'active'}:${item.message.message_id}`"
           class="chat-group d-flex align-start position-relative"
           :class="[
             {
@@ -5319,6 +5325,26 @@ onUnmounted(() => {
                         {{ t('chat_edited') }}
                       </span>
                       <div class="message-meta-row">
+                        <VTooltip
+                          v-if="isExternalWhatsAppSend(item.message)"
+                          location="top"
+                          open-delay="180"
+                        >
+                          <template #activator="{ props }">
+                            <span
+                              v-bind="props"
+                              class="external-whatsapp-badge"
+                              :aria-label="
+                                t('chat_sent_outside_platform_label')
+                              "
+                            >
+                              <VIcon size="12">tabler-brand-whatsapp</VIcon>
+                            </span>
+                          </template>
+                          <span>{{
+                            t('chat_sent_outside_platform_label')
+                          }}</span>
+                        </VTooltip>
                         <span class="message-time">
                           {{
                             formatDate(item.message.date, {
@@ -7582,6 +7608,25 @@ onUnmounted(() => {
     .message-time {
       line-height: 1;
       white-space: nowrap;
+    }
+
+    .external-whatsapp-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 16px;
+      inline-size: 16px;
+      block-size: 16px;
+      padding: 0;
+      border: 1px solid rgba(37, 211, 102, 0.22);
+      border-radius: 50%;
+      background: rgba(37, 211, 102, 0.08);
+      color: rgba(18, 140, 82, 0.88);
+      line-height: 1;
+
+      .v-icon {
+        font-size: 0.72rem;
+      }
     }
 
     .message-edited-badge,
