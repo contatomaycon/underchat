@@ -424,8 +424,15 @@ describe('MessageUpsertConsume edit fallback', () => {
       updateMessageChat: jest.fn(async (..._args: unknown[]) => undefined),
       updateChatSummaryAtomically: jest.fn(async (..._args: unknown[]) => true),
       updateChatUserAndSector: jest.fn(async (..._args: unknown[]) => true),
-      findChatByChatId: jest.fn(async (..._args: unknown[]) => chat),
-      findChatByPhone: jest.fn(async (..._args: unknown[]) => null),
+      findChatByChatId: jest.fn<Promise<IChat | null>, unknown[]>(
+        async (..._args: unknown[]) => chat
+      ),
+      findChatByPhone: jest.fn<Promise<IChat | null>, unknown[]>(
+        async (..._args: unknown[]) => null
+      ),
+      findChatByMessageKeyJid: jest.fn<Promise<IChat | null>, unknown[]>(
+        async (..._args: unknown[]) => null
+      ),
       saveChat: jest.fn(async (..._args: unknown[]) => undefined),
       invalidateChatCache: jest.fn(async (..._args: unknown[]) => undefined),
     };
@@ -497,6 +504,41 @@ describe('MessageUpsertConsume edit fallback', () => {
     const streamProducerService = {
       send: jest.fn(async () => undefined),
     };
+    const inboundMessageSpoolService = {
+      startPublisher: jest.fn(() => undefined),
+      publish: jest.fn(async () => true),
+      parkConsumerMessage: jest.fn(async () => undefined),
+    };
+    const extractPhoneJidFromChat = (chatInput: IChat | null | undefined) => {
+      const key = chatInput?.message_key;
+      const fromKey = [key?.remote_jid, key?.remote_jid_alt].find(
+        (candidate) =>
+          typeof candidate === 'string' && candidate.endsWith('@s.whatsapp.net')
+      );
+      if (fromKey) {
+        return fromKey;
+      }
+
+      return typeof chatInput?.phone === 'string'
+        ? `${chatInput.phone.replaceAll(/\D/g, '')}@s.whatsapp.net`
+        : null;
+    };
+    const lidJidCacheService = {
+      isLidJid: jest.fn(
+        (jid?: string | null) => jid?.endsWith('@lid') === true
+      ),
+      resolvePhoneJid: jest.fn(async () => null),
+      remember: jest.fn(async () => null),
+      rememberFromUpsert: jest.fn(async () => null),
+      rememberFromChat: jest.fn(
+        async (
+          _accountId: string,
+          _workerId: string,
+          chatInput: IChat | null | undefined
+        ) => extractPhoneJidFromChat(chatInput)
+      ),
+      extractPhoneJidFromChat: jest.fn(extractPhoneJidFromChat),
+    };
     const consumer = new MessageUpsertConsume(
       redis as never,
       {} as never,
@@ -542,7 +584,9 @@ describe('MessageUpsertConsume edit fallback', () => {
       pushNotificationService as never,
       sectorService as never,
       userService as never,
-      activeWhatsappValidationService as never
+      activeWhatsappValidationService as never,
+      inboundMessageSpoolService as never,
+      lidJidCacheService as never
     );
 
     return {
@@ -557,6 +601,8 @@ describe('MessageUpsertConsume edit fallback', () => {
       workerConfigService,
       chatbotFlowRunnerService,
       streamProducerService,
+      inboundMessageSpoolService,
+      lidJidCacheService,
     };
   };
 
@@ -676,6 +722,51 @@ describe('MessageUpsertConsume edit fallback', () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+
+  it('resolves LID-only incoming messages from an active chat message key', async () => {
+    const { consumer, chatService } = makeConsumer();
+    const chatWithResolvedJid = {
+      ...makeChat(),
+      phone: '556999715039',
+      message_key: {
+        remote_jid: phoneJid,
+        remote_jid_alt: lidJid,
+      },
+    } as IChat;
+    chatService.findChatByMessageKeyJid.mockResolvedValueOnce(
+      chatWithResolvedJid
+    );
+    chatService.findChatByPhone.mockResolvedValueOnce(chatWithResolvedJid);
+
+    const upsert = makeTextUpsert();
+    upsert.message.key.remoteJid = lidJid;
+    delete (upsert.message.key as { remoteJidAlt?: string }).remoteJidAlt;
+
+    const result = await (consumer as any).processKafkaUpsertOnce(
+      jest.fn((key: string) => key),
+      upsert,
+      17,
+      63535
+    );
+
+    expect(result).toBe(true);
+    expect(chatService.findChatByMessageKeyJid).toHaveBeenCalledWith(
+      'account-1',
+      'worker-1',
+      lidJid,
+      undefined
+    );
+    expect(upsert.message.key.remoteJid).toBe(lidJid);
+    expect(upsert.message.key.remoteJidAlt).toBe(phoneJid);
+    expect(chatService.findChatByPhone).toHaveBeenCalledWith(
+      'account-1',
+      'worker-1',
+      '556999715039',
+      lidJid,
+      phoneJid
+    );
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
   });
 
   it('discards lock acquisition timeouts after local retries so the partition can commit', async () => {

@@ -93,6 +93,7 @@ import type {
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
+import { LidJidCacheService } from '@core/services/lidJidCache.service';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -230,7 +231,16 @@ export class MessageUpsertConsume {
         return true;
       },
       parkConsumerMessage: async () => undefined,
-    } as unknown as InboundMessageSpoolService
+    } as unknown as InboundMessageSpoolService,
+    @inject(LidJidCacheService)
+    private readonly lidJidCacheService: LidJidCacheService = {
+      isLidJid: (jid?: string | null) => jid?.trim().endsWith('@lid') === true,
+      resolvePhoneJid: async () => null,
+      remember: async () => null,
+      rememberFromUpsert: async () => null,
+      rememberFromChat: async () => null,
+      extractPhoneJidFromChat: () => null,
+    } as unknown as LidJidCacheService
   ) {
     this.historyReceiptCache = new MessageHistoryReceiptCacheService(
       this.redis
@@ -5355,6 +5365,8 @@ export class MessageUpsertConsume {
           ]
         );
 
+        await this.rememberLidJidPairFromChat(data, getChat);
+
         if (!getChat) {
           const existingRelatedMessage =
             await this.findExistingMessageForIncomingData(data, {
@@ -5838,6 +5850,184 @@ export class MessageUpsertConsume {
     return timeout;
   }
 
+  private normalizeJidCandidate(value?: string | null): string | undefined {
+    const raw = value?.trim();
+    if (!raw) {
+      return undefined;
+    }
+
+    return normalizeJid(raw) ?? raw;
+  }
+
+  private hydrateMessageKeyWithPhoneJid(
+    data: IUpsertMessage,
+    lidJid: string,
+    phoneJid: string
+  ): void {
+    const key = data.message?.key;
+    if (!key) {
+      return;
+    }
+
+    const normalizedLid = this.normalizeJidCandidate(lidJid) ?? lidJid;
+    const normalizedPhone = this.normalizeJidCandidate(phoneJid) ?? phoneJid;
+    const currentRemote = this.normalizeJidCandidate(key.remoteJid);
+    const currentAlt = this.normalizeJidCandidate(key.remoteJidAlt);
+
+    if (currentRemote === normalizedLid) {
+      key.remoteJid = currentRemote;
+      key.remoteJidAlt = normalizedPhone;
+      return;
+    }
+
+    if (currentAlt === normalizedLid) {
+      if (!currentRemote || this.lidJidCacheService.isLidJid(currentRemote)) {
+        key.remoteJid = normalizedPhone;
+      }
+      key.remoteJidAlt = currentAlt;
+    }
+  }
+
+  private async rememberLidJidPairFromUpsert(
+    data: IUpsertMessage
+  ): Promise<void> {
+    try {
+      await this.lidJidCacheService.rememberFromUpsert(data);
+    } catch (error) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.lid_jid_cache.remember_error',
+        decision: 'remember_lid_jid_pair',
+        outcome: 'error',
+        level: 'warn',
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async rememberLidJidPairFromChat(
+    data: IUpsertMessage,
+    chat: IChat | null | undefined
+  ): Promise<void> {
+    if (!chat) {
+      return;
+    }
+
+    try {
+      await this.lidJidCacheService.rememberFromChat(
+        data.account_id,
+        data.worker_id,
+        chat
+      );
+    } catch (error) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.lid_jid_cache.remember_chat_error',
+        decision: 'remember_lid_jid_pair',
+        outcome: 'error',
+        level: 'warn',
+        chat_id: chat.chat_id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async resolvePhoneForIncomingMessage(
+    data: IUpsertMessage,
+    partition: number,
+    offset: number
+  ): Promise<string | null> {
+    await this.rememberLidJidPairFromUpsert(data);
+
+    let jid = this.normalizeJidCandidate(remoteJid(data.message?.key));
+    let jidAlt = this.normalizeJidCandidate(remoteJidAlt(data.message?.key));
+    let phone = getPhoneFromJid(jid, jidAlt);
+    if (phone) {
+      return phone;
+    }
+
+    const lidJid = [jid, jidAlt].find((candidate): candidate is string =>
+      this.lidJidCacheService.isLidJid(candidate)
+    );
+    if (!lidJid) {
+      return null;
+    }
+
+    try {
+      const cachedPhoneJid = await this.lidJidCacheService.resolvePhoneJid(
+        data.account_id,
+        data.worker_id,
+        lidJid
+      );
+
+      if (cachedPhoneJid) {
+        this.hydrateMessageKeyWithPhoneJid(data, lidJid, cachedPhoneJid);
+        jid = this.normalizeJidCandidate(remoteJid(data.message?.key));
+        jidAlt = this.normalizeJidCandidate(remoteJidAlt(data.message?.key));
+        phone = getPhoneFromJid(jid, jidAlt);
+        if (phone) {
+          this.logLifecycle(data, {
+            stage: 'message_upsert.lid_jid_cache.resolve',
+            decision: 'resolve_lid_jid_pair',
+            outcome: 'resolved',
+            source: 'cache',
+            lid_jid: lidJid,
+            phone_jid: cachedPhoneJid,
+            partition,
+            offset,
+          });
+          return phone;
+        }
+      }
+    } catch (error) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.lid_jid_cache.resolve_error',
+        decision: 'resolve_lid_jid_pair',
+        outcome: 'error',
+        level: 'warn',
+        lid_jid: lidJid,
+        partition,
+        offset,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    const chat = await this.chatService.findChatByMessageKeyJid(
+      data.account_id,
+      data.worker_id,
+      jid,
+      jidAlt
+    );
+    if (!chat) {
+      return null;
+    }
+
+    await this.rememberLidJidPairFromChat(data, chat);
+    const chatPhoneJid = this.lidJidCacheService.extractPhoneJidFromChat(chat);
+    if (!chatPhoneJid) {
+      return null;
+    }
+
+    this.hydrateMessageKeyWithPhoneJid(data, lidJid, chatPhoneJid);
+    jid = this.normalizeJidCandidate(remoteJid(data.message?.key));
+    jidAlt = this.normalizeJidCandidate(remoteJidAlt(data.message?.key));
+    phone = getPhoneFromJid(jid, jidAlt);
+
+    if (phone) {
+      this.logLifecycle(data, {
+        stage: 'message_upsert.lid_jid_cache.resolve',
+        decision: 'resolve_lid_jid_pair',
+        outcome: 'resolved',
+        source: 'active_chat_message_key',
+        chat_id: chat.chat_id,
+        lid_jid: lidJid,
+        phone_jid: chatPhoneJid,
+        partition,
+        offset,
+      });
+    }
+
+    return phone;
+  }
+
   private async processKafkaUpsertOnce(
     t: TFunction<'translation', undefined>,
     data: IUpsertMessage,
@@ -5879,7 +6069,11 @@ export class MessageUpsertConsume {
       );
     }
 
-    const phone = getPhoneFromJid(jid, jidAlt);
+    const phone = await this.resolvePhoneForIncomingMessage(
+      data,
+      partition,
+      offset
+    );
 
     if (!phone) {
       this.logLifecycle(data, {

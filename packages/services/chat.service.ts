@@ -142,9 +142,7 @@ export class ChatService {
     const content = messageChat.content;
     const contextInfo = content?.context_info;
     const externalAdReply = contextInfo?.external_ad_reply as
-      | Record<string, unknown>
-      | null
-      | undefined;
+      Record<string, unknown> | null | undefined;
 
     if (!content || !contextInfo || !externalAdReply) {
       return messageChat;
@@ -1798,6 +1796,101 @@ export class ChatService {
                 ],
               }
             : {}),
+        },
+      },
+    };
+
+    const result = await this.elasticDatabaseService.select<IChat>(
+      EElasticIndex.chat,
+      queryElastic
+    );
+
+    const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
+    const chat = this.normalizeChatData(hit?._source ?? null);
+
+    if (!chat) {
+      return null;
+    }
+
+    await this.cacheChat(chat);
+
+    return chat;
+  };
+
+  findChatByMessageKeyJid = async (
+    accountId: string,
+    workerId: string,
+    remoteJid?: string | null,
+    remoteJidAlt?: string | null
+  ): Promise<IChat | null> => {
+    const shouldClauses: any[] = [];
+
+    if (remoteJid) {
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid': remoteJid } },
+        },
+      });
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid_alt': remoteJid } },
+        },
+      });
+    }
+
+    if (remoteJidAlt) {
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid': remoteJidAlt } },
+        },
+      });
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: { term: { 'message_key.remote_jid_alt': remoteJidAlt } },
+        },
+      });
+    }
+
+    if (!shouldClauses.length) {
+      return null;
+    }
+
+    const queryElastic = {
+      size: 1,
+      _source: true,
+      query: {
+        bool: {
+          filter: [
+            {
+              nested: {
+                path: 'account',
+                query: { term: { 'account.id': accountId } },
+              },
+            },
+            {
+              nested: {
+                path: 'worker',
+                query: { term: { 'worker.id': workerId } },
+              },
+            },
+            {
+              terms: {
+                status: [
+                  EChatStatus.in_chat,
+                  EChatStatus.queue,
+                  EChatStatus.ura,
+                  EChatStatus.ura_output,
+                  EChatStatus.ura_schedule,
+                  EChatStatus.ura_webhook,
+                ],
+              },
+            },
+          ],
+          must: [{ bool: { should: shouldClauses, minimum_should_match: 1 } }],
         },
       },
     };

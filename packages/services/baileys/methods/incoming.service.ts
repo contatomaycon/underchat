@@ -47,6 +47,7 @@ import { resolveCallEventJidAndPhone } from '../util/callEventResolver';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
+import { LidJidCacheService } from '@core/services/lidJidCache.service';
 
 const UNSUPPORTED_INCOMING_MESSAGE_TEXT =
   'Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp.';
@@ -171,7 +172,16 @@ export class BaileysIncomingMessageService {
         return true;
       },
       parkConsumerMessage: async () => undefined,
-    } as unknown as InboundMessageSpoolService
+    } as unknown as InboundMessageSpoolService,
+    @inject(LidJidCacheService)
+    private readonly lidJidCacheService: LidJidCacheService = {
+      isLidJid: (jid?: string | null) => jid?.trim().endsWith('@lid') === true,
+      resolvePhoneJid: async () => null,
+      remember: async () => null,
+      rememberFromUpsert: async () => null,
+      rememberFromChat: async () => null,
+      extractPhoneJidFromChat: () => null,
+    } as unknown as LidJidCacheService
   ) {
     this.startCleanupInterval();
     this.startQueueProcessor();
@@ -194,6 +204,80 @@ export class BaileysIncomingMessageService {
     if (!jidToUse) return null;
 
     return `${jidToUse}:${id}:${fromMe}`;
+  }
+
+  private async rememberMessageKeyLidJidPair(
+    key: WAMessageKey | null | undefined
+  ): Promise<void> {
+    try {
+      await this.lidJidCacheService.remember(
+        baileysEnvironment.baileysAccountId,
+        baileysEnvironment.baileysWorkerId,
+        remoteJid(key),
+        remoteJidAlt(key)
+      );
+    } catch (error) {
+      this.logLifecycle({ key } as WAMessage, {
+        stage: 'baileys.lid_jid_cache.remember_error',
+        decision: 'remember_lid_jid_pair',
+        outcome: 'error',
+        level: 'warn',
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async hydrateMessageKeyFromLidCache(m: WAMessage): Promise<void> {
+    const key = m.key as
+      (WAMessageKey & { remoteJidAlt?: string | null }) | null | undefined;
+    if (!key) {
+      return;
+    }
+
+    await this.rememberMessageKeyLidJidPair(key);
+
+    const jid = normalizeJid(remoteJid(key));
+    const jidAlt = normalizeJid(remoteJidAlt(key));
+    const lidJid = [jid, jidAlt].find((candidate): candidate is string =>
+      this.lidJidCacheService.isLidJid(candidate)
+    );
+    if (!lidJid) {
+      return;
+    }
+
+    let phoneJid: string | null = null;
+    try {
+      phoneJid = await this.lidJidCacheService.resolvePhoneJid(
+        baileysEnvironment.baileysAccountId,
+        baileysEnvironment.baileysWorkerId,
+        lidJid
+      );
+    } catch (error) {
+      this.logLifecycle(m, {
+        stage: 'baileys.lid_jid_cache.resolve_error',
+        decision: 'resolve_lid_jid_pair',
+        outcome: 'error',
+        level: 'warn',
+        lid_jid: lidJid,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    if (!phoneJid) {
+      return;
+    }
+
+    if (jid === lidJid) {
+      key.remoteJid = jid;
+      key.remoteJidAlt = phoneJid;
+      return;
+    }
+
+    if (jidAlt === lidJid && (!jid || this.lidJidCacheService.isLidJid(jid))) {
+      key.remoteJid = phoneJid;
+      key.remoteJidAlt = jidAlt;
+    }
   }
 
   private logLifecycle(
@@ -890,7 +974,7 @@ export class BaileysIncomingMessageService {
     m: WAMessage,
     upsertType: string
   ): void {
-    this.processIncomingMessage(
+    void this.processIncomingMessage(
       socket,
       m,
       upsertType,
@@ -914,7 +998,7 @@ export class BaileysIncomingMessageService {
       return;
     }
 
-    this.processIncomingMessage(
+    void this.processIncomingMessage(
       socket,
       m,
       upsertType,
@@ -966,13 +1050,13 @@ export class BaileysIncomingMessageService {
     return Boolean(mapIncomingToType(m) || m.message || m.key?.id);
   }
 
-  private processIncomingMessage(
+  private async processIncomingMessage(
     socket: WASocket,
     m: WAMessage,
     upsertType: string | null,
     topic: string,
     options: ProcessIncomingOptions = {}
-  ): void {
+  ): Promise<void> {
     try {
       this.logLifecycle(m, {
         stage: 'baileys.incoming.received',
@@ -1004,6 +1088,8 @@ export class BaileysIncomingMessageService {
         });
         return;
       }
+
+      await this.hydrateMessageKeyFromLidCache(m);
 
       const messageKey = this.getMessageKey(m);
       if (!messageKey) {
@@ -1600,6 +1686,24 @@ export class BaileysIncomingMessageService {
       let callPhoto: string | null = null;
 
       if (callPhone) {
+        try {
+          await this.lidJidCacheService.remember(
+            baileysEnvironment.baileysAccountId,
+            baileysEnvironment.baileysWorkerId,
+            normalizedJid,
+            `${callPhone}@s.whatsapp.net`
+          );
+        } catch (error) {
+          this.logLifecycle(null, {
+            stage: 'baileys.lid_jid_cache.remember_call_error',
+            decision: 'remember_lid_jid_pair',
+            outcome: 'error',
+            level: 'warn',
+            call_jid: normalizedJid,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+
         const callUpsert: IUpsertMessage = {
           worker_id: baileysEnvironment.baileysWorkerId,
           account_id: baileysEnvironment.baileysAccountId,

@@ -34,6 +34,7 @@ import { MessageDeliveryConfirmationFailedError } from '@core/common/exceptions/
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
 import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
+import { LidJidCacheService } from '@core/services/lidJidCache.service';
 
 const ACK_ERROR = -1;
 const ACK_SERVER = 1;
@@ -789,7 +790,16 @@ export class WwebjsIncomingMessageService {
         return true;
       },
       parkConsumerMessage: async () => undefined,
-    } as unknown as InboundMessageSpoolService
+    } as unknown as InboundMessageSpoolService,
+    @inject(LidJidCacheService)
+    private readonly lidJidCacheService: LidJidCacheService = {
+      isLidJid: (jid?: string | null) => jid?.trim().endsWith('@lid') === true,
+      resolvePhoneJid: async () => null,
+      remember: async () => null,
+      rememberFromUpsert: async () => null,
+      rememberFromChat: async () => null,
+      extractPhoneJidFromChat: () => null,
+    } as unknown as LidJidCacheService
   ) {
     this.inboundMessageSpoolService.startPublisher(
       'wwebjs',
@@ -3213,6 +3223,26 @@ export class WwebjsIncomingMessageService {
     return !!jid && jid.endsWith('@lid');
   }
 
+  private async rememberResolvedLidJidPair(
+    remoteJid?: string | null,
+    remoteJidAlt?: string | null
+  ): Promise<void> {
+    try {
+      await this.lidJidCacheService.remember(
+        wwebjsEnvironment.wwebjsAccountId,
+        wwebjsEnvironment.wwebjsWorkerId,
+        remoteJid,
+        remoteJidAlt
+      );
+    } catch (error) {
+      this.logEvent('lid_jid_cache_remember_failed', {
+        remoteJid,
+        remoteJidAlt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   private normalizePhoneDigits(
     value: string | null | undefined
   ): string | undefined {
@@ -3264,6 +3294,30 @@ export class WwebjsIncomingMessageService {
       }
     }
 
+    try {
+      const cachedPhoneJid = await this.lidJidCacheService.resolvePhoneJid(
+        wwebjsEnvironment.wwebjsAccountId,
+        wwebjsEnvironment.wwebjsWorkerId,
+        lidJid
+      );
+      const cachedPhone = this.sanitizeResolvedPhoneFromLid(
+        lidJid,
+        cachedPhoneJid ?? undefined
+      );
+      if (cachedPhone) {
+        this.LID_PHONE_CACHE.set(lidJid, {
+          phone: cachedPhone,
+          ts: Date.now(),
+        });
+        return cachedPhone;
+      }
+    } catch (error) {
+      this.logEvent('lid_jid_cache_resolve_failed', {
+        lidJid,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     const resolved =
       this.sanitizeResolvedPhoneFromLid(
         lidJid,
@@ -3279,6 +3333,12 @@ export class WwebjsIncomingMessageService {
       phone: resolved ?? null,
       ts: Date.now(),
     });
+    if (resolved) {
+      await this.rememberResolvedLidJidPair(
+        lidJid,
+        `${resolved}@s.whatsapp.net`
+      );
+    }
     return resolved;
   }
 
@@ -3614,6 +3674,10 @@ export class WwebjsIncomingMessageService {
         });
         return;
       }
+      await this.rememberResolvedLidJidPair(
+        resolvedJids.remoteJid,
+        resolvedJids.remoteJidAlt
+      );
       if (this.isUnsupportedSystemNotification(msg)) {
         this.logLifecycleForMessage(msg, {
           stage: 'wwebjs.incoming.skip',
