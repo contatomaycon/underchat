@@ -50,6 +50,10 @@ import ReanimatedSwipeable, {
   SwipeDirection,
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Reanimated, {
+  useAnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 import type { ChatStackParamList } from '../navigation/types';
 import {
   type ListChatsResult,
@@ -602,6 +606,7 @@ const MESSAGE_SWIPE_REPLY_ACTION_WIDTH = 84;
 const MESSAGE_SWIPE_REPLY_THRESHOLD = 44;
 const MESSAGE_SWIPE_FRICTION = 1.8;
 const MESSAGE_SWIPE_DRAG_OFFSET = 18;
+const MESSAGE_SWIPE_REPLY_DIRECTION = SwipeDirection.RIGHT;
 const VIEWER_SWIPE_CLOSE_DISTANCE = 120;
 const VIEWER_SWIPE_CLOSE_VELOCITY = 1.05;
 const VIEWER_SWIPE_ACTIVATION_DISTANCE = 10;
@@ -5725,6 +5730,36 @@ function MessageBubble({
   );
 }
 
+function MessageSwipeReplyAction({
+  progress,
+}: {
+  progress: SharedValue<number>;
+}) {
+  const animatedStyle = useAnimatedStyle(() => {
+    const visibleProgress = Math.min(1, Math.max(0, progress.value));
+
+    return {
+      opacity: visibleProgress,
+      transform: [
+        { translateX: -8 + visibleProgress * 8 },
+        { scale: 0.94 + visibleProgress * 0.06 },
+      ],
+    };
+  }, [progress]);
+
+  return (
+    <Reanimated.View
+      pointerEvents="none"
+      style={[styles.messageSwipeRightAction, animatedStyle]}
+    >
+      <View style={styles.messageSwipeRightActionInner}>
+        <Ionicons name="arrow-undo-outline" size={18} color={colors.primary} />
+        <Text style={styles.messageSwipeRightActionText}>{pt.reply}</Text>
+      </View>
+    </Reanimated.View>
+  );
+}
+
 type ChatMessageListRowProps = {
   item: MessageWithSeparator;
   chatInfo: ListChatsResult;
@@ -5798,19 +5833,8 @@ function ChatMessageListRow({
     onPressQuotedMessage(quotedTargetId);
   }, [onPressQuotedMessage, quotedTargetId]);
 
-  const renderSwipeReplyAction = useCallback(() => {
-    return (
-      <View style={styles.messageSwipeRightAction}>
-        <View style={styles.messageSwipeRightActionInner}>
-          <Ionicons
-            name="arrow-undo-outline"
-            size={18}
-            color={colors.primary}
-          />
-          <Text style={styles.messageSwipeRightActionText}>{pt.reply}</Text>
-        </View>
-      </View>
-    );
+  const renderSwipeReplyAction = useCallback((progress: SharedValue<number>) => {
+    return <MessageSwipeReplyAction progress={progress} />;
   }, []);
 
   if (item.type === 'separator') {
@@ -5862,8 +5886,9 @@ function ChatMessageListRow({
       overshootLeft={false}
       dragOffsetFromLeft={MESSAGE_SWIPE_DRAG_OFFSET}
       containerStyle={styles.messageSwipeContainer}
+      childrenContainerStyle={styles.messageSwipeChildren}
       onSwipeableWillOpen={(direction) => {
-        if (direction !== SwipeDirection.LEFT) return;
+        if (direction !== MESSAGE_SWIPE_REPLY_DIRECTION) return;
         if (
           openedMessageSwipeableRef.current &&
           openedMessageSwipeableRef.current !== rowSwipeable
@@ -5872,7 +5897,7 @@ function ChatMessageListRow({
         }
       }}
       onSwipeableOpen={(direction) => {
-        if (direction !== SwipeDirection.LEFT) return;
+        if (direction !== MESSAGE_SWIPE_REPLY_DIRECTION) return;
         openedMessageSwipeableRef.current = rowSwipeable;
         rowSwipeable?.close();
         onReplyFromMessage(message);
@@ -17432,6 +17457,9 @@ const styles = StyleSheet.create({
   },
   messageSwipeContainer: {
     overflow: 'visible',
+  },
+  messageSwipeChildren: {
+    width: '100%',
   },
   messageSwipeRightAction: {
     width: MESSAGE_SWIPE_REPLY_ACTION_WIDTH,
