@@ -5,7 +5,6 @@ defineProps<{
   chat: ListChatsResult;
   dateLabel: string;
   lastInteractionLabel: string;
-  attendanceTimeLabel: string;
   loading?: boolean;
   loaded?: boolean;
   expanded?: boolean;
@@ -45,9 +44,6 @@ const emit = defineEmits<{
       </span>
       <span class="inline-attendance-history-marker__meta">
         {{ $t('last_interaction') }}: {{ lastInteractionLabel }}
-      </span>
-      <span class="inline-attendance-history-marker__meta">
-        {{ $t('attendance_time') }}: {{ attendanceTimeLabel }}
       </span>
     </VBtn>
 

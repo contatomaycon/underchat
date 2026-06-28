@@ -257,13 +257,29 @@ const {
   loadMoreResults: loadMoreInlineAttendanceHistory,
   resetAttendanceHistory: resetInlineAttendanceHistory,
   formatAttendanceDate: formatInlineAttendanceDate,
-  formatLastInteractionDate: formatInlineLastInteractionDate,
-  calculateAttendanceTime: calculateInlineAttendanceTime,
 } = useChatAttendanceHistory({
   activePhone,
   enabled: canViewAttendanceHistory,
   excludeChatId: activeChatId,
 });
+
+const formatInlineLastInteractionDate = (
+  dateString: string | null | undefined
+): string => {
+  if (!dateString) return '-';
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+
+  return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+};
 
 const inlineAttendanceMessagesByChatId = ref<
   Record<string, ListMessageResult[]>
@@ -2321,9 +2337,7 @@ const loadInlineAttendanceMessages = async (chat: ListChatsResult) => {
     const sortedMessages = allMessages
       .filter((message) => message.chat_id === chat.chat_id)
       .sort((first, second) => {
-        return (
-          new Date(first.date).getTime() - new Date(second.date).getTime()
-        );
+        return new Date(first.date).getTime() - new Date(second.date).getTime();
       });
 
     inlineAttendanceMessagesByChatId.value = {
@@ -3209,12 +3223,6 @@ onUnmounted(() => {
           :date-label="formatInlineAttendanceDate(item.chat.date)"
           :last-interaction-label="
             formatInlineLastInteractionDate(item.chat.summary?.last_date)
-          "
-          :attendance-time-label="
-            calculateInlineAttendanceTime(
-              item.chat.started_at ?? null,
-              item.chat.closed_at ?? null
-            )
           "
           :loading="isInlineAttendanceMessagesLoading(item.chat.chat_id)"
           :loaded="isInlineAttendanceMessagesLoaded(item.chat.chat_id)"
