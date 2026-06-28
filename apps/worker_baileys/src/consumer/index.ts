@@ -31,7 +31,9 @@ function delay(ms: number): Promise<void> {
 export async function startConsumers(server: FastifyInstance): Promise<void> {
   server.qrStreamReady = false;
   try {
-    registerWorkerConsumer(await startConnectionQrCodeConsume(server));
+    registerWorkerConsumer(await startConnectionQrCodeConsume(server), {
+      monitorKafkaHealth: false,
+    });
     server.qrStreamReady = true;
   } catch (err) {
     server.qrStreamReady = false;

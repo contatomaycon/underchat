@@ -11,9 +11,14 @@ export interface IWorkerConsumer {
   restart?: () => Promise<void>;
 }
 
+interface IRegisterWorkerConsumerOptions {
+  monitorKafkaHealth?: boolean;
+}
+
 interface IRegisteredWorkerConsumer {
   consumer: IWorkerConsumer;
   registeredAt: number;
+  monitorKafkaHealth: boolean;
 }
 
 const consumers: IRegisteredWorkerConsumer[] = [];
@@ -28,10 +33,14 @@ const MISSING_SNAPSHOT_GRACE_MS = Math.max(
   Number(process.env.KAFKA_CONSUMER_MISSING_SNAPSHOT_GRACE_MS) || 120000
 );
 
-export function registerWorkerConsumer(consumer: IWorkerConsumer): void {
+export function registerWorkerConsumer(
+  consumer: IWorkerConsumer,
+  options: IRegisterWorkerConsumerOptions = {}
+): void {
   consumers.push({
     consumer,
     registeredAt: Date.now(),
+    monitorKafkaHealth: options.monitorKafkaHealth !== false,
   });
 }
 
@@ -40,7 +49,7 @@ export function getWorkerConsumers(): IWorkerConsumer[] {
 }
 
 export function getKafkaConsumerHealthSnapshots(): IKafkaConsumerOwnerHealthSnapshot[] {
-  return consumers.map((item) => {
+  return consumers.filter(shouldMonitorKafkaHealth).map((item) => {
     const snapshot = getConsumerOwnerKafkaHealthSnapshot(item.consumer);
     if (snapshot) {
       return {
@@ -92,7 +101,7 @@ async function restartUnhealthyConsumers(log: {
   warn: (obj: unknown, msg?: string) => void;
   error: (obj: unknown, msg?: string) => void;
 }): Promise<void> {
-  for (const item of consumers) {
+  for (const item of consumers.filter(shouldMonitorKafkaHealth)) {
     const consumer = item.consumer;
     const snapshot =
       getConsumerOwnerKafkaHealthSnapshot(consumer) ??
@@ -140,6 +149,10 @@ async function restartUnhealthyConsumers(log: {
       );
     }
   }
+}
+
+function shouldMonitorKafkaHealth(item: IRegisteredWorkerConsumer): boolean {
+  return item.monitorKafkaHealth;
 }
 
 function forceResetConsumerOwner(consumer: IWorkerConsumer): void {
