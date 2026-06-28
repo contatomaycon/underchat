@@ -285,6 +285,7 @@ func (s *WorkerConnectionGRPCServer) RuntimeHealth(ctx context.Context, msg *dyn
 	setDynamicString(out, "last_probe_at", resp.LastProbeAt)
 	setDynamicInt32(out, "probe_latency_ms", int32(resp.ProbeLatencyMS))
 	setDynamicString(out, "phone", resp.Phone)
+	setDynamicBool(out, "kafka_unhealthy", resp.KafkaUnhealthy)
 	setDynamicString(out, "error", resp.Error)
 	return out, nil
 }

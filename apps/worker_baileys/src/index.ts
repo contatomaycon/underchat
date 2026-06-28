@@ -20,6 +20,7 @@ import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnecti
 import baileysConsumersOnListenHook, {
   activateBaileysRuntime,
 } from './consumer';
+import { hasUnhealthyKafkaConsumer } from './consumer/registry';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -58,6 +59,7 @@ server.register(
   {
     module: ERouteModule.worker_baileys,
     activateRuntime: activateBaileysRuntime,
+    getKafkaUnhealthy: hasUnhealthyKafkaConsumer,
   }
 );
 

@@ -24,6 +24,7 @@ import { EAccountStatus } from '@core/common/enums/EAccountStatus';
 import { IConnectionFailureTracker } from '@core/common/interfaces/IConnectionFailureTracker';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
 import { currentTime } from '@core/common/functions/currentTime';
+import { WorkerCommandHandlerService } from './workerCommandHandler.service';
 
 const mapConcurrent = async <T, R>(
   items: T[],
@@ -99,7 +100,9 @@ export class WorkerMonitorService {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(AccountService)
-    private readonly accountService: AccountService
+    private readonly accountService: AccountService,
+    @inject(WorkerCommandHandlerService)
+    private readonly workerCommandHandlerService: WorkerCommandHandlerService
   ) {}
 
   run = async (): Promise<void> => {
@@ -497,14 +500,10 @@ export class WorkerMonitorService {
     });
 
     if (newFailureCount >= this.maxConnectionFailures) {
-      if (worker.worker_status_id !== EWorkerStatus.offline) {
-        await this.updateWorkerStatus(
-          worker,
-          EWorkerStatus.offline,
-          ECodeMessage.info,
-          EBaileysConnectionStatus.info
-        );
-      }
+      await this.handlePersistentConnectionDegradation(
+        worker,
+        connectionHealth
+      );
     }
   };
 
@@ -562,14 +561,27 @@ export class WorkerMonitorService {
   ): Promise<void> => {
     this.activeContinuousChecks.delete(workerId);
 
-    if (currentWorker.worker_status_id !== EWorkerStatus.offline) {
-      await this.updateWorkerStatus(
-        currentWorker,
-        EWorkerStatus.offline,
-        ECodeMessage.info,
-        EBaileysConnectionStatus.info
-      );
-    }
+    const tracker = this.connectionFailureTrackers.get(workerId);
+    await this.handlePersistentConnectionDegradation(currentWorker, {
+      healthy: false,
+      code: null,
+      body: null,
+      kafka_unhealthy: false,
+      degraded_reason: tracker
+        ? `connection_check_failed_${tracker.failureCount}`
+        : 'connection_check_failed',
+    });
+  };
+
+  private readonly handlePersistentConnectionDegradation = async (
+    worker: IWorkerMonitor,
+    connectionHealth: IConnectionHealthCheckResult
+  ): Promise<void> => {
+    this.connectionFailureTrackers.delete(worker.worker_id);
+    this.activeContinuousChecks.delete(worker.worker_id);
+
+    await this.updateWorkerDegradedStatus(worker, connectionHealth);
+    await this.requestExternalSelfHealing(worker, connectionHealth);
   };
 
   private readonly startContinuousConnectionCheck = async (
@@ -658,6 +670,107 @@ export class WorkerMonitorService {
       workerCentrifugoQueue(worker.account_id),
       payload
     );
+  };
+
+  private readonly updateWorkerDegradedStatus = async (
+    worker: IWorkerMonitor,
+    connectionHealth: IConnectionHealthCheckResult
+  ): Promise<void> => {
+    const degradedReason =
+      connectionHealth.degraded_reason ??
+      (connectionHealth.kafka_unhealthy
+        ? 'kafka_unhealthy'
+        : 'connection_health_failed');
+
+    if (worker.worker_status_id !== EWorkerStatus.disponible) {
+      await this.workerService.updateStatusWorker(
+        worker.worker_id,
+        EWorkerStatus.disponible
+      );
+    }
+
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.awaitConnection,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: worker.worker_id,
+      worker_name: worker.name,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      worker_status_id: EWorkerStatus.disponible,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: connectionHealth.provider_state ?? 'degraded',
+      degraded_reason: degradedReason,
+    };
+
+    logLocalConnectionStatus('service.monitor.degraded_status_update', {
+      layer: 'service.monitor',
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      previous_worker_status_id: worker.worker_status_id,
+      worker_status_id: EWorkerStatus.disponible,
+      session_ready: connectionHealth.session_ready,
+      can_send: connectionHealth.can_send,
+      can_receive_runtime: connectionHealth.can_receive_runtime,
+      authenticated: connectionHealth.authenticated,
+      provider_state: payload.provider_state,
+      degraded_reason: degradedReason,
+      kafka_unhealthy: connectionHealth.kafka_unhealthy,
+      status_code: connectionHealth.code,
+    });
+
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(worker.account_id),
+      payload
+    );
+  };
+
+  private readonly requestExternalSelfHealing = async (
+    worker: IWorkerMonitor,
+    connectionHealth: IConnectionHealthCheckResult
+  ): Promise<void> => {
+    const reason =
+      connectionHealth.degraded_reason ??
+      (connectionHealth.kafka_unhealthy
+        ? 'kafka_unhealthy'
+        : 'external_monitor_degraded');
+
+    logLocalConnectionStatus('service.monitor.self_heal_requested', {
+      layer: 'service.monitor',
+      worker_id: worker.worker_id,
+      account_id: worker.account_id,
+      worker_type_id: worker.worker_type_id,
+      source: 'external_monitor',
+      reason,
+      provider_state: connectionHealth.provider_state,
+      kafka_unhealthy: connectionHealth.kafka_unhealthy,
+    });
+
+    await this.workerCommandHandlerService
+      .requestWorkerSelfHealing({
+        worker_id: worker.worker_id,
+        account_id: worker.account_id,
+        worker_type_id: worker.worker_type_id,
+        source: 'external_monitor',
+        reason,
+        provider_state: connectionHealth.provider_state ?? '',
+        degraded_reason: reason,
+        kafka_unhealthy: connectionHealth.kafka_unhealthy,
+      })
+      .catch((error) => {
+        logLocalConnectionStatus('service.monitor.self_heal_request_failed', {
+          layer: 'service.monitor',
+          worker_id: worker.worker_id,
+          account_id: worker.account_id,
+          worker_type_id: worker.worker_type_id,
+          source: 'external_monitor',
+          reason,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   };
 
   private readonly shouldPromoteReadyWorkerToOnline = (
@@ -943,6 +1056,7 @@ export class WorkerMonitorService {
       can_receive_runtime?: unknown;
       authenticated?: unknown;
       kafka_unhealthy?: unknown;
+      phone?: unknown;
     };
 
     return (
@@ -951,6 +1065,8 @@ export class WorkerMonitorService {
       record.can_send === true &&
       record.can_receive_runtime === true &&
       record.authenticated === true &&
+      typeof record.phone === 'string' &&
+      record.phone.trim().length > 0 &&
       record.kafka_unhealthy !== true
     );
   };

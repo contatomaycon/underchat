@@ -209,6 +209,7 @@ export class WorkerSelfMonitorService {
       readiness.can_send === true &&
       readiness.can_receive_runtime === true &&
       readiness.authenticated === true &&
+      Boolean(readiness.phone?.trim()) &&
       kafkaUnhealthy !== true
     );
   }
@@ -343,7 +344,15 @@ export class WorkerSelfMonitorService {
       return;
     }
 
-    const dailyKey = workerSelfHealDailyKey(options.workerId, parts.date);
+    const schedule = this.dailyMaintenanceScheduleKey(
+      scheduledHour,
+      scheduledMinute
+    );
+    const dailyKey = workerSelfHealDailyKey(
+      options.workerId,
+      parts.date,
+      schedule
+    );
     const acquired = await this.redis.set(
       dailyKey,
       '1',
@@ -352,6 +361,16 @@ export class WorkerSelfMonitorService {
       'NX'
     );
     if (acquired !== 'OK') {
+      logLocalConnectionStatus('worker.self_monitor.daily_skipped_dedupe', {
+        layer: options.provider,
+        provider: options.provider,
+        worker_id: options.workerId,
+        account_id: options.accountId,
+        worker_type_id: options.workerTypeId,
+        local_date: parts.date,
+        schedule,
+        daily_key: dailyKey,
+      });
       return;
     }
 
@@ -462,6 +481,12 @@ export class WorkerSelfMonitorService {
       dailyMaintenanceHour: hour,
       dailyMaintenanceMinute: minute,
     };
+  }
+
+  private dailyMaintenanceScheduleKey(hour: number, minute: number): string {
+    return `${hour.toString().padStart(2, '0')}${minute
+      .toString()
+      .padStart(2, '0')}`;
   }
 
   private logError(error: unknown): void {

@@ -182,6 +182,7 @@ type WorkerRuntimeHealthResponse struct {
 	LastProbeAt       string `json:"last_probe_at,omitempty"`
 	ProbeLatencyMS    int    `json:"probe_latency_ms,omitempty"`
 	Phone             string `json:"phone,omitempty"`
+	KafkaUnhealthy    bool   `json:"kafka_unhealthy,omitempty"`
 	Error             string `json:"error,omitempty"`
 }
 

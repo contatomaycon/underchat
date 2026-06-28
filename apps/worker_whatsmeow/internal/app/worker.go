@@ -161,6 +161,7 @@ func (w *Worker) startHTTP() error {
 			health = manager.ConnectionHealth()
 		}
 		health["kafka_consumers"] = w.kafka.ConsumerHealthSnapshot()
+		health["kafka_consumer_summary"] = w.kafka.ConsumerHealthSummary()
 		kafkaUnhealthy := w.kafka.HasUnhealthyConsumers()
 		health["kafka_unhealthy"] = kafkaUnhealthy
 		failOnKafkaUnhealthy := w.cfg.ConnectionHealthFailOnKafkaUnhealthy
@@ -374,6 +375,7 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 	lastProbeAt := ""
 	probeLatencyMS := 0
 	phone := ""
+	kafkaUnhealthy := w.kafka != nil && w.kafka.HasUnhealthyConsumers()
 	if w.whatsapp != nil {
 		health := w.whatsapp.ConnectionHealth()
 		if value, ok := health["has_store_id"].(bool); ok {
@@ -421,6 +423,7 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		LastProbeAt:       lastProbeAt,
 		ProbeLatencyMS:    probeLatencyMS,
 		Phone:             phone,
+		KafkaUnhealthy:    kafkaUnhealthy,
 	}
 	localConnectionStatusLog("whatsmeow.grpc.runtime_health", map[string]any{
 		"layer":                "worker_whatsmeow.grpc",
@@ -443,6 +446,7 @@ func (w *Worker) RuntimeHealth(ctx context.Context, req WorkerRuntimeHealthReque
 		"has_qr":               response.HasQR,
 		"qr_stream_ready":      response.QRStreamReady,
 		"phone":                response.Phone,
+		"kafka_unhealthy":      response.KafkaUnhealthy,
 		"request_worker_id":    req.WorkerID,
 		"request_warm_pool_id": req.WarmPoolID,
 	})

@@ -18,6 +18,7 @@ import redisPlugin from '@core/plugins/redis';
 import s3Plugin from '@core/plugins/s3';
 import workerConnectionGrpcServerPlugin from '@core/plugins/proto/workerConnectionGrpcServer';
 import wwebjsConsumersOnListenHook, { activateWwebjsRuntime } from './consumer';
+import { hasUnhealthyKafkaConsumer } from './consumer/registry';
 
 const server = fastify({
   pluginTimeout: 600000,
@@ -53,7 +54,11 @@ server.register(safePlugin(centrifugoPlugin, 'centrifugo'), {
 });
 server.register(
   safePlugin(workerConnectionGrpcServerPlugin, 'workerConnectionGrpcServer'),
-  { module: ERouteModule.worker_wwebjs, activateRuntime: activateWwebjsRuntime }
+  {
+    module: ERouteModule.worker_wwebjs,
+    activateRuntime: activateWwebjsRuntime,
+    getKafkaUnhealthy: hasUnhealthyKafkaConsumer,
+  }
 );
 
 server.register(

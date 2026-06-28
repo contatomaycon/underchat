@@ -45,4 +45,5 @@ export interface IWorkerRuntimeHealthResponseProto {
   last_probe_at?: string;
   probe_latency_ms?: number | string;
   phone?: string;
+  kafka_unhealthy?: boolean;
 }

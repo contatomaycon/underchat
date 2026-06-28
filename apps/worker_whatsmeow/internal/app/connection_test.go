@@ -412,6 +412,7 @@ func TestSelfMonitorHealthReadyRequiresRuntimeAndKafkaHealth(t *testing.T) {
 		"can_send":            true,
 		"can_receive_runtime": true,
 		"authenticated":       true,
+		"phone":               "556192037138",
 	}
 
 	if !selfMonitorHealthReady(health, false) {
@@ -424,6 +425,21 @@ func TestSelfMonitorHealthReadyRequiresRuntimeAndKafkaHealth(t *testing.T) {
 	health["can_send"] = false
 	if selfMonitorHealthReady(health, false) {
 		t.Fatal("send capability is required for healthy status")
+	}
+}
+
+func TestOutboundFailuresOnlyDegradeAfterThreshold(t *testing.T) {
+	if outboundFailuresShouldDegrade(1, 3) {
+		t.Fatal("single outbound failure should not degrade channel health")
+	}
+	if outboundFailuresShouldDegrade(2, 3) {
+		t.Fatal("transient outbound failures below threshold should not degrade channel health")
+	}
+	if !outboundFailuresShouldDegrade(3, 3) {
+		t.Fatal("persistent outbound failures should degrade channel health")
+	}
+	if !outboundFailuresShouldDegrade(3, 0) {
+		t.Fatal("default threshold should degrade at three failures")
 	}
 }
 

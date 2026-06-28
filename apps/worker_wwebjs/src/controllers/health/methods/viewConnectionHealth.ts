@@ -4,6 +4,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { WwebjsHealthCheckService } from '@core/services/wwebjs/methods/healthCheck.service';
 import {
+  getKafkaConsumerHealthSummary,
   getKafkaConsumerHealthSnapshots,
   hasUnhealthyKafkaConsumer,
 } from '@/consumer/registry';
@@ -25,6 +26,7 @@ export const viewConnectionHealth = async (
     ready: sessionReady,
     kafka_unhealthy: kafkaUnhealthy,
     kafka_consumers: getKafkaConsumerHealthSnapshots(),
+    kafka_consumer_summary: getKafkaConsumerHealthSummary(),
   };
 
   if (sessionReady && (!kafkaUnhealthy || !FAIL_ON_KAFKA_UNHEALTHY)) {

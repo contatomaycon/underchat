@@ -250,7 +250,10 @@ function buildHandler(
     requestConnection: jest.fn(async () => buildConnectedState()),
     waitForReady: jest.fn(async () => 'worker-1:50053'),
     activateRuntime: jest.fn(async () => ({ activated: true })),
-    runtimeHealth: jest.fn(async () => ({
+    runtimeHealth: jest.fn<
+      Promise<Record<string, unknown>>,
+      [string, unknown, EWorkerType]
+    >(async () => ({
       worker_id: 'worker-1',
       account_id: 'account-1',
       worker_type_id: EWorkerType.wwebjs,
@@ -266,6 +269,7 @@ function buildHandler(
       qr_stream_ready: true,
       provider_state: '',
       phone: '',
+      kafka_unhealthy: false,
       ...overrides.runtimeHealthResponse,
     })),
   };
@@ -788,6 +792,13 @@ describe('WorkerCommandHandlerService connection', () => {
 
   it('uses worker_type_id from NotifyWorkerStatus to confirm online readiness through runtime health', async () => {
     const deps = buildHandler();
+    deps.workerService.viewWorker.mockResolvedValueOnce({
+      id: 'worker-1',
+      name: 'Canal 1',
+      server: { id: 'server-1' },
+      type: { id: EWorkerType.whatsmeow },
+      status: { id: EWorkerStatus.disponible },
+    });
     deps.workerBaileysGrpcClientService.runtimeHealth.mockResolvedValueOnce({
       worker_id: 'worker-1',
       account_id: 'account-1',
@@ -904,6 +915,106 @@ describe('WorkerCommandHandlerService connection', () => {
         session_ready: true,
       })
     );
+  });
+
+  it('rejects online notifications when runtime health reports unhealthy Kafka', async () => {
+    const deps = buildHandler();
+    deps.workerBaileysGrpcClientService.runtimeHealth.mockResolvedValueOnce({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      activated: true,
+      ready: true,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      standby: false,
+      has_session: true,
+      runtime_state: 'active',
+      qr_stream_ready: true,
+      provider_state: 'CONNECTED',
+      phone: '556192037138',
+      kafka_unhealthy: true,
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.online,
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      phone: '556192037138',
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+    });
+
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        status: EWorkerStatus.disponible,
+        connection_date: null,
+      })
+    );
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_status_id: EWorkerStatus.disponible,
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitConnection,
+        session_ready: false,
+        can_send: false,
+        can_receive_runtime: false,
+        authenticated: false,
+      })
+    );
+  });
+
+  it('ignores stale runtime generation notifications before updating or publishing', async () => {
+    const deps = buildHandler({
+      workerRuntimeRepository: {
+        viewByWorkerId: jest.fn(async () => ({
+          worker_id: 'worker-1',
+          container_id: 'container-current',
+          container_name: 'worker-1',
+          session_volume_name: 'worker-1',
+          runtime_generation: 5,
+          warm_pool_id: null,
+        })),
+        upsert: jest.fn(async () => null),
+        deleteByWorkerId: jest.fn(async () => undefined),
+      },
+    });
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.online,
+      status: EBaileysConnectionStatus.connected,
+      code: ECodeMessage.connectionEstablished,
+      phone: '556192037138',
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      runtime_generation: 4,
+    });
+
+    expect(
+      deps.workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publish).not.toHaveBeenCalled();
+    expect(
+      deps.workerBaileysGrpcClientService.runtimeHealth
+    ).not.toHaveBeenCalled();
   });
 
   it('promotes a non-online notification to online when runtime health confirms a real session', async () => {
@@ -1128,7 +1239,16 @@ describe('WorkerCommandHandlerService connection', () => {
   });
 
   it('persists a connected notification even when a QR is cached for the same attempt', async () => {
-    const deps = buildHandler();
+    const deps = buildHandler({
+      runtimeHealthResponse: {
+        session_ready: true,
+        can_send: true,
+        can_receive_runtime: true,
+        authenticated: true,
+        has_session: true,
+        phone: '556192037138',
+      },
+    });
     seedActiveQrAttempt(deps.redisStore, {
       connectionAttemptId: 'attempt-active',
       runtimeGeneration: 1,
@@ -2724,7 +2844,7 @@ describe('WorkerCommandHandlerService connection', () => {
         runtime_state: 'active',
         qr_stream_ready: true,
         provider_state: 'CONNECTED',
-        phone: '',
+        phone: '556192037138',
       });
 
     await deps.handler.handle({
@@ -2811,6 +2931,7 @@ describe('WorkerCommandHandlerService connection', () => {
         can_receive_runtime: true,
         authenticated: true,
         has_session: true,
+        phone: '556192037138',
       },
     });
 

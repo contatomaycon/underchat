@@ -1,5 +1,7 @@
 import {
+  buildMissingKafkaConsumerHealthSnapshot,
   getConsumerOwnerKafkaHealthSnapshot,
+  getConsumerOwnerName,
   type IKafkaConsumerOwnerHealthSnapshot,
 } from '@core/common/functions/kafkaConsumerHealth';
 
@@ -9,29 +11,61 @@ export interface IWorkerConsumer {
   restart?: () => Promise<void>;
 }
 
-const consumers: IWorkerConsumer[] = [];
+interface IRegisteredWorkerConsumer {
+  consumer: IWorkerConsumer;
+  registeredAt: number;
+}
+
+const consumers: IRegisteredWorkerConsumer[] = [];
 let supervisorTimer: NodeJS.Timeout | null = null;
 
 const SUPERVISOR_INTERVAL_MS = Math.max(
   1000,
   Number(process.env.KAFKA_CONSUMER_SUPERVISOR_INTERVAL_MS) || 30000
 );
+const MISSING_SNAPSHOT_GRACE_MS = Math.max(
+  1000,
+  Number(process.env.KAFKA_CONSUMER_MISSING_SNAPSHOT_GRACE_MS) || 120000
+);
 
 export function registerWorkerConsumer(consumer: IWorkerConsumer): void {
-  consumers.push(consumer);
+  consumers.push({
+    consumer,
+    registeredAt: Date.now(),
+  });
 }
 
 export function getWorkerConsumers(): IWorkerConsumer[] {
-  return [...consumers];
+  return consumers.map((item) => item.consumer);
 }
 
 export function getKafkaConsumerHealthSnapshots(): IKafkaConsumerOwnerHealthSnapshot[] {
-  return consumers
-    .map((consumer) => getConsumerOwnerKafkaHealthSnapshot(consumer))
-    .filter(
-      (snapshot): snapshot is IKafkaConsumerOwnerHealthSnapshot =>
-        snapshot !== null
-    );
+  return consumers.map((item) => {
+    const snapshot = getConsumerOwnerKafkaHealthSnapshot(item.consumer);
+    if (snapshot) {
+      return {
+        ...snapshot,
+        registered_at: item.registeredAt,
+      };
+    }
+
+    return buildMissingKafkaConsumerHealthSnapshot({
+      owner: getConsumerOwnerName(item.consumer),
+      registeredAt: item.registeredAt,
+      graceMs: MISSING_SNAPSHOT_GRACE_MS,
+    });
+  });
+}
+
+export function getKafkaConsumerHealthSummary() {
+  const snapshots = getKafkaConsumerHealthSnapshots();
+  return {
+    expected: consumers.length,
+    active: snapshots.filter((snapshot) => snapshot.missing !== true).length,
+    missing: snapshots.filter((snapshot) => snapshot.missing === true).length,
+    unhealthy: snapshots.filter((snapshot) => snapshot.unhealthy === true)
+      .length,
+  };
 }
 
 export function hasUnhealthyKafkaConsumer(): boolean {
@@ -58,8 +92,15 @@ async function restartUnhealthyConsumers(log: {
   warn: (obj: unknown, msg?: string) => void;
   error: (obj: unknown, msg?: string) => void;
 }): Promise<void> {
-  for (const consumer of consumers) {
-    const snapshot = getConsumerOwnerKafkaHealthSnapshot(consumer);
+  for (const item of consumers) {
+    const consumer = item.consumer;
+    const snapshot =
+      getConsumerOwnerKafkaHealthSnapshot(consumer) ??
+      buildMissingKafkaConsumerHealthSnapshot({
+        owner: getConsumerOwnerName(consumer),
+        registeredAt: item.registeredAt,
+        graceMs: MISSING_SNAPSHOT_GRACE_MS,
+      });
     if (!snapshot?.unhealthy) {
       continue;
     }

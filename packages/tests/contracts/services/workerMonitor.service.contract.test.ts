@@ -21,6 +21,9 @@ jest.mock('@core/services/centrifugo.service', () => ({
 jest.mock('@core/services/account.service', () => ({
   AccountService: class AccountService {},
 }));
+jest.mock('@core/services/workerCommandHandler.service', () => ({
+  WorkerCommandHandlerService: class WorkerCommandHandlerService {},
+}));
 
 import { WorkerMonitorService } from '@core/services/workerMonitor.service';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
@@ -34,6 +37,7 @@ function makeService(
     workerService?: Record<string, unknown>;
     sshService?: { runCommands: jest.Mock };
     centrifugoService?: Record<string, unknown>;
+    workerCommandHandlerService?: Record<string, unknown>;
   } = {}
 ): WorkerMonitorService {
   return new WorkerMonitorService(
@@ -43,7 +47,8 @@ function makeService(
     {} as never,
     {} as never,
     (overrides.centrifugoService ?? {}) as never,
-    {} as never
+    {} as never,
+    (overrides.workerCommandHandlerService ?? {}) as never
   );
 }
 
@@ -181,7 +186,7 @@ describe('WorkerMonitorService', () => {
     );
   });
 
-  it('promotes a disponible worker to online when health proves session readiness', async () => {
+  it('corrects a stale disponible worker to online only when health proves session readiness', async () => {
     const workerService = {
       updateWorkerLastConnectionCheckAt: jest.fn(async () => true),
       viewWorkerPhoneConnectionDate: jest.fn(async () => ({
@@ -254,14 +259,21 @@ describe('WorkerMonitorService', () => {
     );
   });
 
-  it('publishes complete offline status when connection failures reach the threshold', async () => {
+  it('marks the worker degraded and requests self-heal when connection failures reach the threshold', async () => {
     const workerService = {
       updateStatusWorker: jest.fn(async () => true),
     };
     const centrifugoService = {
       publishSub: jest.fn(async () => true),
     };
-    const service = makeService({ workerService, centrifugoService });
+    const workerCommandHandlerService = {
+      requestWorkerSelfHealing: jest.fn(async () => undefined),
+    };
+    const service = makeService({
+      workerService,
+      centrifugoService,
+      workerCommandHandlerService,
+    });
     const worker = makeWorker({ worker_status_id: EWorkerStatus.online });
 
     await (service as any).syncConnectionStatusWithFailureTracking(
@@ -321,28 +333,43 @@ describe('WorkerMonitorService', () => {
 
     expect(workerService.updateStatusWorker).toHaveBeenCalledWith(
       'worker-1',
-      EWorkerStatus.offline
+      EWorkerStatus.disponible
     );
     expect(centrifugoService.publishSub).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        code: ECodeMessage.info,
-        status: EBaileysConnectionStatus.info,
+        code: ECodeMessage.awaitConnection,
+        status: EBaileysConnectionStatus.connecting,
         worker_id: 'worker-1',
         worker_name: 'Canal 1',
         worker_type_id: EWorkerType.wwebjs,
-        worker_status_id: EWorkerStatus.offline,
+        worker_status_id: EWorkerStatus.disponible,
+        degraded_reason: 'probe_failed',
+      })
+    );
+    expect(
+      workerCommandHandlerService.requestWorkerSelfHealing
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        source: 'external_monitor',
+        reason: 'probe_failed',
       })
     );
   });
 
-  it('keeps a disponible worker disponible when health is not session ready', async () => {
+  it('keeps a disponible worker disponible without self-heal while waiting for QR or session', async () => {
     const workerService = {
       updateWorkerLastConnectionCheckAt: jest.fn(async () => true),
       updateStatusWorker: jest.fn(async () => true),
       updateWorkerPhoneStatusConnectionDate: jest.fn(async () => true),
     };
-    const service = makeService({ workerService });
+    const workerCommandHandlerService = {
+      requestWorkerSelfHealing: jest.fn(async () => undefined),
+    };
+    const service = makeService({ workerService, workerCommandHandlerService });
 
     await (service as any).syncConnectionStatusWithFailureTracking(
       makeWorker({ worker_status_id: EWorkerStatus.disponible }),
@@ -369,6 +396,9 @@ describe('WorkerMonitorService', () => {
     expect(workerService.updateStatusWorker).not.toHaveBeenCalled();
     expect(
       workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
+    expect(
+      workerCommandHandlerService.requestWorkerSelfHealing
     ).not.toHaveBeenCalled();
   });
 });

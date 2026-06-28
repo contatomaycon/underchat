@@ -328,7 +328,8 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 	if hasStoreID {
 		phone = phoneFromOwnID(client.Store.ID)
 	}
-	authenticated := loggedIn && hasStoreID
+	hasPhone := phone != ""
+	authenticated := loggedIn && hasStoreID && hasPhone
 
 	m.mu.RLock()
 	connectedEvent := m.connected
@@ -342,25 +343,34 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 	degradedReason := m.degradedReason
 	m.mu.RUnlock()
 
-	if degradedReason == "" {
+	outboundFailureThreshold := normalizeOutboundFailureThreshold(m.cfg.OutboundFailureReconnectThreshold)
+	outboundFailuresDegraded := outboundFailuresShouldDegrade(consecutiveSendFailures, outboundFailureThreshold)
+	effectiveDegradedReason := degradedReason
+	if effectiveDegradedReason == "outbound_send_failed" && !outboundFailuresDegraded {
+		effectiveDegradedReason = ""
+	}
+
+	if effectiveDegradedReason == "" {
 		switch {
 		case !connectedEvent:
-			degradedReason = "connection_event_disconnected"
+			effectiveDegradedReason = "connection_event_disconnected"
 		case !clientConnected:
-			degradedReason = "client_socket_disconnected"
+			effectiveDegradedReason = "client_socket_disconnected"
 		case !loggedIn:
-			degradedReason = "client_not_logged_in"
+			effectiveDegradedReason = "client_not_logged_in"
 		case !hasStoreID:
-			degradedReason = "missing_store_id"
+			effectiveDegradedReason = "missing_store_id"
+		case !hasPhone:
+			effectiveDegradedReason = "missing_self_phone"
 		case keepAliveFailures > 0:
-			degradedReason = "keepalive_timeout"
-		case consecutiveSendFailures > 0:
-			degradedReason = "outbound_failures"
+			effectiveDegradedReason = "keepalive_timeout"
+		case outboundFailuresDegraded:
+			effectiveDegradedReason = "outbound_failures"
 		}
 	}
 
 	canReceiveRuntime := connectedEvent && clientConnected && loggedIn
-	ready := canReceiveRuntime && authenticated && keepAliveFailures == 0 && consecutiveSendFailures == 0 && degradedReason == ""
+	ready := canReceiveRuntime && authenticated && keepAliveFailures == 0 && !outboundFailuresDegraded && effectiveDegradedReason == ""
 	healthStatus := "connected"
 	if !ready {
 		if connectedEvent || clientConnected || loggedIn {
@@ -371,30 +381,32 @@ func (m *WhatsAppManager) ConnectionHealth() map[string]any {
 	}
 
 	return map[string]any{
-		"status":                    healthStatus,
-		"provider":                  "whatsmeow",
-		"ready":                     ready,
-		"connected":                 ready,
-		"session_ready":             ready,
-		"can_send":                  ready,
-		"can_receive_runtime":       canReceiveRuntime,
-		"authenticated":             authenticated,
-		"phone":                     phone,
-		"provider_state":            healthStatus,
-		"connected_event":           connectedEvent,
-		"client_connected":          clientConnected,
-		"logged_in":                 loggedIn,
-		"has_store_id":              hasStoreID,
-		"manager_status":            status,
-		"last_keepalive_at":         healthTime(lastKeepAliveAt),
-		"keepalive_failures":        keepAliveFailures,
-		"last_send_attempt_at":      healthTime(lastSendAttemptAt),
-		"last_send_success_at":      healthTime(lastSendSuccessAt),
-		"last_send_error_at":        healthTime(lastSendErrorAt),
-		"consecutive_send_failures": consecutiveSendFailures,
-		"degraded_reason":           degradedReason,
-		"last_probe_at":             time.Now().UTC().Format(time.RFC3339Nano),
-		"probe_latency_ms":          0,
+		"status":                     healthStatus,
+		"provider":                   "whatsmeow",
+		"ready":                      ready,
+		"connected":                  ready,
+		"session_ready":              ready,
+		"can_send":                   ready,
+		"can_receive_runtime":        canReceiveRuntime,
+		"authenticated":              authenticated,
+		"phone":                      phone,
+		"provider_state":             healthStatus,
+		"connected_event":            connectedEvent,
+		"client_connected":           clientConnected,
+		"logged_in":                  loggedIn,
+		"has_store_id":               hasStoreID,
+		"has_phone":                  hasPhone,
+		"manager_status":             status,
+		"last_keepalive_at":          healthTime(lastKeepAliveAt),
+		"keepalive_failures":         keepAliveFailures,
+		"last_send_attempt_at":       healthTime(lastSendAttemptAt),
+		"last_send_success_at":       healthTime(lastSendSuccessAt),
+		"last_send_error_at":         healthTime(lastSendErrorAt),
+		"consecutive_send_failures":  consecutiveSendFailures,
+		"outbound_failure_threshold": outboundFailureThreshold,
+		"degraded_reason":            effectiveDegradedReason,
+		"last_probe_at":              time.Now().UTC().Format(time.RFC3339Nano),
+		"probe_latency_ms":           0,
 	}
 }
 
@@ -403,6 +415,17 @@ func healthTime(value time.Time) string {
 		return ""
 	}
 	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func normalizeOutboundFailureThreshold(threshold int) int {
+	if threshold <= 0 {
+		return 3
+	}
+	return threshold
+}
+
+func outboundFailuresShouldDegrade(consecutiveFailures, threshold int) bool {
+	return consecutiveFailures >= normalizeOutboundFailureThreshold(threshold)
 }
 
 func (m *WhatsAppManager) recordOutboundAttempt(ctx context.Context, data ChatMessage) {

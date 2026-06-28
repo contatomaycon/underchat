@@ -26,8 +26,12 @@ export const workerSelfHealRecoveryKey = (workerId: string): string =>
 
 export const workerSelfHealDailyKey = (
   workerId: string,
-  localDate: string
-): string => `worker:self-heal:daily:${workerId}:${localDate}`;
+  localDate: string,
+  schedule?: string
+): string => {
+  const suffix = schedule?.trim() ? `:${schedule.trim()}` : '';
+  return `worker:self-heal:daily:${workerId}:${localDate}${suffix}`;
+};
 
 export const workerRecreateServerSlotKey = (
   serverId: string,

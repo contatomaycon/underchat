@@ -1372,23 +1372,26 @@ export class WorkerCommandHandlerService {
       phone: payload.phone,
     });
     const shouldPublishAsQrAttempt = this.isNotifyQrAttemptState(payload);
-    const shouldResolveQrWorkerData =
+    const shouldResolveWorkerData =
       shouldPublishAsQrAttempt ||
       Boolean(payload.connection_attempt_id) ||
-      this.isQrAttemptTerminalState(payload);
-    const qrWorkerData = shouldResolveQrWorkerData
+      this.isQrAttemptTerminalState(payload) ||
+      workerStatusId === EWorkerStatus.online ||
+      payload.runtime_generation !== undefined ||
+      Boolean(payload.container_id);
+    const resolvedWorkerData = shouldResolveWorkerData
       ? await this.resolveWorkerDataForContainer(workerId, accountId).catch(
           () => {
             return null;
           }
         )
       : null;
-    if (qrWorkerData) {
-      payload.worker_type_id ??= qrWorkerData.workerTypeId;
-      payload.worker_status_id ??= qrWorkerData.workerStatusId;
-      payload.runtime_generation ??= qrWorkerData.runtimeGeneration;
-      payload.warm_pool_id ??= qrWorkerData.warmPoolId ?? undefined;
-      payload.container_id ??= qrWorkerData.containerId ?? undefined;
+    if (resolvedWorkerData) {
+      payload.worker_type_id ??= resolvedWorkerData.workerTypeId;
+      payload.worker_status_id ??= resolvedWorkerData.workerStatusId;
+      payload.runtime_generation ??= resolvedWorkerData.runtimeGeneration;
+      payload.warm_pool_id ??= resolvedWorkerData.warmPoolId ?? undefined;
+      payload.container_id ??= resolvedWorkerData.containerId ?? undefined;
       this.logDebug('service.notify_status.worker_data_resolved', {
         trace_id: payload.debug_trace_id,
         layer: 'service',
@@ -1403,6 +1406,30 @@ export class WorkerCommandHandlerService {
         container_id: payload.container_id,
         warm_pool_id: payload.warm_pool_id,
       });
+    }
+
+    const staleRuntimeStatus = this.shouldIgnoreStaleRuntimeNotification(
+      payload,
+      resolvedWorkerData
+    );
+    if (staleRuntimeStatus.ignored) {
+      this.logDebug('service.notify_status.stale_runtime_skipped', {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        container_id: payload.container_id,
+        status: payload.status,
+        code: payload.code,
+        worker_status_id: workerStatusId,
+        reason: staleRuntimeStatus.reason,
+        current_runtime_generation: resolvedWorkerData?.runtimeGeneration,
+        current_container_id: resolvedWorkerData?.containerId,
+      });
+      return;
     }
 
     const requestedWorkerStatusId = workerStatusId;
@@ -1721,26 +1748,7 @@ export class WorkerCommandHandlerService {
       return workerStatusId;
     }
 
-    if (this.isStrictConnectedPayload(payload)) {
-      await this.enrichConnectedPayloadFromRuntimeHealth(payload);
-      this.logDebug('service.notify_status.session_ready_payload_accepted', {
-        trace_id: payload.debug_trace_id,
-        layer: 'service',
-        worker_id: payload.worker_id,
-        account_id: payload.account_id,
-        worker_type_id: payload.worker_type_id,
-        worker_status_id: workerStatusId,
-        status: payload.status,
-        code: payload.code,
-        session_ready: payload.session_ready,
-        phone: payload.phone,
-        connection_attempt_id: payload.connection_attempt_id,
-        runtime_generation: payload.runtime_generation,
-      });
-      return workerStatusId;
-    }
-
-    const workerType = payload.worker_type_id;
+    const workerType = payload.worker_type_id as EWorkerType | undefined;
     if (workerType) {
       try {
         const health = await this.workerBaileysGrpcClientService.runtimeHealth(
@@ -1765,11 +1773,37 @@ export class WorkerCommandHandlerService {
           degraded_reason: health?.degraded_reason,
           runtime_generation: health?.runtime_generation,
           runtime_state: health?.runtime_state,
+          phone: health?.phone,
+          kafka_unhealthy: health?.kafka_unhealthy,
           connection_attempt_id: payload.connection_attempt_id,
         });
 
-        if (this.isConnectedRuntimeHealth(health, workerType)) {
+        if (
+          this.isRuntimeGenerationCompatible(payload, health) &&
+          this.isConnectedRuntimeHealth(health, workerType, payload.phone)
+        ) {
           this.applyConnectedRuntimeHealthToPayload(payload, health);
+          this.logDebug(
+            'service.notify_status.session_ready_runtime_confirmed',
+            {
+              trace_id: payload.debug_trace_id,
+              layer: 'service',
+              worker_id: payload.worker_id,
+              account_id: payload.account_id,
+              worker_type_id: workerType,
+              worker_status_id: workerStatusId,
+              status: payload.status,
+              code: payload.code,
+              session_ready: payload.session_ready,
+              can_send: payload.can_send,
+              can_receive_runtime: payload.can_receive_runtime,
+              authenticated: payload.authenticated,
+              phone: payload.phone,
+              connection_attempt_id: payload.connection_attempt_id,
+              runtime_generation: payload.runtime_generation,
+              runtime_health_generation: health?.runtime_generation,
+            }
+          );
           return workerStatusId;
         }
       } catch (error) {
@@ -1793,6 +1827,8 @@ export class WorkerCommandHandlerService {
     payload.code = ECodeMessage.awaitConnection;
     payload.session_ready = false;
     payload.can_send = false;
+    payload.can_receive_runtime = false;
+    payload.authenticated = false;
     payload.degraded_reason ??= 'online_without_session_ready';
 
     this.logDebug(
@@ -1812,6 +1848,41 @@ export class WorkerCommandHandlerService {
     );
 
     return EWorkerStatus.disponible;
+  }
+
+  private shouldIgnoreStaleRuntimeNotification(
+    payload: IBaileysConnectionState,
+    current: ResolvedWorkerDataForContainer | null
+  ): { ignored: boolean; reason?: string } {
+    if (!current) {
+      return { ignored: false };
+    }
+
+    if (
+      payload.worker_type_id &&
+      current.workerTypeId &&
+      payload.worker_type_id !== current.workerTypeId
+    ) {
+      return { ignored: true, reason: 'runtime_worker_type_mismatch' };
+    }
+
+    if (
+      payload.container_id &&
+      current.containerId &&
+      payload.container_id !== current.containerId
+    ) {
+      return { ignored: true, reason: 'runtime_container_mismatch' };
+    }
+
+    if (
+      payload.runtime_generation !== undefined &&
+      current.runtimeGeneration !== undefined &&
+      payload.runtime_generation < current.runtimeGeneration
+    ) {
+      return { ignored: true, reason: 'runtime_generation_stale' };
+    }
+
+    return { ignored: false };
   }
 
   private shouldProbeNonOnlineNotificationReadiness(
@@ -1900,7 +1971,7 @@ export class WorkerCommandHandlerService {
         connection_attempt_id: payload.connection_attempt_id,
       });
 
-      if (this.isConnectedRuntimeHealth(health, workerType)) {
+      if (this.isConnectedRuntimeHealth(health, workerType, payload.phone)) {
         this.applyConnectedRuntimeHealthToPayload(payload, health);
       }
     } catch (error) {
@@ -1956,7 +2027,7 @@ export class WorkerCommandHandlerService {
         connection_attempt_id: payload.connection_attempt_id,
       });
 
-      if (!this.isConnectedRuntimeHealth(health, workerType)) {
+      if (!this.isConnectedRuntimeHealth(health, workerType, payload.phone)) {
         return workerStatusId;
       }
 
@@ -4656,7 +4727,8 @@ export class WorkerCommandHandlerService {
 
   private isConnectedRuntimeHealth(
     health: IWorkerRuntimeHealthResponseProto | undefined,
-    workerType: EWorkerType
+    workerType: EWorkerType,
+    phoneFallback?: string | null
   ): boolean {
     return (
       health?.session_ready === true &&
@@ -4666,8 +4738,29 @@ export class WorkerCommandHandlerService {
       health?.activated === true &&
       health?.standby !== true &&
       (!health.worker_type_id || health.worker_type_id === workerType) &&
-      !health.error
+      health.kafka_unhealthy !== true &&
+      !health.error &&
+      Boolean(
+        this.normalizeConnectionPhone(health.phone) ??
+        this.normalizeConnectionPhone(phoneFallback)
+      )
     );
+  }
+
+  private isRuntimeGenerationCompatible(
+    payload: IBaileysConnectionState,
+    health: IWorkerRuntimeHealthResponseProto | undefined
+  ): boolean {
+    const payloadGeneration = payload.runtime_generation;
+    const healthGeneration = this.normalizeNotifyOptionalNumber(
+      health?.runtime_generation
+    );
+
+    if (payloadGeneration === undefined || healthGeneration === undefined) {
+      return true;
+    }
+
+    return payloadGeneration === healthGeneration;
   }
 
   private isStrictConnectedPayload(
@@ -4677,7 +4770,8 @@ export class WorkerCommandHandlerService {
       payload.session_ready === true &&
       payload.can_send === true &&
       payload.can_receive_runtime === true &&
-      payload.authenticated === true
+      payload.authenticated === true &&
+      Boolean(this.normalizeConnectionPhone(payload.phone))
     );
   }
 

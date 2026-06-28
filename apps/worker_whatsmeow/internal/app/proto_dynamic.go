@@ -162,6 +162,7 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("last_probe_at", 20),
 				int32Field("probe_latency_ms", 21),
 				stringField("phone", 22),
+				boolField("kafka_unhealthy", 23),
 			),
 		},
 		Service: []*descriptorpb.ServiceDescriptorProto{{

@@ -133,4 +133,5 @@ message WorkerRuntimeHealthResponse {
   string last_probe_at = 20;
   int32 probe_latency_ms = 21;
   string phone = 22;
+  bool kafka_unhealthy = 23;
 }

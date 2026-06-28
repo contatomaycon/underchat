@@ -320,6 +320,22 @@ func (k *KafkaClient) HasUnhealthyConsumers() bool {
 	return false
 }
 
+func (k *KafkaClient) ConsumerHealthSummary() map[string]any {
+	snapshots := k.ConsumerHealthSnapshot()
+	unhealthy := 0
+	for _, snapshot := range snapshots {
+		if value, _ := snapshot["unhealthy"].(bool); value {
+			unhealthy++
+		}
+	}
+	return map[string]any{
+		"expected":  len(snapshots),
+		"active":    len(snapshots),
+		"missing":   0,
+		"unhealthy": unhealthy,
+	}
+}
+
 func nullableInt64(value *int64) any {
 	if value == nil {
 		return nil

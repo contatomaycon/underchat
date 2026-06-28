@@ -116,6 +116,7 @@ func selfMonitorHealthReady(health map[string]any, kafkaUnhealthy bool) bool {
 		healthBool(health, "can_send") &&
 		healthBool(health, "can_receive_runtime") &&
 		healthBool(health, "authenticated") &&
+		strings.TrimSpace(healthString(health, "phone")) != "" &&
 		!kafkaUnhealthy
 }
 
@@ -150,9 +151,22 @@ func (w *Worker) maybeRequestDailyMaintenance(ctx context.Context, health map[st
 		return
 	}
 
-	key := "worker:self-heal:daily:" + w.cfg.WorkerID + ":" + now.Format("2006-01-02")
+	schedule := selfMonitorDailyScheduleKey(w.cfg.DailyMaintenanceHour, w.cfg.DailyMaintenanceMinute)
+	key := "worker:self-heal:daily:" + w.cfg.WorkerID + ":" + now.Format("2006-01-02") + ":" + schedule
 	acquired, err := w.redis.SetNX(ctx, key, "1", 36*time.Hour).Result()
 	if err != nil || !acquired {
+		if err == nil {
+			localConnectionStatusLog("whatsmeow.self_monitor.daily_skipped_dedupe", map[string]any{
+				"layer":          "worker_whatsmeow.self_monitor",
+				"provider":       "whatsmeow",
+				"worker_id":      w.cfg.WorkerID,
+				"account_id":     w.cfg.AccountID,
+				"worker_type_id": WorkerTypeWhatsmeow,
+				"local_date":     now.Format("2006-01-02"),
+				"schedule":       schedule,
+				"daily_key":      key,
+			})
+		}
 		return
 	}
 
@@ -256,6 +270,10 @@ func (w *Worker) requestSelfHealing(ctx context.Context, source string, health m
 
 func (w *Worker) selfMonitorTraceID(source string) string {
 	return "self-heal:" + source + ":" + w.cfg.WorkerID + ":" + time.Now().UTC().Format("20060102150405.000000000")
+}
+
+func selfMonitorDailyScheduleKey(hour, minute int) string {
+	return time.Date(2000, 1, 1, hour, minute, 0, 0, time.UTC).Format("1504")
 }
 
 func selfMonitorLocation() *time.Location {

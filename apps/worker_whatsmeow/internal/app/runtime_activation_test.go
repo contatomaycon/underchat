@@ -34,6 +34,9 @@ func TestDynamicWorkerConnectionDescriptorIncludesRuntimeActivation(t *testing.T
 	if number := descs.workerRuntimeHealthResponse.Fields().ByName("qr_stream_ready").Number(); number != protoreflect.FieldNumber(13) {
 		t.Fatalf("qr_stream_ready field number = %d, want 13", number)
 	}
+	if number := descs.workerRuntimeHealthResponse.Fields().ByName("kafka_unhealthy").Number(); number != protoreflect.FieldNumber(23) {
+		t.Fatalf("kafka_unhealthy field number = %d, want 23", number)
+	}
 }
 
 func TestRuntimeHealthReportsWarmStandbyReady(t *testing.T) {

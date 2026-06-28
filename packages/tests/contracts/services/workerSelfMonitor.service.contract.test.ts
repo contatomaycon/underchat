@@ -112,6 +112,7 @@ describe('WorkerSelfMonitorService', () => {
         can_receive_runtime: true,
         authenticated: true,
         provider_state: 'connected',
+        phone: '556192037138',
       }),
     });
 
@@ -164,6 +165,7 @@ describe('WorkerSelfMonitorService', () => {
         can_receive_runtime: true,
         authenticated: true,
         provider_state: 'connected',
+        phone: '556192037138',
       }),
       hasUnhealthyKafkaConsumer: () => true,
     });
@@ -199,6 +201,7 @@ describe('WorkerSelfMonitorService', () => {
           can_receive_runtime: true,
           authenticated: true,
           provider_state: 'connected',
+          phone: '556192037138',
         }),
       });
 
@@ -247,6 +250,7 @@ describe('WorkerSelfMonitorService', () => {
           can_receive_runtime: true,
           authenticated: true,
           provider_state: 'connected',
+          phone: '556192037138',
         }),
       });
 

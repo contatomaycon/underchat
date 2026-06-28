@@ -29,6 +29,9 @@ export interface IKafkaConsumerHealthSnapshot {
   last_restart_at: number;
   last_watchdog_at?: number;
   last_error: string;
+  missing?: boolean;
+  registered_at?: number;
+  missing_age_ms?: number;
 }
 
 export interface IKafkaConsumerOwnerHealthSnapshot extends IKafkaConsumerHealthSnapshot {
@@ -71,15 +74,54 @@ export function getConsumerOwnerKafkaHealthSnapshot(
     return null;
   }
 
+  return {
+    owner: getConsumerOwnerName(owner),
+    ...snapshot,
+  };
+}
+
+export function getConsumerOwnerName(owner: unknown): string {
+  if (!isRecord(owner)) {
+    return 'unknown';
+  }
+
   const constructorValue = owner.constructor;
-  const ownerName =
-    typeof constructorValue === 'function' &&
+  return typeof constructorValue === 'function' &&
     typeof constructorValue.name === 'string'
-      ? constructorValue.name
-      : 'unknown';
+    ? constructorValue.name
+    : 'unknown';
+}
+
+export function buildMissingKafkaConsumerHealthSnapshot(input: {
+  owner: string;
+  registeredAt: number;
+  graceMs: number;
+}): IKafkaConsumerOwnerHealthSnapshot {
+  const now = Date.now();
+  const missingAgeMs = Math.max(0, now - input.registeredAt);
+  const unhealthy = missingAgeMs >= input.graceMs;
 
   return {
-    owner: ownerName,
-    ...snapshot,
+    owner: input.owner,
+    group_id: '',
+    topics: [],
+    connected: false,
+    consuming: false,
+    unhealthy,
+    stall_reason: unhealthy ? 'missing_consumer_health_snapshot' : undefined,
+    lag: 0,
+    pending_count: 0,
+    oldest_pending_age_ms: 0,
+    restart_count: 0,
+    consecutive_stall_restart_count: 0,
+    last_message_at: 0,
+    last_commit_at: 0,
+    last_progress_at: 0,
+    last_restart_at: 0,
+    last_watchdog_at: 0,
+    last_error: unhealthy ? 'missing_consumer_health_snapshot' : '',
+    missing: true,
+    registered_at: input.registeredAt,
+    missing_age_ms: missingAgeMs,
   };
 }

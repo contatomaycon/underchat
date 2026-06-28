@@ -75,6 +75,7 @@ interface WorkerConnectionGrpcOptions {
     fastify: FastifyInstance,
     request: IWorkerRuntimeActivationRequestProto
   ) => Promise<{ alreadyActive?: boolean } | void>;
+  getKafkaUnhealthy?: () => boolean;
 }
 
 function optionalRuntimeGeneration(value: unknown): number | undefined {
@@ -159,6 +160,17 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     module === ERouteModule.worker_wwebjs
       ? container.resolve(WwebjsHealthCheckService).verifyCurrentSession()
       : container.resolve(BaileysHealthCheckService).verifyCurrentSession();
+  const getKafkaUnhealthy = () => {
+    try {
+      return options?.getKafkaUnhealthy?.() === true;
+    } catch (err) {
+      fastify.log.warn(
+        { err, module },
+        'Worker runtime health Kafka snapshot check failed'
+      );
+      return true;
+    }
+  };
 
   const activateEnvironment = (
     request: IWorkerRuntimeActivationRequestProto
@@ -474,6 +486,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         const runtimeActivated = isRuntimeActivated();
         const warmStandby = isWarmStandby();
         const readiness = await getSessionReadiness();
+        const kafkaUnhealthy = getKafkaUnhealthy();
         callback(null, {
           worker_id: runtimeActivated ? getWorkerId() : '',
           account_id: runtimeActivated ? getAccountId() : '',
@@ -497,6 +510,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
           last_probe_at: readiness.last_probe_at ?? '',
           probe_latency_ms: readiness.probe_latency_ms ?? 0,
           phone: readiness.phone ?? '',
+          kafka_unhealthy: kafkaUnhealthy,
           error: '',
         });
       } catch (err) {
@@ -522,6 +536,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
           degraded_reason: err instanceof Error ? err.message : String(err),
           last_probe_at: new Date().toISOString(),
           probe_latency_ms: 0,
+          kafka_unhealthy: true,
           error: err instanceof Error ? err.message : String(err),
         });
       }
