@@ -439,28 +439,35 @@ onBeforeUnmount(() => {
       >
         {{ attendantLabel }}
       </div>
-      <VBtn
+      <div
         v-if="props.showPinAction"
-        class="chat-pin-btn"
-        :class="{ 'chat-pin-btn--pinned': props.isPinned }"
-        :loading="props.pinLoading"
-        :aria-label="
-          props.isPinned ? t('unpin_conversation') : t('pin_conversation')
-        "
-        icon
-        variant="text"
-        density="comfortable"
-        size="x-small"
-        @click.stop="emit('toggle-pin')"
+        class="chat-pin-action-panel"
+        :class="{ 'chat-pin-action-panel--loading': props.pinLoading }"
       >
-        <VIcon
-          size="17"
-          :icon="props.isPinned ? 'tabler-pinned-off' : 'tabler-pin'"
-        />
-        <VTooltip activator="parent" location="top">
-          {{ props.isPinned ? t('unpin_conversation') : t('pin_conversation') }}
-        </VTooltip>
-      </VBtn>
+        <VBtn
+          class="chat-pin-btn"
+          :class="{ 'chat-pin-btn--pinned': props.isPinned }"
+          :loading="props.pinLoading"
+          :aria-label="
+            props.isPinned ? t('unpin_conversation') : t('pin_conversation')
+          "
+          icon
+          variant="text"
+          density="comfortable"
+          size="x-small"
+          @click.stop="emit('toggle-pin')"
+        >
+          <VIcon
+            size="17"
+            :icon="props.isPinned ? 'tabler-pinned-off' : 'tabler-pin'"
+          />
+          <VTooltip activator="parent" location="top">
+            {{
+              props.isPinned ? t('unpin_conversation') : t('pin_conversation')
+            }}
+          </VTooltip>
+        </VBtn>
+      </div>
       <VAvatar
         size="40"
         :variant="
@@ -613,14 +620,6 @@ onBeforeUnmount(() => {
     padding-inline-start: 44px;
   }
 
-  &.chat-with-pin-action {
-    padding-inline-end: 44px;
-  }
-
-  &.chat-has-attendant.chat-with-pin-action {
-    padding-inline-end: calc(44px + var(--chat-attendant-label-size));
-  }
-
   &.chat-pinned:not(.chat-active) {
     border-color: rgba(var(--v-theme-primary), 0.45);
     background-color: rgba(var(--v-theme-primary), 0.04);
@@ -655,52 +654,123 @@ onBeforeUnmount(() => {
   z-index: 4;
 }
 
-.chat-pin-btn {
+.chat-pin-action-panel {
   position: absolute;
-  top: 6px;
-  right: 8px;
+  inset-block: 0;
+  inset-inline-end: 0;
   z-index: 8;
-  inline-size: 30px;
-  block-size: 30px;
-  min-inline-size: 30px;
-  color: rgb(var(--v-theme-primary));
-  background-color: transparent !important;
-  box-shadow: none !important;
-  opacity: 1;
+  display: grid;
+  place-items: center;
+  inline-size: 72px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(6px);
   transition:
-    background-color 0.16s ease,
+    opacity 0.16s ease,
     transform 0.16s ease;
 
-  &:hover {
-    transform: translateY(-1px);
-    background-color: rgba(var(--v-theme-primary), 0.08);
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      rgba(var(--v-theme-surface), 0),
+      rgba(var(--v-theme-surface), 0.86) 34%,
+      rgba(var(--v-theme-surface), 0.98)
+    );
+    box-shadow: inset 1px 0 rgba(var(--v-theme-on-surface), 0.04);
+    backdrop-filter: blur(8px);
+  }
+}
+
+.chat-has-attendant .chat-pin-action-panel {
+  inset-inline-end: var(--chat-attendant-label-size);
+}
+
+.chat:hover .chat-pin-action-panel,
+.chat:focus-within .chat-pin-action-panel,
+.chat-pin-action-panel--loading {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.chat-pin-btn {
+  position: relative;
+  z-index: 1;
+  inline-size: 36px;
+  block-size: 36px;
+  min-inline-size: 36px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.18);
+  border-radius: 12px !important;
+  color: rgb(var(--v-theme-primary));
+  background-color: rgba(var(--v-theme-surface), 0.96) !important;
+  box-shadow:
+    0 12px 26px rgba(var(--v-theme-on-surface), 0.16),
+    0 3px 8px rgba(var(--v-theme-on-surface), 0.1) !important;
+  transform: scale(0.9);
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+
+  &:hover,
+  &:focus-visible {
+    background-color: rgba(var(--v-theme-primary), 0.1) !important;
+    border-color: rgba(var(--v-theme-primary), 0.32);
+    color: rgb(var(--v-theme-primary));
+    box-shadow:
+      0 14px 28px rgba(var(--v-theme-primary), 0.18),
+      0 4px 10px rgba(var(--v-theme-on-surface), 0.14) !important;
+    transform: scale(1);
   }
 
-  .v-btn__content {
-    color: currentColor;
-    opacity: 1;
-  }
-
+  .v-btn__content,
   .v-icon {
     color: currentColor;
     opacity: 1;
   }
 }
 
+.chat:hover .chat-pin-btn,
+.chat:focus-within .chat-pin-btn,
+.chat-pin-action-panel--loading .chat-pin-btn {
+  transform: scale(1);
+}
+
 .chat-pin-btn--pinned {
   color: rgb(var(--v-theme-primary));
 }
 
-.chat.chat-active .chat-pin-btn {
-  color: #fff !important;
-
-  &:hover {
-    background-color: rgba(255, 255, 255, 0.14) !important;
-  }
+.chat.chat-active .chat-pin-action-panel::before {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--v-theme-primary), 0),
+    rgba(var(--v-theme-primary), 0.88) 34%,
+    rgb(var(--v-theme-primary))
+  );
+  box-shadow:
+    inset 1px 0 rgba(255, 255, 255, 0.16),
+    inset -1px 0 rgba(255, 255, 255, 0.22);
 }
 
-.chat-has-attendant .chat-pin-btn {
-  right: calc(var(--chat-attendant-label-size) + 6px);
+.chat.chat-active .chat-pin-btn {
+  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow:
+    0 14px 28px rgba(0, 0, 0, 0.16),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+
+  &:hover,
+  &:focus-visible {
+    background-color: rgba(255, 255, 255, 0.28) !important;
+    border-color: rgba(255, 255, 255, 0.42);
+  }
 }
 
 .chat-sector-label {
