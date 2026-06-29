@@ -240,6 +240,32 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     });
   });
 
+  it('explains Meta SMB deregister limitation without exposing the raw Graph error', async () => {
+    const deps = buildDeps();
+    deps.metaWhatsappEmbeddedService.deregisterPhoneNumber.mockRejectedValue(
+      new Error(
+        'Deregister endpoint is not available for API solution for SMB businesses.'
+      )
+    );
+    const useCase = buildUseCase(deps);
+
+    await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
+      worker_id: 'worker-1',
+      disconnected: true,
+      meta_deregistered: false,
+      meta_unsubscribed: true,
+      meta_warning:
+        'whatsapp_official_disconnect_meta_deregister_smb_unsupported_warning',
+    });
+
+    expect(
+      deps.officialConnectionRepository.disconnectPreservingWorker
+    ).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      workerId: 'worker-1',
+    });
+  });
+
   it('rejects non-official workers', async () => {
     const deps = buildDeps();
     deps.workerService.viewWorker.mockResolvedValue({

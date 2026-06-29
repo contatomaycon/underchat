@@ -515,7 +515,7 @@
   "whatsapp_official_disconnect_partial_success": "WhatsApp Oficial fue desconectado en Underchat, pero la limpieza completa en Meta no se completó.",
   "whatsapp_official_disconnect_error": "Error al desconectar WhatsApp Oficial.",
   "whatsapp_official_disconnect_progress_title": "Desconectando WhatsApp Oficial",
-  "whatsapp_official_disconnect_progress_meta": "Desregistrando el número en Meta",
+  "whatsapp_official_disconnect_progress_meta": "Verificando limpieza en Meta",
   "whatsapp_official_disconnect_progress_underchat": "Actualizando el canal en Underchat",
   "whatsapp_official_disconnect_progress_warning": "Desconexión local completada con advertencia de Meta.",
   "whatsapp_official_disconnect_progress_success": "Desconexión completada.",

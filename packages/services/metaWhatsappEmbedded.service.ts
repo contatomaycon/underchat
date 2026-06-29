@@ -34,6 +34,12 @@ export const isMetaPermissionsError = (error: unknown): boolean => {
   );
 };
 
+export const isMetaSmbDeregisterUnsupportedError = (error: unknown): boolean =>
+  error instanceof Error &&
+  /deregister endpoint is not available for api solution for smb businesses/i.test(
+    error.message
+  );
+
 interface MetaTokenResponse extends MetaGraphErrorResponse {
   access_token?: string;
   token_type?: string;

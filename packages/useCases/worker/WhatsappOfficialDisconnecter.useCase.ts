@@ -5,6 +5,7 @@ import { ChatService } from '@core/services/chat.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import {
   isMetaPermissionsError,
+  isMetaSmbDeregisterUnsupportedError,
   MetaWhatsappEmbeddedService,
 } from '@core/services/metaWhatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
@@ -114,11 +115,19 @@ export class WhatsappOfficialDisconnecterUseCase {
         );
       }
     } catch (error) {
-      const warningKey = isMetaPermissionsError(error)
-        ? 'whatsapp_official_disconnect_meta_deregister_permission_warning'
-        : 'whatsapp_official_disconnect_meta_deregister_warning';
+      if (isMetaSmbDeregisterUnsupportedError(error)) {
+        warnings.add(
+          input.t(
+            'whatsapp_official_disconnect_meta_deregister_smb_unsupported_warning'
+          )
+        );
+      } else {
+        const warningKey = isMetaPermissionsError(error)
+          ? 'whatsapp_official_disconnect_meta_deregister_permission_warning'
+          : 'whatsapp_official_disconnect_meta_deregister_warning';
 
-      warnings.add(this.buildMetaWarning(input.t, warningKey, error));
+        warnings.add(this.buildMetaWarning(input.t, warningKey, error));
+      }
     }
 
     const otherWabaConnections =

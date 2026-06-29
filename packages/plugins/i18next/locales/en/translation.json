@@ -110,6 +110,7 @@
   "whatsapp_official_disconnect_meta_permission_warning": "Meta did not allow removing the app subscription.",
   "whatsapp_official_disconnect_meta_cleanup_warning": "Could not remove the app subscription in Meta.",
   "whatsapp_official_disconnect_meta_deregister_permission_warning": "Meta did not allow deregistering the phone number.",
+  "whatsapp_official_disconnect_meta_deregister_smb_unsupported_warning": "Meta does not allow API deregistration for SMB numbers connected through Embedded Signup. The channel was disconnected in Underchat; to remove the link in WhatsApp Manager, remove it manually in Meta.",
   "whatsapp_official_disconnect_meta_deregister_warning": "Could not deregister the phone number in Meta.",
   "whatsapp_official_connection_not_found": "Official WhatsApp connection not found.",
   "worker_volume_removal_failed": "Error removing worker volume!",
