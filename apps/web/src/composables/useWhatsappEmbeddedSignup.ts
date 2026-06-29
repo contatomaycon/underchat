@@ -55,7 +55,7 @@ let sdkPromise: Promise<void> | null = null;
 const WHATSAPP_BUSINESS_APP_ONBOARDING_FEATURE =
   'whatsapp_business_app_onboarding';
 const WHATSAPP_EMBEDDED_SIGNUP_SCOPE =
-  'whatsapp_business_management,whatsapp_business_messaging';
+  'business_management,whatsapp_business_management,whatsapp_business_messaging';
 const WHATSAPP_EMBEDDED_SIGNUP_TIMEOUT_MS = 10 * 60 * 1000;
 const FINISH_EVENTS = new Set([
   'FINISH',
