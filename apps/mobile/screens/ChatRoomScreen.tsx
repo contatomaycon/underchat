@@ -103,6 +103,9 @@ import {
   clearChatSummary,
   generateLinkPreview,
   updateChatStatusDetailed,
+  listPinnedChats,
+  pinChat as pinChatApi,
+  unpinChat as unpinChatApi,
   transferChat,
   joinChat,
   leaveChat,
@@ -222,6 +225,14 @@ import {
 } from '../utils/chatClosure';
 import { consumeChatMessagePreload } from '../utils/chatMessagePreload';
 import { normalizeLocationCoordinate } from '../utils/locationPreview';
+import {
+  getSystemMessageText,
+  shouldRenderChatMessage,
+} from '../utils/chatSystemMessages';
+import {
+  emitChatPinningChange,
+  isPinnableChat,
+} from '../utils/chatPinning';
 import type { UploadProgressState } from '../types/uploadProgress';
 
 type EmojiDatasetEntry = {
@@ -643,6 +654,7 @@ type ProtocolWithType = {
 
 type ChatMenuActionKey =
   | 'attendants_info'
+  | 'pin_conversation'
   | 'protocol'
   | 'label'
   | 'attendance_history'
@@ -659,6 +671,8 @@ type ChatMenuAction = {
   icon: keyof typeof Ionicons.glyphMap;
   danger?: boolean;
   active?: boolean;
+  loading?: boolean;
+  disabled?: boolean;
   onPress: () => void;
 };
 
@@ -702,16 +716,27 @@ type ForwardTargetItem = {
 
 type ForwardPickerKind = 'channel' | null;
 
-type TransferDestinationType = 'user' | 'sector' | null;
+type TransferDestinationType = 'user' | 'sector' | 'chatbot' | null;
 
 type TransferPickerKind =
-  'channel' | 'type' | 'user' | 'sector' | 'sector_user' | null;
+  | 'channel'
+  | 'type'
+  | 'user'
+  | 'sector'
+  | 'sector_user'
+  | 'chatbot'
+  | null;
 
 type TransferChannelOption = {
   value: string;
   title: string;
   name: string;
   number: string | null;
+};
+
+type TransferChatbotOption = {
+  value: string;
+  label: string;
 };
 
 type SearchMessageResultItem = {
@@ -2154,6 +2179,8 @@ function getLatestMessageText(msg: ListMessageResult): string {
 
   const messageText = readNonEmptyString(c?.message);
   if (messageText) return messageText;
+  const systemText = getSystemMessageText(msg);
+  if (systemText) return systemText;
   const imageCaption = readNonEmptyString(c?.image?.caption);
   if (imageCaption) return imageCaption;
   const videoCaption = readNonEmptyString(c?.video?.caption);
@@ -2773,7 +2800,10 @@ function filterMessagesForChat(
   messages: ListMessageResult[],
   chatId: string | null | undefined
 ): ListMessageResult[] {
-  return messages.filter((message) => messageBelongsToChat(message, chatId));
+  return messages.filter(
+    (message) =>
+      messageBelongsToChat(message, chatId) && shouldRenderChatMessage(message)
+  );
 }
 
 function mergePendingSocketMessages(
@@ -2785,7 +2815,13 @@ function mergePendingSocketMessages(
   let next = filterMessagesForChat(current, chatId);
   for (const payload of pending) {
     const normalized = normalizeSocketMessageToListMessage(payload);
-    if (!normalized || !messageBelongsToChat(normalized, chatId)) continue;
+    if (
+      !normalized ||
+      !messageBelongsToChat(normalized, chatId) ||
+      !shouldRenderChatMessage(normalized)
+    ) {
+      continue;
+    }
     next = mergeMessageLists(next, normalized);
   }
   return next;
@@ -5833,9 +5869,12 @@ function ChatMessageListRow({
     onPressQuotedMessage(quotedTargetId);
   }, [onPressQuotedMessage, quotedTargetId]);
 
-  const renderSwipeReplyAction = useCallback((progress: SharedValue<number>) => {
-    return <MessageSwipeReplyAction progress={progress} />;
-  }, []);
+  const renderSwipeReplyAction = useCallback(
+    (progress: SharedValue<number>) => {
+      return <MessageSwipeReplyAction progress={progress} />;
+    },
+    []
+  );
 
   if (item.type === 'separator') {
     return <MemoizedDateSeparator label={item.separatorLabel} />;
@@ -6157,6 +6196,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   >(null);
   const [selectedTransferSectorUserId, setSelectedTransferSectorUserId] =
     useState<string | null>(null);
+  const [selectedTransferChatbotId, setSelectedTransferChatbotId] = useState<
+    string | null
+  >(null);
   const [transferChannels, setTransferChannels] = useState<
     TransferChannelOption[]
   >([]);
@@ -6179,6 +6221,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [isLeavingConversation, setIsLeavingConversation] = useState(false);
   const [isTogglingForwardToOutput, setIsTogglingForwardToOutput] =
     useState(false);
+  const [isChatPinned, setIsChatPinned] = useState(false);
+  const [isPinningChat, setIsPinningChat] = useState(false);
   const [
     attendanceInactivityDisabledForActiveChat,
     setAttendanceInactivityDisabledForActiveChat,
@@ -8168,8 +8212,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     workerConfigForChat?.send_message_on_finish_attendance_enabled === true &&
     canDisableSendMessageOnFinishAttendanceAction;
   const shouldShowTransferSendMessageToggle =
+    transferType !== 'chatbot' &&
     transferWorkerConfigForChat?.send_message_on_transfer_enabled === true &&
     canDisableSendMessageOnTransferAction;
+  const canPinChatAction = !isHistoryReadonly && isPinnableChat(chatInfo);
   const showCloseServiceClosureReasonInput = shouldShowClosureReasonInput({
     canToggleOptionalClosureReason: canToggleOptionalClosureReasonAction,
     informClosureReason: closeServiceInformClosureReason,
@@ -8650,6 +8696,51 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     isTogglingForwardToOutput,
   ]);
 
+  const refreshChatPinnedState = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId || !isPinnableChat(chatInfo)) {
+      setIsChatPinned(false);
+      return;
+    }
+
+    const pinnedChats = await listPinnedChats().catch(() => null);
+    if (!pinnedChats) return;
+
+    setIsChatPinned(pinnedChats.some((item) => item.chat_id === chatId));
+  }, [chatInfo]);
+
+  useEffect(() => {
+    void refreshChatPinnedState();
+  }, [refreshChatPinnedState]);
+
+  const handleToggleChatPin = useCallback(async () => {
+    const chatId = readNonEmptyString(chatInfo.chat_id);
+    if (!chatId || !isPinnableChat(chatInfo) || isPinningChat) return;
+
+    const nextPinned = !isChatPinned;
+    setIsPinningChat(true);
+    setIsChatPinned(nextPinned);
+
+    let ok = false;
+    try {
+      ok = nextPinned ? await pinChatApi(chatId) : await unpinChatApi(chatId);
+    } catch {
+      ok = false;
+    } finally {
+      setIsPinningChat(false);
+    }
+
+    if (!ok) {
+      setIsChatPinned(!nextPinned);
+      Alert.alert(
+        pt.error_title,
+        nextPinned ? pt.chat_pin_error : pt.chat_unpin_error
+      );
+    } else {
+      emitChatPinningChange({ chat: chatInfo, pinned: nextPinned });
+    }
+  }, [chatInfo, isChatPinned, isPinningChat]);
+
   const openLabelModal = useCallback(async () => {
     if (!canLabelAction) return;
 
@@ -8976,6 +9067,33 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       ) ?? null,
     [selectedTransferSectorUserId, transferSectorUsers]
   );
+  const transferChatbots = useMemo<TransferChatbotOption[]>(() => {
+    const items: TransferChatbotOption[] = [];
+    const inputChatbot = transferWorkerConfigForChat?.input_chatbot;
+    const outputChatbot = transferWorkerConfigForChat?.output_chatbot;
+
+    if (inputChatbot) {
+      items.push({
+        value: inputChatbot.chatbot_id,
+        label: `${inputChatbot.name} (${pt.chatbot_type_input})`,
+      });
+    }
+
+    if (outputChatbot) {
+      items.push({
+        value: outputChatbot.chatbot_id,
+        label: `${outputChatbot.name} (${pt.chatbot_type_output})`,
+      });
+    }
+
+    return items;
+  }, [transferWorkerConfigForChat]);
+  const selectedTransferChatbot = useMemo(
+    () =>
+      transferChatbots.find((item) => item.value === selectedTransferChatbotId) ??
+      null,
+    [selectedTransferChatbotId, transferChatbots]
+  );
   const selectedForwardChannel = useMemo(
     () =>
       forwardChannels.find((item) => item.value === selectedForwardChannelId) ??
@@ -8994,6 +9112,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       setSelectedTransferUserId(null);
       setSelectedTransferSectorId(null);
       setSelectedTransferSectorUserId(null);
+      setSelectedTransferChatbotId(null);
       setTransferChannels([]);
       setTransferUsers([]);
       setTransferSectors([]);
@@ -9044,6 +9163,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
 
     setSelectedTransferUserId(null);
     setSelectedTransferSectorUserId(null);
+    setSelectedTransferChatbotId(null);
     setTransferUsers([]);
     setTransferSectorUsers([]);
     setTransferWorkerConfigForChat(null);
@@ -9114,6 +9234,26 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     transferModalVisible,
   ]);
 
+  useEffect(() => {
+    if (!transferModalVisible) return;
+
+    if (
+      selectedTransferChatbotId &&
+      !transferChatbots.some((item) => item.value === selectedTransferChatbotId)
+    ) {
+      setSelectedTransferChatbotId(null);
+    }
+
+    if (transferType === 'chatbot' && transferChatbots.length === 0) {
+      setTransferType(null);
+    }
+  }, [
+    selectedTransferChatbotId,
+    transferChatbots,
+    transferModalVisible,
+    transferType,
+  ]);
+
   const transferPickerItems = useMemo<SelectOption[]>(() => {
     if (transferPickerKind === 'channel') {
       return transferChannels.map((item) => ({
@@ -9122,10 +9262,14 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       }));
     }
     if (transferPickerKind === 'type') {
-      return [
+      const items: SelectOption[] = [
         { value: 'user', label: pt.transfer_type_user },
         { value: 'sector', label: pt.transfer_type_sector },
       ];
+      if (transferChatbots.length > 0) {
+        items.push({ value: 'chatbot', label: pt.transfer_type_chatbot });
+      }
+      return items;
     }
     if (transferPickerKind === 'user') {
       return transferUsers.map((item) => ({
@@ -9145,8 +9289,12 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         label: item.name,
       }));
     }
+    if (transferPickerKind === 'chatbot') {
+      return transferChatbots;
+    }
     return [];
   }, [
+    transferChatbots,
     transferChannels,
     transferPickerKind,
     transferSectorUsers,
@@ -9162,6 +9310,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (transferPickerKind === 'sector_user') {
       return pt.transfer_sector_user_optional;
     }
+    if (transferPickerKind === 'chatbot') return pt.chatbot;
     return pt.select_option;
   }, [transferPickerKind]);
 
@@ -9172,9 +9321,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     if (transferPickerKind === 'sector') return selectedTransferSectorId;
     if (transferPickerKind === 'sector_user')
       return selectedTransferSectorUserId;
+    if (transferPickerKind === 'chatbot') return selectedTransferChatbotId;
     return null;
   }, [
     selectedTransferChannelId,
+    selectedTransferChatbotId,
     selectedTransferSectorId,
     selectedTransferSectorUserId,
     selectedTransferUserId,
@@ -9195,21 +9346,32 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     (value: string) => {
       if (transferPickerKind === 'channel') {
         setSelectedTransferChannelId(value);
+        setSelectedTransferUserId(null);
+        setSelectedTransferSectorUserId(null);
+        setSelectedTransferChatbotId(null);
       } else if (transferPickerKind === 'type') {
-        if (value === 'user' || value === 'sector') {
+        if (value === 'user' || value === 'sector' || value === 'chatbot') {
           setTransferType(value);
+          if (value === 'chatbot') {
+            setTransferKeepInChat(false);
+            setTransferSendMessageOnTransfer(true);
+          }
         } else {
           setTransferType(null);
         }
         setSelectedTransferUserId(null);
         setSelectedTransferSectorId(null);
         setSelectedTransferSectorUserId(null);
+        setSelectedTransferChatbotId(null);
       } else if (transferPickerKind === 'user') {
         setSelectedTransferUserId(value);
       } else if (transferPickerKind === 'sector') {
         setSelectedTransferSectorId(value);
+        setSelectedTransferSectorUserId(null);
       } else if (transferPickerKind === 'sector_user') {
         setSelectedTransferSectorUserId(value);
+      } else if (transferPickerKind === 'chatbot') {
+        setSelectedTransferChatbotId(value);
       }
 
       setTransferPickerKind(null);
@@ -9238,6 +9400,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       Alert.alert(pt.warning_title, pt.sector_required);
       return;
     }
+    if (transferType === 'chatbot' && !selectedTransferChatbotId) {
+      Alert.alert(pt.warning_title, pt.chatbot_required);
+      return;
+    }
 
     const targetUserId =
       transferType === 'user'
@@ -9259,8 +9425,10 @@ export function ChatRoomScreen({ route, navigation }: Props) {
       worker_id: selectedTransferChannelId,
       user_id: targetUserId,
       sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
+      chatbot_id:
+        transferType === 'chatbot' ? selectedTransferChatbotId : null,
       annotation: transferAnnotation.trim() || null,
-      keep_in_chat: transferKeepInChat,
+      keep_in_chat: transferType === 'chatbot' ? false : transferKeepInChat,
     };
 
     if (shouldShowTransferSendMessageToggle) {
@@ -9291,6 +9459,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     navigation,
     canManageInChatLifecycle,
     selectedTransferChannelId,
+    selectedTransferChatbotId,
     selectedTransferSectorId,
     selectedTransferSectorUserId,
     selectedTransferUserId,
@@ -9334,6 +9503,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
         icon: 'pricetag-outline',
         onPress: () => {
           void openLabelModal();
+        },
+      });
+    }
+
+    if (canPinChatAction) {
+      actions.push({
+        key: 'pin_conversation',
+        label: isChatPinned ? pt.unpin_conversation : pt.pin_conversation,
+        icon: isChatPinned ? 'pin' : 'pin-outline',
+        active: isChatPinned,
+        loading: isPinningChat,
+        disabled: isPinningChat,
+        onPress: () => {
+          void handleToggleChatPin();
         },
       });
     }
@@ -9427,6 +9610,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     canLabelAction,
     canShowCloseButton,
     canShowAttendanceInactivityAction,
+    canPinChatAction,
     canToggleForwardToOutputAction,
     canTransferAction,
     canLeaveConversationAction,
@@ -9435,8 +9619,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     handleLeaveConversation,
     handleCloseService,
     handleToggleAttendanceInactivity,
+    handleToggleChatPin,
     handleToggleForwardToOutput,
     isForwardToOutputActive,
+    isChatPinned,
+    isPinningChat,
     openAttendantsInfo,
     openLabelModal,
     protocolList.length,
@@ -15496,7 +15683,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             {menuActions.map((action) => (
               <Pressable
                 key={action.key}
-                style={styles.menuItem}
+                style={[
+                  styles.menuItem,
+                  action.disabled && styles.menuItemDisabled,
+                ]}
+                disabled={action.disabled}
                 onPress={() => {
                   setMenuVisible(false);
                   action.onPress();
@@ -15524,6 +15715,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                 ) : null}
                 {isTogglingForwardToOutput &&
                 action.key === 'forward_to_output_chatbot' ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : null}
+                {action.loading ? (
                   <ActivityIndicator size="small" color={colors.primary} />
                 ) : null}
                 {(isLoadingAttendanceInactivityState ||
@@ -16050,7 +16244,9 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                   ? pt.transfer_type_user
                   : transferType === 'sector'
                     ? pt.transfer_type_sector
-                    : null
+                    : transferType === 'chatbot'
+                      ? pt.transfer_type_chatbot
+                      : null
               }
               placeholder={pt.transfer_to_placeholder}
               onPress={dismissKeyboardAnd(() => setTransferPickerKind('type'))}
@@ -16102,6 +16298,20 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             </>
           ) : null}
 
+          {transferType === 'chatbot' ? (
+            <View style={styles.formField}>
+              <SelectField
+                label={pt.chatbot}
+                valueLabel={selectedTransferChatbot?.label ?? null}
+                placeholder={pt.transfer_select_chatbot}
+                onPress={dismissKeyboardAnd(() =>
+                  setTransferPickerKind('chatbot')
+                )}
+                disabled={!selectedTransferChannelId}
+              />
+            </View>
+          ) : null}
+
           <View style={styles.formField}>
             <Text style={styles.formFieldLabel}>{pt.transfer_annotation}</Text>
             <TextInput
@@ -16115,22 +16325,24 @@ export function ChatRoomScreen({ route, navigation }: Props) {
             />
           </View>
 
-          <View style={styles.closeServiceToggleRow}>
-            <View style={styles.closeServiceToggleTextWrap}>
-              <Text style={styles.closeServiceToggleLabel}>
-                {pt.keep_in_chat}
-              </Text>
-              <Text style={styles.closeServiceToggleDescription}>
-                {pt.keep_in_chat_description}
-              </Text>
+          {transferType !== 'chatbot' ? (
+            <View style={styles.closeServiceToggleRow}>
+              <View style={styles.closeServiceToggleTextWrap}>
+                <Text style={styles.closeServiceToggleLabel}>
+                  {pt.keep_in_chat}
+                </Text>
+                <Text style={styles.closeServiceToggleDescription}>
+                  {pt.keep_in_chat_description}
+                </Text>
+              </View>
+              <Switch
+                value={transferKeepInChat}
+                onValueChange={setTransferKeepInChat}
+                trackColor={{ false: colors.grey300, true: colors.primary }}
+                thumbColor={colors.onPrimary}
+              />
             </View>
-            <Switch
-              value={transferKeepInChat}
-              onValueChange={setTransferKeepInChat}
-              trackColor={{ false: colors.grey300, true: colors.primary }}
-              thumbColor={colors.onPrimary}
-            />
-          </View>
+          ) : null}
 
           {shouldShowTransferSendMessageToggle ? (
             <View style={styles.closeServiceToggleRow}>
@@ -19407,6 +19619,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  menuItemDisabled: {
+    opacity: 0.6,
   },
   menuItemText: {
     flex: 1,

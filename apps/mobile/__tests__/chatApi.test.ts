@@ -5,15 +5,17 @@ const mockApiPatchWithMessage =
   jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockApiPostWithMessage =
   jest.fn<(...args: unknown[]) => Promise<unknown>>();
+const mockApiPost = jest.fn<(...args: unknown[]) => Promise<unknown>>();
+const mockApiDelete = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockApiGet = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 
 jest.mock('../api/client', () => ({
-  apiDelete: jest.fn(),
+  apiDelete: mockApiDelete,
   apiGet: mockApiGet,
   apiPatch: mockApiPatch,
   apiPatchWithMessage: mockApiPatchWithMessage,
   apiPatchFormWithMessage: jest.fn(),
-  apiPost: jest.fn(),
+  apiPost: mockApiPost,
   apiPostWithMessage: mockApiPostWithMessage,
   apiPostForm: jest.fn(),
   apiPostFormWithMessage: jest.fn(),
@@ -21,7 +23,10 @@ jest.mock('../api/client', () => ({
 }));
 
 import {
+  listPinnedChats,
+  pinChat,
   transferChat,
+  unpinChat,
   updateChatAttendanceInactivity,
   updateChatStatusDetailed,
   viewChatAttendanceInactivity,
@@ -68,11 +73,58 @@ describe('chatApi attendance lifecycle', () => {
         worker_id: 'worker-1',
         user_id: undefined,
         sector_id: undefined,
+        chatbot_id: undefined,
         annotation: undefined,
         keep_in_chat: true,
         send_message_on_transfer: false,
       }
     );
+  });
+
+  it('sends chatbot_id when transferring to chatbot', async () => {
+    mockApiPostWithMessage.mockResolvedValue({
+      status: true,
+      message: 'ok',
+      data: { chat_id: 'chat-1', status: true },
+    });
+
+    await transferChat('chat-1', {
+      worker_id: 'worker-1',
+      chatbot_id: 'chatbot-1',
+      keep_in_chat: false,
+    });
+
+    expect(mockApiPostWithMessage).toHaveBeenCalledWith(
+      '/chat/chat-1/transfer',
+      {
+        worker_id: 'worker-1',
+        user_id: undefined,
+        sector_id: undefined,
+        chatbot_id: 'chatbot-1',
+        annotation: undefined,
+        keep_in_chat: false,
+      }
+    );
+  });
+
+  it('lists pinned chats', async () => {
+    const pinnedChats = [{ chat_id: 'chat-1', status: 'in_chat' }];
+    mockApiGet.mockResolvedValue({ status: true, data: pinnedChats });
+
+    await expect(listPinnedChats()).resolves.toBe(pinnedChats);
+
+    expect(mockApiGet).toHaveBeenCalledWith('/chat/pinned');
+  });
+
+  it('pins and unpins chats', async () => {
+    mockApiPost.mockResolvedValue({ status: true, data: null });
+    mockApiDelete.mockResolvedValue({ status: true, data: null });
+
+    await expect(pinChat('chat-1')).resolves.toBe(true);
+    await expect(unpinChat('chat-1')).resolves.toBe(true);
+
+    expect(mockApiPost).toHaveBeenCalledWith('/chat/pinned/chat-1', {});
+    expect(mockApiDelete).toHaveBeenCalledWith('/chat/pinned/chat-1');
   });
 
   it('reads and updates attendance inactivity state', async () => {

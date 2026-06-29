@@ -37,6 +37,9 @@ import {
   listMyChats,
   listQueueChats,
   listChats,
+  listPinnedChats,
+  pinChat as pinChatApi,
+  unpinChat as unpinChatApi,
   searchChats,
   listMessages,
   clearChatSummary,
@@ -144,6 +147,11 @@ import {
   isAnyMobilePushPreferenceEnabled,
 } from '../services/pushNotifications';
 import { setChatMessagePreload } from '../utils/chatMessagePreload';
+import {
+  addChatPinningListener,
+  emitChatPinningChange,
+  isPinnableChat,
+} from '../utils/chatPinning';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -207,11 +215,16 @@ function getChatbotFilterKey(filters: ChatbotFilterStatus[]): string {
   return [...filters].sort().join('|');
 }
 
-type TransferDestinationType = 'user' | 'sector';
+type TransferDestinationType = 'user' | 'sector' | 'chatbot';
 type TransferPickerKind =
-  'channel' | 'type' | 'user' | 'sector' | 'sector_user' | null;
+  'channel' | 'type' | 'user' | 'sector' | 'sector_user' | 'chatbot' | null;
 
 type TransferChannelOption = {
+  value: string;
+  label: string;
+};
+
+type TransferChatbotOption = {
   value: string;
   label: string;
 };
@@ -706,7 +719,6 @@ function ChatRow({
     workerConfig,
     now
   );
-
   const renderPreviewToken = useCallback(
     (token: WhatsAppTextToken, index: number) => {
       if (!token.text) return null;
@@ -990,6 +1002,8 @@ export function ChatListScreen({ route, navigation }: Props) {
     useState(false);
   const [notificationSettingsSaving, setNotificationSettingsSaving] =
     useState(false);
+  const [pinnedChats, setPinnedChats] = useState<ListChatsResult[]>([]);
+  const [pinningChatIds, setPinningChatIds] = useState<string[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMorePages, setHasMorePages] = useState(false);
@@ -1031,6 +1045,9 @@ export function ChatListScreen({ route, navigation }: Props) {
   >(null);
   const [selectedTransferSectorUserId, setSelectedTransferSectorUserId] =
     useState<string | null>(null);
+  const [selectedTransferChatbotId, setSelectedTransferChatbotId] = useState<
+    string | null
+  >(null);
   const [isLoadingTransferOptions, setIsLoadingTransferOptions] =
     useState(false);
   const [isLoadingTransferSectorUsers, setIsLoadingTransferSectorUsers] =
@@ -1162,6 +1179,33 @@ export function ChatListScreen({ route, navigation }: Props) {
       );
     },
     [currentUserId, socketPermissions, userSectors, userChannels]
+  );
+
+  const normalizePinnedChats = useCallback(
+    (items: ListChatsResult[]): ListChatsResult[] => {
+      const unique = new Map<string, ListChatsResult>();
+      for (const chat of applyLocallyClearedUnreadOverrides(
+        filterAuthorizedChats(items.filter(isPinnableChat))
+      )) {
+        if (chat.chat_id) {
+          unique.set(chat.chat_id, chat);
+        }
+      }
+      return Array.from(unique.values());
+    },
+    [applyLocallyClearedUnreadOverrides, filterAuthorizedChats]
+  );
+
+  useEffect(
+    () =>
+      addChatPinningListener(({ chat, pinned }) => {
+        setPinnedChats((prev) =>
+          pinned
+            ? normalizePinnedChats([chat, ...prev])
+            : prev.filter((item) => item.chat_id !== chat.chat_id)
+        );
+      }),
+    [normalizePinnedChats]
   );
 
   const syncChatCounts = useCallback(
@@ -1343,6 +1387,9 @@ export function ChatListScreen({ route, navigation }: Props) {
       const status = tab === 'chatbot' ? chatbotStatus : CHAT_STATUS[tab];
       const hasSearchText = (search ?? '').trim().length > 0;
       const useSearch = hasAppliedAdvancedFilters || hasSearchText;
+      const pinnedChatsPromise = append
+        ? null
+        : listPinnedChats().catch(() => null);
       const inChatFilterUserId =
         tab === 'in_chat' && inChatScope === 'mine'
           ? currentUserId
@@ -1533,6 +1580,13 @@ export function ChatListScreen({ route, navigation }: Props) {
           setIsLoadingMore(false);
           isLoadingMoreRef.current = false;
         } else {
+          if (pinnedChatsPromise) {
+            const pinned = await pinnedChatsPromise;
+            if (pinned) {
+              setPinnedChats(normalizePinnedChats(pinned));
+            }
+          }
+
           loadingRef.current = false;
           hasLoadedOnceRef.current = true;
 
@@ -1575,6 +1629,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       currentUserId,
       applyLocallyClearedUnreadOverrides,
       filterAuthorizedChats,
+      normalizePinnedChats,
       syncChatCounts,
     ]
   );
@@ -2022,6 +2077,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     setSelectedTransferUserId(null);
     setSelectedTransferSectorId(null);
     setSelectedTransferSectorUserId(null);
+    setSelectedTransferChatbotId(null);
     setIsLoadingTransferOptions(false);
     setIsLoadingTransferSectorUsers(false);
   }, [isTransferring]);
@@ -2055,6 +2111,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       setSelectedTransferUserId(null);
       setSelectedTransferSectorId(null);
       setSelectedTransferSectorUserId(null);
+      setSelectedTransferChatbotId(null);
       setIsLoadingTransferOptions(true);
 
       try {
@@ -2181,21 +2238,69 @@ export function ChatListScreen({ route, navigation }: Props) {
     transferType,
   ]);
 
+  const transferChatbots = useMemo<TransferChatbotOption[]>(() => {
+    const items: TransferChatbotOption[] = [];
+    const inputChatbot = transferWorkerConfigForChat?.input_chatbot;
+    const outputChatbot = transferWorkerConfigForChat?.output_chatbot;
+
+    if (inputChatbot) {
+      items.push({
+        value: inputChatbot.chatbot_id,
+        label: `${inputChatbot.name} (${pt.chatbot_type_input})`,
+      });
+    }
+
+    if (outputChatbot) {
+      items.push({
+        value: outputChatbot.chatbot_id,
+        label: `${outputChatbot.name} (${pt.chatbot_type_output})`,
+      });
+    }
+
+    return items;
+  }, [transferWorkerConfigForChat]);
+
+  useEffect(() => {
+    if (!transferModalVisible) return;
+
+    if (
+      selectedTransferChatbotId &&
+      !transferChatbots.some((item) => item.value === selectedTransferChatbotId)
+    ) {
+      setSelectedTransferChatbotId(null);
+    }
+
+    if (transferType === 'chatbot' && transferChatbots.length === 0) {
+      setTransferType(null);
+    }
+  }, [
+    selectedTransferChatbotId,
+    transferChatbots,
+    transferModalVisible,
+    transferType,
+  ]);
+
   const handleSelectTransferPickerValue = useCallback(
     (value: string) => {
       if (transferPickerKind === 'channel') {
         setSelectedTransferChannelId(value);
         setSelectedTransferUserId(null);
         setSelectedTransferSectorUserId(null);
+        setSelectedTransferChatbotId(null);
       } else if (transferPickerKind === 'type') {
-        if (value === 'user' || value === 'sector') {
+        if (value === 'user' || value === 'sector' || value === 'chatbot') {
           setTransferType(value);
+          if (value === 'chatbot') {
+            setTransferKeepInChat(false);
+            setTransferSendMessageOnTransfer(true);
+          }
         } else {
           setTransferType(null);
         }
         setSelectedTransferUserId(null);
         setSelectedTransferSectorId(null);
         setSelectedTransferSectorUserId(null);
+        setSelectedTransferChatbotId(null);
       } else if (transferPickerKind === 'user') {
         setSelectedTransferUserId(value);
       } else if (transferPickerKind === 'sector') {
@@ -2203,6 +2308,8 @@ export function ChatListScreen({ route, navigation }: Props) {
         setSelectedTransferSectorUserId(null);
       } else if (transferPickerKind === 'sector_user') {
         setSelectedTransferSectorUserId(value);
+      } else if (transferPickerKind === 'chatbot') {
+        setSelectedTransferChatbotId(value);
       }
 
       setTransferPickerKind(null);
@@ -2215,10 +2322,14 @@ export function ChatListScreen({ route, navigation }: Props) {
       return transferChannels;
     }
     if (transferPickerKind === 'type') {
-      return [
+      const items: SelectOption[] = [
         { value: 'user', label: pt.transfer_type_user },
         { value: 'sector', label: pt.transfer_type_sector },
       ];
+      if (transferChatbots.length > 0) {
+        items.push({ value: 'chatbot', label: pt.transfer_type_chatbot });
+      }
+      return items;
     }
     if (transferPickerKind === 'user') {
       return transferUsers.map((option) => ({
@@ -2238,9 +2349,13 @@ export function ChatListScreen({ route, navigation }: Props) {
         label: formatTransferUserLabel(option),
       }));
     }
+    if (transferPickerKind === 'chatbot') {
+      return transferChatbots;
+    }
     return [];
   }, [
     transferChannels,
+    transferChatbots,
     transferPickerKind,
     transferSectors,
     transferSectorUsers,
@@ -2255,6 +2370,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     if (transferPickerKind === 'sector_user') {
       return pt.transfer_sector_user_optional;
     }
+    if (transferPickerKind === 'chatbot') return pt.chatbot;
     return pt.select_option;
   }, [transferPickerKind]);
 
@@ -2265,9 +2381,11 @@ export function ChatListScreen({ route, navigation }: Props) {
     if (transferPickerKind === 'sector') return selectedTransferSectorId;
     if (transferPickerKind === 'sector_user')
       return selectedTransferSectorUserId;
+    if (transferPickerKind === 'chatbot') return selectedTransferChatbotId;
     return null;
   }, [
     selectedTransferChannelId,
+    selectedTransferChatbotId,
     selectedTransferSectorId,
     selectedTransferSectorUserId,
     selectedTransferUserId,
@@ -2283,7 +2401,9 @@ export function ChatListScreen({ route, navigation }: Props) {
       ? pt.transfer_type_user
       : transferType === 'sector'
         ? pt.transfer_type_sector
-        : null;
+        : transferType === 'chatbot'
+          ? pt.transfer_type_chatbot
+          : null;
   const selectedTransferUserLabel =
     transferUsers.find((item) => item.id === selectedTransferUserId)?.name ??
     null;
@@ -2293,6 +2413,9 @@ export function ChatListScreen({ route, navigation }: Props) {
   const selectedTransferSectorUserLabel =
     transferSectorUsers.find((item) => item.id === selectedTransferSectorUserId)
       ?.name ?? null;
+  const selectedTransferChatbotLabel =
+    transferChatbots.find((item) => item.value === selectedTransferChatbotId)
+      ?.label ?? null;
 
   const canDisableSendMessageOnFinishAttendanceAction =
     canDisableSendMessageOnFinishAttendance(socketPermissions);
@@ -2304,6 +2427,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     closeServiceWorkerConfig?.send_message_on_finish_attendance_enabled ===
       true && canDisableSendMessageOnFinishAttendanceAction;
   const shouldShowTransferSendMessageToggle =
+    transferType !== 'chatbot' &&
     transferWorkerConfigForChat?.send_message_on_transfer_enabled === true &&
     canDisableSendMessageOnTransferAction;
   const showCloseServiceClosureReasonInput = shouldShowClosureReasonInput({
@@ -2338,6 +2462,10 @@ export function ChatListScreen({ route, navigation }: Props) {
       Alert.alert(pt.warning_title, pt.sector_required);
       return;
     }
+    if (transferType === 'chatbot' && !selectedTransferChatbotId) {
+      Alert.alert(pt.warning_title, pt.chatbot_required);
+      return;
+    }
 
     const targetUserId =
       transferType === 'user'
@@ -2359,8 +2487,9 @@ export function ChatListScreen({ route, navigation }: Props) {
       worker_id: selectedTransferChannelId,
       user_id: targetUserId,
       sector_id: transferType === 'sector' ? selectedTransferSectorId : null,
+      chatbot_id: transferType === 'chatbot' ? selectedTransferChatbotId : null,
       annotation: transferAnnotation.trim() || null,
-      keep_in_chat: transferKeepInChat,
+      keep_in_chat: transferType === 'chatbot' ? false : transferKeepInChat,
     };
 
     if (shouldShowTransferSendMessageToggle) {
@@ -2391,6 +2520,7 @@ export function ChatListScreen({ route, navigation }: Props) {
     closeTransferModal,
     load,
     selectedTransferChannelId,
+    selectedTransferChatbotId,
     selectedTransferSectorId,
     selectedTransferSectorUserId,
     selectedTransferUserId,
@@ -2628,14 +2758,88 @@ export function ChatListScreen({ route, navigation }: Props) {
     setLabelInfoModalVisible(true);
   }, []);
 
+  const pinnedChatIds = useMemo(
+    () => new Set(pinnedChats.map((chat) => chat.chat_id)),
+    [pinnedChats]
+  );
+  const canShowPinnedChats = pinnedChats.length > 0;
+  const removePinnedFromSections = useCallback(
+    (items: ListChatsResult[]): ListChatsResult[] => {
+      if (!canShowPinnedChats) return items;
+      return items.filter((item) => !pinnedChatIds.has(item.chat_id));
+    },
+    [canShowPinnedChats, pinnedChatIds]
+  );
+
+  const setPinningChat = useCallback((chatId: string, loadingPin: boolean) => {
+    if (!chatId) return;
+    setPinningChatIds((prev) => {
+      if (loadingPin) {
+        return prev.includes(chatId) ? prev : [...prev, chatId];
+      }
+      return prev.filter((id) => id !== chatId);
+    });
+  }, []);
+
+  const handleTogglePinnedChat = useCallback(
+    async (chat: ListChatsResult) => {
+      if (!chat.chat_id || !isPinnableChat(chat)) {
+        Alert.alert(pt.error_title, pt.chat_pin_error);
+        return;
+      }
+
+      if (pinningChatIds.includes(chat.chat_id)) {
+        return;
+      }
+
+      const wasPinned = pinnedChatIds.has(chat.chat_id);
+      const previousPinnedChats = pinnedChats;
+
+      setPinningChat(chat.chat_id, true);
+      setPinnedChats((prev) =>
+        wasPinned
+          ? prev.filter((item) => item.chat_id !== chat.chat_id)
+          : normalizePinnedChats([chat, ...prev])
+      );
+
+      let ok = false;
+      try {
+        ok = wasPinned
+          ? await unpinChatApi(chat.chat_id)
+          : await pinChatApi(chat.chat_id);
+      } catch {
+        ok = false;
+      } finally {
+        setPinningChat(chat.chat_id, false);
+      }
+
+      if (!ok) {
+        setPinnedChats(previousPinnedChats);
+        Alert.alert(
+          pt.error_title,
+          wasPinned ? pt.chat_unpin_error : pt.chat_pin_error
+        );
+      } else {
+        emitChatPinningChange({ chat, pinned: !wasPinned });
+      }
+    },
+    [
+      normalizePinnedChats,
+      pinnedChatIds,
+      pinnedChats,
+      pinningChatIds,
+      setPinningChat,
+    ]
+  );
+
   const visibleWorkerIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const item of [...queue, ...inChat]) {
+    for (const item of [...pinnedChats, ...queue, ...inChat]) {
       const workerId = item.worker?.id;
       if (workerId) ids.add(workerId);
     }
     return Array.from(ids);
-  }, [inChat, queue]);
+  }, [inChat, pinnedChats, queue]);
 
   useEffect(() => {
     const missingWorkerIds = visibleWorkerIds.filter(
@@ -2687,16 +2891,30 @@ export function ChatListScreen({ route, navigation }: Props) {
     []
   );
 
-  const sections: { title: string; data: ListChatsResult[] }[] = [];
+  const visiblePinnedChats = canShowPinnedChats ? pinnedChats : [];
+  const visibleInChat = removePinnedFromSections(inChat);
+  const visibleQueue = removePinnedFromSections(queue);
+  const sections: {
+    title: string;
+    data: ListChatsResult[];
+    isPinned?: boolean;
+  }[] = [];
+  if (visiblePinnedChats.length > 0) {
+    sections.push({
+      title: pt.fixed_chats,
+      data: visiblePinnedChats,
+      isPinned: true,
+    });
+  }
   if (tab === 'closed') {
-    sections.push({ title: pt.closed, data: queue });
+    sections.push({ title: pt.closed, data: visibleQueue });
   } else if (tab === 'chatbot') {
-    sections.push({ title: pt.chatbot, data: inChat });
+    sections.push({ title: pt.chatbot, data: visibleInChat });
   } else {
-    if (inChat.length > 0)
-      sections.push({ title: pt.in_service, data: inChat });
-    if (queue.length > 0)
-      sections.push({ title: pt.awaiting_service, data: queue });
+    if (visibleInChat.length > 0)
+      sections.push({ title: pt.in_service, data: visibleInChat });
+    if (visibleQueue.length > 0)
+      sections.push({ title: pt.awaiting_service, data: visibleQueue });
   }
   if (sections.length === 0) {
     let emptyTitle = pt.chatbot;
@@ -3276,6 +3494,19 @@ export function ChatListScreen({ route, navigation }: Props) {
                     </>
                   ) : null}
 
+                  {transferType === 'chatbot' ? (
+                    <SelectField
+                      label={pt.chatbot}
+                      valueLabel={selectedTransferChatbotLabel}
+                      placeholder={pt.transfer_select_chatbot}
+                      onPress={dismissKeyboardAnd(() =>
+                        setTransferPickerKind('chatbot')
+                      )}
+                      disabled={!selectedTransferChannelId}
+                      containerStyle={styles.transferSelectContainer}
+                    />
+                  ) : null}
+
                   <Text style={styles.transferFieldLabel}>
                     {pt.transfer_annotation}
                   </Text>
@@ -3289,25 +3520,27 @@ export function ChatListScreen({ route, navigation }: Props) {
                     maxLength={300}
                   />
 
-                  <View style={styles.transferKeepInChatRow}>
-                    <View style={styles.transferKeepInChatTextWrap}>
-                      <Text style={styles.transferKeepInChatLabel}>
-                        {pt.keep_in_chat}
-                      </Text>
-                      <Text style={styles.transferKeepInChatDescription}>
-                        {pt.keep_in_chat_description}
-                      </Text>
+                  {transferType !== 'chatbot' ? (
+                    <View style={styles.transferKeepInChatRow}>
+                      <View style={styles.transferKeepInChatTextWrap}>
+                        <Text style={styles.transferKeepInChatLabel}>
+                          {pt.keep_in_chat}
+                        </Text>
+                        <Text style={styles.transferKeepInChatDescription}>
+                          {pt.keep_in_chat_description}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={transferKeepInChat}
+                        onValueChange={setTransferKeepInChat}
+                        trackColor={{
+                          false: colors.grey300,
+                          true: colors.primary,
+                        }}
+                        thumbColor={colors.onPrimary}
+                      />
                     </View>
-                    <Switch
-                      value={transferKeepInChat}
-                      onValueChange={setTransferKeepInChat}
-                      trackColor={{
-                        false: colors.grey300,
-                        true: colors.primary,
-                      }}
-                      thumbColor={colors.onPrimary}
-                    />
-                  </View>
+                  ) : null}
 
                   {shouldShowTransferSendMessageToggle ? (
                     <View style={styles.transferKeepInChatRow}>
@@ -3411,9 +3644,26 @@ export function ChatListScreen({ route, navigation }: Props) {
           }}
           keyboardDismissMode="on-drag"
           keyExtractor={(item) => item.chat_id}
-          renderItem={({ item, index }) => {
+          renderItem={({ item, index, section }) => {
+            const isPinnedSection = section.isPinned === true;
+            const queueIndexForItem =
+              item.status === 'queue'
+                ? isPinnedSection
+                  ? queue.findIndex((chat) => chat.chat_id === item.chat_id)
+                  : index
+                : null;
+            const normalizedQueueIndexForOpen =
+              item.status === 'queue'
+                ? queueIndexForItem !== null && queueIndexForItem >= 0
+                  ? queueIndexForItem
+                  : canPickAnyQueueChat
+                    ? null
+                    : 1
+                : null;
             const isQueueItemLocked =
-              item.status === 'queue' && !canPickAnyQueueChat && index !== 0;
+              item.status === 'queue' &&
+              !canPickAnyQueueChat &&
+              queueIndexForItem !== 0;
             const canOpenByVisibility = canViewChat(item, {
               permissions: socketPermissions,
               userId: currentUserId,
@@ -3430,15 +3680,20 @@ export function ChatListScreen({ route, navigation }: Props) {
                 isCurrentUserMasterOrAdministrator ||
                 canManageInChatLifecyclePermission(socketPermissions));
             const canAttendQueueItem =
-              isQueueItem && (canPickAnyQueueChat || index === 0);
+              isQueueItem && (canPickAnyQueueChat || queueIndexForItem === 0);
             const canCloseQueueItem =
               isQueueItem && canCloseChatWithoutAttending(socketPermissions);
             const canTransferItem = isQueueItem || canManageInChatItem;
             const canCloseItem = canManageInChatItem || canCloseQueueItem;
+            const canPinItem = isPinnableChat(item);
+            const isPinned = pinnedChatIds.has(item.chat_id);
+            const pinLoading = pinningChatIds.includes(item.chat_id);
+            const canShowLifecycleSwipeActions = !isQueueItemLocked;
             const canSwipe =
               canOpenByVisibility &&
-              !isQueueItemLocked &&
-              (isInChatItem || isQueueItem);
+              (canPinItem ||
+                (canShowLifecycleSwipeActions &&
+                  (isInChatItem || isQueueItem)));
 
             const row = (
               <ChatRow
@@ -3456,9 +3711,7 @@ export function ChatListScreen({ route, navigation }: Props) {
                   !canOpenByVisibility ||
                   openingChatId !== null
                 }
-                onPress={() =>
-                  void openChat(item, item.status === 'queue' ? index : null)
-                }
+                onPress={() => void openChat(item, normalizedQueueIndexForOpen)}
               />
             );
 
@@ -3467,8 +3720,20 @@ export function ChatListScreen({ route, navigation }: Props) {
 
             const queueActions = [
               {
+                key: 'pin',
+                visible: canPinItem,
+                style: styles.swipePinBtn,
+                label: isPinned ? pt.unpin : pt.pin,
+                loading: pinLoading,
+                disabled: pinLoading,
+                onPress: () => {
+                  openedSwipeableRef.current?.close();
+                  void handleTogglePinnedChat(item);
+                },
+              },
+              {
                 key: 'attend',
-                visible: isQueueItem,
+                visible: canShowLifecycleSwipeActions && isQueueItem,
                 style: styles.swipeAttendBtn,
                 label: pt.attend_service,
                 loading: attendingChatId === item.chat_id,
@@ -3487,7 +3752,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               },
               {
                 key: 'transfer',
-                visible: canTransferItem,
+                visible: canShowLifecycleSwipeActions && canTransferItem,
                 style: styles.swipeTransferBtn,
                 label: pt.transfer,
                 loading: false,
@@ -3499,7 +3764,7 @@ export function ChatListScreen({ route, navigation }: Props) {
               },
               {
                 key: 'close',
-                visible: canCloseItem,
+                visible: canShowLifecycleSwipeActions && canCloseItem,
                 style: styles.swipeCloseBtn,
                 label: closeSwipeLabel,
                 loading: false,
@@ -3516,7 +3781,7 @@ export function ChatListScreen({ route, navigation }: Props) {
 
             const maxActionsWidth = Math.max(
               140,
-              Math.floor(screenWidth * 0.5)
+              Math.floor(screenWidth * 0.65)
             );
             const actionWidth = Math.floor(
               maxActionsWidth / Math.max(queueActions.length, 1)
@@ -4086,6 +4351,9 @@ const styles = StyleSheet.create({
   },
   swipeAttendBtn: {
     backgroundColor: colors.success,
+  },
+  swipePinBtn: {
+    backgroundColor: colors.primary,
   },
   swipeTransferBtn: {
     backgroundColor: colors.warning,

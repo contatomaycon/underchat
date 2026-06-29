@@ -93,6 +93,7 @@ export interface TransferChatPayload {
   worker_id?: string;
   user_id?: string | null;
   sector_id?: string | null;
+  chatbot_id?: string | null;
   annotation?: string | null;
   keep_in_chat?: boolean;
   send_message_on_transfer?: boolean;
@@ -318,6 +319,26 @@ export async function listChats(
   const res = await apiGet<ListChatsRawResponse>('/chat', q);
   if (!res?.data) return null;
   return normalizeListChatsResponse(res.data, params);
+}
+
+export async function listPinnedChats(): Promise<ListChatsResult[] | null> {
+  const res = await apiGet<ListChatsResult[]>('/chat/pinned');
+  if (!res?.status) return null;
+  return res.data ?? [];
+}
+
+export async function pinChat(chatId: string): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+
+  const res = await apiPost<null>(`/chat/pinned/${chatId}`, {});
+  return !!res?.status;
+}
+
+export async function unpinChat(chatId: string): Promise<boolean> {
+  if (!chatId || chatId.trim().length === 0) return false;
+
+  const res = await apiDelete<null>(`/chat/pinned/${chatId}`);
+  return !!res?.status;
 }
 
 export async function listMyChats(
@@ -711,6 +732,7 @@ export async function transferChat(
     worker_id: payload.worker_id,
     user_id: payload.user_id ?? undefined,
     sector_id: payload.sector_id ?? undefined,
+    chatbot_id: payload.chatbot_id ?? undefined,
     annotation: payload.annotation?.trim() || undefined,
     keep_in_chat: payload.keep_in_chat === true,
   };

@@ -16,13 +16,7 @@ export type ContactIgnore =
   (typeof CONTACT_IGNORE)[keyof typeof CONTACT_IGNORE];
 
 export type ContactSortField =
-  | 'name'
-  | 'last_name'
-  | 'nickname'
-  | 'email'
-  | 'phone'
-  | 'label'
-  | 'birthday';
+  'name' | 'last_name' | 'nickname' | 'email' | 'phone' | 'label' | 'birthday';
 
 export type ContactSortOrder = 'asc' | 'desc';
 
@@ -163,6 +157,11 @@ export interface TransferSector {
   } | null;
 }
 
+export interface WorkerConfigChatbot {
+  chatbot_id: string;
+  name: string;
+}
+
 export interface WorkerConfigForChat {
   show_worker_name: boolean;
   show_attendee_name: boolean;
@@ -178,4 +177,6 @@ export interface WorkerConfigForChat {
   has_ura_output: boolean;
   ai_agent_enabled: boolean;
   ai_agent_id: string | null;
+  input_chatbot?: WorkerConfigChatbot | null;
+  output_chatbot?: WorkerConfigChatbot | null;
 }

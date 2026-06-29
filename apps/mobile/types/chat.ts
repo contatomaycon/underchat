@@ -239,6 +239,19 @@ export interface MessageContentForward {
   source_message_key?: MessageKey | null;
 }
 
+export interface MessageContentPin {
+  pin_action?: string | null;
+  pin_user_name?: string | null;
+  pin_user_phone?: string | null;
+}
+
+export interface MessageContentEphemeral {
+  enabled: boolean;
+  expiration_seconds?: number | null;
+  user_name?: string | null;
+  user_phone?: string | null;
+}
+
 export interface MessageContentTemplate {
   hydratedTitleText?: string | null;
   hydratedContentText?: string | null;
@@ -303,8 +316,8 @@ export interface MessageContent {
   context_info?: MessageContextInfo | null;
   template?: MessageContentTemplate | null;
   album?: MessageContentAlbum | null;
-  pin?: unknown;
-  ephemeral?: unknown;
+  pin?: MessageContentPin | null;
+  ephemeral?: MessageContentEphemeral | null;
   forward?: MessageContentForward | null;
 }
 
