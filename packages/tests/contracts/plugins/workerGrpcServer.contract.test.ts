@@ -16,4 +16,15 @@ describe('workerGrpcServer plugin', () => {
     );
     expect(source).toContain('callback(null, {});');
   });
+
+  it('copies reserved recreate server slot metadata into the worker payload', () => {
+    const source = fs.readFileSync(
+      path.join(process.cwd(), 'packages/plugins/proto/workerGrpcServer.ts'),
+      'utf8'
+    );
+
+    expect(source).toContain('WORKER_RECREATE_SERVER_SLOT_KEY_METADATA');
+    expect(source).toContain('payload.recreate_server_slot_key');
+    expect(source).toContain('payload.recreate_server_slot_token');
+  });
 });

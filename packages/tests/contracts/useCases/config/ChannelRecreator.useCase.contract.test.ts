@@ -208,4 +208,46 @@ describe('ChannelRecreatorUseCase', () => {
       })
     );
   });
+
+  it('includes reserved recreate server slot in lifecycle message', async () => {
+    const workerService = {
+      viewWorker: jest.fn(async () => ({
+        status: { id: EWorkerStatus.online },
+      })),
+      updateWorkerById: jest.fn(async () => true),
+    };
+    const accountService = { existsAccountById: jest.fn(async () => true) };
+    const configService = {
+      viewChannelBalancer: jest.fn(async () => ({
+        account_id: 'acc-1',
+        server_id: 'srv-1',
+      })),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => undefined),
+      publish: jest.fn(async () => undefined),
+    };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const useCase = new ChannelRecreatorUseCase(
+      workerService as never,
+      accountService as never,
+      configService as never,
+      centrifugoService as never,
+      workerLifecycleQueueService as never
+    );
+
+    await useCase.execute(jest.fn() as never, 'worker-1', undefined, {
+      recreate_server_slot_key: 'worker:recreate:server:srv-1:slot:0',
+      recreate_server_slot_token: 'worker-1:token',
+    });
+
+    expect(workerLifecycleQueueService.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recreate_server_slot_key: 'worker:recreate:server:srv-1:slot:0',
+        recreate_server_slot_token: 'worker-1:token',
+      })
+    );
+  });
 });

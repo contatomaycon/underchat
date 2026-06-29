@@ -325,6 +325,30 @@ function buildHandler(
       }
       return deleted;
     }),
+    eval: jest.fn(
+      async (
+        script: string,
+        _keyCount: number,
+        key: string,
+        token: string,
+        ttlMs?: number
+      ) => {
+        if (script.includes('PEXPIRE')) {
+          return redisStore.get(key) === token && ttlMs ? 1 : 0;
+        }
+
+        if (script.includes('DEL')) {
+          if (redisStore.get(key) !== token) {
+            return 0;
+          }
+
+          redisStore.delete(key);
+          return 1;
+        }
+
+        return 0;
+      }
+    ),
   };
   const redisQueueService = {
     streamKey: jest.fn((workerId: string, workerTypeId: string) => {
@@ -530,8 +554,11 @@ describe('WorkerCommandHandlerService connection', () => {
       expect.any(Number),
       'NX'
     );
-    expect(deps.redis.del).toHaveBeenCalledWith(
-      'worker:recreate:server:server-1:slot:0'
+    expect(deps.redis.eval).toHaveBeenCalledWith(
+      expect.stringContaining('DEL'),
+      1,
+      'worker:recreate:server:server-1:slot:0',
+      expect.stringContaining('worker-1:')
     );
     expect(deps.workerService.createContainerWorker).toHaveBeenCalledWith(
       expect.any(String),
@@ -544,6 +571,45 @@ describe('WorkerCommandHandlerService connection', () => {
       expect.objectContaining({ workerTypeId: EWorkerType.wwebjs }),
       'worker-1',
       { requireExistingVolume: true }
+    );
+  });
+
+  it('adopts and releases a reserved per-server recreate slot', async () => {
+    const deps = buildHandler();
+    const slotKey = 'worker:recreate:server:server-1:slot:0';
+    const slotToken = 'worker-1:reserved-token';
+    deps.redisStore.set(slotKey, slotToken);
+
+    await deps.handler.handle({
+      action: EWorkerAction.recreate,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      server_id: 'server-1',
+      worker_type_id: EWorkerType.wwebjs,
+      previous_worker_status_id: EWorkerStatus.online,
+      recreate_server_slot_key: slotKey,
+      recreate_server_slot_token: slotToken,
+    });
+
+    expect(deps.redis.set).not.toHaveBeenCalledWith(
+      slotKey,
+      expect.any(String),
+      'PX',
+      expect.any(Number),
+      'NX'
+    );
+    expect(deps.redis.eval).toHaveBeenCalledWith(
+      expect.stringContaining('PEXPIRE'),
+      1,
+      slotKey,
+      slotToken,
+      expect.any(Number)
+    );
+    expect(deps.redis.eval).toHaveBeenCalledWith(
+      expect.stringContaining('DEL'),
+      1,
+      slotKey,
+      slotToken
     );
   });
 

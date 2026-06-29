@@ -7,6 +7,7 @@ import { ListChannelsResponse } from '@core/schema/config/listChannels/response.
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
+import { IConfigChannelRecreateTarget } from '@core/common/interfaces/IConfigChannelRecreateTarget';
 
 @injectable()
 export class ConfigService {
@@ -42,6 +43,14 @@ export class ConfigService {
     filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
   ): Promise<string[]> => {
     return this.channelsListerRepository.listAllNonDeletedChannelIds(filters);
+  };
+
+  listAllNonDeletedChannelRecreateTargets = async (
+    filters: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+  ): Promise<IConfigChannelRecreateTarget[]> => {
+    return this.channelsListerRepository.listAllNonDeletedChannelRecreateTargets(
+      filters
+    );
   };
 
   getChannelsStatistics = async (): Promise<{

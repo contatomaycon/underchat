@@ -90,6 +90,10 @@ export class ChannelRecreatorUseCase {
   private buildLifecycleMessage(input: {
     payload: IWorkerPayload;
     operationId: string;
+    recreateServerSlot?: {
+      key: string;
+      token: string;
+    };
   }): IWorkerLifecycleQueueMessage {
     return {
       request_id: uuidv7(),
@@ -102,6 +106,8 @@ export class ChannelRecreatorUseCase {
       worker_status_id: input.payload.worker_status_id,
       source: 'config_recreate',
       previous_worker_status_id: input.payload.previous_worker_status_id,
+      recreate_server_slot_key: input.recreateServerSlot?.key,
+      recreate_server_slot_token: input.recreateServerSlot?.token,
       debug_trace_id: input.payload.debug_trace_id,
       requested_at: currentTime(),
     };
@@ -122,7 +128,11 @@ export class ChannelRecreatorUseCase {
   async execute(
     t: TFunction<'translation', undefined>,
     channelId: string,
-    debugTraceIdInput?: string
+    debugTraceIdInput?: string,
+    options?: {
+      recreate_server_slot_key?: string;
+      recreate_server_slot_token?: string;
+    }
   ): Promise<IWorkerLifecycleAck> {
     const debugTraceId =
       debugTraceIdInput ??
@@ -163,8 +173,7 @@ export class ChannelRecreatorUseCase {
       lifecycle_operation_id: lifecycleOperationId,
       debug_trace_id: debugTraceId,
       previous_worker_status_id: viewWorker?.status?.id as
-        | EWorkerStatus
-        | undefined,
+        EWorkerStatus | undefined,
     };
 
     const inputUpdate: IUpdateWorker = {
@@ -203,6 +212,14 @@ export class ChannelRecreatorUseCase {
       this.buildLifecycleMessage({
         payload: inputRecreate,
         operationId: lifecycleOperationId,
+        recreateServerSlot:
+          options?.recreate_server_slot_key &&
+          options?.recreate_server_slot_token
+            ? {
+                key: options.recreate_server_slot_key,
+                token: options.recreate_server_slot_token,
+              }
+            : undefined,
       })
     );
     void this.connectionLifecycleDebugService.log(

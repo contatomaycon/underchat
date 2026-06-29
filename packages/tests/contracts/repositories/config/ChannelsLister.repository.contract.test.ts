@@ -117,14 +117,19 @@ describe('ChannelsListerRepository', () => {
   it('returns total and all non-deleted channel ids', async () => {
     const totalChain = createCountChain([{ count: 2 }]);
     const idsChain = createCountChain([
-      { worker_id: 'w1' },
-      { worker_id: 'w2' },
+      { worker_id: 'w1', server_id: 'srv-1' },
+      { worker_id: 'w2', server_id: 'srv-2' },
+    ]);
+    const targetsChain = createCountChain([
+      { worker_id: 'w1', server_id: 'srv-1' },
+      { worker_id: 'w2', server_id: 'srv-2' },
     ]);
     const dbRo = {
       select: jest
         .fn()
         .mockImplementationOnce(totalChain.select)
-        .mockImplementationOnce(idsChain.select),
+        .mockImplementationOnce(idsChain.select)
+        .mockImplementationOnce(targetsChain.select),
     };
     const repository = new ChannelsListerRepository(dbRo as never);
 
@@ -132,22 +137,28 @@ describe('ChannelsListerRepository', () => {
     await expect(
       repository.listAllNonDeletedChannelIds({} as never)
     ).resolves.toEqual(['w1', 'w2']);
+    await expect(
+      repository.listAllNonDeletedChannelRecreateTargets({} as never)
+    ).resolves.toEqual([
+      { worker_id: 'w1', server_id: 'srv-1' },
+      { worker_id: 'w2', server_id: 'srv-2' },
+    ]);
   });
 
   it('keeps exact filters and searches name or number for recreate-all ids', async () => {
-    const chain = createCountChain([{ worker_id: 'w1' }]);
+    const chain = createCountChain([{ worker_id: 'w1', server_id: 'srv-1' }]);
     const dbRo = { select: chain.select };
     const repository = new ChannelsListerRepository(dbRo as never);
 
     await expect(
-      repository.listAllNonDeletedChannelIds({
+      repository.listAllNonDeletedChannelRecreateTargets({
         status: EWorkerStatus.error,
         type: EWorkerType.baileys,
         account: 'acc-1',
         name: 'Display',
         number: '5511999999999',
       })
-    ).resolves.toEqual(['w1']);
+    ).resolves.toEqual([{ worker_id: 'w1', server_id: 'srv-1' }]);
 
     const whereSql = collectSqlParts(
       chain.queryBuilder.where.mock.calls[0][0]

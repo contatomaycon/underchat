@@ -78,11 +78,11 @@ import { logLocalConnectionStatus } from '@core/common/functions/localConnection
 import {
   WorkerSelfHealRecoveryState,
   parseWorkerSelfHealRecoveryState,
-  workerRecreateServerSlotKey,
   workerSelfHealCooldownKey,
   workerSelfHealInflightKey,
   workerSelfHealRecoveryKey,
 } from '@core/common/functions/workerSelfHealingKeys';
+import { WorkerRecreateServerSlotService } from '@core/services/workerRecreateServerSlot.service';
 
 interface ResolvedWorkerDataForContainer {
   accountIdResolved: string;
@@ -170,18 +170,6 @@ export class WorkerCommandHandlerService {
     60,
     Number(process.env.WORKER_SELF_HEAL_RECOVERY_WINDOW_SECONDS) || 10 * 60
   );
-  private readonly recreateServerSlotCount = Math.max(
-    1,
-    Number(process.env.WORKER_RECREATE_SERVER_SLOT_COUNT) || 2
-  );
-  private readonly recreateServerSlotTtlMs = Math.max(
-    60_000,
-    Number(process.env.WORKER_RECREATE_SERVER_SLOT_TTL_MS) || 20 * 60_000
-  );
-  private readonly recreateServerSlotWaitMs = Math.max(
-    60_000,
-    Number(process.env.WORKER_RECREATE_SERVER_SLOT_WAIT_MS) || 30 * 60_000
-  );
   private connectionRequestTimers = new Map<string, NodeJS.Timeout>();
   private connectionRequestAttempts = new Map<string, number>();
   private connectionRequestPayloads = new Map<
@@ -233,7 +221,11 @@ export class WorkerCommandHandlerService {
     @inject(ConnectionLifecycleDebugService)
     private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
       log: async () => undefined,
-    } as unknown as ConnectionLifecycleDebugService
+    } as unknown as ConnectionLifecycleDebugService,
+    @inject(WorkerRecreateServerSlotService)
+    private readonly workerRecreateServerSlotService: WorkerRecreateServerSlotService = new WorkerRecreateServerSlotService(
+      redis
+    )
   ) {}
 
   private logDebug(
@@ -274,15 +266,6 @@ export class WorkerCommandHandlerService {
     ttlSeconds: number
   ): Promise<boolean> {
     const result = await this.redis.set(key, value, 'EX', ttlSeconds, 'NX');
-    return result === 'OK';
-  }
-
-  private async redisSetNxMs(
-    key: string,
-    value: string,
-    ttlMs: number
-  ): Promise<boolean> {
-    const result = await this.redis.set(key, value, 'PX', ttlMs, 'NX');
     return result === 'OK';
   }
 
@@ -1132,8 +1115,7 @@ export class WorkerCommandHandlerService {
     const workerId = input.worker_id?.trim();
     const accountId = input.account_id?.trim();
     const workerTypeId = input.worker_type_id?.trim() as
-      | EWorkerType
-      | undefined;
+      EWorkerType | undefined;
 
     if (!workerId || !accountId || !workerTypeId) {
       throw new Error(
@@ -4623,62 +4605,34 @@ export class WorkerCommandHandlerService {
     data: IWorkerPayload,
     callback: () => Promise<T>
   ): Promise<T> {
-    const token = `${data.worker_id}:${data.lifecycle_operation_id ?? uuidv7()}`;
     const startedAt = Date.now();
-    let slotKey: string | null = null;
+    return this.workerRecreateServerSlotService.withSlot(
+      {
+        serverId: data.server_id,
+        workerId: data.worker_id,
+        lifecycleOperationId: data.lifecycle_operation_id,
+      },
+      async (lease) => {
+        this.logDebug('service.recreate_worker.server_slot_acquired', {
+          trace_id: data.debug_trace_id,
+          layer: 'service',
+          worker_id: data.worker_id,
+          account_id: data.account_id,
+          worker_type_id: data.worker_type_id,
+          lifecycle_operation_id: data.lifecycle_operation_id,
+          server_id: data.server_id,
+          slot: lease.slot,
+          reserved_slot: lease.reserved,
+          wait_ms: Date.now() - startedAt,
+        });
 
-    while (Date.now() - startedAt <= this.recreateServerSlotWaitMs) {
-      for (let slot = 0; slot < this.recreateServerSlotCount; slot++) {
-        const key = workerRecreateServerSlotKey(data.server_id, slot);
-        if (await this.redisSetNxMs(key, token, this.recreateServerSlotTtlMs)) {
-          slotKey = key;
-          this.logDebug('service.recreate_worker.server_slot_acquired', {
-            trace_id: data.debug_trace_id,
-            layer: 'service',
-            worker_id: data.worker_id,
-            account_id: data.account_id,
-            worker_type_id: data.worker_type_id,
-            lifecycle_operation_id: data.lifecycle_operation_id,
-            server_id: data.server_id,
-            slot,
-            wait_ms: Date.now() - startedAt,
-          });
-          break;
-        }
+        return callback();
+      },
+      {
+        reservedSlotKey: data.recreate_server_slot_key,
+        reservedSlotToken: data.recreate_server_slot_token,
       }
-
-      if (slotKey) {
-        break;
-      }
-
-      await this.sleep(1000);
-    }
-
-    if (!slotKey) {
-      throw new Error(
-        `Timed out waiting for recreate slot on server ${data.server_id}`
-      );
-    }
-
-    try {
-      return await callback();
-    } finally {
-      await this.releaseRecreateServerSlot(slotKey, token);
-    }
-  }
-
-  private async releaseRecreateServerSlot(
-    slotKey: string,
-    token: string
-  ): Promise<void> {
-    try {
-      const current = await this.redis.get(slotKey);
-      if (current === token) {
-        await this.redis.del(slotKey);
-      }
-    } catch {
-      await this.redis.del(slotKey).catch(() => undefined);
-    }
+    );
   }
 
   private async publishWorkerDisponible(

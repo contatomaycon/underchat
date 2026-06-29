@@ -11,6 +11,7 @@ describe('ConfigService', () => {
         listChannels,
         listChannelsTotal,
         listAllNonDeletedChannelIds: jest.fn(),
+        listAllNonDeletedChannelRecreateTargets: jest.fn(),
       } as never,
       { viewChannelBalancer: jest.fn() } as never,
       { getChannelsStatistics: jest.fn() } as never
@@ -26,11 +27,16 @@ describe('ConfigService', () => {
   it('delegates balancer and listAllNonDeletedChannelIds', async () => {
     const viewChannelBalancer = jest.fn(async () => ({ worker_id: 'w1' }));
     const listAllNonDeletedChannelIds = jest.fn(async () => ['c1', 'c2']);
+    const listAllNonDeletedChannelRecreateTargets = jest.fn(async () => [
+      { worker_id: 'c1', server_id: 'srv-1' },
+      { worker_id: 'c2', server_id: 'srv-2' },
+    ]);
     const service = new ConfigService(
       {
         listChannels: jest.fn(),
         listChannelsTotal: jest.fn(),
         listAllNonDeletedChannelIds,
+        listAllNonDeletedChannelRecreateTargets,
       } as never,
       { viewChannelBalancer } as never,
       { getChannelsStatistics: jest.fn() } as never
@@ -42,6 +48,14 @@ describe('ConfigService', () => {
     await expect(
       service.listAllNonDeletedChannelIds({ include_test: true } as never)
     ).resolves.toEqual(['c1', 'c2']);
+    await expect(
+      service.listAllNonDeletedChannelRecreateTargets({
+        include_test: true,
+      } as never)
+    ).resolves.toEqual([
+      { worker_id: 'c1', server_id: 'srv-1' },
+      { worker_id: 'c2', server_id: 'srv-2' },
+    ]);
   });
 
   it('maps channels statistics with default zero values', async () => {
@@ -58,6 +72,7 @@ describe('ConfigService', () => {
         listChannels: jest.fn(),
         listChannelsTotal: jest.fn(),
         listAllNonDeletedChannelIds: jest.fn(),
+        listAllNonDeletedChannelRecreateTargets: jest.fn(),
       } as never,
       { viewChannelBalancer: jest.fn() } as never,
       { getChannelsStatistics } as never

@@ -127,6 +127,12 @@ function makeSut() {
       warmup_enabled: true,
     })),
   };
+  const connectionLifecycleDebugService = {
+    log: jest.fn(async () => undefined),
+  };
+  const workerRecreateServerSlotService = {
+    releaseReservedSlot: jest.fn(async () => undefined),
+  };
   const server = {
     log: {
       error: jest.fn(),
@@ -138,7 +144,9 @@ function makeSut() {
     workerGrpcClientService as never,
     workerService as never,
     workerWarmPoolQueueService as never,
-    workerWarmPoolSettingsService as never
+    workerWarmPoolSettingsService as never,
+    connectionLifecycleDebugService as never,
+    workerRecreateServerSlotService as never
   );
 
   return {
@@ -151,6 +159,7 @@ function makeSut() {
     workerService,
     workerWarmPoolQueueService,
     workerWarmPoolSettingsService,
+    workerRecreateServerSlotService,
   };
 }
 
@@ -211,11 +220,79 @@ describe('WorkerLifecycleConsume', () => {
     expect(deps.workerGrpcClientService.createWorker).not.toHaveBeenCalled();
     expect(deps.workerGrpcClientService.recreateWorker).not.toHaveBeenCalled();
     expect(deps.workerGrpcClientService.cleanupWorker).not.toHaveBeenCalled();
+    expect(
+      deps.workerRecreateServerSlotService.releaseReservedSlot
+    ).not.toHaveBeenCalled();
     expect(commitOffset).toHaveBeenCalledWith(
       deps.kafkaConsumer,
       'worker.lifecycle.request',
       1,
       3
+    );
+  });
+
+  it('releases a reserved recreate slot when the lifecycle message is stale', async () => {
+    const deps = makeSut();
+    deps.workerService.viewWorkerForMonitor.mockResolvedValueOnce(
+      currentWorker({ lifecycle_operation_id: 'operation-new' })
+    );
+
+    await deps.sut.execute(deps.server as never);
+    deps.handlers.data({
+      value: Buffer.from(
+        JSON.stringify(
+          lifecyclePayload({
+            action: 'recreate',
+            source: 'config_recreate',
+            worker_status_id: EWorkerStatus.recreating,
+            recreate_server_slot_key: 'worker:recreate:server:server-1:slot:0',
+            recreate_server_slot_token: 'worker-1:slot-token',
+          })
+        )
+      ),
+      partition: 1,
+      offset: 3,
+    });
+    await flushPromises();
+    await deps.sut.close();
+
+    expect(
+      deps.workerRecreateServerSlotService.releaseReservedSlot
+    ).toHaveBeenCalledWith({
+      serverId: 'server-1',
+      key: 'worker:recreate:server:server-1:slot:0',
+      token: 'worker-1:slot-token',
+    });
+  });
+
+  it('passes reserved recreate server slots to gRPC recreate dispatch', async () => {
+    const deps = makeSut();
+
+    await deps.sut.execute(deps.server as never);
+    deps.handlers.data({
+      value: Buffer.from(
+        JSON.stringify(
+          lifecyclePayload({
+            action: 'recreate',
+            source: 'config_recreate',
+            worker_status_id: EWorkerStatus.recreating,
+            recreate_server_slot_key: 'worker:recreate:server:server-1:slot:0',
+            recreate_server_slot_token: 'worker-1:slot-token',
+          })
+        )
+      ),
+      partition: 1,
+      offset: 5,
+    });
+    await flushPromises();
+    await deps.sut.close();
+
+    expect(deps.workerGrpcClientService.recreateWorker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: EWorkerAction.recreate,
+        recreate_server_slot_key: 'worker:recreate:server:server-1:slot:0',
+        recreate_server_slot_token: 'worker-1:slot-token',
+      })
     );
   });
 

@@ -23,6 +23,7 @@ import {
 import { ListChannelsRequest } from '@core/schema/config/listChannels/request.schema';
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
 import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
+import { IConfigChannelRecreateTarget } from '@core/common/interfaces/IConfigChannelRecreateTarget';
 
 @injectable()
 export class ChannelsListerRepository {
@@ -204,6 +205,15 @@ export class ChannelsListerRepository {
   listAllNonDeletedChannelIds = async (
     filtersInput: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
   ): Promise<string[]> => {
+    const targets =
+      await this.listAllNonDeletedChannelRecreateTargets(filtersInput);
+
+    return targets.map((item) => item.worker_id);
+  };
+
+  listAllNonDeletedChannelRecreateTargets = async (
+    filtersInput: Omit<IConfigChannelsRecreateAllPayload, 'account_id'>
+  ): Promise<IConfigChannelRecreateTarget[]> => {
     const filters: SQLWrapper[] = [
       isNull(worker.deleted_at),
       isNull(account.deleted_at),
@@ -232,6 +242,7 @@ export class ChannelsListerRepository {
     const result = await this.dbRo
       .select({
         worker_id: worker.worker_id,
+        server_id: worker.server_id,
       })
       .from(worker)
       .innerJoin(account, eq(account.account_id, worker.account_id))
@@ -246,6 +257,9 @@ export class ChannelsListerRepository {
       .where(and(...filters))
       .execute();
 
-    return result.map((item) => item.worker_id);
+    return result.map((item) => ({
+      worker_id: item.worker_id,
+      server_id: item.server_id,
+    }));
   };
 }

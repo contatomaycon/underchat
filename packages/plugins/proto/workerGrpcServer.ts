@@ -16,6 +16,10 @@ import {
   protoToWorkerPayload,
   protoToStatusConnectionRequest,
 } from '@core/common/functions/workerCommandProtoMapper';
+import {
+  WORKER_RECREATE_SERVER_SLOT_KEY_METADATA,
+  WORKER_RECREATE_SERVER_SLOT_TOKEN_METADATA,
+} from '@core/common/functions/workerRecreateServerSlotMetadata';
 import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
 import { IChangeConnectionStatusRequestProto } from '@core/common/interfaces/IChangeConnectionStatusRequestProto';
 import { INotifyWorkerStatusRequestProto } from '@core/common/interfaces/INotifyWorkerStatusRequestProto';
@@ -55,6 +59,25 @@ if (!workerCommandProto || !workerCommandProto.WorkerCommand) {
 
 const WorkerCommandService = workerCommandProto.WorkerCommand;
 
+function getMetadataString(
+  call: ServerUnaryCall<unknown, unknown>,
+  key: string
+): string | undefined {
+  const value = call.metadata.get(key)[0];
+
+  if (Buffer.isBuffer(value)) {
+    const text = value.toString('utf8').trim();
+    return text || undefined;
+  }
+
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text || undefined;
+  }
+
+  return undefined;
+}
+
 const workerGrpcServerPlugin: FastifyPluginAsync = async (
   fastify: FastifyInstance
 ) => {
@@ -85,6 +108,18 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
         null
       );
       return;
+    }
+    const recreateServerSlotKey = getMetadataString(
+      call,
+      WORKER_RECREATE_SERVER_SLOT_KEY_METADATA
+    );
+    const recreateServerSlotToken = getMetadataString(
+      call,
+      WORKER_RECREATE_SERVER_SLOT_TOKEN_METADATA
+    );
+    if (recreateServerSlotKey && recreateServerSlotToken) {
+      payload.recreate_server_slot_key = recreateServerSlotKey;
+      payload.recreate_server_slot_token = recreateServerSlotToken;
     }
 
     void connectionLifecycleDebugService.log('service.command_grpc.received', {

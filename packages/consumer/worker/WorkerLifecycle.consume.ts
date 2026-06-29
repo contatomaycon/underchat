@@ -16,6 +16,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
+import { WorkerRecreateServerSlotService } from '@core/services/workerRecreateServerSlot.service';
 
 @singleton()
 export class WorkerLifecycleConsume {
@@ -39,7 +40,11 @@ export class WorkerLifecycleConsume {
     @inject(ConnectionLifecycleDebugService)
     private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
       log: async () => undefined,
-    } as unknown as ConnectionLifecycleDebugService
+    } as unknown as ConnectionLifecycleDebugService,
+    @inject(WorkerRecreateServerSlotService)
+    private readonly workerRecreateServerSlotService: WorkerRecreateServerSlotService = {
+      releaseReservedSlot: async () => undefined,
+    } as unknown as WorkerRecreateServerSlotService
   ) {}
 
   async execute(server: FastifyInstance): Promise<void> {
@@ -68,6 +73,9 @@ export class WorkerLifecycleConsume {
           },
           'Worker lifecycle consume failed'
         );
+      },
+      onDiscarded: async (payload) => {
+        await this.releaseReservedRecreateSlot(payload);
       },
       maxRetries: 3,
       retryDelaysMs: [1000, 5000],
@@ -121,6 +129,7 @@ export class WorkerLifecycleConsume {
           reason: stale,
         }
       );
+      await this.releaseReservedRecreateSlot(payload);
       return;
     }
 
@@ -152,6 +161,8 @@ export class WorkerLifecycleConsume {
       previous_worker_status_id: payload.previous_worker_status_id,
       remove_session: payload.remove_session,
       remove_volume: payload.remove_volume,
+      recreate_server_slot_key: payload.recreate_server_slot_key,
+      recreate_server_slot_token: payload.recreate_server_slot_token,
       lifecycle_operation_id: payload.operation_id,
       debug_trace_id: payload.debug_trace_id,
     };
@@ -193,6 +204,20 @@ export class WorkerLifecycleConsume {
     await this.workerGrpcClientService.cleanupWorker({
       ...workerPayload,
       action: EWorkerAction.cleanup,
+    });
+  }
+
+  private async releaseReservedRecreateSlot(
+    payload: IWorkerLifecycleQueueMessage
+  ): Promise<void> {
+    if (payload.action !== 'recreate') {
+      return;
+    }
+
+    await this.workerRecreateServerSlotService.releaseReservedSlot({
+      serverId: payload.server_id,
+      key: payload.recreate_server_slot_key,
+      token: payload.recreate_server_slot_token,
     });
   }
 

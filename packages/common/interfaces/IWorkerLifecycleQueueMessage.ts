@@ -3,10 +3,7 @@ import { EWorkerStatus } from '../enums/EWorkerStatus';
 import { EWorkerType } from '../enums/EWorkerType';
 
 export type WorkerLifecycleQueueAction =
-  | 'create'
-  | 'recreate'
-  | 'activate_warm'
-  | 'cleanup_previous_runtime';
+  'create' | 'recreate' | 'activate_warm' | 'cleanup_previous_runtime';
 
 export type WorkerLifecycleQueueSource =
   | 'worker_create'
@@ -31,6 +28,8 @@ export interface IWorkerLifecycleQueueMessage {
   previous_server_id?: string;
   previous_worker_type_id?: EWorkerType;
   previous_worker_status_id?: EWorkerStatus;
+  recreate_server_slot_key?: string;
+  recreate_server_slot_token?: string;
   debug_trace_id?: string;
   requested_at: string;
 }

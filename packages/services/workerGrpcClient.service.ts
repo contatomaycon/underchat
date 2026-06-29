@@ -12,6 +12,10 @@ import {
   workerPayloadToProto,
   statusConnectionRequestToProto,
 } from '@core/common/functions/workerCommandProtoMapper';
+import {
+  WORKER_RECREATE_SERVER_SLOT_KEY_METADATA,
+  WORKER_RECREATE_SERVER_SLOT_TOKEN_METADATA,
+} from '@core/common/functions/workerRecreateServerSlotMetadata';
 import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
@@ -164,10 +168,7 @@ export class WorkerGrpcClientService {
 
   private async call(
     method:
-      | 'CreateWorker'
-      | 'DeleteWorker'
-      | 'RecreateWorker'
-      | 'CleanupWorker',
+      'CreateWorker' | 'DeleteWorker' | 'RecreateWorker' | 'CleanupWorker',
     payload: IWorkerPayload,
     timeoutMs?: number
   ): Promise<void> {
@@ -182,6 +183,7 @@ export class WorkerGrpcClientService {
 
     const protoPayload: IWorkerPayloadProto = workerPayloadToProto(payload);
     const metadata = new Metadata();
+    this.applyRecreateServerSlotMetadata(metadata, payload);
     const deadline = timeoutMs ? new Date(Date.now() + timeoutMs) : undefined;
     const options = deadline ? { deadline } : {};
 
@@ -222,6 +224,27 @@ export class WorkerGrpcClientService {
         method,
         grpc_address: address,
       }
+    );
+  }
+
+  private applyRecreateServerSlotMetadata(
+    metadata: Metadata,
+    payload: IWorkerPayload
+  ): void {
+    if (
+      !payload.recreate_server_slot_key ||
+      !payload.recreate_server_slot_token
+    ) {
+      return;
+    }
+
+    metadata.set(
+      WORKER_RECREATE_SERVER_SLOT_KEY_METADATA,
+      payload.recreate_server_slot_key
+    );
+    metadata.set(
+      WORKER_RECREATE_SERVER_SLOT_TOKEN_METADATA,
+      payload.recreate_server_slot_token
     );
   }
 

@@ -17,5 +17,7 @@ export interface IWorkerPayload {
   remove_volume?: boolean;
   lifecycle_operation_id?: string;
   recreate_available_at?: string | null;
+  recreate_server_slot_key?: string;
+  recreate_server_slot_token?: string;
   debug_trace_id?: string;
 }
