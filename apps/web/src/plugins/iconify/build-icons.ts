@@ -156,7 +156,12 @@ const sources: BundleScriptConfig = {
     require.resolve('@iconify-json/tabler/icons.json'),
     {
       filename: require.resolve('@iconify-json/mdi/icons.json'),
-      icons: ['close-circle', 'language-javascript', 'language-typescript'],
+      icons: [
+        'close-circle',
+        'language-javascript',
+        'language-typescript',
+        'whatsapp',
+      ],
     },
     {
       filename: require.resolve('@iconify-json/fa/icons.json'),

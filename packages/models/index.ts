@@ -27,3 +27,4 @@ export * from './push';
 export * from './release';
 export * from './s3BackupUpload';
 export * from './internalChat';
+export * from './whatsapp';

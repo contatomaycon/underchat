@@ -143,6 +143,7 @@ declare module 'vue-router/auto-routes' {
       | 'config-nfse-tab'
       | 'config-notifications-tab'
       | 'config-s3-backup-tab'
+      | 'config-whatsapp-embedded-tab'
     >,
     'config-channels-tab': RouteRecordInfo<
       'config-channels-tab',
@@ -182,6 +183,13 @@ declare module 'vue-router/auto-routes' {
     'config-s3-backup-tab': RouteRecordInfo<
       'config-s3-backup-tab',
       '/config/s3-backup-tab',
+      Record<never, never>,
+      Record<never, never>,
+      | never
+    >,
+    'config-whatsapp-embedded-tab': RouteRecordInfo<
+      'config-whatsapp-embedded-tab',
+      '/config/whatsapp-embedded-tab',
       Record<never, never>,
       Record<never, never>,
       | never
@@ -563,6 +571,7 @@ declare module 'vue-router/auto-routes' {
         | 'config-nfse-tab'
         | 'config-notifications-tab'
         | 'config-s3-backup-tab'
+        | 'config-whatsapp-embedded-tab'
       views:
         | 'default'
     }
@@ -599,6 +608,12 @@ declare module 'vue-router/auto-routes' {
     'src/pages/config/s3-backup-tab.vue': {
       routes:
         | 'config-s3-backup-tab'
+      views:
+        | never
+    }
+    'src/pages/config/whatsapp-embedded-tab.vue': {
+      routes:
+        | 'config-whatsapp-embedded-tab'
       views:
         | never
     }

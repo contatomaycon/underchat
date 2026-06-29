@@ -28,6 +28,8 @@ import { recreateWarmChannel } from './methods/recreateWarmChannel';
 import { recreateWarmChannelsAll } from './methods/recreateWarmChannelsAll';
 import { viewWarmChannelSettings } from './methods/viewWarmChannelSettings';
 import { updateWarmChannelSettings } from './methods/updateWarmChannelSettings';
+import { viewWhatsappEmbeddedConfig } from './methods/viewWhatsappEmbeddedConfig';
+import { updateWhatsappEmbeddedConfig } from './methods/updateWhatsappEmbeddedConfig';
 
 @injectable()
 class ConfigController {
@@ -60,6 +62,8 @@ class ConfigController {
   public recreateWarmChannelsAll = recreateWarmChannelsAll;
   public viewWarmChannelSettings = viewWarmChannelSettings;
   public updateWarmChannelSettings = updateWarmChannelSettings;
+  public viewWhatsappEmbeddedConfig = viewWhatsappEmbeddedConfig;
+  public updateWhatsappEmbeddedConfig = updateWhatsappEmbeddedConfig;
 }
 
 export default ConfigController;

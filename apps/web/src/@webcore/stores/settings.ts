@@ -31,6 +31,9 @@ import { ListMethodPaymentsResponse } from '@core/schema/config/listMethodPaymen
 import { UpdateMethodPaymentRequest } from '@core/schema/config/updateMethodPayment/request.schema';
 import { UpdateMethodPaymentResponse } from '@core/schema/config/updateMethodPayment/response.schema';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import { ViewWhatsappEmbeddedConfigResponse } from '@core/schema/config/viewWhatsappEmbeddedConfig/response.schema';
+import { UpdateWhatsappEmbeddedConfigRequest } from '@core/schema/config/updateWhatsappEmbeddedConfig/request.schema';
+import { UpdateWhatsappEmbeddedConfigResponse } from '@core/schema/config/updateWhatsappEmbeddedConfig/response.schema';
 import {
   connectionLifecycleDebugHeaders,
   createConnectionLifecycleDebugTraceId,
@@ -81,6 +84,7 @@ export const useSettingsStore = defineStore('settings', {
     s3BackupUploads: null as ListS3BackupUploadsFinalResponse | null,
     creditCardFee: null as ListCreditCardFeeResponse | null,
     methodPayments: null as ListMethodPaymentsResponse | null,
+    whatsappEmbeddedConfig: null as ViewWhatsappEmbeddedConfigResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -610,6 +614,76 @@ export const useSettingsStore = defineStore('settings', {
         this.showSnackbar(errorMessage, EColor.error);
 
         return false;
+      }
+    },
+    async getWhatsappEmbeddedConfig(): Promise<ViewWhatsappEmbeddedConfigResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<ViewWhatsappEmbeddedConfigResponse>
+        >('/config/whatsapp-embedded');
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.whatsappEmbeddedConfig = data.data;
+
+        return data.data;
+      } catch {
+        this.loading = false;
+        return null;
+      }
+    },
+    async updateWhatsappEmbeddedConfig(
+      input: UpdateWhatsappEmbeddedConfigRequest
+    ): Promise<UpdateWhatsappEmbeddedConfigResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.patch<
+          IApiResponse<UpdateWhatsappEmbeddedConfigResponse>
+        >('/config/whatsapp-embedded', input);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('whatsapp_embedded_config_update_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.whatsappEmbeddedConfig = data.data;
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t('whatsapp_embedded_config_update_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t(
+          'whatsapp_embedded_config_update_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return null;
       }
     },
     async getAccounts(): Promise<IAccountBasic[] | null> {

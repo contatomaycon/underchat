@@ -1,15 +1,23 @@
 <script lang="ts" setup>
-import { nextTick } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EColor } from '@core/common/enums/EColor';
 import { CreateWorkerRequest } from '@core/schema/worker/createWorker/request.schema';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
+import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { can } from '@layouts/plugins/casl';
-import AppChannelConnectionTypeInfo from './AppChannelConnectionTypeInfo.vue';
+import { useWhatsappEmbeddedSignup } from '@/composables/useWhatsappEmbeddedSignup';
+import AppChannelTypeCards from './AppChannelTypeCards.vue';
+
+type CreatedChannelPayload =
+  ICreateWorkerResponse | ConnectWhatsappEmbeddedResponse;
 
 const channelStore = useChannelsStore();
+const { t } = useI18n();
+const { isLoading: isSignupLoading, startSignup } = useWhatsappEmbeddedSignup();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -17,7 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', visible: boolean): void;
-  (e: 'created', data: ICreateWorkerResponse): void;
+  (e: 'created', data: CreatedChannelPayload): void;
 }>();
 
 const isVisible = computed({
@@ -31,19 +39,35 @@ const canChooseServer = computed(() =>
 
 const name = ref<string | null>(null);
 const serverId = ref<string | null>(null);
-const type = ref<EWorkerType>(EWorkerType.baileys);
-
-const itemsType = ref([
-  { value: EWorkerType.baileys, title: 'Opção 1 (Socket)' },
-  { value: EWorkerType.wwebjs, title: 'Opção 2 (Navegador)' },
-  { value: EWorkerType.whatsmeow, title: 'Opção 3 (Socket)' },
-]);
-
+const type = ref<EWorkerType | null>(null);
 const serverItems = ref<Array<{ value: string; title: string }>>([]);
 const serversLoading = ref(false);
-
 const refFormAddChannel = ref<VForm>();
 const isAdding = ref(false);
+
+const isOfficialSelected = computed(() => type.value === EWorkerType.whatsapp);
+
+const isWhatsappEmbeddedConfigured = computed(
+  () => channelStore.whatsappEmbeddedConfig?.is_configured === true
+);
+
+const isSubmitDisabled = computed(() => {
+  if (!type.value || !name.value?.trim()) {
+    return true;
+  }
+
+  if (canChooseServer.value && !isOfficialSelected.value && !serverId.value) {
+    return true;
+  }
+
+  return isOfficialSelected.value && !isWhatsappEmbeddedConfigured.value;
+});
+
+const submitLabel = computed(() =>
+  isOfficialSelected.value
+    ? t('connect_with_whatsapp_business')
+    : t('connect_channel')
+);
 
 const loadWorkerServers = async () => {
   if (!canChooseServer.value) {
@@ -65,16 +89,44 @@ const loadWorkerServers = async () => {
   }
 };
 
-const addChannel = async () => {
-  const validateForm = await refFormAddChannel?.value?.validate();
-  if (!validateForm?.valid) return;
+const connectOfficialChannel = async () => {
+  const config =
+    channelStore.whatsappEmbeddedConfig ??
+    (await channelStore.getWhatsappEmbeddedConfig());
 
-  if (!name.value) {
+  if (!config?.is_configured) {
+    channelStore.showSnackbar(
+      t('whatsapp_embedded_configure_required'),
+      EColor.error
+    );
+    return;
+  }
+
+  const signupResult = await startSignup(config);
+  const result = await channelStore.connectWhatsappEmbedded({
+    name: name.value?.trim() ?? '',
+    code: signupResult.code,
+    business_id: signupResult.business_id,
+    waba_id: signupResult.waba_id,
+    phone_number_id: signupResult.phone_number_id,
+  });
+
+  if (!result) {
+    return;
+  }
+
+  isVisible.value = false;
+  emit('created', result);
+  await channelStore.listChannels();
+};
+
+const addUnofficialChannel = async () => {
+  if (!type.value) {
     return;
   }
 
   const payload: CreateWorkerRequest = {
-    name: name.value,
+    name: name.value?.trim() ?? '',
     worker_type: type.value,
   };
 
@@ -82,16 +134,35 @@ const addChannel = async () => {
     payload.server_id = serverId.value;
   }
 
+  const result = await channelStore.addChannel(payload);
+
+  if (result) {
+    isVisible.value = false;
+    emit('created', result);
+
+    await channelStore.listChannels();
+  }
+};
+
+const addChannel = async () => {
+  const validateForm = await refFormAddChannel.value?.validate();
+  if (!validateForm?.valid || isSubmitDisabled.value) return;
+
   isAdding.value = true;
   try {
-    const result = await channelStore.addChannel(payload);
-
-    if (result) {
-      isVisible.value = false;
-      emit('created', result);
-
-      await channelStore.listChannels();
+    if (isOfficialSelected.value) {
+      await connectOfficialChannel();
+      return;
     }
+
+    await addUnofficialChannel();
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? t(error.message)
+        : t('whatsapp_embedded_signup_error');
+
+    channelStore.showSnackbar(message, EColor.error);
   } finally {
     isAdding.value = false;
   }
@@ -100,7 +171,7 @@ const addChannel = async () => {
 const resetForm = () => {
   name.value = null;
   serverId.value = null;
-  type.value = EWorkerType.baileys;
+  type.value = null;
   refFormAddChannel.value?.resetValidation();
 };
 
@@ -111,40 +182,54 @@ watch(
       resetForm();
       serverItems.value = [];
       await nextTick();
-      if (canChooseServer.value) {
-        loadWorkerServers();
-      }
+      await Promise.all([
+        canChooseServer.value ? loadWorkerServers() : Promise.resolve(),
+        channelStore.getWhatsappEmbeddedConfig(),
+      ]);
     }
   },
   { immediate: true }
 );
-
-onMounted(resetForm);
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="860">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VForm ref="refFormAddChannel" @submit.prevent>
-      <VCard :title="$t('add_channel')">
+    <VForm ref="refFormAddChannel" @submit.prevent="addChannel">
+      <VCard :title="$t('add_channel')" class="position-relative">
+        <VOverlay
+          :model-value="channelStore.loading || isSignupLoading"
+          class="align-center justify-center"
+          contained
+        >
+          <VProgressCircular color="primary" indeterminate size="64" />
+        </VOverlay>
+
         <VCardText>
           <VRow>
-            <VCol cols="12" sm="6" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
-              <AppSelectSearch
-                v-model="type"
-                :items="itemsType"
-                :placeholder="$t('type')"
-                :clearable="false"
-                item-value="value"
-                item-title="title"
-                data-testid="add-channel-type-select"
-                option-test-id-prefix="add-channel-type-option"
-              />
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-2">
+                {{ $t('channel_select_type_title') }}
+              </VLabel>
+              <AppChannelTypeCards v-model="type" />
             </VCol>
 
-            <VCol cols="12" sm="6" md="6">
+            <VCol
+              v-if="isOfficialSelected && !isWhatsappEmbeddedConfigured"
+              cols="12"
+            >
+              <VAlert
+                type="warning"
+                variant="tonal"
+                border="start"
+                density="comfortable"
+              >
+                {{ $t('whatsapp_embedded_configure_required') }}
+              </VAlert>
+            </VCol>
+
+            <VCol v-if="type" cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
@@ -153,7 +238,11 @@ onMounted(resetForm);
               />
             </VCol>
 
-            <VCol v-if="canChooseServer" cols="12" sm="6" md="6">
+            <VCol
+              v-if="type && canChooseServer && !isOfficialSelected"
+              cols="12"
+              md="6"
+            >
               <VLabel class="text-body-2 mb-1">{{ $t('server') }}:</VLabel>
               <AppSelectSearch
                 v-model="serverId"
@@ -161,14 +250,12 @@ onMounted(resetForm);
                 :placeholder="$t('select_server')"
                 :loading="serversLoading"
                 :clearable="true"
+                :rules="[requiredValidator(serverId, $t('select_server'))]"
                 item-value="value"
                 item-title="title"
               />
             </VCol>
 
-            <VCol cols="12">
-              <AppChannelConnectionTypeInfo />
-            </VCol>
           </VRow>
         </VCardText>
 
@@ -176,8 +263,12 @@ onMounted(resetForm);
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn :loading="isAdding" @click="addChannel">
-            {{ $t('add') }}
+          <VBtn
+            type="submit"
+            :loading="isAdding || isSignupLoading"
+            :disabled="isSubmitDisabled"
+          >
+            {{ submitLabel }}
           </VBtn>
         </VCardText>
       </VCard>

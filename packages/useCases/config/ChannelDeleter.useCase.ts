@@ -11,6 +11,8 @@ import {
   channelsConfigCentrifugo,
 } from '@core/common/functions/centrifugoQueue';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 
 @injectable()
 export class ChannelDeleterUseCase {
@@ -24,7 +26,11 @@ export class ChannelDeleterUseCase {
     @inject(WorkerGrpcClientService)
     private readonly workerGrpcClientService: WorkerGrpcClientService,
     @inject(ChatService)
-    private readonly chatService: ChatService
+    private readonly chatService: ChatService,
+    @inject(WorkerWhatsappOfficialConnectionRepository)
+    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository = {
+      softDeleteByWorkerId: async () => false,
+    } as unknown as WorkerWhatsappOfficialConnectionRepository
   ) {}
 
   private async validate(
@@ -71,6 +77,12 @@ export class ChannelDeleterUseCase {
       throw new Error(t('worker_not_found'));
     }
 
+    const viewWorker = await this.workerService.viewWorker(
+      viewWorkerBalancer.account_id,
+      channelId
+    );
+    const isOfficialWhatsapp = viewWorker?.type?.id === EWorkerType.whatsapp;
+
     const inputDeleter: IWorkerPayload = {
       action: EWorkerAction.delete,
       worker_id: channelId,
@@ -91,7 +103,15 @@ export class ChannelDeleterUseCase {
       channelId
     );
 
-    this.onChannelDeleted(inputDeleter);
+    if (deleted && isOfficialWhatsapp) {
+      await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
+        channelId
+      );
+    }
+
+    if (!isOfficialWhatsapp) {
+      this.onChannelDeleted(inputDeleter);
+    }
 
     return deleted;
   }

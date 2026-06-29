@@ -251,6 +251,10 @@ export class WorkerCreatorUseCase {
       throw new Error(t('worker_type_invalid'));
     }
 
+    if (workerType === EWorkerType.whatsapp) {
+      throw new Error(t('whatsapp_official_connect_required'));
+    }
+
     if (!input.name || input.name.trim().length === 0) {
       throw new Error(t('worker_name_required'));
     }

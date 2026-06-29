@@ -1,13 +1,13 @@
 <script lang="ts" setup>
+import { computed, ref, toRef, watch } from 'vue';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EditWorkerRequest } from '@core/schema/worker/editWorker/request.schema';
 import { VForm } from 'vuetify/components/VForm';
-import AppChannelConnectionTypeInfo from './AppChannelConnectionTypeInfo.vue';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import AppChannelTypeCards from './AppChannelTypeCards.vue';
 
 const channelStore = useChannelsStore();
-const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -37,24 +37,29 @@ const channelId = toRef(props, 'channelId');
 const name = ref<string | null>(null);
 const type = ref<EWorkerType | null>(null);
 const initialType = ref<EWorkerType | null>(null);
-
-const itemsType = ref([
-  { value: EWorkerType.baileys, title: 'Opção 1 (Socket)' },
-  { value: EWorkerType.wwebjs, title: 'Opção 2 (Navegador)' },
-  { value: EWorkerType.whatsmeow, title: 'Opção 3 (Socket)' },
-]);
-
 const refFormEditChannel = ref<VForm>();
 const isInitializingModal = ref(false);
+
+const isOfficialChannel = computed(
+  () => initialType.value === EWorkerType.whatsapp
+);
+
+const disabledTypes = computed(() =>
+  isOfficialChannel.value
+    ? [EWorkerType.baileys, EWorkerType.wwebjs, EWorkerType.whatsmeow]
+    : [EWorkerType.whatsapp]
+);
 
 const isLifecycleAck = (value: unknown): value is IWorkerLifecycleAck =>
   typeof value === 'object' &&
   value !== null &&
   (value as { queued?: unknown }).queued === true;
 
+const isSubmitDisabled = computed(() => !type.value || !name.value?.trim());
+
 const updateServer = async () => {
-  const validateForm = await refFormEditChannel?.value?.validate();
-  if (!validateForm?.valid) return;
+  const validateForm = await refFormEditChannel.value?.validate();
+  if (!validateForm?.valid || isSubmitDisabled.value) return;
 
   if (!channelId.value || !name.value) {
     return;
@@ -120,10 +125,10 @@ watch(
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="860">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VForm ref="refFormEditChannel" @submit.prevent>
+    <VForm ref="refFormEditChannel" @submit.prevent="updateServer">
       <VCard
         :title="$t('edit_channel')"
         class="position-relative"
@@ -138,21 +143,19 @@ watch(
         </VOverlay>
         <VCardText>
           <VRow>
-            <VCol cols="12" sm="6" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
-              <AppSelectSearch
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-2">
+                {{ $t('channel_select_type_title') }}
+              </VLabel>
+              <AppChannelTypeCards
                 v-model="type"
-                :items="itemsType"
-                :placeholder="$t('type')"
-                :clearable="false"
-                item-value="value"
-                item-title="title"
-                data-testid="edit-channel-type-select"
-                option-test-id-prefix="edit-channel-type-option"
+                :allow-official="isOfficialChannel"
+                :lock-official="isOfficialChannel"
+                :disabled-types="disabledTypes"
               />
             </VCol>
 
-            <VCol cols="12" sm="6" md="6">
+            <VCol v-if="type" cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
@@ -161,9 +164,6 @@ watch(
               />
             </VCol>
 
-            <VCol cols="12">
-              <AppChannelConnectionTypeInfo />
-            </VCol>
           </VRow>
         </VCardText>
 
@@ -171,7 +171,11 @@ watch(
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn data-testid="edit-channel-save" @click="updateServer">
+          <VBtn
+            data-testid="edit-channel-save"
+            type="submit"
+            :disabled="isSubmitDisabled"
+          >
             {{ $t('save') }}
           </VBtn>
         </VCardText>

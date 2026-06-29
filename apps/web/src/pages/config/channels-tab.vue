@@ -750,7 +750,7 @@ onUnmounted(async () => {
                   <VIcon icon="tabler-edit" @click="openEditDialog(item)" />
                 </IconBtn>
 
-                <IconBtn>
+                <IconBtn v-if="item.type?.id !== EWorkerType.whatsapp">
                   <VTooltip
                     location="top"
                     transition="scale-transition"

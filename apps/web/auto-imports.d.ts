@@ -404,6 +404,7 @@ declare global {
   const useWebSocket: typeof import('@vueuse/core').useWebSocket
   const useWebWorker: typeof import('@vueuse/core').useWebWorker
   const useWebWorkerFn: typeof import('@vueuse/core').useWebWorkerFn
+  const useWhatsappEmbeddedSignup: typeof import('./src/composables/useWhatsappEmbeddedSignup').useWhatsappEmbeddedSignup
   const useWindowFocus: typeof import('@vueuse/core').useWindowFocus
   const useWindowScroll: typeof import('@vueuse/core').useWindowScroll
   const useWindowSize: typeof import('@vueuse/core').useWindowSize
@@ -449,6 +450,9 @@ declare global {
   // @ts-ignore
   export type { ChatTransferNotificationPayload, ChatNotificationToastPayload } from './src/composables/useChatNotificationToast'
   import('./src/composables/useChatNotificationToast')
+  // @ts-ignore
+  export type { WhatsappEmbeddedSignupResult } from './src/composables/useWhatsappEmbeddedSignup'
+  import('./src/composables/useWhatsappEmbeddedSignup')
 }
 
 // for vue template auto import
@@ -832,6 +836,7 @@ declare module 'vue' {
     readonly useWebSocket: UnwrapRef<typeof import('@vueuse/core')['useWebSocket']>
     readonly useWebWorker: UnwrapRef<typeof import('@vueuse/core')['useWebWorker']>
     readonly useWebWorkerFn: UnwrapRef<typeof import('@vueuse/core')['useWebWorkerFn']>
+    readonly useWhatsappEmbeddedSignup: UnwrapRef<typeof import('./src/composables/useWhatsappEmbeddedSignup')['useWhatsappEmbeddedSignup']>
     readonly useWindowFocus: UnwrapRef<typeof import('@vueuse/core')['useWindowFocus']>
     readonly useWindowScroll: UnwrapRef<typeof import('@vueuse/core')['useWindowScroll']>
     readonly useWindowSize: UnwrapRef<typeof import('@vueuse/core')['useWindowSize']>

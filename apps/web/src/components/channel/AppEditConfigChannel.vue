@@ -1,12 +1,13 @@
 <script lang="ts" setup>
+import { computed, nextTick, ref, toRef, watch } from 'vue';
 import { useSettingsStore } from '@/@webcore/stores/settings';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
 import { UpdateChannelRequest } from '@core/schema/config/updateChannel/request.schema';
 import { VForm } from 'vuetify/components/VForm';
+import AppChannelTypeCards from './AppChannelTypeCards.vue';
 
 const settingsStore = useSettingsStore();
-const { t } = useI18n();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -26,18 +27,31 @@ const isVisible = computed({
 const channel = toRef(props, 'channel');
 const name = ref<string | null>(null);
 const type = ref<EWorkerType | null>(null);
+const initialType = ref<EWorkerType | null>(null);
 const serverId = ref<string | null>(null);
 const serverItems = ref<Array<{ value: string; title: string }>>([]);
-
-const itemsType = ref([
-  { value: EWorkerType.baileys, title: t('unofficial_socket') },
-  { value: EWorkerType.wwebjs, title: t('unofficial_browser') },
-  { value: EWorkerType.whatsmeow, title: t('unofficial_whatsmeow') },
-]);
-
 const refFormEditChannel = ref<VForm>();
 const isInitializingModal = ref(false);
 const isSaving = ref(false);
+const { t } = useI18n();
+
+const isOfficialChannel = computed(
+  () => initialType.value === EWorkerType.whatsapp
+);
+
+const disabledTypes = computed(() =>
+  isOfficialChannel.value
+    ? [EWorkerType.baileys, EWorkerType.wwebjs, EWorkerType.whatsmeow]
+    : [EWorkerType.whatsapp]
+);
+
+const isSubmitDisabled = computed(() => {
+  if (!type.value || !name.value?.trim()) {
+    return true;
+  }
+
+  return !isOfficialChannel.value && !serverId.value;
+});
 
 const loadServerOptions = async () => {
   const result = await settingsStore.getChannelServers();
@@ -71,6 +85,7 @@ const initializeModal = async () => {
   try {
     name.value = channel.value.name;
     type.value = (channel.value.type?.id as EWorkerType) ?? null;
+    initialType.value = type.value;
     serverId.value = channel.value.server?.id ?? null;
 
     await loadServerOptions();
@@ -81,9 +96,9 @@ const initializeModal = async () => {
 
 const updateChannel = async () => {
   const validateForm = await refFormEditChannel.value?.validate();
-  if (!validateForm?.valid) return;
+  if (!validateForm?.valid || isSubmitDisabled.value) return;
 
-  if (!channel.value?.id || !name.value || !serverId.value) {
+  if (!channel.value?.id || !name.value) {
     return;
   }
 
@@ -91,8 +106,11 @@ const updateChannel = async () => {
     channel_id: channel.value.id,
     name: name.value,
     worker_type: type.value ?? undefined,
-    server_id: serverId.value,
   };
+
+  if (!isOfficialChannel.value && serverId.value) {
+    payload.server_id = serverId.value;
+  }
 
   isSaving.value = true;
   try {
@@ -134,10 +152,10 @@ watch(
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="600">
+  <VDialog v-model="isVisible" max-width="860">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VForm ref="refFormEditChannel" @submit.prevent>
+    <VForm ref="refFormEditChannel" @submit.prevent="updateChannel">
       <VCard :title="$t('edit_channel')" class="position-relative">
         <VOverlay
           :model-value="isInitializingModal || isSaving"
@@ -149,19 +167,19 @@ watch(
 
         <VCardText>
           <VRow>
-            <VCol cols="12" sm="6" md="6">
-              <VLabel class="text-body-2 mb-1">{{ $t('type') }}:</VLabel>
-              <AppSelectSearch
+            <VCol cols="12">
+              <VLabel class="text-body-2 mb-2">
+                {{ $t('channel_select_type_title') }}
+              </VLabel>
+              <AppChannelTypeCards
                 v-model="type"
-                :items="itemsType"
-                :placeholder="$t('type')"
-                :clearable="true"
-                item-value="value"
-                item-title="title"
+                :allow-official="isOfficialChannel"
+                :lock-official="isOfficialChannel"
+                :disabled-types="disabledTypes"
               />
             </VCol>
 
-            <VCol cols="12" sm="6" md="6">
+            <VCol v-if="type" cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
               <AppTextField
                 v-model="name"
@@ -170,7 +188,7 @@ watch(
               />
             </VCol>
 
-            <VCol cols="12">
+            <VCol v-if="type && !isOfficialChannel" cols="12" md="6">
               <VLabel class="text-body-2 mb-1">{{ $t('server') }}:</VLabel>
               <AppSelectSearch
                 v-model="serverId"
@@ -182,6 +200,7 @@ watch(
                 item-title="title"
               />
             </VCol>
+
           </VRow>
         </VCardText>
 
@@ -189,7 +208,13 @@ watch(
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn @click="updateChannel"> {{ $t('save') }} </VBtn>
+          <VBtn
+            type="submit"
+            :loading="isSaving"
+            :disabled="isSubmitDisabled"
+          >
+            {{ $t('save') }}
+          </VBtn>
         </VCardText>
       </VCard>
     </VForm>

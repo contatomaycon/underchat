@@ -122,6 +122,9 @@ describe('ChannelDeleterUseCase', () => {
   it('publishes deletion and deletes worker successfully', async () => {
     const workerService = {
       deleteWorkerById: jest.fn(async () => true),
+      viewWorker: jest.fn(async () => ({
+        type: { id: 'non-official-worker-type' },
+      })),
     };
     const configService = {
       viewChannelBalancer: jest.fn(async () => ({

@@ -64,6 +64,8 @@ import {
   requestWorkerExternalConnectionQrCodeSchema,
   viewWorkerExternalConnectionSchema,
 } from '@core/schema/worker/externalConnection';
+import { workerWhatsappEmbeddedConfigSchema } from '@core/schema/worker/whatsappEmbeddedConfig';
+import { connectWhatsappEmbeddedSchema } from '@core/schema/worker/connectWhatsappEmbedded';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -117,6 +119,28 @@ export default function workerRoutes(server: FastifyInstance) {
   server.post('/worker/:worker_id/external-connection-link', {
     schema: workerExternalConnectionLinkSchema,
     handler: workerController.createExternalConnectionLink,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/whatsapp-embedded/config', {
+    schema: workerWhatsappEmbeddedConfigSchema,
+    handler: workerController.viewWhatsappEmbeddedConfig,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/whatsapp-embedded/connect', {
+    schema: connectWhatsappEmbeddedSchema,
+    handler: workerController.connectWhatsappEmbedded,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerCreatePermissions),

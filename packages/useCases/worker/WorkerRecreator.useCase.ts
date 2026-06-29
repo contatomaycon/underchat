@@ -229,6 +229,10 @@ export class WorkerRecreatorUseCase {
       throw new Error(t('worker_balancer_not_available'));
     }
 
+    if (viewWorker?.type?.id === EWorkerType.whatsapp) {
+      throw new Error(t('whatsapp_official_runtime_action_not_supported'));
+    }
+
     const inputRecreate: IWorkerPayload = {
       action: EWorkerAction.recreate,
       worker_id: workerId,

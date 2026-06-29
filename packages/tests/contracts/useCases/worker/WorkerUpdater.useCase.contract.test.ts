@@ -348,4 +348,124 @@ describe('WorkerUpdaterUseCase lifecycle fencing', () => {
       })
     );
   });
+
+  it('does not allow official WhatsApp to change to an unofficial type', async () => {
+    const workerService = {
+      viewWorkerType: jest.fn(async () => ({
+        worker_type_id: EWorkerType.whatsapp,
+      })),
+      updateWorkerById: jest.fn(async () => true),
+    };
+    const accountService = {
+      existsAccountById: jest.fn(async () => true),
+    };
+    const workerConfigService = {
+      refreshTypingSimulationCache: jest.fn(async () => undefined),
+    };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const useCase = new WorkerUpdaterUseCase(
+      workerService as never,
+      accountService as never,
+      workerConfigService as never,
+      {} as never,
+      {} as never,
+      workerLifecycleQueueService as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      useCase.execute(t, 'account-1', {
+        worker_id: 'worker-1',
+        name: 'Official',
+        worker_type: EWorkerType.baileys,
+      } as never)
+    ).rejects.toThrow('whatsapp_official_type_change_not_allowed');
+
+    expect(workerService.updateWorkerById).not.toHaveBeenCalled();
+    expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
+  });
+
+  it('does not allow unofficial channels to become official through generic update', async () => {
+    const workerService = {
+      viewWorkerType: jest.fn(async () => ({
+        worker_type_id: EWorkerType.baileys,
+      })),
+      updateWorkerById: jest.fn(async () => true),
+    };
+    const accountService = {
+      existsAccountById: jest.fn(async () => true),
+    };
+    const workerConfigService = {
+      refreshTypingSimulationCache: jest.fn(async () => undefined),
+    };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const useCase = new WorkerUpdaterUseCase(
+      workerService as never,
+      accountService as never,
+      workerConfigService as never,
+      {} as never,
+      {} as never,
+      workerLifecycleQueueService as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      useCase.execute(t, 'account-1', {
+        worker_id: 'worker-1',
+        name: 'Unofficial',
+        worker_type: EWorkerType.whatsapp,
+      } as never)
+    ).rejects.toThrow('whatsapp_official_connect_required');
+
+    expect(workerService.updateWorkerById).not.toHaveBeenCalled();
+    expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
+  });
+
+  it('updates official WhatsApp name without lifecycle queue', async () => {
+    const workerService = {
+      viewWorkerType: jest.fn(async () => ({
+        worker_type_id: EWorkerType.whatsapp,
+      })),
+      updateWorkerById: jest.fn(async () => true),
+    };
+    const accountService = {
+      existsAccountById: jest.fn(async () => true),
+    };
+    const workerConfigService = {
+      refreshTypingSimulationCache: jest.fn(async () => undefined),
+    };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const useCase = new WorkerUpdaterUseCase(
+      workerService as never,
+      accountService as never,
+      workerConfigService as never,
+      {} as never,
+      {} as never,
+      workerLifecycleQueueService as never,
+      {} as never,
+      {} as never
+    );
+
+    await expect(
+      useCase.execute(t, 'account-1', {
+        worker_id: 'worker-1',
+        name: 'Official Renamed',
+        worker_type: EWorkerType.whatsapp,
+      } as never)
+    ).resolves.toBe(true);
+
+    expect(workerService.updateWorkerById).toHaveBeenCalledWith('account-1', {
+      worker_id: 'worker-1',
+      name: 'Official Renamed',
+    });
+    expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
+  });
 });

@@ -314,8 +314,76 @@ export class WorkerUpdaterUseCase {
     );
     const nextWorkerType = input.worker_type as EWorkerType | undefined;
     const currentType = currentWorkerType?.worker_type_id as
-      | EWorkerType
-      | undefined;
+      EWorkerType | undefined;
+
+    if (!currentType) {
+      throw new Error(t('worker_not_found'));
+    }
+
+    if (
+      nextWorkerType &&
+      !Object.values(EWorkerType).includes(nextWorkerType)
+    ) {
+      throw new Error(t('worker_type_invalid'));
+    }
+
+    if (
+      currentType === EWorkerType.whatsapp &&
+      nextWorkerType &&
+      nextWorkerType !== EWorkerType.whatsapp
+    ) {
+      throw new Error(t('whatsapp_official_type_change_not_allowed'));
+    }
+
+    if (
+      currentType !== EWorkerType.whatsapp &&
+      nextWorkerType === EWorkerType.whatsapp
+    ) {
+      throw new Error(t('whatsapp_official_connect_required'));
+    }
+
+    if (currentType === EWorkerType.whatsapp) {
+      const inputUpdate: IUpdateWorker = {
+        worker_id: input.worker_id,
+        name: input.name,
+      };
+
+      if (input.server_id) {
+        const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
+          accountId,
+          input.worker_id
+        );
+
+        if (!viewWorkerBalancer?.server_id) {
+          throw new Error(t('worker_not_found'));
+        }
+
+        const shouldUpdateServer = await this.validateServerEligibility(
+          t,
+          input.server_id,
+          viewWorkerBalancer.server_id
+        );
+
+        if (shouldUpdateServer) {
+          inputUpdate.server_id = input.server_id;
+        }
+      }
+
+      const updateWorkerById = await this.workerService.updateWorkerById(
+        accountId,
+        inputUpdate
+      );
+
+      if (!updateWorkerById) {
+        throw new Error(t('error_updating_worker'));
+      }
+
+      await this.workerConfigService.refreshTypingSimulationCache(
+        input.worker_id
+      );
+
+      return updateWorkerById;
+    }
 
     const shouldRecreateOnTypeChange = this.shouldRecreateWorkerOnTypeChange(
       currentType,
@@ -352,8 +420,7 @@ export class WorkerUpdaterUseCase {
       currentServerId = viewWorkerBalancer.server_id;
       currentServerStatusId = viewWorkerBalancer.server_status_id;
       previousWorkerStatusId = viewWorker?.status?.id as
-        | EWorkerStatus
-        | undefined;
+        EWorkerStatus | undefined;
 
       if (input.server_id) {
         shouldRecreateOnServerChange = await this.validateServerEligibility(

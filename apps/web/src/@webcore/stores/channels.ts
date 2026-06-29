@@ -49,6 +49,9 @@ import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/extern
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
+import { WorkerWhatsappEmbeddedConfigResponse } from '@core/schema/worker/whatsappEmbeddedConfig/response.schema';
+import { ConnectWhatsappEmbeddedRequest } from '@core/schema/worker/connectWhatsappEmbedded/request.schema';
+import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
 import {
   connectionLifecycleDebugHeaders,
   createConnectionLifecycleDebugTraceId,
@@ -122,6 +125,7 @@ export const useChannelsStore = defineStore('channels', {
       string,
       ViewWorkerConfigForChatResponse | null
     >,
+    whatsappEmbeddedConfig: null as WorkerWhatsappEmbeddedConfigResponse | null,
   }),
   actions: {
     showSnackbar(message: string, color: EColor) {
@@ -217,6 +221,68 @@ export const useChannelsStore = defineStore('channels', {
 
         return data.data.results;
       } catch {
+        return null;
+      }
+    },
+
+    async getWhatsappEmbeddedConfig(): Promise<WorkerWhatsappEmbeddedConfigResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<WorkerWhatsappEmbeddedConfigResponse>
+        >('/worker/whatsapp-embedded/config');
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        this.whatsappEmbeddedConfig = data.data;
+
+        return data.data;
+      } catch {
+        return null;
+      }
+    },
+
+    async connectWhatsappEmbedded(
+      payload: ConnectWhatsappEmbeddedRequest
+    ): Promise<ConnectWhatsappEmbeddedResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<ConnectWhatsappEmbeddedResponse>
+        >('/worker/whatsapp-embedded/connect', payload);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('channel_add_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ?? this.i18n.global.t('channel_add_success'),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        this.loading = false;
+        let errorMessage = this.i18n.global.t('channel_add_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
         return null;
       }
     },
@@ -842,8 +908,7 @@ export const useChannelsStore = defineStore('channels', {
         let errorMessage = this.i18n.global.t('worker_recreation_failed');
         if (error instanceof AxiosError) {
           const responseData = error.response?.data as
-            | WorkerRecreateCooldownConflictResponse
-            | undefined;
+            WorkerRecreateCooldownConflictResponse | undefined;
 
           if (
             responseData?.data &&

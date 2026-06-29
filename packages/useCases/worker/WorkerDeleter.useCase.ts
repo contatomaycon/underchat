@@ -6,6 +6,8 @@ import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 
 @injectable()
 export class WorkerDeleterUseCase {
@@ -15,7 +17,11 @@ export class WorkerDeleterUseCase {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(WorkerGrpcClientService)
-    private readonly workerGrpcClientService: WorkerGrpcClientService
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
+    @inject(WorkerWhatsappOfficialConnectionRepository)
+    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository = {
+      softDeleteByWorkerId: async () => false,
+    } as unknown as WorkerWhatsappOfficialConnectionRepository
   ) {}
 
   private async validate(
@@ -46,14 +52,16 @@ export class WorkerDeleterUseCase {
   ): Promise<boolean> {
     await this.validate(t, workerId, accountId);
 
-    const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
-      accountId,
-      workerId
-    );
+    const [viewWorkerBalancer, viewWorker] = await Promise.all([
+      this.workerService.viewWorkerBalancer(accountId, workerId),
+      this.workerService.viewWorker(accountId, workerId),
+    ]);
 
     if (!viewWorkerBalancer) {
       throw new Error(t('worker_not_found'));
     }
+
+    const isOfficialWhatsapp = viewWorker?.type?.id === EWorkerType.whatsapp;
 
     const inputDeleter: IWorkerPayload = {
       action: EWorkerAction.delete,
@@ -72,7 +80,15 @@ export class WorkerDeleterUseCase {
       workerId
     );
 
-    this.onWorkerDeleted(inputDeleter);
+    if (deleted && isOfficialWhatsapp) {
+      await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
+        workerId
+      );
+    }
+
+    if (!isOfficialWhatsapp) {
+      this.onWorkerDeleted(inputDeleter);
+    }
 
     return deleted;
   }

@@ -30,6 +30,8 @@ import { recreateWarmChannelSchema } from '@core/schema/config/recreateWarmChann
 import { recreateWarmChannelsAllSchema } from '@core/schema/config/recreateWarmChannelsAll';
 import { viewWarmChannelSettingsSchema } from '@core/schema/config/viewWarmChannelSettings';
 import { updateWarmChannelSettingsSchema } from '@core/schema/config/updateWarmChannelSettings';
+import { viewWhatsappEmbeddedConfigSchema } from '@core/schema/config/viewWhatsappEmbeddedConfig';
+import { updateWhatsappEmbeddedConfigSchema } from '@core/schema/config/updateWhatsappEmbeddedConfig';
 import { configPermissions } from '@/permissions';
 
 export default async function configRoutes(server: FastifyInstance) {
@@ -137,6 +139,24 @@ export default async function configRoutes(server: FastifyInstance) {
   server.patch('/config/method-payment', {
     schema: updateMethodPaymentSchema,
     handler: configController.updateMethodPayment,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.get('/config/whatsapp-embedded', {
+    schema: viewWhatsappEmbeddedConfigSchema,
+    handler: configController.viewWhatsappEmbeddedConfig,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, configPermissions),
+    ],
+  });
+
+  server.patch('/config/whatsapp-embedded', {
+    schema: updateWhatsappEmbeddedConfigSchema,
+    handler: configController.updateWhatsappEmbeddedConfig,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, configPermissions),

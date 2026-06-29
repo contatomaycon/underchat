@@ -24,6 +24,7 @@ import {
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
+import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
 import { useChannelRecreateCooldown } from '@/composables/useChannelRecreateCooldown';
 import {
   createConnectionLifecycleDebugTraceId,
@@ -117,6 +118,7 @@ const itemsType = ref([
   { id: EWorkerType.baileys, text: t('unofficial_socket') },
   { id: EWorkerType.wwebjs, text: t('unofficial_browser') },
   { id: EWorkerType.whatsmeow, text: t('unofficial_whatsmeow') },
+  { id: EWorkerType.whatsapp, text: t('official') },
 ]);
 
 const isDialogDeleterShow = ref(false);
@@ -298,6 +300,10 @@ const openEditDialog = (id: string) => {
 };
 
 const openConnectionDialog = (channel: ListWorkerResponse) => {
+  if (channel.type?.id === EWorkerType.whatsapp) {
+    return;
+  }
+
   const debugTraceId = isConnectionLifecycleDebugEnabled()
     ? createConnectionLifecycleDebugTraceId('web_connection_dialog')
     : undefined;
@@ -354,28 +360,37 @@ const handleRecreate = async () => {
   channelToRecreate.value = null;
 };
 
-const handleChannelCreated = async (data: ICreateWorkerResponse) => {
+const handleChannelCreated = async (
+  data: ICreateWorkerResponse | ConnectWhatsappEmbeddedResponse
+) => {
   await channelsStore.listChannels(query.value);
 
-  const currentChannel =
-    channelsStore.list.find((channel) => channel.id === data.worker_id) ??
-    (await channelsStore.getWorkerById(data.worker_id));
+  if (data.worker_type_id === EWorkerType.whatsapp) {
+    return;
+  }
 
-  channelConnectionChannel.value = data.worker_id;
-  channelConnectionType.value = currentChannel?.type?.id ?? data.worker_type_id;
+  const createdWorker = data as ICreateWorkerResponse;
+  const currentChannel =
+    channelsStore.list.find(
+      (channel) => channel.id === createdWorker.worker_id
+    ) ?? (await channelsStore.getWorkerById(createdWorker.worker_id));
+
+  channelConnectionChannel.value = createdWorker.worker_id;
+  channelConnectionType.value =
+    currentChannel?.type?.id ?? createdWorker.worker_type_id;
   channelConnectionStatus.value =
     currentChannel?.status?.id ??
-    data.worker_status_id ??
+    createdWorker.worker_status_id ??
     EWorkerStatus.creating;
   channelConnectionPhone.value = currentChannel?.number ?? null;
-  channelConnectionDebugTraceId.value = data.debug_trace_id ?? null;
+  channelConnectionDebugTraceId.value = createdWorker.debug_trace_id ?? null;
   logConnectionLifecycleDebug('web.connection_dialog.open_after_create', {
-    trace_id: data.debug_trace_id,
+    trace_id: createdWorker.debug_trace_id,
     layer: 'web',
-    worker_id: data.worker_id,
-    account_id: data.account_id,
-    worker_type_id: data.worker_type_id,
-    lifecycle_operation_id: data.operation_id,
+    worker_id: createdWorker.worker_id,
+    account_id: createdWorker.account_id,
+    worker_type_id: createdWorker.worker_type_id,
+    lifecycle_operation_id: createdWorker.operation_id,
     status: channelConnectionStatus.value ?? undefined,
   });
   isDialogConnectionChannelShow.value = true;
@@ -767,6 +782,7 @@ onUnmounted(async () => {
               <div class="d-flex gap-1">
                 <IconBtn
                   v-if="
+                    item.type?.id !== EWorkerType.whatsapp &&
                     item.status?.id !== EWorkerStatus.stopped &&
                     (EWorkerStatus.disponible === item.status?.id ||
                       EWorkerStatus.online === item.status?.id ||
@@ -823,7 +839,10 @@ onUnmounted(async () => {
                 /></IconBtn>
 
                 <VTooltip
-                  v-if="$canPermission(permissionsRecreate)"
+                  v-if="
+                    $canPermission(permissionsRecreate) &&
+                    item.type?.id !== EWorkerType.whatsapp
+                  "
                   location="top"
                   transition="scale-transition"
                 >

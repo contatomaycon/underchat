@@ -50,6 +50,8 @@ import { createExternalConnectionLink } from './methods/createExternalConnection
 import { viewExternalConnection } from './methods/viewExternalConnection';
 import { requestExternalConnectionQrCode } from './methods/requestExternalConnectionQrCode';
 import { requestConnectionQrCode } from './methods/requestConnectionQrCode';
+import { viewWhatsappEmbeddedConfig } from './methods/viewWhatsappEmbeddedConfig';
+import { connectWhatsappEmbedded } from './methods/connectWhatsappEmbedded';
 
 @injectable()
 class WorkerController {
@@ -107,6 +109,8 @@ class WorkerController {
   public viewExternalConnection = viewExternalConnection;
   public requestExternalConnectionQrCode = requestExternalConnectionQrCode;
   public requestConnectionQrCode = requestConnectionQrCode;
+  public viewWhatsappEmbeddedConfig = viewWhatsappEmbeddedConfig;
+  public connectWhatsappEmbedded = connectWhatsappEmbedded;
 }
 
 export default WorkerController;
