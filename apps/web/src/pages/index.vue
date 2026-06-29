@@ -1137,7 +1137,7 @@ onMounted(async () => {
       </VCol>
     </VRow>
 
-      <VRow class="dashboard-row">
+    <VRow class="dashboard-row">
       <VCol cols="12" md="3" class="d-flex" style="align-self: stretch">
         <VCard
           class="flex-grow-1 d-flex flex-column w-100"
@@ -1174,8 +1174,8 @@ onMounted(async () => {
           </VCardText>
         </VCard>
       </VCol>
-      <VCol cols="12" md="9">
-        <VRow>
+      <VCol cols="12" md="9" class="dashboard-additional-stack">
+        <VRow class="dashboard-additional-subrow">
           <VCol cols="12" sm="6" class="d-flex">
             <VCard class="flex-grow-1 d-flex flex-column w-100">
               <VCardText class="flex-grow-1 d-flex flex-column">
@@ -1235,7 +1235,7 @@ onMounted(async () => {
             </VCard>
           </VCol>
         </VRow>
-        <VRow>
+        <VRow class="dashboard-additional-subrow">
           <VCol cols="12" sm="6" class="d-flex">
             <VCard class="flex-grow-1 d-flex flex-column w-100">
               <VCardText class="flex-grow-1 d-flex flex-column">
@@ -1296,7 +1296,7 @@ onMounted(async () => {
           </VCol>
         </VRow>
       </VCol>
-      </VRow>
+    </VRow>
     </template>
 
     <VSnackbar
@@ -1327,6 +1327,14 @@ onMounted(async () => {
   .v-card {
     width: 100%;
   }
+}
+
+.dashboard-additional-stack {
+  flex-direction: column;
+}
+
+.dashboard-additional-subrow {
+  flex: 1 1 0;
 }
 
 .dashboard-limited-view {
