@@ -35,7 +35,9 @@ RUN curl -sSf https://atlasgo.sh | sh
 COPY . .
 
 ENV npm_config_build_from_source=true \
-    npm_config_loglevel=verbose
+    npm_config_loglevel=verbose \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 RUN pnpm install --unsafe-perm
 RUN RDKAFKA_PATH=$(find /app/node_modules -type d -name "node-rdkafka" 2>/dev/null | head -1) && \

@@ -63,14 +63,14 @@ ENV VITE_BACKEND_URL=${VITE_BACKEND_URL} \
     CI=true \
     PATH="/app/node_modules/.bin:$PATH"
 
-WORKDIR /app/apps/web
+WORKDIR /app
 
 RUN ulimit -n 1048576 || true && \
-    pnpm run build:icons && \
-    pnpm run msw:init
+    pnpm --filter web run build:icons && \
+    pnpm --filter web run msw:init
 
 RUN ulimit -n 1048576 || true && \
-    pnpm run build
+    pnpm --filter web run build
 
 FROM nginx:1.27-alpine AS runner
 
