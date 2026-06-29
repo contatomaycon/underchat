@@ -260,104 +260,109 @@ describe('WorkerMonitorService', () => {
   });
 
   it('marks the worker degraded and requests self-heal when connection failures reach the threshold', async () => {
-    const workerService = {
-      updateStatusWorker: jest.fn(async () => true),
-    };
-    const centrifugoService = {
-      publishSub: jest.fn(async () => true),
-    };
-    const workerCommandHandlerService = {
-      requestWorkerSelfHealing: jest.fn(async () => undefined),
-    };
-    const service = makeService({
-      workerService,
-      centrifugoService,
-      workerCommandHandlerService,
-    });
-    const worker = makeWorker({ worker_status_id: EWorkerStatus.online });
+    jest.useFakeTimers();
+    try {
+      const workerService = {
+        updateStatusWorker: jest.fn(async () => true),
+      };
+      const centrifugoService = {
+        publishSub: jest.fn(async () => true),
+      };
+      const workerCommandHandlerService = {
+        requestWorkerSelfHealing: jest.fn(async () => undefined),
+      };
+      const service = makeService({
+        workerService,
+        centrifugoService,
+        workerCommandHandlerService,
+      });
+      const worker = makeWorker({ worker_status_id: EWorkerStatus.online });
 
-    await (service as any).syncConnectionStatusWithFailureTracking(
-      worker,
-      {
-        healthy: false,
-        code: 503,
-        body: {},
-        session_ready: false,
-        connected: false,
-        can_send: false,
-        can_receive_runtime: false,
-        authenticated: false,
-        provider_state: 'DISCONNECTED',
-        degraded_reason: 'probe_failed',
-        kafka_unhealthy: false,
-      },
-      'server-1',
-      {} as never
-    );
-    await (service as any).syncConnectionStatusWithFailureTracking(
-      worker,
-      {
-        healthy: false,
-        code: 503,
-        body: {},
-        session_ready: false,
-        connected: false,
-        can_send: false,
-        can_receive_runtime: false,
-        authenticated: false,
-        provider_state: 'DISCONNECTED',
-        degraded_reason: 'probe_failed',
-        kafka_unhealthy: false,
-      },
-      'server-1',
-      {} as never
-    );
-    await (service as any).syncConnectionStatusWithFailureTracking(
-      worker,
-      {
-        healthy: false,
-        code: 503,
-        body: {},
-        session_ready: false,
-        connected: false,
-        can_send: false,
-        can_receive_runtime: false,
-        authenticated: false,
-        provider_state: 'DISCONNECTED',
-        degraded_reason: 'probe_failed',
-        kafka_unhealthy: false,
-      },
-      'server-1',
-      {} as never
-    );
+      await (service as any).syncConnectionStatusWithFailureTracking(
+        worker,
+        {
+          healthy: false,
+          code: 503,
+          body: {},
+          session_ready: false,
+          connected: false,
+          can_send: false,
+          can_receive_runtime: false,
+          authenticated: false,
+          provider_state: 'DISCONNECTED',
+          degraded_reason: 'probe_failed',
+          kafka_unhealthy: false,
+        },
+        'server-1',
+        {} as never
+      );
+      await (service as any).syncConnectionStatusWithFailureTracking(
+        worker,
+        {
+          healthy: false,
+          code: 503,
+          body: {},
+          session_ready: false,
+          connected: false,
+          can_send: false,
+          can_receive_runtime: false,
+          authenticated: false,
+          provider_state: 'DISCONNECTED',
+          degraded_reason: 'probe_failed',
+          kafka_unhealthy: false,
+        },
+        'server-1',
+        {} as never
+      );
+      await (service as any).syncConnectionStatusWithFailureTracking(
+        worker,
+        {
+          healthy: false,
+          code: 503,
+          body: {},
+          session_ready: false,
+          connected: false,
+          can_send: false,
+          can_receive_runtime: false,
+          authenticated: false,
+          provider_state: 'DISCONNECTED',
+          degraded_reason: 'probe_failed',
+          kafka_unhealthy: false,
+        },
+        'server-1',
+        {} as never
+      );
 
-    expect(workerService.updateStatusWorker).toHaveBeenCalledWith(
-      'worker-1',
-      EWorkerStatus.disponible
-    );
-    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        code: ECodeMessage.awaitConnection,
-        status: EBaileysConnectionStatus.connecting,
-        worker_id: 'worker-1',
-        worker_name: 'Canal 1',
-        worker_type_id: EWorkerType.wwebjs,
-        worker_status_id: EWorkerStatus.disponible,
-        degraded_reason: 'probe_failed',
-      })
-    );
-    expect(
-      workerCommandHandlerService.requestWorkerSelfHealing
-    ).toHaveBeenCalledWith(
-      expect.objectContaining({
-        worker_id: 'worker-1',
-        account_id: 'account-1',
-        worker_type_id: EWorkerType.wwebjs,
-        source: 'external_monitor',
-        reason: 'probe_failed',
-      })
-    );
+      expect(workerService.updateStatusWorker).toHaveBeenCalledWith(
+        'worker-1',
+        EWorkerStatus.disponible
+      );
+      expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          code: ECodeMessage.awaitConnection,
+          status: EBaileysConnectionStatus.connecting,
+          worker_id: 'worker-1',
+          worker_name: 'Canal 1',
+          worker_type_id: EWorkerType.wwebjs,
+          worker_status_id: EWorkerStatus.disponible,
+          degraded_reason: 'probe_failed',
+        })
+      );
+      expect(
+        workerCommandHandlerService.requestWorkerSelfHealing
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          worker_id: 'worker-1',
+          account_id: 'account-1',
+          worker_type_id: EWorkerType.wwebjs,
+          source: 'external_monitor',
+          reason: 'probe_failed',
+        })
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('keeps a disponible worker disponible without self-heal while waiting for QR or session', async () => {

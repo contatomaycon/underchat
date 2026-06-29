@@ -138,7 +138,10 @@ describe('MessageStatusUpdateConsume', () => {
     expect(
       messageStatusPendingService.deferMissingStatusUpdate
     ).toHaveBeenCalledWith(
-      data,
+      {
+        ...data,
+        patch: { is_delivered: true, is_sent: true },
+      },
       { is_delivered: true, is_sent: true },
       {
         batchSize: 1,

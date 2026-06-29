@@ -16,6 +16,10 @@ jest.mock('@core/services/contact.service', () => ({
   ContactService: class ContactService {},
 }));
 
+jest.mock('@core/services/chatbotFlowRunner.service', () => ({
+  ChatbotFlowRunnerService: class ChatbotFlowRunnerService {},
+}));
+
 jest.mock('@core/common/functions/generateProtocol', () => ({
   generateProtocol: () => mockGenerateProtocol(),
 }));

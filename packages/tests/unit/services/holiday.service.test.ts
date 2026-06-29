@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { HolidayService } from './holiday.service';
+import { HolidayService } from '@core/services/holiday.service';
 
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'holiday-uuid'),

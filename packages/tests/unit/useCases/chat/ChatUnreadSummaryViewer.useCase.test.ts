@@ -6,7 +6,7 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import type { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import type { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
-import { ChatUnreadSummaryViewerUseCase } from './ChatUnreadSummaryViewer.useCase';
+import { ChatUnreadSummaryViewerUseCase } from '@core/useCases/chat/ChatUnreadSummaryViewer.useCase';
 
 jest.mock('@core/services/elasticDatabase.service', () => ({
   ElasticDatabaseService: class ElasticDatabaseService {},

@@ -53,7 +53,6 @@ async function flushPromises(times = 6): Promise<void> {
   for (let index = 0; index < times; index += 1) {
     await Promise.resolve();
   }
-  await new Promise((resolve) => setImmediate(resolve));
 }
 
 function lifecyclePayload(
@@ -170,6 +169,7 @@ describe('WorkerLifecycleConsume', () => {
       offset: 7,
     });
     await flushPromises();
+    await deps.sut.close();
 
     expect(deps.workerService.viewWorkerForMonitor).toHaveBeenCalledWith(
       'worker-1'
@@ -206,6 +206,7 @@ describe('WorkerLifecycleConsume', () => {
       offset: 3,
     });
     await flushPromises();
+    await deps.sut.close();
 
     expect(deps.workerGrpcClientService.createWorker).not.toHaveBeenCalled();
     expect(deps.workerGrpcClientService.recreateWorker).not.toHaveBeenCalled();
@@ -235,6 +236,7 @@ describe('WorkerLifecycleConsume', () => {
       await flushPromises();
       await jest.advanceTimersByTimeAsync(1000);
       await flushPromises();
+      await deps.sut.close();
 
       expect(deps.workerGrpcClientService.createWorker).toHaveBeenCalledTimes(
         2
@@ -273,6 +275,7 @@ describe('WorkerLifecycleConsume', () => {
       offset: 9,
     });
     await flushPromises();
+    await deps.sut.close();
 
     expect(
       deps.workerGrpcClientService.activateWarmWorker

@@ -8,7 +8,7 @@ import { MY_CHATS_STATUS } from '@core/schema/chat/listChats/request.schema';
 import { ListChatsResult } from '@core/schema/chat/listChats/response.schema';
 import type { ChatUserService } from '@core/services/chatUser.service';
 import type { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
-import { ChatSearcherUseCase } from './ChatSearcher.useCase';
+import { ChatSearcherUseCase } from '@core/useCases/chat/ChatSearcher.useCase';
 
 jest.mock('@core/services/chatUser.service', () => ({
   ChatUserService: class ChatUserService {},
@@ -157,7 +157,6 @@ function matchQueryString(
   );
 }
 
-/* eslint-disable no-use-before-define */
 function matchBool(doc: ListChatsResult, boolQuery: QueryRecord): boolean {
   const mustClauses = asArray(boolQuery.must);
   const filterClauses = asArray(boolQuery.filter);
@@ -229,7 +228,6 @@ function matchClause(doc: ListChatsResult, clause: unknown): boolean {
 
   return true;
 }
-/* eslint-enable no-use-before-define */
 
 function matchElasticQuery(doc: ListChatsResult, query: unknown): boolean {
   if (!isRecord(query)) {

@@ -31,7 +31,7 @@ import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { ChatStackParamList } from '../navigation/types';
+import type { ChatStackParamList, ChatTab } from '../navigation/types';
 import type { ChatListCounts, ListChatsResult } from '../types/chat';
 import {
   listMyChats,
@@ -47,6 +47,8 @@ import {
   updateChatStatus,
   updateChatStatusDetailed,
   updateChatNotificationSettings,
+  updateChatUser,
+  bulkActionChats,
   viewWorkerConfigForChat,
   transferChat,
   listTransferOptions,
@@ -97,6 +99,12 @@ import { AppAvatar } from '../components/AppAvatar';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import { OpeningConversationModal } from '../components/OpeningConversationModal';
 import type { WorkerConfigForChat } from '../types/contact';
+import type {
+  BulkActionChatRequest,
+  BulkActionChatResponse,
+  ChatSortField,
+  ChatSortOrder,
+} from '../types/chatBulkActions';
 import { CHAT_MESSAGES_PER_PAGE } from '../constants/chatMessages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pt } from '../locales/pt';
@@ -152,6 +160,16 @@ import {
   emitChatPinningChange,
   isPinnableChat,
 } from '../utils/chatPinning';
+import {
+  buildBulkSelectionPayload,
+  DEFAULT_CHAT_SORT_FIELD,
+  DEFAULT_CHAT_SORT_ORDER,
+  normalizeChatSortField,
+  normalizeChatSortOrder,
+  resolveBulkCategory,
+  resolveBulkTargetCount,
+  isBulkSelectableChat,
+} from '../utils/chatListBulkActions';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'ChatList'>;
 
@@ -218,6 +236,11 @@ function getChatbotFilterKey(filters: ChatbotFilterStatus[]): string {
 type TransferDestinationType = 'user' | 'sector' | 'chatbot';
 type TransferPickerKind =
   'channel' | 'type' | 'user' | 'sector' | 'sector_user' | 'chatbot' | null;
+type BulkTransferDestinationType = 'user' | 'sector';
+type BulkTransferPickerKind =
+  'channel' | 'type' | 'user' | 'sector' | 'sector_user' | null;
+type ChatSortTarget = 'all' | 'in_chat' | 'queue' | 'chatbot';
+type ChatSortPickerKind = 'sort_field' | 'sort_order' | null;
 
 type TransferChannelOption = {
   value: string;
@@ -228,6 +251,44 @@ type TransferChatbotOption = {
   value: string;
   label: string;
 };
+
+type ChatSortPreferences = {
+  inChatField: ChatSortField;
+  inChatOrder: ChatSortOrder;
+  queueField: ChatSortField;
+  queueOrder: ChatSortOrder;
+  myChatsField: ChatSortField;
+  myChatsOrder: ChatSortOrder;
+  chatbotField: ChatSortField;
+  chatbotOrder: ChatSortOrder;
+};
+
+const CHAT_SORT_FIELD_OPTIONS: Array<{
+  value: ChatSortField;
+  label: string;
+}> = [
+  { value: 'summary.last_message', label: pt.last_message },
+  { value: 'account.name', label: pt.account },
+  { value: 'worker.name', label: pt.channel },
+  { value: 'name', label: pt.name },
+  { value: 'phone', label: pt.phone },
+  { value: 'status', label: pt.status },
+  { value: 'date', label: pt.date },
+  { value: 'user.name', label: pt.attendant },
+  { value: 'sector.name', label: pt.sector },
+  { value: 'started_at', label: pt.started_at },
+  { value: 'closed_at', label: pt.closed_at },
+];
+
+const CHAT_SORT_ORDER_OPTIONS: Array<{
+  value: ChatSortOrder;
+  label: string;
+}> = [
+  { value: 'asc', label: pt.ascending },
+  { value: 'desc', label: pt.descending },
+];
+
+const BULK_SUMMARY_FAILURE_PREVIEW_LIMIT = 5;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -281,6 +342,43 @@ function readChatNotificationSettingsFromUser(
       chatUser.notifications_transfer
     ),
   };
+}
+
+function readChatSortPreferencesFromUser(user: unknown): ChatSortPreferences {
+  const chatUser =
+    isRecord(user) && isRecord(user.chat_user) ? user.chat_user : {};
+
+  return {
+    inChatField: normalizeChatSortField(
+      readString(chatUser.sort_by_chat_order)
+    ),
+    inChatOrder: normalizeChatSortOrder(
+      readString(chatUser.sort_in_chat_order)
+    ),
+    queueField: normalizeChatSortField(
+      readString(chatUser.sort_by_queue_order)
+    ),
+    queueOrder: normalizeChatSortOrder(readString(chatUser.sort_queue_order)),
+    myChatsField: normalizeChatSortField(
+      readString(chatUser.sort_by_my_chats_order)
+    ),
+    myChatsOrder: normalizeChatSortOrder(
+      readString(chatUser.sort_my_chats_order)
+    ),
+    chatbotField: normalizeChatSortField(
+      readString(chatUser.sort_by_chatbot_order)
+    ),
+    chatbotOrder: normalizeChatSortOrder(
+      readString(chatUser.sort_chatbot_order)
+    ),
+  };
+}
+
+function resolveSortTarget(tab: ChatTab): ChatSortTarget | null {
+  if (tab === 'closed') return null;
+  if (tab === 'all') return 'all';
+  if (tab === 'chatbot') return 'chatbot';
+  return tab;
 }
 
 function shouldUseChatPush(settings: ChatNotificationSettingsPayload): boolean {
@@ -674,6 +772,9 @@ function ChatRow({
   item,
   onPress,
   disabled = false,
+  bulkMode = false,
+  bulkSelectable = false,
+  bulkSelected = false,
   chatbotTypeLabel,
   onPressLabelDetails,
   workerConfig,
@@ -682,6 +783,9 @@ function ChatRow({
   item: ListChatsResult;
   onPress: () => void;
   disabled?: boolean;
+  bulkMode?: boolean;
+  bulkSelectable?: boolean;
+  bulkSelected?: boolean;
   chatbotTypeLabel?: string | null;
   onPressLabelDetails?: (labelNames: string[]) => void;
   workerConfig?: WorkerConfigForChat | null;
@@ -719,6 +823,7 @@ function ChatRow({
     workerConfig,
     now
   );
+  const isPressDisabled = bulkMode ? !bulkSelectable : disabled;
   const renderPreviewToken = useCallback(
     (token: WhatsAppTextToken, index: number) => {
       if (!token.text) return null;
@@ -745,15 +850,31 @@ function ChatRow({
     <Pressable
       style={[
         styles.chatRow,
+        bulkMode && styles.chatRowBulkMode,
         attendantLabel && styles.chatRowWithAttendant,
         showPendingReplyAlert && styles.chatRowPendingReplyAlert,
-        disabled && styles.chatRowDisabled,
+        isPressDisabled && styles.chatRowDisabled,
       ]}
       onPress={onPress}
-      disabled={disabled}
-      accessibilityState={{ disabled }}
-      accessibilityLabel={disabled ? pt.action_unavailable_by_permission : name}
+      disabled={isPressDisabled}
+      accessibilityState={{ disabled: isPressDisabled, selected: bulkSelected }}
+      accessibilityLabel={
+        isPressDisabled ? pt.action_unavailable_by_permission : name
+      }
     >
+      {bulkMode ? (
+        <View
+          style={[
+            styles.bulkRowCheckbox,
+            bulkSelected && styles.bulkRowCheckboxSelected,
+            !bulkSelectable && styles.bulkRowCheckboxDisabled,
+          ]}
+        >
+          {bulkSelected ? (
+            <Ionicons name="checkmark" size={14} color={colors.onPrimary} />
+          ) : null}
+        </View>
+      ) : null}
       <AppAvatar
         uri={item.photo ?? item.contact?.photo ?? null}
         size={48}
@@ -1083,6 +1204,100 @@ export function ChatListScreen({ route, navigation }: Props) {
   const [closeServiceClosureError, setCloseServiceClosureError] = useState<
     string | null
   >(null);
+  const [inChatSortField, setInChatSortField] = useState<ChatSortField>(
+    DEFAULT_CHAT_SORT_FIELD
+  );
+  const [inChatSortOrder, setInChatSortOrder] = useState<ChatSortOrder>(
+    DEFAULT_CHAT_SORT_ORDER
+  );
+  const [queueSortField, setQueueSortField] = useState<ChatSortField>(
+    DEFAULT_CHAT_SORT_FIELD
+  );
+  const [queueSortOrder, setQueueSortOrder] = useState<ChatSortOrder>(
+    DEFAULT_CHAT_SORT_ORDER
+  );
+  const [myChatsSortField, setMyChatsSortField] = useState<ChatSortField>(
+    DEFAULT_CHAT_SORT_FIELD
+  );
+  const [myChatsSortOrder, setMyChatsSortOrder] = useState<ChatSortOrder>(
+    DEFAULT_CHAT_SORT_ORDER
+  );
+  const [chatbotSortField, setChatbotSortField] = useState<ChatSortField>(
+    DEFAULT_CHAT_SORT_FIELD
+  );
+  const [chatbotSortOrder, setChatbotSortOrder] = useState<ChatSortOrder>(
+    DEFAULT_CHAT_SORT_ORDER
+  );
+  const [sortModalVisible, setSortModalVisible] = useState(false);
+  const [sortModalTarget, setSortModalTarget] =
+    useState<ChatSortTarget>('in_chat');
+  const [sortPickerKind, setSortPickerKind] =
+    useState<ChatSortPickerKind>(null);
+  const [sortDraftField, setSortDraftField] = useState<ChatSortField>(
+    DEFAULT_CHAT_SORT_FIELD
+  );
+  const [sortDraftOrder, setSortDraftOrder] = useState<ChatSortOrder>(
+    DEFAULT_CHAT_SORT_ORDER
+  );
+  const [isSavingSort, setIsSavingSort] = useState(false);
+  const [isBulkModeEnabled, setIsBulkModeEnabled] = useState(false);
+  const [bulkSelectAllFiltered, setBulkSelectAllFiltered] = useState(false);
+  const [bulkSelectedChatIds, setBulkSelectedChatIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [bulkTransferModalVisible, setBulkTransferModalVisible] =
+    useState(false);
+  const [bulkTransferPickerKind, setBulkTransferPickerKind] =
+    useState<BulkTransferPickerKind>(null);
+  const [bulkTransferType, setBulkTransferType] =
+    useState<BulkTransferDestinationType | null>(null);
+  const [bulkTransferAnnotation, setBulkTransferAnnotation] = useState('');
+  const [bulkTransferKeepInChat, setBulkTransferKeepInChat] = useState(false);
+  const [
+    bulkTransferSendMessageOnTransfer,
+    setBulkTransferSendMessageOnTransfer,
+  ] = useState(false);
+  const [bulkTransferWorkerConfigForChat, setBulkTransferWorkerConfigForChat] =
+    useState<WorkerConfigForChat | null>(null);
+  const [bulkTransferChannels, setBulkTransferChannels] = useState<
+    TransferChannelOption[]
+  >([]);
+  const [bulkTransferUsers, setBulkTransferUsers] = useState<
+    TransferUserOption[]
+  >([]);
+  const [bulkTransferSectors, setBulkTransferSectors] = useState<
+    TransferSectorOption[]
+  >([]);
+  const [bulkTransferSectorUsers, setBulkTransferSectorUsers] = useState<
+    TransferUserOption[]
+  >([]);
+  const [selectedBulkTransferChannelId, setSelectedBulkTransferChannelId] =
+    useState<string | null>(null);
+  const [selectedBulkTransferUserId, setSelectedBulkTransferUserId] = useState<
+    string | null
+  >(null);
+  const [selectedBulkTransferSectorId, setSelectedBulkTransferSectorId] =
+    useState<string | null>(null);
+  const [
+    selectedBulkTransferSectorUserId,
+    setSelectedBulkTransferSectorUserId,
+  ] = useState<string | null>(null);
+  const [isLoadingBulkTransferOptions, setIsLoadingBulkTransferOptions] =
+    useState(false);
+  const [
+    isLoadingBulkTransferSectorUsers,
+    setIsLoadingBulkTransferSectorUsers,
+  ] = useState(false);
+  const [bulkCloseModalVisible, setBulkCloseModalVisible] = useState(false);
+  const [
+    bulkCloseSendMessageOnFinishAttendance,
+    setBulkCloseSendMessageOnFinishAttendance,
+  ] = useState(true);
+  const [bulkSummaryModalVisible, setBulkSummaryModalVisible] = useState(false);
+  const [bulkSummary, setBulkSummary] = useState<BulkActionChatResponse | null>(
+    null
+  );
+  const [isBulkActionRunning, setIsBulkActionRunning] = useState(false);
   const [workerConfigById, setWorkerConfigById] = useState<
     Record<string, WorkerConfigForChat | null>
   >({});
@@ -1217,6 +1432,18 @@ export function ChatListScreen({ route, navigation }: Props) {
     [setChatCounts]
   );
 
+  const applyUserSortPreferences = useCallback((user: unknown) => {
+    const preferences = readChatSortPreferencesFromUser(user);
+    setInChatSortField(preferences.inChatField);
+    setInChatSortOrder(preferences.inChatOrder);
+    setQueueSortField(preferences.queueField);
+    setQueueSortOrder(preferences.queueOrder);
+    setMyChatsSortField(preferences.myChatsField);
+    setMyChatsSortOrder(preferences.myChatsOrder);
+    setChatbotSortField(preferences.chatbotField);
+    setChatbotSortOrder(preferences.chatbotOrder);
+  }, []);
+
   useEffect(() => {
     getUser()
       .then((user) => {
@@ -1234,11 +1461,12 @@ export function ChatListScreen({ route, navigation }: Props) {
           isMasterOrAdministratorUser(user)
         );
         setNotificationSettings(readChatNotificationSettingsFromUser(user));
+        applyUserSortPreferences(user);
       })
       .finally(() => {
         setIsUserResolved(true);
       });
-  }, []);
+  }, [applyUserSortPreferences]);
 
   useEffect(() => {
     return addCurrentUserPresenceStatusListener(setUserStatus, {
@@ -1297,6 +1525,7 @@ export function ChatListScreen({ route, navigation }: Props) {
           isMasterOrAdministratorUser(user)
         );
         setNotificationSettings(readChatNotificationSettingsFromUser(user));
+        applyUserSortPreferences(user);
       });
 
       void getPermissions().then((permissions) => {
@@ -1313,7 +1542,7 @@ export function ChatListScreen({ route, navigation }: Props) {
         );
       });
     });
-  }, []);
+  }, [applyUserSortPreferences]);
 
   const isAuthContextResolved =
     isUserResolved &&
@@ -1324,6 +1553,29 @@ export function ChatListScreen({ route, navigation }: Props) {
   useEffect(() => {
     isAuthContextResolvedRef.current = isAuthContextResolved;
   }, [isAuthContextResolved]);
+
+  const currentSort = useMemo(() => {
+    if (tab === 'all') {
+      return { field: myChatsSortField, order: myChatsSortOrder };
+    }
+    if (tab === 'queue') {
+      return { field: queueSortField, order: queueSortOrder };
+    }
+    if (tab === 'chatbot') {
+      return { field: chatbotSortField, order: chatbotSortOrder };
+    }
+    return { field: inChatSortField, order: inChatSortOrder };
+  }, [
+    chatbotSortField,
+    chatbotSortOrder,
+    inChatSortField,
+    inChatSortOrder,
+    myChatsSortField,
+    myChatsSortOrder,
+    queueSortField,
+    queueSortOrder,
+    tab,
+  ]);
 
   const load = useCallback(
     async (options?: { append?: boolean; trigger?: ChatListLoadTrigger }) => {
@@ -1422,8 +1674,12 @@ export function ChatListScreen({ route, navigation }: Props) {
             filter_protocol: advancedFilterValues.filter_protocol,
             filter_date_start: advancedFilterValues.filter_date_start,
             filter_date_end: toNextDay(advancedFilterValues.filter_date_end),
-            sort_field: advancedFilterValues.sort_field,
-            sort_order: advancedFilterValues.sort_order,
+            sort_field: advancedFilterValues.sort_field
+              ? normalizeChatSortField(advancedFilterValues.sort_field)
+              : currentSort.field,
+            sort_order: advancedFilterValues.sort_order
+              ? normalizeChatSortOrder(advancedFilterValues.sort_order)
+              : currentSort.order,
           });
           if (res) {
             applyPagination(res.current_page, res.total_pages);
@@ -1624,6 +1880,7 @@ export function ChatListScreen({ route, navigation }: Props) {
       search,
       hasAppliedAdvancedFilters,
       advancedFilterValues,
+      currentSort,
       chatbotFilters,
       inChatScope,
       currentUserId,
@@ -1965,6 +2222,107 @@ export function ChatListScreen({ route, navigation }: Props) {
       };
     }, [handleCloseProfileSidebar])
   );
+
+  const openSortModal = useCallback(() => {
+    const target = resolveSortTarget(tab);
+    if (!target) return;
+
+    dismissKeyboard();
+    openedSwipeableRef.current?.close();
+    setSortModalTarget(target);
+
+    if (target === 'all') {
+      setSortDraftField(myChatsSortField);
+      setSortDraftOrder(myChatsSortOrder);
+    } else if (target === 'queue') {
+      setSortDraftField(queueSortField);
+      setSortDraftOrder(queueSortOrder);
+    } else if (target === 'chatbot') {
+      setSortDraftField(chatbotSortField);
+      setSortDraftOrder(chatbotSortOrder);
+    } else {
+      setSortDraftField(inChatSortField);
+      setSortDraftOrder(inChatSortOrder);
+    }
+
+    setSortPickerKind(null);
+    setSortModalVisible(true);
+  }, [
+    chatbotSortField,
+    chatbotSortOrder,
+    inChatSortField,
+    inChatSortOrder,
+    myChatsSortField,
+    myChatsSortOrder,
+    queueSortField,
+    queueSortOrder,
+    tab,
+  ]);
+
+  const closeSortModal = useCallback(() => {
+    if (isSavingSort) return;
+    setSortPickerKind(null);
+    setSortModalVisible(false);
+  }, [isSavingSort]);
+
+  const applySort = useCallback(async () => {
+    if (isSavingSort) return;
+
+    const payload: Parameters<typeof updateChatUser>[0] = {};
+    const patch: Record<string, unknown> = {};
+
+    if (sortModalTarget === 'all') {
+      payload.sort_by_my_chats_order = sortDraftField;
+      payload.sort_my_chats_order = sortDraftOrder;
+      patch.sort_by_my_chats_order = sortDraftField;
+      patch.sort_my_chats_order = sortDraftOrder;
+    } else if (sortModalTarget === 'queue') {
+      payload.sort_by_queue_order = sortDraftField;
+      payload.sort_queue_order = sortDraftOrder;
+      patch.sort_by_queue_order = sortDraftField;
+      patch.sort_queue_order = sortDraftOrder;
+    } else if (sortModalTarget === 'chatbot') {
+      payload.sort_by_chatbot_order = sortDraftField;
+      payload.sort_chatbot_order = sortDraftOrder;
+      patch.sort_by_chatbot_order = sortDraftField;
+      patch.sort_chatbot_order = sortDraftOrder;
+    } else {
+      payload.sort_by_chat_order = sortDraftField;
+      payload.sort_in_chat_order = sortDraftOrder;
+      patch.sort_by_chat_order = sortDraftField;
+      patch.sort_in_chat_order = sortDraftOrder;
+    }
+
+    setIsSavingSort(true);
+    try {
+      const ok = await updateChatUser(payload);
+      if (!ok) {
+        Alert.alert(pt.error_title, pt.chat_sort_update_error);
+        return;
+      }
+
+      if (sortModalTarget === 'all') {
+        setMyChatsSortField(sortDraftField);
+        setMyChatsSortOrder(sortDraftOrder);
+      } else if (sortModalTarget === 'queue') {
+        setQueueSortField(sortDraftField);
+        setQueueSortOrder(sortDraftOrder);
+      } else if (sortModalTarget === 'chatbot') {
+        setChatbotSortField(sortDraftField);
+        setChatbotSortOrder(sortDraftOrder);
+      } else {
+        setInChatSortField(sortDraftField);
+        setInChatSortOrder(sortDraftOrder);
+      }
+
+      await patchUser({ chat_user: patch });
+      setSortModalVisible(false);
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_sort_update_error);
+    } finally {
+      setIsSavingSort(false);
+    }
+  }, [isSavingSort, sortDraftField, sortDraftOrder, sortModalTarget]);
 
   const openChat = useCallback(
     async (chat: ListChatsResult, queueIndex: number | null = null) => {
@@ -2894,6 +3252,655 @@ export function ChatListScreen({ route, navigation }: Props) {
   const visiblePinnedChats = canShowPinnedChats ? pinnedChats : [];
   const visibleInChat = removePinnedFromSections(inChat);
   const visibleQueue = removePinnedFromSections(queue);
+  const activeChatbotFilter = chatbotFilters[0] ?? 'ura';
+  const bulkCategory = useMemo(
+    () => resolveBulkCategory(tab, activeChatbotFilter),
+    [activeChatbotFilter, tab]
+  );
+  const isBulkModeAvailable = bulkCategory !== null;
+  const selectedBulkChatIds = useMemo(
+    () => Array.from(bulkSelectedChatIds),
+    [bulkSelectedChatIds]
+  );
+  const visibleSelectableBulkCount = useMemo(() => {
+    return [...visiblePinnedChats, ...visibleInChat, ...visibleQueue].filter(
+      (chat) => isBulkSelectableChat(chat, bulkCategory, currentUserId)
+    ).length;
+  }, [
+    bulkCategory,
+    currentUserId,
+    visibleInChat,
+    visiblePinnedChats,
+    visibleQueue,
+  ]);
+  const bulkTargetCount = useMemo(
+    () =>
+      resolveBulkTargetCount({
+        category: bulkCategory,
+        selectAllFiltered: bulkSelectAllFiltered,
+        selectedCount: bulkSelectedChatIds.size,
+        counts: chatCounts,
+        visibleSelectableCount: visibleSelectableBulkCount,
+        inChatScope,
+      }),
+    [
+      bulkCategory,
+      bulkSelectAllFiltered,
+      bulkSelectedChatIds.size,
+      chatCounts,
+      inChatScope,
+      visibleSelectableBulkCount,
+    ]
+  );
+  const hasBulkSelection = bulkTargetCount > 0;
+  const bulkSelectedCountLabel = pt.bulk_selected_count.replace(
+    '{count}',
+    String(bulkTargetCount)
+  );
+  const bulkTargetCountLabel = pt.bulk_target_count.replace(
+    '{count}',
+    String(bulkTargetCount)
+  );
+
+  const resetBulkSelection = useCallback(() => {
+    setBulkSelectAllFiltered(false);
+    setBulkSelectedChatIds(new Set());
+  }, []);
+
+  const disableBulkMode = useCallback(() => {
+    setIsBulkModeEnabled(false);
+    resetBulkSelection();
+  }, [resetBulkSelection]);
+
+  useEffect(() => {
+    disableBulkMode();
+  }, [
+    activeChatbotFilter,
+    advancedFilterValues,
+    disableBulkMode,
+    hasAppliedAdvancedFilters,
+    inChatScope,
+    search,
+    tab,
+  ]);
+
+  const toggleBulkMode = useCallback(() => {
+    if (!isBulkModeAvailable) return;
+    dismissKeyboard();
+    openedSwipeableRef.current?.close();
+    setIsBulkModeEnabled((current) => {
+      if (current) {
+        resetBulkSelection();
+        return false;
+      }
+      resetBulkSelection();
+      return true;
+    });
+  }, [isBulkModeAvailable, resetBulkSelection]);
+
+  const handleBulkSelectAllFilteredChange = useCallback(() => {
+    setBulkSelectAllFiltered((current) => {
+      const next = !current;
+      if (next) {
+        setBulkSelectedChatIds(new Set());
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleBulkChatSelection = useCallback(
+    (chatId: string) => {
+      if (bulkSelectAllFiltered || !chatId) return;
+      setBulkSelectedChatIds((current) => {
+        const next = new Set(current);
+        if (next.has(chatId)) {
+          next.delete(chatId);
+        } else {
+          next.add(chatId);
+        }
+        return next;
+      });
+    },
+    [bulkSelectAllFiltered]
+  );
+
+  const buildBulkActionBasePayload = useCallback((): Omit<
+    BulkActionChatRequest,
+    | 'action'
+    | 'selection_mode'
+    | 'chat_ids'
+    | 'category'
+    | 'transfer_payload'
+    | 'close_payload'
+  > => {
+    const filterUserId =
+      tab === 'in_chat' && inChatScope === 'mine'
+        ? currentUserId
+        : advancedFilterValues.filter_user_id;
+
+    return {
+      search: search.trim(),
+      has_applied_advanced_filters: hasAppliedAdvancedFilters,
+      filter_label_template_id: advancedFilterValues.filter_label_template_id,
+      filter_worker_id: advancedFilterValues.filter_worker_id,
+      filter_user_id: filterUserId,
+      filter_sector_id: advancedFilterValues.filter_sector_id,
+      filter_name: advancedFilterValues.filter_name,
+      filter_phone: advancedFilterValues.filter_phone,
+      filter_protocol: advancedFilterValues.filter_protocol,
+      filter_date_start: advancedFilterValues.filter_date_start,
+      filter_date_end: toNextDay(advancedFilterValues.filter_date_end),
+      sort_field: advancedFilterValues.sort_field
+        ? normalizeChatSortField(advancedFilterValues.sort_field)
+        : currentSort.field,
+      sort_order: advancedFilterValues.sort_order
+        ? normalizeChatSortOrder(advancedFilterValues.sort_order)
+        : currentSort.order,
+    };
+  }, [
+    advancedFilterValues,
+    currentSort.field,
+    currentSort.order,
+    currentUserId,
+    hasAppliedAdvancedFilters,
+    inChatScope,
+    search,
+    tab,
+  ]);
+
+  const closeBulkTransferModal = useCallback(() => {
+    if (isBulkActionRunning) return;
+    dismissKeyboard();
+    setBulkTransferModalVisible(false);
+    setBulkTransferPickerKind(null);
+    setBulkTransferType(null);
+    setBulkTransferAnnotation('');
+    setBulkTransferKeepInChat(false);
+    setBulkTransferSendMessageOnTransfer(false);
+    setBulkTransferWorkerConfigForChat(null);
+    setBulkTransferChannels([]);
+    setBulkTransferUsers([]);
+    setBulkTransferSectors([]);
+    setBulkTransferSectorUsers([]);
+    setSelectedBulkTransferChannelId(null);
+    setSelectedBulkTransferUserId(null);
+    setSelectedBulkTransferSectorId(null);
+    setSelectedBulkTransferSectorUserId(null);
+    setIsLoadingBulkTransferOptions(false);
+    setIsLoadingBulkTransferSectorUsers(false);
+  }, [isBulkActionRunning]);
+
+  const openBulkTransferModal = useCallback(async () => {
+    if (!hasBulkSelection) {
+      Alert.alert(pt.warning_title, pt.bulk_no_selection);
+      return;
+    }
+
+    dismissKeyboard();
+    openedSwipeableRef.current?.close();
+    setBulkTransferModalVisible(true);
+    setBulkTransferPickerKind(null);
+    setBulkTransferType(null);
+    setBulkTransferAnnotation('');
+    setBulkTransferKeepInChat(false);
+    setBulkTransferSendMessageOnTransfer(false);
+    setBulkTransferWorkerConfigForChat(null);
+    setBulkTransferChannels([]);
+    setBulkTransferUsers([]);
+    setBulkTransferSectors([]);
+    setBulkTransferSectorUsers([]);
+    setSelectedBulkTransferChannelId(null);
+    setSelectedBulkTransferUserId(null);
+    setSelectedBulkTransferSectorId(null);
+    setSelectedBulkTransferSectorUserId(null);
+    setIsLoadingBulkTransferOptions(true);
+
+    try {
+      const [baseOptions, sectors] = await Promise.all([
+        listTransferOptions(),
+        listTransferSectors(),
+      ]);
+
+      setBulkTransferChannels(
+        (baseOptions?.workers ?? []).map((worker) => {
+          const numberLabel = worker.number ? ` (${worker.number})` : '';
+          return {
+            value: worker.id,
+            label: `${worker.name}${numberLabel}`,
+          };
+        })
+      );
+      setBulkTransferSectors(sectors);
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_transfer_error);
+      closeBulkTransferModal();
+    } finally {
+      setIsLoadingBulkTransferOptions(false);
+    }
+  }, [closeBulkTransferModal, hasBulkSelection]);
+
+  useEffect(() => {
+    if (!bulkTransferModalVisible || !selectedBulkTransferChannelId) {
+      setBulkTransferUsers([]);
+      setBulkTransferWorkerConfigForChat(null);
+      return;
+    }
+
+    let cancelled = false;
+    setBulkTransferWorkerConfigForChat(null);
+    setBulkTransferSendMessageOnTransfer(false);
+
+    viewWorkerConfigForChat(selectedBulkTransferChannelId)
+      .then((config) => {
+        if (cancelled) return;
+        setBulkTransferWorkerConfigForChat(config);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBulkTransferWorkerConfigForChat(null);
+      });
+
+    listTransferUsers(undefined, selectedBulkTransferChannelId)
+      .then((users) => {
+        if (cancelled) return;
+        setBulkTransferUsers(users);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBulkTransferUsers([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bulkTransferModalVisible, selectedBulkTransferChannelId]);
+
+  useEffect(() => {
+    if (
+      !bulkTransferModalVisible ||
+      bulkTransferType !== 'sector' ||
+      !selectedBulkTransferSectorId ||
+      !selectedBulkTransferChannelId
+    ) {
+      setBulkTransferSectorUsers([]);
+      return;
+    }
+
+    setIsLoadingBulkTransferSectorUsers(true);
+
+    listTransferSectorUsers(
+      selectedBulkTransferSectorId,
+      undefined,
+      selectedBulkTransferChannelId
+    )
+      .then(setBulkTransferSectorUsers)
+      .catch(() => {
+        setBulkTransferSectorUsers([]);
+      })
+      .finally(() => {
+        setIsLoadingBulkTransferSectorUsers(false);
+      });
+  }, [
+    bulkTransferModalVisible,
+    bulkTransferType,
+    selectedBulkTransferChannelId,
+    selectedBulkTransferSectorId,
+  ]);
+
+  const shouldShowBulkTransferSendMessageToggle =
+    bulkTransferWorkerConfigForChat?.send_message_on_transfer_enabled ===
+      true && canDisableSendMessageOnTransferAction;
+
+  const closeBulkCloseModal = useCallback(() => {
+    if (isBulkActionRunning) return;
+    setBulkCloseModalVisible(false);
+    setBulkCloseSendMessageOnFinishAttendance(true);
+  }, [isBulkActionRunning]);
+
+  const openBulkCloseModal = useCallback(() => {
+    if (!hasBulkSelection) {
+      Alert.alert(pt.warning_title, pt.bulk_no_selection);
+      return;
+    }
+
+    dismissKeyboard();
+    openedSwipeableRef.current?.close();
+    setBulkCloseSendMessageOnFinishAttendance(true);
+    setBulkCloseModalVisible(true);
+  }, [hasBulkSelection]);
+
+  const runBulkTransferAction = useCallback(async () => {
+    if (!hasBulkSelection) {
+      Alert.alert(pt.warning_title, pt.bulk_no_selection);
+      return;
+    }
+    if (!selectedBulkTransferChannelId) {
+      Alert.alert(pt.warning_title, pt.channel_required);
+      return;
+    }
+    if (bulkTransferType === 'user' && !selectedBulkTransferUserId) {
+      Alert.alert(pt.warning_title, pt.user_required);
+      return;
+    }
+    if (bulkTransferType === 'sector' && !selectedBulkTransferSectorId) {
+      Alert.alert(pt.warning_title, pt.sector_required);
+      return;
+    }
+    if (!bulkTransferType) {
+      Alert.alert(pt.warning_title, pt.transfer_to_placeholder);
+      return;
+    }
+
+    const selectedUserId =
+      bulkTransferType === 'user'
+        ? selectedBulkTransferUserId
+        : selectedBulkTransferSectorUserId;
+
+    const payload: BulkActionChatRequest = {
+      action: 'transfer',
+      ...buildBulkSelectionPayload({
+        selectAllFiltered: bulkSelectAllFiltered,
+        selectedChatIds: selectedBulkChatIds,
+        category: bulkCategory,
+      }),
+      ...buildBulkActionBasePayload(),
+      transfer_payload: {
+        worker_id: selectedBulkTransferChannelId,
+        ...(selectedUserId ? { user_id: selectedUserId } : {}),
+        ...(bulkTransferType === 'sector' && selectedBulkTransferSectorId
+          ? { sector_id: selectedBulkTransferSectorId }
+          : {}),
+        ...(bulkTransferAnnotation.trim()
+          ? { annotation: bulkTransferAnnotation.trim() }
+          : {}),
+        keep_in_chat: bulkTransferKeepInChat,
+        ...(shouldShowBulkTransferSendMessageToggle
+          ? { send_message_on_transfer: bulkTransferSendMessageOnTransfer }
+          : {}),
+      },
+    };
+
+    setIsBulkActionRunning(true);
+    try {
+      const result = await bulkActionChats(payload);
+      if (!result.ok || !result.data) {
+        Alert.alert(
+          pt.error_title,
+          result.message ?? pt.chat_bulk_action_all_failed
+        );
+        return;
+      }
+
+      setBulkSummary(result.data);
+      setBulkSummaryModalVisible(true);
+      setBulkTransferModalVisible(false);
+      disableBulkMode();
+      void load({ trigger: 'action' });
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_bulk_action_all_failed);
+    } finally {
+      setIsBulkActionRunning(false);
+    }
+  }, [
+    buildBulkActionBasePayload,
+    bulkCategory,
+    bulkSelectAllFiltered,
+    bulkTransferAnnotation,
+    bulkTransferKeepInChat,
+    bulkTransferSendMessageOnTransfer,
+    bulkTransferType,
+    disableBulkMode,
+    hasBulkSelection,
+    load,
+    selectedBulkChatIds,
+    selectedBulkTransferChannelId,
+    selectedBulkTransferSectorId,
+    selectedBulkTransferSectorUserId,
+    selectedBulkTransferUserId,
+    shouldShowBulkTransferSendMessageToggle,
+  ]);
+
+  const runBulkCloseAction = useCallback(async () => {
+    if (!hasBulkSelection) {
+      Alert.alert(pt.warning_title, pt.bulk_no_selection);
+      return;
+    }
+
+    const payload: BulkActionChatRequest = {
+      action: 'close',
+      ...buildBulkSelectionPayload({
+        selectAllFiltered: bulkSelectAllFiltered,
+        selectedChatIds: selectedBulkChatIds,
+        category: bulkCategory,
+      }),
+      ...buildBulkActionBasePayload(),
+      close_payload: {
+        send_message_on_finish_attendance:
+          bulkCloseSendMessageOnFinishAttendance,
+      },
+    };
+
+    setIsBulkActionRunning(true);
+    try {
+      const result = await bulkActionChats(payload);
+      if (!result.ok || !result.data) {
+        Alert.alert(
+          pt.error_title,
+          result.message ?? pt.chat_bulk_action_all_failed
+        );
+        return;
+      }
+
+      setBulkSummary(result.data);
+      setBulkSummaryModalVisible(true);
+      setBulkCloseModalVisible(false);
+      disableBulkMode();
+      void load({ trigger: 'action' });
+    } catch {
+      Alert.alert(pt.error_title, pt.chat_bulk_action_all_failed);
+    } finally {
+      setIsBulkActionRunning(false);
+    }
+  }, [
+    buildBulkActionBasePayload,
+    bulkCategory,
+    bulkCloseSendMessageOnFinishAttendance,
+    bulkSelectAllFiltered,
+    disableBulkMode,
+    hasBulkSelection,
+    load,
+    selectedBulkChatIds,
+  ]);
+
+  const handleSelectBulkTransferPickerValue = useCallback(
+    (value: string) => {
+      if (bulkTransferPickerKind === 'channel') {
+        setSelectedBulkTransferChannelId(value);
+        setSelectedBulkTransferUserId(null);
+        setSelectedBulkTransferSectorUserId(null);
+      } else if (bulkTransferPickerKind === 'type') {
+        if (value === 'user' || value === 'sector') {
+          setBulkTransferType(value);
+        } else {
+          setBulkTransferType(null);
+        }
+        setSelectedBulkTransferUserId(null);
+        setSelectedBulkTransferSectorId(null);
+        setSelectedBulkTransferSectorUserId(null);
+      } else if (bulkTransferPickerKind === 'user') {
+        setSelectedBulkTransferUserId(value);
+      } else if (bulkTransferPickerKind === 'sector') {
+        setSelectedBulkTransferSectorId(value);
+        setSelectedBulkTransferSectorUserId(null);
+      } else if (bulkTransferPickerKind === 'sector_user') {
+        setSelectedBulkTransferSectorUserId(value);
+      }
+
+      setBulkTransferPickerKind(null);
+    },
+    [bulkTransferPickerKind]
+  );
+
+  const bulkTransferPickerOptions = useMemo<SelectOption[]>(() => {
+    if (bulkTransferPickerKind === 'channel') {
+      return bulkTransferChannels;
+    }
+    if (bulkTransferPickerKind === 'type') {
+      return [
+        { value: 'user', label: pt.transfer_type_user },
+        { value: 'sector', label: pt.transfer_type_sector },
+      ];
+    }
+    if (bulkTransferPickerKind === 'user') {
+      return bulkTransferUsers.map((option) => ({
+        value: option.id,
+        label: formatTransferUserLabel(option),
+      }));
+    }
+    if (bulkTransferPickerKind === 'sector') {
+      return bulkTransferSectors.map((option) => ({
+        value: option.id,
+        label: option.name,
+      }));
+    }
+    if (bulkTransferPickerKind === 'sector_user') {
+      return bulkTransferSectorUsers.map((option) => ({
+        value: option.id,
+        label: formatTransferUserLabel(option),
+      }));
+    }
+    return [];
+  }, [
+    bulkTransferChannels,
+    bulkTransferPickerKind,
+    bulkTransferSectors,
+    bulkTransferSectorUsers,
+    bulkTransferUsers,
+  ]);
+
+  const bulkTransferPickerTitle = useMemo(() => {
+    if (bulkTransferPickerKind === 'channel') return pt.channel;
+    if (bulkTransferPickerKind === 'type') return pt.transfer_to;
+    if (bulkTransferPickerKind === 'user') return pt.attendant;
+    if (bulkTransferPickerKind === 'sector') return pt.sector;
+    if (bulkTransferPickerKind === 'sector_user') {
+      return pt.transfer_sector_user_optional;
+    }
+    return pt.select_option;
+  }, [bulkTransferPickerKind]);
+
+  const selectedBulkTransferPickerValue = useMemo(() => {
+    if (bulkTransferPickerKind === 'channel') {
+      return selectedBulkTransferChannelId;
+    }
+    if (bulkTransferPickerKind === 'type') return bulkTransferType;
+    if (bulkTransferPickerKind === 'user') return selectedBulkTransferUserId;
+    if (bulkTransferPickerKind === 'sector')
+      return selectedBulkTransferSectorId;
+    if (bulkTransferPickerKind === 'sector_user') {
+      return selectedBulkTransferSectorUserId;
+    }
+    return null;
+  }, [
+    bulkTransferPickerKind,
+    bulkTransferType,
+    selectedBulkTransferChannelId,
+    selectedBulkTransferSectorId,
+    selectedBulkTransferSectorUserId,
+    selectedBulkTransferUserId,
+  ]);
+
+  const selectedBulkTransferChannelLabel =
+    bulkTransferChannels.find(
+      (item) => item.value === selectedBulkTransferChannelId
+    )?.label ?? null;
+  const selectedBulkTransferTypeLabel =
+    bulkTransferType === 'user'
+      ? pt.transfer_type_user
+      : bulkTransferType === 'sector'
+        ? pt.transfer_type_sector
+        : null;
+  const selectedBulkTransferUserLabel =
+    bulkTransferUsers.find((item) => item.id === selectedBulkTransferUserId)
+      ?.name ?? null;
+  const selectedBulkTransferSectorLabel =
+    bulkTransferSectors.find((item) => item.id === selectedBulkTransferSectorId)
+      ?.name ?? null;
+  const selectedBulkTransferSectorUserLabel =
+    bulkTransferSectorUsers.find(
+      (item) => item.id === selectedBulkTransferSectorUserId
+    )?.name ?? null;
+
+  const selectedSortFieldLabel =
+    CHAT_SORT_FIELD_OPTIONS.find((option) => option.value === sortDraftField)
+      ?.label ?? null;
+  const selectedSortOrderLabel =
+    CHAT_SORT_ORDER_OPTIONS.find((option) => option.value === sortDraftOrder)
+      ?.label ?? null;
+  const sortModalTitle =
+    sortModalTarget === 'all'
+      ? pt.sort_my_chats
+      : sortModalTarget === 'queue'
+        ? pt.sort_queue
+        : sortModalTarget === 'chatbot'
+          ? pt.sort_chatbot
+          : pt.sort_in_chat;
+
+  const handleSelectSortPickerValue = useCallback(
+    (value: string) => {
+      if (sortPickerKind === 'sort_field') {
+        setSortDraftField(normalizeChatSortField(value));
+      } else if (sortPickerKind === 'sort_order') {
+        setSortDraftOrder(normalizeChatSortOrder(value));
+      }
+
+      setSortPickerKind(null);
+    },
+    [sortPickerKind]
+  );
+
+  const sortPickerOptions = useMemo<SelectOption[]>(() => {
+    if (sortPickerKind === 'sort_field') return CHAT_SORT_FIELD_OPTIONS;
+    if (sortPickerKind === 'sort_order') return CHAT_SORT_ORDER_OPTIONS;
+    return [];
+  }, [sortPickerKind]);
+
+  const selectedSortPickerValue =
+    sortPickerKind === 'sort_field'
+      ? sortDraftField
+      : sortPickerKind === 'sort_order'
+        ? sortDraftOrder
+        : null;
+
+  const sortPickerTitle =
+    sortPickerKind === 'sort_field' ? pt.sort_by : pt.sort_order;
+
+  const bulkSummaryMessage = useMemo(() => {
+    if (!bulkSummary) return '';
+
+    const values: Record<string, string> = {
+      '{total}': String(bulkSummary.total_targeted),
+      '{success}': String(bulkSummary.success_count),
+      '{failed}': String(bulkSummary.failed_count),
+    };
+    const template =
+      bulkSummary.total_targeted <= 0
+        ? pt.chat_bulk_action_no_targets
+        : bulkSummary.success_count <= 0
+          ? pt.chat_bulk_action_all_failed
+          : bulkSummary.failed_count > 0
+            ? pt.chat_bulk_action_partial
+            : pt.chat_bulk_action_success;
+
+    return Object.entries(values).reduce(
+      (message, [key, value]) => message.replace(key, value),
+      template
+    );
+  }, [bulkSummary]);
+
+  const bulkSummaryFailures =
+    bulkSummary?.failures.slice(0, BULK_SUMMARY_FAILURE_PREVIEW_LIMIT) ?? [];
+
   const sections: {
     title: string;
     data: ListChatsResult[];
@@ -3147,6 +4154,132 @@ export function ChatListScreen({ route, navigation }: Props) {
           })}
         </View>
       ) : null}
+      {isBulkModeAvailable ? (
+        <View style={styles.listToolsContainer}>
+          <View style={styles.listToolsRow}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.listToolButton,
+                pressed && styles.listToolButtonPressed,
+              ]}
+              onPress={openSortModal}
+              disabled={isSavingSort}
+            >
+              <Ionicons
+                name="swap-vertical-outline"
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.listToolButtonText}>{pt.sort}</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.listToolButton,
+                isBulkModeEnabled && styles.listToolButtonActive,
+                pressed && styles.listToolButtonPressed,
+              ]}
+              onPress={toggleBulkMode}
+            >
+              <Ionicons
+                name={
+                  isBulkModeEnabled
+                    ? 'close-circle-outline'
+                    : 'checkbox-outline'
+                }
+                size={18}
+                color={isBulkModeEnabled ? colors.onPrimary : colors.primary}
+              />
+              <Text
+                style={[
+                  styles.listToolButtonText,
+                  isBulkModeEnabled && styles.listToolButtonTextActive,
+                ]}
+              >
+                {isBulkModeEnabled ? pt.bulk_mode_exit : pt.select}
+              </Text>
+            </Pressable>
+          </View>
+
+          {isBulkModeEnabled ? (
+            <View style={styles.bulkToolbar}>
+              <Pressable
+                style={styles.bulkSelectAllRow}
+                onPress={handleBulkSelectAllFilteredChange}
+              >
+                <View
+                  style={[
+                    styles.bulkToolbarCheckbox,
+                    bulkSelectAllFiltered && styles.bulkToolbarCheckboxSelected,
+                  ]}
+                >
+                  {bulkSelectAllFiltered ? (
+                    <Ionicons
+                      name="checkmark"
+                      size={14}
+                      color={colors.onPrimary}
+                    />
+                  ) : null}
+                </View>
+                <Text style={styles.bulkSelectAllText} numberOfLines={2}>
+                  {pt.bulk_select_all_filtered}
+                </Text>
+                <View style={styles.bulkCountChip}>
+                  <Text style={styles.bulkCountChipText}>
+                    {bulkSelectAllFiltered
+                      ? bulkTargetCountLabel
+                      : bulkSelectedCountLabel}
+                  </Text>
+                </View>
+              </Pressable>
+              {bulkSelectAllFiltered ? (
+                <Text style={styles.bulkHintText}>
+                  {pt.bulk_selection_filtered_hint}
+                </Text>
+              ) : null}
+              <View style={styles.bulkActionsRow}>
+                <Pressable
+                  style={[
+                    styles.bulkActionButton,
+                    styles.bulkTransferButton,
+                    (!hasBulkSelection || isBulkActionRunning) &&
+                      styles.actionBtnDisabled,
+                  ]}
+                  onPress={() => void openBulkTransferModal()}
+                  disabled={!hasBulkSelection || isBulkActionRunning}
+                >
+                  <Ionicons
+                    name="swap-horizontal-outline"
+                    size={17}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.bulkTransferButtonText}>
+                    {pt.bulk_transfer}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.bulkActionButton,
+                    styles.bulkCloseButton,
+                    (!hasBulkSelection || isBulkActionRunning) &&
+                      styles.actionBtnDisabled,
+                  ]}
+                  onPress={openBulkCloseModal}
+                  disabled={!hasBulkSelection || isBulkActionRunning}
+                >
+                  <Ionicons
+                    name="close-outline"
+                    size={17}
+                    color={colors.error}
+                  />
+                  <Text style={styles.bulkCloseButtonText}>
+                    {pt.bulk_close}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
       <UserSidebar
         visible={profileSidebarVisible}
         onClose={handleCloseProfileSidebar}
@@ -3180,6 +4313,63 @@ export function ChatListScreen({ route, navigation }: Props) {
         }}
         canUseUserAndSectorFilters={canUseUserAndSectorFilters}
       />
+      <BottomSheetModal
+        visible={sortModalVisible}
+        onClose={closeSortModal}
+        title={sortModalTitle}
+        footer={
+          <>
+            <Pressable
+              style={styles.sheetCancelBtn}
+              onPress={closeSortModal}
+              disabled={isSavingSort}
+            >
+              <Text style={styles.sheetCancelText}>{pt.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.sheetSaveBtn,
+                isSavingSort && styles.actionBtnDisabled,
+              ]}
+              onPress={() => void applySort()}
+              disabled={isSavingSort}
+            >
+              {isSavingSort ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <Text style={styles.sheetSaveText}>{pt.apply}</Text>
+              )}
+            </Pressable>
+          </>
+        }
+        extraContent={
+          <SelectSheet
+            visible={sortPickerKind !== null}
+            title={sortPickerTitle}
+            options={sortPickerOptions}
+            selectedValue={selectedSortPickerValue}
+            emptyText={pt.no_results_found}
+            searchPlaceholder={pt.select_search_placeholder}
+            onRequestClose={dismissKeyboardAnd(() => setSortPickerKind(null))}
+            onSelectValue={handleSelectSortPickerValue}
+          />
+        }
+      >
+        <View style={styles.sortSheetContent}>
+          <SelectField
+            label={pt.sort_by}
+            valueLabel={selectedSortFieldLabel}
+            placeholder={pt.select_sort_field}
+            onPress={dismissKeyboardAnd(() => setSortPickerKind('sort_field'))}
+          />
+          <SelectField
+            label={pt.sort_order}
+            valueLabel={selectedSortOrderLabel}
+            placeholder={pt.select_sort_order}
+            onPress={dismissKeyboardAnd(() => setSortPickerKind('sort_order'))}
+          />
+        </View>
+      </BottomSheetModal>
       <Modal
         visible={labelInfoModalVisible}
         transparent
@@ -3612,6 +4802,433 @@ export function ChatListScreen({ route, navigation }: Props) {
           />
         </KeyboardAvoidingView>
       </Modal>
+      <Modal
+        visible={bulkTransferModalVisible}
+        transparent
+        statusBarTranslucent
+        navigationBarTranslucent
+        animationType="fade"
+        onRequestClose={closeBulkTransferModal}
+      >
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoiding}
+          behavior={modalKeyboardAvoidingBehavior}
+          keyboardVerticalOffset={getModalKeyboardVerticalOffset(
+            insets.bottom + 8,
+            ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+          )}
+        >
+          <View
+            style={[
+              styles.transferOverlay,
+              { paddingBottom: 16 + insets.bottom },
+            ]}
+          >
+            <Pressable
+              style={styles.transferBackdrop}
+              onPress={dismissKeyboardAnd(closeBulkTransferModal)}
+              disabled={isBulkActionRunning}
+            />
+            <View style={styles.transferCard}>
+              <View style={styles.transferHeaderRow}>
+                <Text style={styles.transferTitle}>
+                  {pt.bulk_transfer_dialog_title}
+                </Text>
+                <Pressable
+                  onPress={dismissKeyboardAnd(closeBulkTransferModal)}
+                  hitSlop={12}
+                  disabled={isBulkActionRunning}
+                >
+                  <Ionicons name="close" size={22} color={colors.onSurface} />
+                </Pressable>
+              </View>
+
+              {isLoadingBulkTransferOptions ? (
+                <View style={styles.transferLoadingWrap}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.bulkModalTargetText}>
+                    {bulkTargetCountLabel}
+                  </Text>
+                  <ScrollView
+                    style={styles.bulkModalScroll}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode={
+                      Platform.OS === 'ios' ? 'interactive' : 'on-drag'
+                    }
+                    showsVerticalScrollIndicator={false}
+                  >
+                    <SelectField
+                      label={pt.channel}
+                      valueLabel={selectedBulkTransferChannelLabel}
+                      placeholder={pt.transfer_select_channel}
+                      onPress={dismissKeyboardAnd(() =>
+                        setBulkTransferPickerKind('channel')
+                      )}
+                      containerStyle={styles.transferSelectContainer}
+                    />
+
+                    <SelectField
+                      label={pt.transfer_to}
+                      valueLabel={selectedBulkTransferTypeLabel}
+                      placeholder={pt.transfer_to_placeholder}
+                      onPress={dismissKeyboardAnd(() =>
+                        setBulkTransferPickerKind('type')
+                      )}
+                      containerStyle={styles.transferSelectContainer}
+                    />
+
+                    {bulkTransferType === 'user' ? (
+                      <SelectField
+                        label={pt.attendant}
+                        valueLabel={selectedBulkTransferUserLabel}
+                        placeholder={pt.transfer_select_user}
+                        onPress={dismissKeyboardAnd(() =>
+                          setBulkTransferPickerKind('user')
+                        )}
+                        disabled={!selectedBulkTransferChannelId}
+                        containerStyle={styles.transferSelectContainer}
+                      />
+                    ) : null}
+
+                    {bulkTransferType === 'sector' ? (
+                      <>
+                        <SelectField
+                          label={pt.sector}
+                          valueLabel={selectedBulkTransferSectorLabel}
+                          placeholder={pt.transfer_select_sector}
+                          onPress={dismissKeyboardAnd(() =>
+                            setBulkTransferPickerKind('sector')
+                          )}
+                          containerStyle={styles.transferSelectContainer}
+                        />
+
+                        <SelectField
+                          label={pt.transfer_sector_user_optional}
+                          valueLabel={selectedBulkTransferSectorUserLabel}
+                          placeholder={pt.transfer_select_sector_user}
+                          onPress={dismissKeyboardAnd(() =>
+                            setBulkTransferPickerKind('sector_user')
+                          )}
+                          disabled={
+                            !selectedBulkTransferChannelId ||
+                            !selectedBulkTransferSectorId
+                          }
+                          loading={isLoadingBulkTransferSectorUsers}
+                          containerStyle={styles.transferSelectContainer}
+                        />
+                      </>
+                    ) : null}
+
+                    <Text style={styles.transferFieldLabel}>
+                      {pt.transfer_annotation}
+                    </Text>
+                    <TextInput
+                      style={styles.transferAnnotationInput}
+                      value={bulkTransferAnnotation}
+                      onChangeText={setBulkTransferAnnotation}
+                      placeholder={pt.transfer_annotation_placeholder}
+                      placeholderTextColor={colors.grey500}
+                      multiline
+                      maxLength={300}
+                    />
+
+                    <View style={styles.transferKeepInChatRow}>
+                      <View style={styles.transferKeepInChatTextWrap}>
+                        <Text style={styles.transferKeepInChatLabel}>
+                          {pt.keep_in_chat}
+                        </Text>
+                        <Text style={styles.transferKeepInChatDescription}>
+                          {pt.keep_in_chat_description}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={bulkTransferKeepInChat}
+                        onValueChange={setBulkTransferKeepInChat}
+                        trackColor={{
+                          false: colors.grey300,
+                          true: colors.primary,
+                        }}
+                        thumbColor={colors.onPrimary}
+                      />
+                    </View>
+
+                    {shouldShowBulkTransferSendMessageToggle ? (
+                      <View style={styles.transferKeepInChatRow}>
+                        <View style={styles.transferKeepInChatTextWrap}>
+                          <Text style={styles.transferKeepInChatLabel}>
+                            {pt.send_message_on_transfer}
+                          </Text>
+                          <Text style={styles.transferKeepInChatDescription}>
+                            {pt.send_message_on_transfer_description}
+                          </Text>
+                        </View>
+                        <Switch
+                          value={bulkTransferSendMessageOnTransfer}
+                          onValueChange={setBulkTransferSendMessageOnTransfer}
+                          trackColor={{
+                            false: colors.grey300,
+                            true: colors.primary,
+                          }}
+                          thumbColor={colors.onPrimary}
+                        />
+                      </View>
+                    ) : null}
+                  </ScrollView>
+
+                  <View style={styles.transferActionsRow}>
+                    <Pressable
+                      style={styles.transferCancelBtn}
+                      onPress={dismissKeyboardAnd(closeBulkTransferModal)}
+                      disabled={isBulkActionRunning}
+                    >
+                      <Text style={styles.transferCancelText}>{pt.cancel}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.transferSubmitBtn,
+                        isBulkActionRunning && styles.actionBtnDisabled,
+                      ]}
+                      onPress={dismissKeyboardAnd(() => {
+                        void runBulkTransferAction();
+                      })}
+                      disabled={isBulkActionRunning}
+                    >
+                      {isBulkActionRunning ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={colors.onPrimary}
+                        />
+                      ) : (
+                        <Text style={styles.transferSubmitText}>
+                          {pt.transfer}
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+          <SelectSheet
+            visible={bulkTransferPickerKind !== null}
+            title={bulkTransferPickerTitle}
+            options={bulkTransferPickerOptions}
+            selectedValue={selectedBulkTransferPickerValue}
+            loading={
+              bulkTransferPickerKind === 'sector_user' &&
+              isLoadingBulkTransferSectorUsers
+            }
+            emptyText={pt.no_results_found}
+            searchPlaceholder={pt.select_search_placeholder}
+            onRequestClose={dismissKeyboardAnd(() =>
+              setBulkTransferPickerKind(null)
+            )}
+            onSelectValue={handleSelectBulkTransferPickerValue}
+          />
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={bulkCloseModalVisible}
+        transparent
+        statusBarTranslucent
+        navigationBarTranslucent
+        animationType="fade"
+        onRequestClose={closeBulkCloseModal}
+      >
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoiding}
+          behavior={modalKeyboardAvoidingBehavior}
+          keyboardVerticalOffset={getModalKeyboardVerticalOffset(
+            insets.bottom + 8,
+            ANDROID_MODAL_KEYBOARD_VERTICAL_OFFSET
+          )}
+        >
+          <View
+            style={[
+              styles.transferOverlay,
+              { paddingBottom: 16 + insets.bottom },
+            ]}
+          >
+            <Pressable
+              style={styles.transferBackdrop}
+              onPress={closeBulkCloseModal}
+              disabled={isBulkActionRunning}
+            />
+            <View style={styles.closeServiceCard}>
+              <View style={styles.transferHeaderRow}>
+                <Text style={styles.transferTitle}>
+                  {pt.bulk_close_dialog_title}
+                </Text>
+                <Pressable
+                  onPress={closeBulkCloseModal}
+                  hitSlop={12}
+                  disabled={isBulkActionRunning}
+                >
+                  <Ionicons name="close" size={22} color={colors.onSurface} />
+                </Pressable>
+              </View>
+
+              <Text style={styles.closeServiceMessage}>
+                {pt.bulk_close_confirmation.replace(
+                  '{count}',
+                  String(bulkTargetCount)
+                )}
+              </Text>
+
+              {canDisableSendMessageOnFinishAttendanceAction ? (
+                <View style={styles.closeServiceToggleRow}>
+                  <View style={styles.closeServiceToggleTextWrap}>
+                    <Text style={styles.closeServiceToggleLabel}>
+                      {pt.close_service_send_message_toggle_label}
+                    </Text>
+                    <Text style={styles.closeServiceToggleDescription}>
+                      {pt.close_service_send_message_toggle_description}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={bulkCloseSendMessageOnFinishAttendance}
+                    onValueChange={setBulkCloseSendMessageOnFinishAttendance}
+                    trackColor={{
+                      false: colors.grey400,
+                      true: colors.primary,
+                    }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+              ) : null}
+
+              <View style={styles.transferActionsRow}>
+                <Pressable
+                  style={styles.transferCancelBtn}
+                  onPress={closeBulkCloseModal}
+                  disabled={isBulkActionRunning}
+                >
+                  <Text style={styles.transferCancelText}>{pt.cancel}</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.closeServiceConfirmBtn,
+                    isBulkActionRunning && styles.actionBtnDisabled,
+                  ]}
+                  onPress={() => void runBulkCloseAction()}
+                  disabled={isBulkActionRunning}
+                >
+                  {isBulkActionRunning ? (
+                    <ActivityIndicator size="small" color={colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.transferSubmitText}>
+                      {pt.close_service}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={bulkSummaryModalVisible}
+        transparent
+        statusBarTranslucent
+        navigationBarTranslucent
+        animationType="fade"
+        onRequestClose={() => setBulkSummaryModalVisible(false)}
+      >
+        <View
+          style={[
+            styles.transferOverlay,
+            { paddingBottom: 16 + insets.bottom },
+          ]}
+        >
+          <Pressable
+            style={styles.transferBackdrop}
+            onPress={() => setBulkSummaryModalVisible(false)}
+          />
+          <View style={styles.bulkSummaryCard}>
+            <View style={styles.transferHeaderRow}>
+              <Text style={styles.transferTitle}>{pt.bulk_summary_title}</Text>
+              <Pressable
+                onPress={() => setBulkSummaryModalVisible(false)}
+                hitSlop={12}
+              >
+                <Ionicons name="close" size={22} color={colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.bulkSummaryMessage}>{bulkSummaryMessage}</Text>
+            {bulkSummary ? (
+              <View style={styles.bulkSummaryStatsRow}>
+                <View style={styles.bulkSummaryStat}>
+                  <Text style={styles.bulkSummaryStatValue}>
+                    {bulkSummary.total_targeted}
+                  </Text>
+                  <Text style={styles.bulkSummaryStatLabel}>{pt.total}</Text>
+                </View>
+                <View style={styles.bulkSummaryStat}>
+                  <Text style={styles.bulkSummaryStatValue}>
+                    {bulkSummary.success_count}
+                  </Text>
+                  <Text style={styles.bulkSummaryStatLabel}>{pt.success}</Text>
+                </View>
+                <View style={styles.bulkSummaryStat}>
+                  <Text
+                    style={[
+                      styles.bulkSummaryStatValue,
+                      bulkSummary.failed_count > 0 &&
+                        styles.bulkSummaryStatValueError,
+                    ]}
+                  >
+                    {bulkSummary.failed_count}
+                  </Text>
+                  <Text style={styles.bulkSummaryStatLabel}>{pt.failed}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {bulkSummaryFailures.length > 0 ? (
+              <View style={styles.bulkFailuresWrap}>
+                <Text style={styles.bulkFailuresTitle}>
+                  {pt.bulk_failures_label}
+                </Text>
+                {bulkSummaryFailures.map((failure, index) => (
+                  <Text
+                    key={`${failure.chat_id ?? 'failure'}-${index}`}
+                    style={styles.bulkFailureText}
+                  >
+                    {failure.chat_id ? `${failure.chat_id}: ` : ''}
+                    {failure.message}
+                  </Text>
+                ))}
+                {bulkSummary &&
+                bulkSummary.failures.length > bulkSummaryFailures.length ? (
+                  <Text style={styles.bulkFailureText}>
+                    {pt.bulk_failures_more.replace(
+                      '{count}',
+                      String(
+                        bulkSummary.failures.length - bulkSummaryFailures.length
+                      )
+                    )}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            <View style={styles.transferActionsRow}>
+              <Pressable
+                style={styles.transferSubmitBtn}
+                onPress={() => setBulkSummaryModalVisible(false)}
+              >
+                <Text style={styles.transferSubmitText}>{pt.done}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       {loading ? (
         <ChatListSkeleton />
       ) : sections.every((s) => s.data.length === 0) ? (
@@ -3690,10 +5307,19 @@ export function ChatListScreen({ route, navigation }: Props) {
             const pinLoading = pinningChatIds.includes(item.chat_id);
             const canShowLifecycleSwipeActions = !isQueueItemLocked;
             const canSwipe =
+              !isBulkModeEnabled &&
               canOpenByVisibility &&
               (canPinItem ||
                 (canShowLifecycleSwipeActions &&
                   (isInChatItem || isQueueItem)));
+            const bulkSelectable = isBulkSelectableChat(
+              item,
+              bulkCategory,
+              currentUserId
+            );
+            const bulkSelected =
+              bulkSelectable &&
+              (bulkSelectAllFiltered || bulkSelectedChatIds.has(item.chat_id));
 
             const row = (
               <ChatRow
@@ -3707,11 +5333,20 @@ export function ChatListScreen({ route, navigation }: Props) {
                 workerConfig={workerConfigById[item.worker?.id ?? ''] ?? null}
                 now={operatorReplyPendingNow}
                 disabled={
-                  isQueueItemLocked ||
-                  !canOpenByVisibility ||
-                  openingChatId !== null
+                  isBulkModeEnabled
+                    ? !bulkSelectable
+                    : isQueueItemLocked ||
+                      !canOpenByVisibility ||
+                      openingChatId !== null
                 }
-                onPress={() => void openChat(item, normalizedQueueIndexForOpen)}
+                bulkMode={isBulkModeEnabled}
+                bulkSelectable={bulkSelectable}
+                bulkSelected={bulkSelected}
+                onPress={
+                  isBulkModeEnabled
+                    ? () => toggleBulkChatSelection(item.chat_id)
+                    : () => void openChat(item, normalizedQueueIndexForOpen)
+                }
               />
             );
 
@@ -4072,6 +5707,131 @@ const styles = StyleSheet.create({
   quickFilterChipBadgeTextActive: {
     color: colors.primary,
   },
+  listToolsContainer: {
+    paddingHorizontal: 12,
+    paddingTop: 6,
+    paddingBottom: 8,
+    gap: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.grey200,
+    backgroundColor: colors.surface,
+  },
+  listToolsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  listToolButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  listToolButtonPressed: {
+    backgroundColor: colors.grey100,
+  },
+  listToolButtonActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  listToolButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  listToolButtonTextActive: {
+    color: colors.onPrimary,
+  },
+  bulkToolbar: {
+    borderWidth: 1,
+    borderColor: '#D6E6FF',
+    borderRadius: 10,
+    backgroundColor: '#F4F8FF',
+    padding: 10,
+    gap: 8,
+  },
+  bulkSelectAllRow: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bulkToolbarCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: colors.grey400,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  bulkToolbarCheckboxSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  bulkSelectAllText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.onSurface,
+  },
+  bulkCountChip: {
+    minHeight: 24,
+    borderRadius: 7,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E0ECFF',
+  },
+  bulkCountChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  bulkHintText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.grey700,
+  },
+  bulkActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  bulkActionButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  bulkTransferButton: {
+    borderColor: '#D6E6FF',
+    backgroundColor: '#EAF2FF',
+  },
+  bulkTransferButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  bulkCloseButton: {
+    borderColor: '#FFD6D6',
+    backgroundColor: '#FFF1F1',
+  },
+  bulkCloseButtonText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.error,
+  },
   skeletonList: {
     flex: 1,
     paddingBottom: 24,
@@ -4139,6 +5899,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.grey200,
   },
+  chatRowBulkMode: {
+    paddingLeft: 12,
+  },
   chatRowWithAttendant: {
     paddingRight: 0,
   },
@@ -4149,6 +5912,25 @@ const styles = StyleSheet.create({
   },
   chatRowDisabled: {
     opacity: 0.55,
+  },
+  bulkRowCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: colors.grey400,
+    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  bulkRowCheckboxSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  bulkRowCheckboxDisabled: {
+    borderColor: colors.grey300,
+    backgroundColor: colors.grey100,
   },
   chatAvatar: {
     marginRight: 12,
@@ -4453,6 +6235,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.error,
     minWidth: 104,
   },
+  sortSheetContent: {
+    gap: 12,
+  },
   transferHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -4477,6 +6262,16 @@ const styles = StyleSheet.create({
   },
   transferSelectContainer: {
     marginTop: 8,
+  },
+  bulkModalTargetText: {
+    fontSize: 13,
+    color: colors.grey700,
+    lineHeight: 18,
+    marginBottom: 2,
+  },
+  bulkModalScroll: {
+    flexShrink: 1,
+    maxHeight: 430,
   },
   transferAnnotationInput: {
     minHeight: 72,
@@ -4546,6 +6341,61 @@ const styles = StyleSheet.create({
   transferSubmitText: {
     color: colors.onPrimary,
     fontWeight: '700',
+  },
+  bulkSummaryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    maxHeight: '82%',
+  },
+  bulkSummaryMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.onSurface,
+  },
+  bulkSummaryStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  bulkSummaryStat: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    backgroundColor: colors.grey100,
+  },
+  bulkSummaryStatValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  bulkSummaryStatValueError: {
+    color: colors.error,
+  },
+  bulkSummaryStatLabel: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.grey700,
+  },
+  bulkFailuresWrap: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.grey200,
+    gap: 6,
+  },
+  bulkFailuresTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.onSurface,
+  },
+  bulkFailureText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.grey700,
   },
   notificationContent: {
     gap: 10,

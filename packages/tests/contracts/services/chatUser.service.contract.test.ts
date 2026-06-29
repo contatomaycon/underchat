@@ -11,7 +11,8 @@ describe('ChatUserService', () => {
     const updateChatUser = jest.fn(async () => true);
     const service = new ChatUserService(
       { viewChatUser } as never,
-      { updateChatUser } as never
+      { updateChatUser } as never,
+      {} as never
     );
 
     await expect(service.viewChatUser('u-1')).resolves.toEqual({

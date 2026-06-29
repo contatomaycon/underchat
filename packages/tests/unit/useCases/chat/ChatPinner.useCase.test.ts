@@ -6,7 +6,7 @@ import type { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierar
 import type { IChat } from '@core/common/interfaces/IChat';
 import type { ChatService } from '@core/services/chat.service';
 import type { ChatUserService } from '@core/services/chatUser.service';
-import { ChatPinnerUseCase } from './ChatPinner.useCase';
+import { ChatPinnerUseCase } from '@core/useCases/chat/ChatPinner.useCase';
 
 jest.mock('@core/services/chat.service', () => ({
   ChatService: class ChatService {},

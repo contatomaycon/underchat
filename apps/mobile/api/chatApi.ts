@@ -34,6 +34,10 @@ import type {
   UpdateChatContactPayload,
   WorkerConfigForChat,
 } from '../types/contact';
+import type {
+  BulkActionChatRequest,
+  BulkActionChatResponse,
+} from '../types/chatBulkActions';
 import {
   appendQueryField,
   serializeContactFilters,
@@ -749,6 +753,23 @@ export async function transferChat(
   return {
     ok: res?.status === true,
     message: res?.message ?? null,
+  };
+}
+
+export async function bulkActionChats(payload: BulkActionChatRequest): Promise<{
+  ok: boolean;
+  message: string | null;
+  data: BulkActionChatResponse | null;
+}> {
+  const res = await apiPostWithMessage<BulkActionChatResponse>(
+    '/chat/bulk-action',
+    payload
+  );
+
+  return {
+    ok: res?.status === true,
+    message: res?.message ?? null,
+    data: res?.data ?? null,
   };
 }
 

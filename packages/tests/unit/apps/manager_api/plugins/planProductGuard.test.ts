@@ -1,7 +1,9 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import { container } from 'tsyringe';
 import { EPlanProduct } from '@core/common/enums/EPlanProduct';
-import { planProductGuard } from './planProductGuard';
+
+const planProductGuardModulePath =
+  '../../../../../../apps/manager_api/src/plugins/planProductGuard';
 
 jest.mock('tsyringe', () => ({
   container: {
@@ -12,6 +14,12 @@ jest.mock('tsyringe', () => ({
 jest.mock('@core/services/account.service', () => ({
   AccountService: class AccountService {},
 }));
+
+const { planProductGuard } = jest.requireActual<{
+  planProductGuard: (
+    product: EPlanProduct
+  ) => (request: never, reply: never) => Promise<void>;
+}>(planProductGuardModulePath);
 
 function buildReply() {
   return {

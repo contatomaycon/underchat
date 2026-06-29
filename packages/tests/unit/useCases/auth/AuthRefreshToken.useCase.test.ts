@@ -16,7 +16,7 @@ jest.mock('uuid', () => ({
   v7: jest.fn(() => 'uuid-v7'),
 }));
 
-import { AuthRefreshTokenUseCase } from './AuthRefreshToken.useCase';
+import { AuthRefreshTokenUseCase } from '@core/useCases/auth/AuthRefreshToken.useCase';
 import { AuthRefreshTokenError } from '@core/common/exceptions/AuthRefreshTokenError';
 import { EHTTPStatusCode } from '@core/common/enums/EHTTPStatusCode';
 import { ERouteModule } from '@core/common/enums/ERouteModule';

@@ -5,7 +5,7 @@ import { EPermissionsRoles } from '@core/common/enums/EPermissions';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import type { ChatUserService } from '@core/services/chatUser.service';
 import type { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
-import { ChatListerUseCase } from './ChatLister.useCase';
+import { ChatListerUseCase } from '@core/useCases/chat/ChatLister.useCase';
 
 jest.mock('@core/services/chatUser.service', () => ({
   ChatUserService: class ChatUserService {},
@@ -280,6 +280,8 @@ describe('ChatListerUseCase', () => {
     );
 
     expect(capturedQueries.length).toBeGreaterThan(0);
-    expect(queryContainsParticipantTerm(capturedQueries[0], 'user-1')).toBe(true);
+    expect(queryContainsParticipantTerm(capturedQueries[0], 'user-1')).toBe(
+      true
+    );
   });
 });

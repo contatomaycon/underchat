@@ -64,8 +64,15 @@ describe('WorkerExternalConnectionTokenService', () => {
   it('rejects tampered tokens', () => {
     const sut = makeSut();
     const result = sut.create('account-1', 'worker-1', 1_700_000_000_000);
-    const replacement = result.token.endsWith('a') ? 'b' : 'a';
-    const tampered = `${result.token.slice(0, -1)}${replacement}`;
+    const encrypted = Buffer.from(result.token, 'base64url').toString('utf8');
+    const [iv = '', authTag = '', cipherText = ''] = encrypted.split(':');
+    const index = Math.floor(cipherText.length / 2);
+    const replacement = cipherText[index] === 'a' ? 'b' : 'a';
+    const tamperedCipherText = `${cipherText.slice(0, index)}${replacement}${cipherText.slice(index + 1)}`;
+    const tampered = Buffer.from(
+      `${iv}:${authTag}:${tamperedCipherText}`,
+      'utf8'
+    ).toString('base64url');
 
     expect(() => sut.validate(tampered, 1_700_000_000_000)).toThrow(
       'worker_external_connection_invalid'

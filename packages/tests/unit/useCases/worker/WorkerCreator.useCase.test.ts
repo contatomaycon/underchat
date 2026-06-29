@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { WorkerCreatorUseCase } from './WorkerCreator.useCase';
+import { WorkerCreatorUseCase } from '@core/useCases/worker/WorkerCreator.useCase';
 import { container } from 'tsyringe';
 import { WORKER_RECREATE_COOLDOWN_SECONDS } from '@core/common/functions/workerRecreateCooldown';
 

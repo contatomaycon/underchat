@@ -19,7 +19,11 @@ const config: Config = {
   clearMocks: true,
   coverageDirectory: 'coverage',
   coverageProvider: 'v8',
+  maxWorkers: process.env.JEST_MAX_WORKERS ?? '25%',
   moduleNameMapper: {
+    '^file-type$': '<rootDir>/packages/tests/mocks/file-type.ts',
+    '^socks-proxy-agent$':
+      '<rootDir>/packages/tests/mocks/socks-proxy-agent.ts',
     '^uuid$': '<rootDir>/packages/tests/mocks/uuid.ts',
     ...pathAliases,
   },
@@ -29,7 +33,8 @@ const config: Config = {
     '<rootDir>/apps/.*/dist/',
     '<rootDir>/packages/tests/e2e/',
   ],
-  preset: 'ts-jest',
+  openHandlesTimeout: 5000,
+  roots: ['<rootDir>/packages/tests', '<rootDir>/apps/mobile'],
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.[jt]s?(x)', '**/?(*.)+(spec|test).[tj]s?(x)'],
   testPathIgnorePatterns: [
@@ -37,7 +42,18 @@ const config: Config = {
     '<rootDir>/out/',
     '<rootDir>/dist/',
     '<rootDir>/apps/.*/dist/',
+    '<rootDir>/packages/tests/e2e/',
   ],
+  workerGracefulExitTimeout: 15000,
+  transform: {
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        diagnostics: process.env.JEST_TS_DIAGNOSTICS === 'true',
+        tsconfig: '<rootDir>/tsconfig.jest.json',
+      },
+    ],
+  },
   passWithNoTests: true,
 };
 

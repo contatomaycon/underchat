@@ -6,7 +6,7 @@ describe('generateProtocol', () => {
 
     const randomSpy = jest
       .spyOn(crypto, 'getRandomValues')
-      .mockImplementation((typedArray: ArrayBufferView<ArrayBufferLike>) => {
+      .mockImplementation((typedArray) => {
         const asUint32 = typedArray as Uint32Array;
         asUint32.set([10, 11, 12, 13, 14, 15, 16]);
         return typedArray;

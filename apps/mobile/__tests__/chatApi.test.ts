@@ -25,6 +25,7 @@ jest.mock('../api/client', () => ({
 import {
   listChats,
   listPinnedChats,
+  bulkActionChats,
   pinChat,
   transferChat,
   unpinChat,
@@ -105,6 +106,42 @@ describe('chatApi attendance lifecycle', () => {
         annotation: undefined,
         keep_in_chat: false,
       }
+    );
+  });
+
+  it('posts bulk chat actions and returns the structured result', async () => {
+    const payload = {
+      action: 'transfer' as const,
+      selection_mode: 'filtered' as const,
+      category: 'queue' as const,
+      search: 'maycon',
+      transfer_payload: {
+        worker_id: 'worker-1',
+        user_id: 'user-1',
+        keep_in_chat: true,
+      },
+    };
+    const data = {
+      total_targeted: 3,
+      success_count: 2,
+      failed_count: 1,
+      failures: [{ chat_id: 'chat-3', message: 'erro' }],
+    };
+    mockApiPostWithMessage.mockResolvedValue({
+      status: true,
+      message: 'ok',
+      data,
+    });
+
+    await expect(bulkActionChats(payload)).resolves.toEqual({
+      ok: true,
+      message: 'ok',
+      data,
+    });
+
+    expect(mockApiPostWithMessage).toHaveBeenCalledWith(
+      '/chat/bulk-action',
+      payload
     );
   });
 

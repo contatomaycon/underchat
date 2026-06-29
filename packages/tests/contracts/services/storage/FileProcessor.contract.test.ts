@@ -2,14 +2,6 @@ jest.mock('uuid', () => ({
   v7: jest.fn(() => 'uuid-v7-mock'),
 }));
 
-jest.mock(
-  'file-type',
-  () => ({
-    fileTypeFromBuffer: jest.fn(async () => null),
-  }),
-  { virtual: true }
-);
-
 jest.mock('sharp', () => jest.fn());
 
 import sharp from 'sharp';
@@ -18,6 +10,12 @@ import { FileProcessor } from '@core/services/storage/FileProcessor';
 
 describe('FileProcessor', () => {
   const service = new FileProcessor();
+
+  beforeEach(() => {
+    const detector = jest.mocked(fileTypeFromBuffer);
+    detector.mockReset();
+    detector.mockResolvedValue(null as never);
+  });
 
   afterEach(() => {
     jest.clearAllMocks();

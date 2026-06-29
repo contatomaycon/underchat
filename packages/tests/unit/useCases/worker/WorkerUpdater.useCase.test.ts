@@ -2,7 +2,7 @@ import 'reflect-metadata';
 import { EServerStatus } from '@core/common/enums/EServerStatus';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { WorkerUpdaterUseCase } from './WorkerUpdater.useCase';
+import { WorkerUpdaterUseCase } from '@core/useCases/worker/WorkerUpdater.useCase';
 
 jest.mock('@core/services/worker.service', () => ({
   WorkerService: class WorkerService {},

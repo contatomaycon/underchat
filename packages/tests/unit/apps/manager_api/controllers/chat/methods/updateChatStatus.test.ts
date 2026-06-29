@@ -1,6 +1,8 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import { container } from 'tsyringe';
-import { updateChatStatus } from './updateChatStatus';
+
+const updateChatStatusModulePath =
+  '../../../../../../../../apps/manager_api/src/controllers/chat/methods/updateChatStatus';
 
 jest.mock('tsyringe', () => ({
   container: {
@@ -11,6 +13,10 @@ jest.mock('tsyringe', () => ({
 jest.mock('@core/useCases/chat/ChatStatusUpdater.useCase', () => ({
   ChatStatusUpdaterUseCase: class ChatStatusUpdaterUseCase {},
 }));
+
+const { updateChatStatus } = jest.requireActual<{
+  updateChatStatus: (request: never, reply: never) => Promise<void>;
+}>(updateChatStatusModulePath);
 
 describe('updateChatStatus controller', () => {
   beforeEach(() => {

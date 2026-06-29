@@ -1,4 +1,4 @@
-import { canReadChatByPolicy } from './canReadChatByPolicy';
+import { canReadChatByPolicy } from '@core/common/functions/canReadChatByPolicy';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
