@@ -34,6 +34,18 @@ export class WhatsappOfficialDisconnecterUseCase {
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
 
+  private buildMetaWarning(
+    t: TFunction<'translation', undefined>,
+    key: string,
+    error?: unknown
+  ): string {
+    if (error instanceof Error && error.message) {
+      return `${t(key)} ${error.message}`;
+    }
+
+    return t(key);
+  }
+
   private async assertCanDisconnect(input: {
     t: TFunction<'translation', undefined>;
     accountId: string;
@@ -68,18 +80,47 @@ export class WhatsappOfficialDisconnecterUseCase {
     return { worker, workerBalancer };
   }
 
-  private async unsubscribeMetaIfLastWabaConnection(input: {
+  private async disconnectMetaConnection(input: {
     t: TFunction<'translation', undefined>;
     workerId: string;
     wabaId: string;
+    phoneNumberId: string;
     accessTokenEncrypted: string;
     apiVersion: string;
   }): Promise<
     Pick<
       DisconnectWhatsappOfficialResponse,
-      'meta_unsubscribed' | 'meta_warning'
+      'meta_deregistered' | 'meta_unsubscribed' | 'meta_warning'
     >
   > {
+    const accessToken = this.passwordEncryptorService.decrypt(
+      input.accessTokenEncrypted
+    );
+    const warnings = new Set<string>();
+    let metaDeregistered = false;
+    let metaUnsubscribed = false;
+
+    try {
+      metaDeregistered =
+        await this.metaWhatsappEmbeddedService.deregisterPhoneNumber({
+          apiVersion: input.apiVersion,
+          accessToken,
+          phoneNumberId: input.phoneNumberId,
+        });
+
+      if (!metaDeregistered) {
+        warnings.add(
+          input.t('whatsapp_official_disconnect_meta_deregister_warning')
+        );
+      }
+    } catch (error) {
+      const warningKey = isMetaPermissionsError(error)
+        ? 'whatsapp_official_disconnect_meta_deregister_permission_warning'
+        : 'whatsapp_official_disconnect_meta_deregister_warning';
+
+      warnings.add(this.buildMetaWarning(input.t, warningKey, error));
+    }
+
     const otherWabaConnections =
       await this.workerWhatsappOfficialConnectionRepository.countActiveByWabaIdExceptWorkerId(
         input.wabaId,
@@ -88,39 +129,38 @@ export class WhatsappOfficialDisconnecterUseCase {
 
     if (otherWabaConnections > 0) {
       return {
+        meta_deregistered: metaDeregistered,
         meta_unsubscribed: false,
-        meta_warning: null,
+        meta_warning: warnings.size ? Array.from(warnings).join(' ') : null,
       };
     }
 
     try {
-      const accessToken = this.passwordEncryptorService.decrypt(
-        input.accessTokenEncrypted
-      );
-
-      const unsubscribed =
+      metaUnsubscribed =
         await this.metaWhatsappEmbeddedService.unsubscribeWabaApp({
           apiVersion: input.apiVersion,
           accessToken,
           wabaId: input.wabaId,
         });
 
-      return {
-        meta_unsubscribed: unsubscribed,
-        meta_warning: unsubscribed
-          ? null
-          : input.t('whatsapp_official_disconnect_meta_cleanup_warning'),
-      };
+      if (!metaUnsubscribed) {
+        warnings.add(
+          input.t('whatsapp_official_disconnect_meta_cleanup_warning')
+        );
+      }
     } catch (error) {
       const warningKey = isMetaPermissionsError(error)
         ? 'whatsapp_official_disconnect_meta_permission_warning'
         : 'whatsapp_official_disconnect_meta_cleanup_warning';
 
-      return {
-        meta_unsubscribed: false,
-        meta_warning: input.t(warningKey),
-      };
+      warnings.add(this.buildMetaWarning(input.t, warningKey, error));
     }
+
+    return {
+      meta_deregistered: metaDeregistered,
+      meta_unsubscribed: metaUnsubscribed,
+      meta_warning: warnings.size ? Array.from(warnings).join(' ') : null,
+    };
   }
 
   async execute(
@@ -138,6 +178,21 @@ export class WhatsappOfficialDisconnecterUseCase {
       await this.workerWhatsappOfficialConnectionRepository.findActiveByWorkerId(
         workerId
       );
+
+    const metaResult = connection
+      ? await this.disconnectMetaConnection({
+          t,
+          workerId,
+          wabaId: connection.waba_id,
+          phoneNumberId: connection.phone_number_id,
+          accessTokenEncrypted: connection.access_token_encrypted,
+          apiVersion: connection.api_version,
+        })
+      : {
+          meta_deregistered: false,
+          meta_unsubscribed: false,
+          meta_warning: null,
+        };
 
     const disconnected =
       await this.workerWhatsappOfficialConnectionRepository.disconnectPreservingWorker(
@@ -171,23 +226,6 @@ export class WhatsappOfficialDisconnecterUseCase {
       workerCentrifugoQueue(workerBalancer.account_id),
       payload
     );
-
-    if (!connection) {
-      return {
-        worker_id: workerId,
-        disconnected: true,
-        meta_unsubscribed: false,
-        meta_warning: null,
-      };
-    }
-
-    const metaResult = await this.unsubscribeMetaIfLastWabaConnection({
-      t,
-      workerId,
-      wabaId: connection.waba_id,
-      accessTokenEncrypted: connection.access_token_encrypted,
-      apiVersion: connection.api_version,
-    });
 
     return {
       worker_id: workerId,

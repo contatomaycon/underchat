@@ -50,6 +50,7 @@ function buildDeps() {
       disconnectPreservingWorker: jest.fn(async () => true),
     },
     metaWhatsappEmbeddedService: {
+      deregisterPhoneNumber: jest.fn(async () => true),
       unsubscribeWabaApp: jest.fn(async () => true),
     },
     passwordEncryptorService: {
@@ -77,6 +78,7 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
       worker_id: 'worker-1',
       disconnected: true,
+      meta_deregistered: true,
       meta_unsubscribed: true,
       meta_warning: null,
     });
@@ -112,6 +114,13 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
       'encrypted-token'
     );
     expect(
+      deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
+    ).toHaveBeenCalledWith({
+      apiVersion: 'v24.0',
+      accessToken: 'plain-token',
+      phoneNumberId: 'phone-1',
+    });
+    expect(
       deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
     ).toHaveBeenCalledWith({
       apiVersion: 'v24.0',
@@ -130,11 +139,21 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
       worker_id: 'worker-1',
       disconnected: true,
+      meta_deregistered: true,
       meta_unsubscribed: false,
       meta_warning: null,
     });
 
-    expect(deps.passwordEncryptorService.decrypt).not.toHaveBeenCalled();
+    expect(deps.passwordEncryptorService.decrypt).toHaveBeenCalledWith(
+      'encrypted-token'
+    );
+    expect(
+      deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
+    ).toHaveBeenCalledWith({
+      apiVersion: 'v24.0',
+      accessToken: 'plain-token',
+      phoneNumberId: 'phone-1',
+    });
     expect(
       deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
     ).not.toHaveBeenCalled();
@@ -150,8 +169,10 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
       worker_id: 'worker-1',
       disconnected: true,
+      meta_deregistered: true,
       meta_unsubscribed: false,
-      meta_warning: 'whatsapp_official_disconnect_meta_permission_warning',
+      meta_warning:
+        'whatsapp_official_disconnect_meta_permission_warning (#200) Permissions error',
     });
 
     expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
@@ -173,6 +194,7 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
       worker_id: 'worker-1',
       disconnected: true,
+      meta_deregistered: false,
       meta_unsubscribed: false,
       meta_warning: null,
     });
@@ -187,8 +209,35 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
       deps.officialConnectionRepository.countActiveByWabaIdExceptWorkerId
     ).not.toHaveBeenCalled();
     expect(
+      deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
+    ).not.toHaveBeenCalled();
+    expect(
       deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
     ).not.toHaveBeenCalled();
+  });
+
+  it('keeps local disconnect complete when Meta does not deregister the phone number', async () => {
+    const deps = buildDeps();
+    deps.metaWhatsappEmbeddedService.deregisterPhoneNumber.mockRejectedValue(
+      new Error('(#200) Permissions error')
+    );
+    const useCase = buildUseCase(deps);
+
+    await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
+      worker_id: 'worker-1',
+      disconnected: true,
+      meta_deregistered: false,
+      meta_unsubscribed: true,
+      meta_warning:
+        'whatsapp_official_disconnect_meta_deregister_permission_warning (#200) Permissions error',
+    });
+
+    expect(
+      deps.officialConnectionRepository.disconnectPreservingWorker
+    ).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      workerId: 'worker-1',
+    });
   });
 
   it('rejects non-official workers', async () => {

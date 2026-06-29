@@ -119,7 +119,8 @@ export class MetaWhatsappEmbeddedService {
   private async parseGraphResponse<T extends MetaGraphErrorResponse>(
     response: Response
   ): Promise<T> {
-    const payload = (await response.json()) as T;
+    const responseText = await response.text();
+    const payload = responseText ? (JSON.parse(responseText) as T) : ({} as T);
 
     if (!response.ok || payload.error) {
       if (payload.error) {
@@ -302,6 +303,26 @@ export class MetaWhatsappEmbeddedService {
         Authorization: `Bearer ${input.accessToken}`,
       },
     });
+    const payload =
+      await this.parseGraphResponse<MetaSuccessResponse>(response);
+
+    return payload.success !== false;
+  }
+
+  async deregisterPhoneNumber(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+  }): Promise<boolean> {
+    const response = await fetch(
+      this.graphUrl(input.apiVersion, `${input.phoneNumberId}/deregister`),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.accessToken}`,
+        },
+      }
+    );
     const payload =
       await this.parseGraphResponse<MetaSuccessResponse>(response);
 

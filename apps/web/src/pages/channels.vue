@@ -134,6 +134,14 @@ const openConversationsCount = ref<number | null>(null);
 const isDialogDisconnectOfficialShow = ref(false);
 const channelToDisconnectOfficial = ref<string | null>(null);
 const reconnectingWhatsappOfficialId = ref<string | null>(null);
+type DisconnectOfficialProgressResult = 'success' | 'warning' | null;
+type DisconnectOfficialProgressStepStatus =
+  'pending' | 'running' | 'done' | 'warning';
+const isDisconnectOfficialProgressShow = ref(false);
+const isDisconnectOfficialRunning = ref(false);
+const disconnectOfficialProgressResult =
+  ref<DisconnectOfficialProgressResult>(null);
+const disconnectOfficialProgressWarning = ref<string | null>(null);
 
 const isDialogRecreatorShow = ref(false);
 const channelToRecreate = ref<string | null>(null);
@@ -358,6 +366,50 @@ const isWhatsappOfficialReconnectable = (channel: ListWorkerResponse) =>
   isWhatsappOfficialChannel(channel) &&
   channel.status?.id !== EWorkerStatus.online;
 
+const disconnectOfficialProgressSteps = computed<
+  Array<{
+    key: string;
+    text: string;
+    status: DisconnectOfficialProgressStepStatus;
+  }>
+>(() => {
+  const isFinished = disconnectOfficialProgressResult.value !== null;
+
+  return [
+    {
+      key: 'meta',
+      text: t('whatsapp_official_disconnect_progress_meta'),
+      status: isDisconnectOfficialRunning.value
+        ? 'running'
+        : disconnectOfficialProgressResult.value === 'warning'
+          ? 'warning'
+          : isFinished
+            ? 'done'
+            : 'pending',
+    },
+    {
+      key: 'underchat',
+      text: t('whatsapp_official_disconnect_progress_underchat'),
+      status: isFinished ? 'done' : 'pending',
+    },
+  ];
+});
+
+const resetDisconnectOfficialProgress = () => {
+  isDisconnectOfficialProgressShow.value = false;
+  isDisconnectOfficialRunning.value = false;
+  disconnectOfficialProgressResult.value = null;
+  disconnectOfficialProgressWarning.value = null;
+};
+
+const closeDisconnectOfficialProgress = () => {
+  if (isDisconnectOfficialRunning.value) {
+    return;
+  }
+
+  resetDisconnectOfficialProgress();
+};
+
 const connectWhatsappOfficial = async (channel: ListWorkerResponse) => {
   if (
     isWhatsappOfficialSignupLoading.value ||
@@ -429,6 +481,12 @@ const handleDisconnectWhatsappOfficial = async () => {
   if (!channelToDisconnectOfficial.value) return;
 
   const channelId = channelToDisconnectOfficial.value;
+  isDialogDisconnectOfficialShow.value = false;
+  isDisconnectOfficialProgressShow.value = true;
+  isDisconnectOfficialRunning.value = true;
+  disconnectOfficialProgressResult.value = null;
+  disconnectOfficialProgressWarning.value = null;
+
   const result = await channelsStore.disconnectWhatsappOfficial(channelId);
 
   if (result?.disconnected) {
@@ -442,6 +500,12 @@ const handleDisconnectWhatsappOfficial = async () => {
     await channelsStore.listChannels(query.value);
   }
 
+  disconnectOfficialProgressWarning.value =
+    result?.meta_warning ??
+    (!result ? t('whatsapp_official_disconnect_error') : null);
+  disconnectOfficialProgressResult.value =
+    disconnectOfficialProgressWarning.value ? 'warning' : 'success';
+  isDisconnectOfficialRunning.value = false;
   channelToDisconnectOfficial.value = null;
 };
 
@@ -960,6 +1024,7 @@ onUnmounted(async () => {
                     isWhatsappOfficialOnline(item) &&
                     $canPermission(permissionsDelete)
                   "
+                  :disabled="isDisconnectOfficialRunning"
                   @click="disconnectWhatsappOfficial(item.id)"
                   ><VTooltip
                     location="top"
@@ -1068,6 +1133,109 @@ onUnmounted(async () => {
         @confirm="handleDisconnectWhatsappOfficial"
       />
 
+      <VDialog
+        v-model="isDisconnectOfficialProgressShow"
+        max-width="460"
+        persistent
+      >
+        <VCard class="disconnect-progress-modal">
+          <VCardText class="disconnect-progress-content">
+            <div class="disconnect-progress-orbit">
+              <VProgressCircular
+                v-if="isDisconnectOfficialRunning"
+                indeterminate
+                color="success"
+                size="70"
+                width="5"
+              />
+              <VIcon
+                v-else
+                :icon="
+                  disconnectOfficialProgressResult === 'warning'
+                    ? 'tabler-alert-triangle'
+                    : 'tabler-circle-check'
+                "
+                :color="
+                  disconnectOfficialProgressResult === 'warning'
+                    ? 'warning'
+                    : 'success'
+                "
+                size="70"
+              />
+              <VIcon
+                icon="tabler-brand-whatsapp"
+                color="success"
+                size="28"
+                class="disconnect-progress-center-icon"
+              />
+            </div>
+
+            <div class="disconnect-progress-heading">
+              <h3>{{ $t('whatsapp_official_disconnect_progress_title') }}</h3>
+              <p>
+                {{
+                  isDisconnectOfficialRunning
+                    ? $t('whatsapp_official_disconnect_progress_meta')
+                    : disconnectOfficialProgressResult === 'warning'
+                      ? $t('whatsapp_official_disconnect_progress_warning')
+                      : $t('whatsapp_official_disconnect_progress_success')
+                }}
+              </p>
+            </div>
+
+            <div class="disconnect-progress-steps">
+              <div
+                v-for="step in disconnectOfficialProgressSteps"
+                :key="step.key"
+                class="disconnect-progress-step"
+                :class="`is-${step.status}`"
+              >
+                <span class="disconnect-progress-step-icon">
+                  <VProgressCircular
+                    v-if="step.status === 'running'"
+                    indeterminate
+                    color="success"
+                    size="18"
+                    width="2"
+                  />
+                  <VIcon
+                    v-else
+                    :icon="
+                      step.status === 'warning'
+                        ? 'tabler-alert-triangle'
+                        : step.status === 'done'
+                          ? 'tabler-check'
+                          : 'tabler-clock'
+                    "
+                    size="18"
+                  />
+                </span>
+                <span>{{ step.text }}</span>
+              </div>
+            </div>
+
+            <VAlert
+              v-if="disconnectOfficialProgressWarning"
+              type="warning"
+              variant="tonal"
+              density="compact"
+              class="disconnect-progress-warning"
+            >
+              {{ disconnectOfficialProgressWarning }}
+            </VAlert>
+
+            <div
+              v-if="!isDisconnectOfficialRunning"
+              class="disconnect-progress-actions"
+            >
+              <VBtn color="primary" @click="closeDisconnectOfficialProgress">
+                {{ $t('close') }}
+              </VBtn>
+            </div>
+          </VCardText>
+        </VCard>
+      </VDialog>
+
       <AppEditChannel
         v-if="isDialogEditChannelShow"
         v-model="isDialogEditChannelShow"
@@ -1131,6 +1299,116 @@ onUnmounted(async () => {
 
 .channel-action-tooltip-anchor {
   display: inline-flex;
+}
+
+.disconnect-progress-modal {
+  border-radius: 8px;
+}
+
+.disconnect-progress-content {
+  display: grid;
+  gap: 1.25rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.disconnect-progress-orbit {
+  position: relative;
+  display: grid;
+  block-size: 5.25rem;
+  inline-size: 5.25rem;
+  margin-inline: auto;
+  place-items: center;
+}
+
+.disconnect-progress-orbit::before {
+  position: absolute;
+  border: 1px solid rgba(var(--v-theme-success), 0.18);
+  border-radius: 50%;
+  animation: disconnect-pulse 1.4s ease-out infinite;
+  content: '';
+  inset: 0.15rem;
+}
+
+.disconnect-progress-center-icon {
+  position: absolute;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: rgb(var(--v-theme-surface));
+}
+
+.disconnect-progress-heading h3 {
+  margin: 0;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.disconnect-progress-heading p {
+  margin: 0.35rem 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.875rem;
+}
+
+.disconnect-progress-steps {
+  display: grid;
+  gap: 0.625rem;
+  text-align: start;
+}
+
+.disconnect-progress-step {
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.025);
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.disconnect-progress-step.is-running {
+  border-color: rgba(var(--v-theme-success), 0.32);
+  background: rgba(var(--v-theme-success), 0.08);
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.disconnect-progress-step.is-done {
+  color: rgb(var(--v-theme-success));
+}
+
+.disconnect-progress-step.is-warning {
+  border-color: rgba(var(--v-theme-warning), 0.34);
+  background: rgba(var(--v-theme-warning), 0.1);
+  color: rgb(var(--v-theme-warning));
+}
+
+.disconnect-progress-step-icon {
+  display: inline-grid;
+  block-size: 1.5rem;
+  inline-size: 1.5rem;
+  place-items: center;
+}
+
+.disconnect-progress-warning {
+  text-align: start;
+}
+
+.disconnect-progress-actions {
+  display: flex;
+  justify-content: end;
+}
+
+@keyframes disconnect-pulse {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.92);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
 }
 
 .data-table {
