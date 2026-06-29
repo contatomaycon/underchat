@@ -191,4 +191,48 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
       deps.metaWhatsappEmbeddedService.updateBusinessProfile
     ).not.toHaveBeenCalled();
   });
+
+  it('maps Meta permissions error when updating official profile', async () => {
+    const deps = buildDeps();
+    deps.metaWhatsappEmbeddedService.updateBusinessProfile.mockRejectedValueOnce(
+      new Error('(#200) Permissions error')
+    );
+    const useCase = new WorkerProfileInfoUpserterUseCase(
+      deps.workerProfileInfoService as never,
+      deps.workerService as never,
+      deps.streamProducerService as never,
+      deps.kafkaBaileysQueueService as never,
+      deps.officialConnectionRepository as never,
+      deps.metaWhatsappEmbeddedService as never,
+      deps.passwordEncryptorService as never,
+      deps.whatsappEmbeddedService as never
+    );
+
+    await expect(
+      useCase.execute(t, 'account-1', 'worker-1', {
+        description: 'Nova descricao',
+      } as never)
+    ).rejects.toThrow('whatsapp_official_profile_permission_error');
+    expect(
+      deps.workerProfileInfoService.upsertWorkerProfileInfo
+    ).not.toHaveBeenCalled();
+  });
+
+  it('maps Meta permissions error when viewing official profile', async () => {
+    const deps = buildDeps();
+    deps.metaWhatsappEmbeddedService.viewBusinessProfile.mockRejectedValueOnce(
+      new Error('(#200) Permissions error')
+    );
+    const useCase = new WorkerProfileInfoViewerUseCase(
+      deps.workerProfileInfoService as never,
+      deps.workerService as never,
+      deps.officialConnectionRepository as never,
+      deps.metaWhatsappEmbeddedService as never,
+      deps.passwordEncryptorService as never
+    );
+
+    await expect(useCase.execute(t, 'account-1', 'worker-1')).rejects.toThrow(
+      'whatsapp_official_profile_permission_error'
+    );
+  });
 });

@@ -11,6 +11,7 @@ import { IProfileInfoMessage } from '@core/common/interfaces/IProfileInfoMessage
 import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import {
+  isMetaPermissionsError,
   MetaWhatsappBusinessProfile,
   MetaWhatsappEmbeddedService,
   UpdateMetaWhatsappBusinessProfile,
@@ -221,37 +222,46 @@ export class WorkerProfileInfoUpserterUseCase {
     );
     const payload = this.buildOfficialProfilePayload(t, body);
 
-    if (body.photo) {
-      const fileBuffer = await this.validateFileSize(body.photo, t);
-      const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
-      payload.profile_picture_handle =
-        await this.metaWhatsappEmbeddedService.uploadProfilePicture({
+    try {
+      if (body.photo) {
+        const fileBuffer = await this.validateFileSize(body.photo, t);
+        const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
+        payload.profile_picture_handle =
+          await this.metaWhatsappEmbeddedService.uploadProfilePicture({
+            apiVersion: connection.api_version,
+            accessToken,
+            appId: config.app_id,
+            filename: body.photo.filename,
+            fileType: body.photo.mimetype ?? 'image/jpeg',
+            fileBuffer,
+          });
+      }
+
+      await this.metaWhatsappEmbeddedService.updateBusinessProfile({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        data: payload,
+      });
+      const profile =
+        await this.metaWhatsappEmbeddedService.viewBusinessProfile({
           apiVersion: connection.api_version,
           accessToken,
-          appId: config.app_id,
-          filename: body.photo.filename,
-          fileType: body.photo.mimetype ?? 'image/jpeg',
-          fileBuffer,
+          phoneNumberId: connection.phone_number_id,
         });
+
+      return this.mapOfficialProfile({
+        workerId,
+        connectionId: connection.worker_whatsapp_official_connection_id,
+        profile,
+      });
+    } catch (error) {
+      if (isMetaPermissionsError(error)) {
+        throw new Error(t('whatsapp_official_profile_permission_error'));
+      }
+
+      throw error;
     }
-
-    await this.metaWhatsappEmbeddedService.updateBusinessProfile({
-      apiVersion: connection.api_version,
-      accessToken,
-      phoneNumberId: connection.phone_number_id,
-      data: payload,
-    });
-    const profile = await this.metaWhatsappEmbeddedService.viewBusinessProfile({
-      apiVersion: connection.api_version,
-      accessToken,
-      phoneNumberId: connection.phone_number_id,
-    });
-
-    return this.mapOfficialProfile({
-      workerId,
-      connectionId: connection.worker_whatsapp_official_connection_id,
-      profile,
-    });
   }
 
   async execute(

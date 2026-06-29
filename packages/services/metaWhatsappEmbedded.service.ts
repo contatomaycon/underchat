@@ -9,6 +9,31 @@ interface MetaGraphErrorResponse {
   };
 }
 
+export class MetaGraphApiError extends Error {
+  code: number | null;
+  errorSubcode: number | null;
+  type: string | null;
+
+  constructor(error: NonNullable<MetaGraphErrorResponse['error']>) {
+    super(error.message ?? 'Meta Graph API request failed');
+    this.name = 'MetaGraphApiError';
+    this.code = error.code ?? null;
+    this.errorSubcode = error.error_subcode ?? null;
+    this.type = error.type ?? null;
+  }
+}
+
+export const isMetaPermissionsError = (error: unknown): boolean => {
+  if (error instanceof MetaGraphApiError) {
+    return error.code === 200;
+  }
+
+  return (
+    error instanceof Error &&
+    /(?:\(#200\)|code\s*200).*permissions?\s+error/i.test(error.message)
+  );
+};
+
 interface MetaTokenResponse extends MetaGraphErrorResponse {
   access_token?: string;
   token_type?: string;
@@ -97,8 +122,11 @@ export class MetaWhatsappEmbeddedService {
     const payload = (await response.json()) as T;
 
     if (!response.ok || payload.error) {
-      const message = payload.error?.message ?? 'Meta Graph API request failed';
-      throw new Error(message);
+      if (payload.error) {
+        throw new MetaGraphApiError(payload.error);
+      }
+
+      throw new Error('Meta Graph API request failed');
     }
 
     return payload;

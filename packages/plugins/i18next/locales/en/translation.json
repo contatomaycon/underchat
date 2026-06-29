@@ -1250,6 +1250,7 @@
   "whatsapp_official_type_change_not_allowed": "Official WhatsApp channels cannot be converted to another type.",
   "whatsapp_official_connect_required": "Use the Meta connection flow to create an Official WhatsApp channel.",
   "whatsapp_official_runtime_action_not_supported": "This runtime action is not available for Official WhatsApp channels.",
+  "whatsapp_official_profile_permission_error": "Meta denied permission to manage this phone number profile. Review the Meta app configuration to include whatsapp_business_management and reconnect the official channel.",
   "whatsapp_profile_category_invalid": "Invalid Official WhatsApp profile category.",
   "chatbot_flow_validation_holiday_options_required": "The \"It is a holiday\" and \"It is not a holiday\" outputs are required in node \"{{nodeLabel}}\""
 }

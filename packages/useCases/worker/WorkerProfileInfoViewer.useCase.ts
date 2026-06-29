@@ -6,6 +6,7 @@ import { ViewProfileInfoResponse } from '@core/schema/worker/viewProfileInfo/res
 import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import {
+  isMetaPermissionsError,
   MetaWhatsappBusinessProfile,
   MetaWhatsappEmbeddedService,
 } from '@core/services/metaWhatsappEmbedded.service';
@@ -66,11 +67,21 @@ export class WorkerProfileInfoViewerUseCase {
     const accessToken = this.passwordEncryptorService.decrypt(
       connection.access_token_encrypted
     );
-    const profile = await this.metaWhatsappEmbeddedService.viewBusinessProfile({
-      apiVersion: connection.api_version,
-      accessToken,
-      phoneNumberId: connection.phone_number_id,
-    });
+    let profile;
+
+    try {
+      profile = await this.metaWhatsappEmbeddedService.viewBusinessProfile({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+      });
+    } catch (error) {
+      if (isMetaPermissionsError(error)) {
+        throw new Error(t('whatsapp_official_profile_permission_error'));
+      }
+
+      throw error;
+    }
 
     return this.mapOfficialProfile({
       workerId,

@@ -5599,6 +5599,7 @@ onMounted(async () => {
                         item-value="value"
                         :placeholder="$t('profile_info_category')"
                         clearable
+                        clear-icon="tabler-x"
                       />
                     </VCol>
                   </template>
