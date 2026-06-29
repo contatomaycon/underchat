@@ -90,10 +90,7 @@ export const isNavLinkActive = (link: NavLink, router: Router) => {
     return String(value as string | number | boolean | bigint);
   };
 
-  const keys = new Set([
-    ...Object.keys(targetQuery),
-    ...Object.keys(currentRoute.query ?? {}),
-  ]);
+  const keys = Object.keys(targetQuery);
 
   for (const key of keys) {
     const expected = normalizeQueryValue(targetQuery[key]);
