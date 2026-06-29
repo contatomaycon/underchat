@@ -10,8 +10,10 @@ import {
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { DisconnectWhatsappOfficialResponse } from '@core/schema/worker/disconnectWhatsappOfficial/response.schema';
-import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
-import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
@@ -63,7 +65,7 @@ export class WhatsappOfficialDisconnecterUseCase {
       );
     }
 
-    return workerBalancer;
+    return { worker, workerBalancer };
   }
 
   private async unsubscribeMetaIfLastWabaConnection(input: {
@@ -126,7 +128,7 @@ export class WhatsappOfficialDisconnecterUseCase {
     accountId: string,
     workerId: string
   ): Promise<DisconnectWhatsappOfficialResponse> {
-    const workerBalancer = await this.assertCanDisconnect({
+    const { worker, workerBalancer } = await this.assertCanDisconnect({
       t,
       accountId,
       workerId,
@@ -137,15 +139,32 @@ export class WhatsappOfficialDisconnecterUseCase {
         workerId
       );
 
-    if (!connection) {
-      throw new Error(t('whatsapp_official_connection_not_found'));
+    const disconnected =
+      await this.workerWhatsappOfficialConnectionRepository.disconnectPreservingWorker(
+        {
+          accountId,
+          workerId,
+        }
+      );
+
+    if (!disconnected) {
+      throw new Error(t('whatsapp_official_disconnect_error'));
     }
 
-    const payload: IWorkerPayload = {
-      action: EWorkerAction.delete,
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.loggedOut,
+      status: EBaileysConnectionStatus.disconnected,
       worker_id: workerId,
-      server_id: workerBalancer.server_id,
+      worker_name: worker.name,
       account_id: workerBalancer.account_id,
+      worker_type_id: EWorkerType.whatsapp,
+      worker_status_id: EWorkerStatus.offline,
+      disconnected_user: true,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'disconnected',
     };
 
     await this.centrifugoService.publishSub(
@@ -153,18 +172,14 @@ export class WhatsappOfficialDisconnecterUseCase {
       payload
     );
 
-    const deleted = await this.workerService.deleteWorkerById(
-      accountId,
-      workerId
-    );
-
-    if (!deleted) {
-      throw new Error(t('whatsapp_official_disconnect_error'));
+    if (!connection) {
+      return {
+        worker_id: workerId,
+        disconnected: true,
+        meta_unsubscribed: false,
+        meta_warning: null,
+      };
     }
-
-    await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
-      workerId
-    );
 
     const metaResult = await this.unsubscribeMetaIfLastWabaConnection({
       t,

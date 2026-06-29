@@ -27,6 +27,10 @@ import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResp
 import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
 import { useChannelRecreateCooldown } from '@/composables/useChannelRecreateCooldown';
 import {
+  isSilentWhatsappEmbeddedSignupError,
+  useWhatsappEmbeddedSignup,
+} from '@/composables/useWhatsappEmbeddedSignup';
+import {
   createConnectionLifecycleDebugTraceId,
   isConnectionLifecycleDebugEnabled,
   logConnectionLifecycleDebug,
@@ -91,6 +95,8 @@ useSnackbarCleanup(channelsStore);
 const user = getUser();
 const { isRecreateCooldownActive, formatRecreateCooldownRemaining } =
   useChannelRecreateCooldown();
+const { isLoading: isWhatsappOfficialSignupLoading, startSignup } =
+  useWhatsappEmbeddedSignup();
 
 const itemsPerPage = ref([
   { value: 5, title: '5' },
@@ -127,6 +133,7 @@ const openConversationsCount = ref<number | null>(null);
 
 const isDialogDisconnectOfficialShow = ref(false);
 const channelToDisconnectOfficial = ref<string | null>(null);
+const reconnectingWhatsappOfficialId = ref<string | null>(null);
 
 const isDialogRecreatorShow = ref(false);
 const channelToRecreate = ref<string | null>(null);
@@ -340,6 +347,70 @@ const openConfigDialog = (id: string) => {
   isDialogConfigChannelShow.value = true;
 };
 
+const isWhatsappOfficialChannel = (channel: ListWorkerResponse) =>
+  channel.type?.id === EWorkerType.whatsapp;
+
+const isWhatsappOfficialOnline = (channel: ListWorkerResponse) =>
+  isWhatsappOfficialChannel(channel) &&
+  channel.status?.id === EWorkerStatus.online;
+
+const isWhatsappOfficialReconnectable = (channel: ListWorkerResponse) =>
+  isWhatsappOfficialChannel(channel) &&
+  channel.status?.id !== EWorkerStatus.online;
+
+const connectWhatsappOfficial = async (channel: ListWorkerResponse) => {
+  if (
+    isWhatsappOfficialSignupLoading.value ||
+    reconnectingWhatsappOfficialId.value
+  ) {
+    return;
+  }
+
+  reconnectingWhatsappOfficialId.value = channel.id;
+
+  try {
+    const config =
+      channelsStore.whatsappEmbeddedConfig ??
+      (await channelsStore.getWhatsappEmbeddedConfig());
+
+    if (!config?.is_configured) {
+      channelsStore.showSnackbar(
+        t('whatsapp_embedded_configure_required'),
+        EColor.error
+      );
+      return;
+    }
+
+    const signupResult = await startSignup(config);
+    const result = await channelsStore.connectWhatsappOfficial(channel.id, {
+      code: signupResult.code,
+      business_id: signupResult.business_id,
+      waba_id: signupResult.waba_id,
+      phone_number_id: signupResult.phone_number_id,
+    });
+
+    if (!result) {
+      return;
+    }
+
+    dashboardStore.removeOfflineChannel(channel.id);
+    await channelsStore.listChannels(query.value);
+  } catch (error) {
+    if (isSilentWhatsappEmbeddedSignupError(error)) {
+      return;
+    }
+
+    const message =
+      error instanceof Error && error.message
+        ? t(error.message)
+        : t('whatsapp_embedded_signup_error');
+
+    channelsStore.showSnackbar(message, EColor.error);
+  } finally {
+    reconnectingWhatsappOfficialId.value = null;
+  }
+};
+
 const handleDelete = async () => {
   if (!channelToDelete.value) return;
 
@@ -361,7 +432,13 @@ const handleDisconnectWhatsappOfficial = async () => {
   const result = await channelsStore.disconnectWhatsappOfficial(channelId);
 
   if (result?.disconnected) {
-    dashboardStore.removeOfflineChannel(channelId);
+    const channel = channelsStore.list.find((item) => item.id === channelId);
+    dashboardStore.updateOfflineChannelStatus(
+      channelId,
+      EWorkerStatus.offline,
+      t('offline'),
+      channel?.name
+    );
     await channelsStore.listChannels(query.value);
   }
 
@@ -829,6 +906,30 @@ onUnmounted(async () => {
                     @click="openConnectionDialog(item)"
                 /></IconBtn>
 
+                <IconBtn
+                  v-if="
+                    isWhatsappOfficialReconnectable(item) &&
+                    $canPermission(permissionsCreate)
+                  "
+                  :disabled="
+                    isWhatsappOfficialSignupLoading ||
+                    !!reconnectingWhatsappOfficialId
+                  "
+                  @click="connectWhatsappOfficial(item)"
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('reconnect_whatsapp_official') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-plug-connected"
+                    :data-testid="`channel-reconnect-official-${item.id}`"
+                  />
+                </IconBtn>
+
                 <IconBtn v-if="$canPermission(permissionsEdit)"
                   ><VTooltip
                     location="top"
@@ -856,9 +957,10 @@ onUnmounted(async () => {
 
                 <IconBtn
                   v-if="
-                    item.type?.id === EWorkerType.whatsapp &&
+                    isWhatsappOfficialOnline(item) &&
                     $canPermission(permissionsDelete)
                   "
+                  @click="disconnectWhatsappOfficial(item.id)"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
@@ -869,7 +971,6 @@ onUnmounted(async () => {
                   <VIcon
                     icon="tabler-plug-connected-x"
                     :data-testid="`channel-disconnect-official-${item.id}`"
-                    @click="disconnectWhatsappOfficial(item.id)"
                 /></IconBtn>
 
                 <IconBtn v-if="$canPermission(permissionsViewLogs)"

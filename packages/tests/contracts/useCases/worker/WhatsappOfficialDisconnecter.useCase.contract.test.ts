@@ -5,7 +5,9 @@ jest.mock('@core/services/chat.service', () => ({
 }));
 
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { WhatsappOfficialDisconnecterUseCase } from '@core/useCases/worker/WhatsappOfficialDisconnecter.useCase';
 
 const t = ((key: string, options?: { count?: number }) =>
@@ -24,6 +26,8 @@ function buildDeps() {
   return {
     workerService: {
       viewWorker: jest.fn(async () => ({
+        id: 'worker-1',
+        name: 'Maycon',
         type: { id: EWorkerType.whatsapp },
       })),
       viewWorkerBalancer: jest.fn(async () => ({
@@ -43,6 +47,7 @@ function buildDeps() {
       findActiveByWorkerId: jest.fn(async () => connection),
       countActiveByWabaIdExceptWorkerId: jest.fn(async () => 0),
       softDeleteByWorkerId: jest.fn(async () => true),
+      disconnectPreservingWorker: jest.fn(async () => true),
     },
     metaWhatsappEmbeddedService: {
       unsubscribeWabaApp: jest.fn(async () => true),
@@ -76,22 +81,30 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
       meta_warning: null,
     });
 
+    expect(
+      deps.officialConnectionRepository.disconnectPreservingWorker
+    ).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      workerId: 'worker-1',
+    });
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
-      {
-        action: EWorkerAction.delete,
+      expect.objectContaining({
+        code: ECodeMessage.loggedOut,
+        status: EBaileysConnectionStatus.disconnected,
         worker_id: 'worker-1',
-        server_id: 'server-1',
+        worker_name: 'Maycon',
         account_id: 'account-1',
-      }
+        worker_type_id: EWorkerType.whatsapp,
+        worker_status_id: EWorkerStatus.offline,
+        disconnected_user: true,
+        session_ready: false,
+      })
     );
-    expect(deps.workerService.deleteWorkerById).toHaveBeenCalledWith(
-      'account-1',
-      'worker-1'
-    );
+    expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
     expect(
       deps.officialConnectionRepository.softDeleteByWorkerId
-    ).toHaveBeenCalledWith('worker-1');
+    ).not.toHaveBeenCalled();
     expect(
       deps.officialConnectionRepository.countActiveByWabaIdExceptWorkerId
     ).toHaveBeenCalledWith('waba-1', 'worker-1');
@@ -141,15 +154,48 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
       meta_warning: 'whatsapp_official_disconnect_meta_permission_warning',
     });
 
-    expect(deps.workerService.deleteWorkerById).toHaveBeenCalled();
+    expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
     expect(
-      deps.officialConnectionRepository.softDeleteByWorkerId
-    ).toHaveBeenCalledWith('worker-1');
+      deps.officialConnectionRepository.disconnectPreservingWorker
+    ).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      workerId: 'worker-1',
+    });
+  });
+
+  it('is idempotent when the official worker has no active connection', async () => {
+    const deps = buildDeps();
+    deps.officialConnectionRepository.findActiveByWorkerId.mockResolvedValue(
+      null as never
+    );
+    const useCase = buildUseCase(deps);
+
+    await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
+      worker_id: 'worker-1',
+      disconnected: true,
+      meta_unsubscribed: false,
+      meta_warning: null,
+    });
+
+    expect(
+      deps.officialConnectionRepository.disconnectPreservingWorker
+    ).toHaveBeenCalledWith({
+      accountId: 'account-1',
+      workerId: 'worker-1',
+    });
+    expect(
+      deps.officialConnectionRepository.countActiveByWabaIdExceptWorkerId
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects non-official workers', async () => {
     const deps = buildDeps();
     deps.workerService.viewWorker.mockResolvedValue({
+      id: 'worker-1',
+      name: 'Maycon',
       type: { id: EWorkerType.baileys },
     });
     const useCase = buildUseCase(deps);
@@ -158,6 +204,9 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
       'whatsapp_official_disconnect_only_official'
     );
     expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
+    expect(
+      deps.officialConnectionRepository.disconnectPreservingWorker
+    ).not.toHaveBeenCalled();
   });
 
   it('rejects official workers with open conversations', async () => {
@@ -170,7 +219,7 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     );
     expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
     expect(
-      deps.officialConnectionRepository.softDeleteByWorkerId
+      deps.officialConnectionRepository.disconnectPreservingWorker
     ).not.toHaveBeenCalled();
   });
 });

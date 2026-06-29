@@ -67,6 +67,7 @@ import {
 import { workerWhatsappEmbeddedConfigSchema } from '@core/schema/worker/whatsappEmbeddedConfig';
 import { connectWhatsappEmbeddedSchema } from '@core/schema/worker/connectWhatsappEmbedded';
 import { disconnectWhatsappOfficialSchema } from '@core/schema/worker/disconnectWhatsappOfficial';
+import { connectWhatsappOfficialSchema } from '@core/schema/worker/connectWhatsappOfficial';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -156,6 +157,17 @@ export default function workerRoutes(server: FastifyInstance) {
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerDeletePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/whatsapp-official/connect', {
+    schema: connectWhatsappOfficialSchema,
+    handler: workerController.connectWhatsappOfficial,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
       planGuard,
       planStatus,
     ],
