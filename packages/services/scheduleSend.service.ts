@@ -61,6 +61,7 @@ import {
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
+import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
 
 @injectable()
 export class ScheduleSendService {
@@ -1327,27 +1328,37 @@ export class ScheduleSendService {
     const ddi = this.normalizePhoneDdi(contact.phone_ddi);
     const phoneFromContact = decrypted ? `${ddi}${decrypted}` : null;
     const phone = phoneFromJid ?? phoneFromContact;
-    if (phone) {
-      const existingChat = await this.chatService.findChatByPhone(
-        schedule.account_id,
-        schedule.worker_id,
-        phone
-      );
+    const identityInput = { phone, remoteJid: jid };
+    const existingChat = await this.chatService.findOpenChatByIdentity(
+      schedule.account_id,
+      schedule.worker_id,
+      identityInput
+    );
 
-      if (existingChat) {
-        return this.reportScheduleChatbotIgnored(schedule, contact);
-      }
+    if (existingChat) {
+      return this.reportScheduleChatbotIgnored(schedule, contact);
     }
+
+    const lockKey = buildChatIdentityLockKey(
+      schedule.account_id,
+      schedule.worker_id,
+      identityInput
+    );
 
     return withLock(
       this.redis,
-      [
-        'schedule:send:account',
-        schedule.account_id,
-        'channel',
-        schedule.worker_id,
-      ].join(':'),
+      lockKey,
       async () => {
+        const existingChat = await this.chatService.findOpenChatByIdentity(
+          schedule.account_id,
+          schedule.worker_id,
+          identityInput
+        );
+
+        if (existingChat) {
+          return this.reportScheduleChatbotIgnored(schedule, contact);
+        }
+
         const now = new Date().toISOString();
         const chat = this.buildScheduleChatbotChat(schedule, contact, jid, now);
         const chatWithProtocol =

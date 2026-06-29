@@ -125,6 +125,7 @@ import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import type { IChat } from '@core/common/interfaces/IChat';
 import type { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import type { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
+import { withLock } from '@core/common/functions/withLock';
 
 describe('MessageUpsertConsume edit fallback', () => {
   const account = { id: 'account-1', name: 'Account' };
@@ -767,6 +768,58 @@ describe('MessageUpsertConsume edit fallback', () => {
       phoneJid
     );
     expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses an open chat in the same worker when incoming JIDs match an alternate identity', async () => {
+    const { consumer, chat, chatService } = makeConsumer();
+    const existingChat = {
+      ...chat,
+      chat_id: 'chat-existing',
+      phone: '556999715039',
+      message_key: {
+        remote_jid: phoneJid,
+        remote_jid_alt: lidJid,
+      },
+    } as IChat;
+    const data = makeTextUpsert('mesmo chat');
+    data.message.key.remoteJid = lidJid;
+    data.message.key.remoteJidAlt = phoneJid;
+    chatService.findChatByPhone.mockResolvedValueOnce(existingChat);
+    const withLockMock = jest.mocked(withLock);
+    withLockMock.mockClear();
+
+    await (consumer as any).createOrUpdateChat(
+      jest.fn((key: string) => key),
+      data,
+      '556999715039'
+    );
+
+    expect(withLockMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'chat-create:account-1:worker-1:phone%3A556999715039',
+      expect.any(Function),
+      { ttlMs: 60_000, retryMs: 100, maxWaitMs: 90_000 }
+    );
+    expect(chatService.findChatByPhone).toHaveBeenCalledWith(
+      'account-1',
+      'worker-1',
+      '556999715039',
+      lidJid,
+      phoneJid
+    );
+    expect(chatService.ensureProtocolForNewChat).not.toHaveBeenCalled();
+    expect(chatService.saveChat).not.toHaveBeenCalled();
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+
+    const createdMessage = chatService.createMessageIdempotent.mock
+      .calls[0][0] as IChatMessage;
+    expect(createdMessage.chat_id).toBe('chat-existing');
+    expect(createdMessage.message_key).toEqual(
+      expect.objectContaining({
+        remote_jid: lidJid,
+        remote_jid_alt: phoneJid,
+      })
+    );
   });
 
   it('discards lock acquisition timeouts after local retries so the partition can commit', async () => {

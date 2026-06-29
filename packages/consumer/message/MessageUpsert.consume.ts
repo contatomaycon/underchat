@@ -65,7 +65,6 @@ import { EContactIgnore } from '@core/common/enums/EContactIgnore';
 import { withLock } from '@core/common/functions/withLock';
 import { delay } from '@core/common/functions/delay';
 import { extractReactionMessage } from '@core/common/functions/extractReactionMessage';
-import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { parseSerializedMessageId } from '@core/common/functions/parseSerializedMessageId';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import { isUuidLike } from '@core/common/functions/isUuidLike';
@@ -94,6 +93,7 @@ import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMe
 import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
 import { LidJidCacheService } from '@core/services/lidJidCache.service';
+import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -245,11 +245,6 @@ export class MessageUpsertConsume {
     this.historyReceiptCache = new MessageHistoryReceiptCacheService(
       this.redis
     );
-  }
-
-  private normalizePhoneForLock(phone: string): string {
-    const candidates = buildCandidates(phone);
-    return candidates.sort()[0] ?? phone;
   }
 
   private isLockAcquisitionTimeoutError(error: unknown): boolean {
@@ -5232,6 +5227,10 @@ export class MessageUpsertConsume {
         undefined,
         new Date().toISOString()
       );
+      await this.chatService.invalidateChatCache({
+        ...currentChat,
+        status: EChatStatus.closed,
+      });
       this.logLifecycle(data, {
         stage: 'message_upsert.outside_hours.message_only',
         decision: 'outside_hours_destination',
@@ -5276,6 +5275,12 @@ export class MessageUpsertConsume {
         null,
         outsideHoursSector
       );
+      await this.chatService.invalidateChatCache({
+        ...currentChat,
+        status: EChatStatus.queue,
+        user: null,
+        sector: outsideHoursSector,
+      });
       this.logLifecycle(data, {
         stage: 'message_upsert.outside_hours.message_only',
         decision: 'outside_hours_destination',
@@ -5318,8 +5323,13 @@ export class MessageUpsertConsume {
       return;
     }
 
-    const normalizedPhone = this.normalizePhoneForLock(phone);
-    const lockKey = `chat-create:${data.account_id}:${data.worker_id}:${normalizedPhone}`;
+    const lockJid = remoteJid(data.message?.key);
+    const lockJidAlt = remoteJidAlt(data.message?.key);
+    const lockKey = buildChatIdentityLockKey(data.account_id, data.worker_id, {
+      phone,
+      remoteJid: lockJid,
+      remoteJidAlt: lockJidAlt,
+    });
 
     await withLock(
       this.redis,
@@ -5733,6 +5743,7 @@ export class MessageUpsertConsume {
       failOnInvalidMessageHookError: true,
       resolveEntityKey: (data, message) =>
         this.resolveUpsertKafkaKey(data, message),
+      preserveEntityOrder: true,
       handle: (data, context) =>
         this.processKafkaMessageInPartition(
           t,
@@ -5844,7 +5855,9 @@ export class MessageUpsertConsume {
         offset,
         timeout_ms: this.MESSAGE_PROCESSING_TIMEOUT_MS,
       });
-    }, this.MESSAGE_PROCESSING_TIMEOUT_MS);
+    }, this.MESSAGE_PROCESSING_TIMEOUT_MS) as ReturnType<typeof setTimeout> & {
+      unref?: () => void;
+    };
     timeout.unref?.();
 
     return timeout;

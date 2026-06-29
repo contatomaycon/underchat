@@ -9,6 +9,7 @@ export interface IContactData {
   contactName: string;
   phonePartial: string;
   fullPhone: string;
+  remoteJid?: string | null;
 }
 
 export interface IRequiredData {

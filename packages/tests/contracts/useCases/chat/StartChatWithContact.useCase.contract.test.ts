@@ -56,6 +56,10 @@ jest.mock('@core/services/pushNotification.service', () => ({
   PushNotificationService: class PushNotificationService {},
 }));
 
+jest.mock('@core/common/functions/withLock', () => ({
+  withLock: jest.fn(async (_redis, _key, fn: () => Promise<unknown>) => fn()),
+}));
+
 jest.mock('uuid', () => ({
   v7: jest.fn(() => 'chat-new-1'),
 }));
@@ -97,9 +101,20 @@ describe('StartChatWithContactUseCase push notifications', () => {
       forward_to_output_chatbot: true,
     }) as IChat;
 
-  const makeUseCase = (existingChat: IChat | null = null) => {
+  const makeUseCase = (
+    existingChat: IChat | null = null,
+    validationResponse: {
+      valid: boolean;
+      phone?: string | null;
+      jid?: string | null;
+    } = {
+      valid: true,
+      phone: '5511999999999',
+      jid: '5511999999999@s.whatsapp.net',
+    }
+  ) => {
     const chatService = {
-      findChatByPhone: jest.fn(async () => existingChat),
+      findOpenChatByIdentity: jest.fn(async () => existingChat),
       ensureProtocolForNewChat: jest.fn(async (chat: IChat) => chat),
       saveChat: jest.fn(async () => true),
       updateChatStatus: jest.fn(async () => true),
@@ -136,10 +151,7 @@ describe('StartChatWithContactUseCase push notifications', () => {
       { viewSectorById: jest.fn(async () => null) } as never,
       { sanitize: jest.fn((value: string) => value) } as never,
       {
-        validatePhone: jest.fn(async () => ({
-          valid: true,
-          phone: '5511999999999',
-        })),
+        validatePhone: jest.fn(async () => validationResponse),
       } as never,
       { findStatusByUserId: jest.fn(async () => 'online') } as never,
       {
@@ -160,7 +172,7 @@ describe('StartChatWithContactUseCase push notifications', () => {
   };
 
   it('does not send a generic status push when creating a new in-chat attendance', async () => {
-    const { useCase, pushNotificationService } = makeUseCase();
+    const { useCase, chatService, pushNotificationService } = makeUseCase();
 
     const chat = await useCase.execute(
       ((key: string) => key) as never,
@@ -173,6 +185,18 @@ describe('StartChatWithContactUseCase push notifications', () => {
     );
 
     expect(chat.status).toBe(EChatStatus.in_chat);
+    expect(chat.message_key).toEqual({
+      remote_jid: '5511999999999@s.whatsapp.net',
+      remote_jid_alt: null,
+    });
+    expect(chatService.findOpenChatByIdentity).toHaveBeenCalledWith(
+      'account-1',
+      'worker-1',
+      {
+        phone: '5511999999999',
+        remoteJid: '5511999999999@s.whatsapp.net',
+      }
+    );
     expect(
       pushNotificationService.sendNotificationForChatStatusChange
     ).not.toHaveBeenCalled();

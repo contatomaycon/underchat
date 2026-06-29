@@ -340,20 +340,23 @@ export class ChatStatusUpdaterUseCase {
     return true;
   }
 
-  private async validatePhoneNotInActiveChat(
+  private async validateChatIdentityNotInActiveChat(
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string,
-    phone: string,
-    currentChatId: string
+    chat: IChat
   ): Promise<void> {
-    const existingChat = await this.chatService.findChatByPhone(
+    const existingChat = await this.chatService.findOpenChatByIdentity(
       accountId,
       workerId,
-      phone
+      {
+        phone: chat.phone,
+        remoteJid: chat.message_key?.remote_jid,
+        remoteJidAlt: chat.message_key?.remote_jid_alt,
+      }
     );
 
-    if (existingChat && existingChat.chat_id !== currentChatId) {
+    if (existingChat && existingChat.chat_id !== chat.chat_id) {
       const sectorName = existingChat.sector?.name;
       if (sectorName) {
         throw new Error(
@@ -716,12 +719,11 @@ export class ChatStatusUpdaterUseCase {
         throw new Error(t('reopen_chat_permission_denied'));
       }
 
-      await this.validatePhoneNotInActiveChat(
+      await this.validateChatIdentityNotInActiveChat(
         t,
         accountId,
         chat.worker.id,
-        chat.phone,
-        chat.chat_id
+        chat
       );
 
       await this.validateInChatAttendance(t, accountId, chat.worker.id, userId);

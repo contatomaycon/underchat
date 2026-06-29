@@ -23,6 +23,7 @@ jest.mock('../api/client', () => ({
 }));
 
 import {
+  listChats,
   listPinnedChats,
   pinChat,
   transferChat,
@@ -125,6 +126,49 @@ describe('chatApi attendance lifecycle', () => {
 
     expect(mockApiPost).toHaveBeenCalledWith('/chat/pinned/chat-1', {});
     expect(mockApiDelete).toHaveBeenCalledWith('/chat/pinned/chat-1');
+  });
+
+  it('preserves chat remote JID fields when listing chats', async () => {
+    mockApiGet.mockResolvedValue({
+      data: {
+        pagings: {
+          current_page: 1,
+          total_pages: 1,
+          per_page: 25,
+          count: 1,
+          total: 1,
+        },
+        results: [
+          {
+            chat_id: 'chat-1',
+            remote_jid: '158733669765176@lid',
+            remote_jid_alt: '5511999999999@s.whatsapp.net',
+            message_key: {
+              remote_jid: '158733669765176@lid',
+              remote_jid_alt: '5511999999999@s.whatsapp.net',
+            },
+            status: 'queue',
+          },
+        ],
+      },
+    });
+
+    const result = await listChats({
+      status: 'queue',
+      current_page: 1,
+      per_page: 25,
+    });
+
+    expect(result?.results[0]).toEqual(
+      expect.objectContaining({
+        remote_jid: '158733669765176@lid',
+        remote_jid_alt: '5511999999999@s.whatsapp.net',
+        message_key: {
+          remote_jid: '158733669765176@lid',
+          remote_jid_alt: '5511999999999@s.whatsapp.net',
+        },
+      })
+    );
   });
 
   it('reads and updates attendance inactivity state', async () => {

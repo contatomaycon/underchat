@@ -1280,6 +1280,11 @@ export class ChatSearcherUseCase {
       if (Array.isArray(source.summary)) {
         source.summary = source.summary[0] ?? null;
       }
+      source.message_key = source.message_key ?? null;
+      source.remote_jid =
+        source.remote_jid ?? source.message_key?.remote_jid ?? null;
+      source.remote_jid_alt =
+        source.remote_jid_alt ?? source.message_key?.remote_jid_alt ?? null;
       if (!Array.isArray(source.secondary_users)) {
         source.secondary_users = [];
       }

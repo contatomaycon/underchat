@@ -48,8 +48,16 @@ export const labelSchema = Type.Object({
   color: Type.String(),
 });
 
+export const messageKeySchema = Type.Object({
+  remote_jid: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  remote_jid_alt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
 export const listChatsResultSchema = Type.Object({
   chat_id: Type.String(),
+  remote_jid: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  remote_jid_alt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  message_key: Type.Optional(Type.Union([messageKeySchema, Type.Null()])),
   summary: Type.Optional(Type.Union([summarySchema, Type.Null()])),
   account: accountSchema,
   worker: workerSchema,

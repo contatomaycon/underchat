@@ -19,6 +19,9 @@ export class ChatPinnedViewerUseCase {
   private mapChatToListResult(chat: IChat): ListChatsResult {
     return {
       chat_id: chat.chat_id,
+      remote_jid: chat.message_key?.remote_jid ?? null,
+      remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+      message_key: chat.message_key ?? null,
       summary: chat.summary ?? null,
       account: chat.account,
       worker: chat.worker,
@@ -50,9 +53,8 @@ export class ChatPinnedViewerUseCase {
     userSectors: string[],
     userChannels: { id: string; name: string }[] = []
   ): Promise<ListChatsResult[]> {
-    const pinnedChats = await this.chatUserService.listPinnedChatsByUserId(
-      userId
-    );
+    const pinnedChats =
+      await this.chatUserService.listPinnedChatsByUserId(userId);
 
     if (!pinnedChats.length) {
       return [];

@@ -35,10 +35,13 @@ import { ChatUserViewerRepository } from '@core/repositories/chat/ChatUserViewer
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { PushNotificationService } from '@core/services/pushNotification.service';
+import { withLock } from '@core/common/functions/withLock';
+import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
+import { normalizeJid } from '@core/common/functions/normalizeJid';
+import type { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 
 type StartChatWithContactExistingInChatBehavior =
-  | 'error'
-  | 'reuse_and_takeover';
+  'error' | 'reuse_and_takeover';
 
 type StartChatWithContactExecuteOptions = {
   onExistingInChat?: StartChatWithContactExistingInChatBehavior;
@@ -117,50 +120,100 @@ export class StartChatWithContactUseCase {
       }
     }
 
-    const existingChat = await this.chatService.findChatByPhone(
+    const remoteJid = this.resolveContactRemoteJid(contactData);
+    const lockKey = buildChatIdentityLockKey(
       accountId,
       requiredData.worker.id,
-      contactData.fullPhone
+      {
+        phone: contactData.fullPhone,
+        remoteJid,
+      }
     );
 
-    if (existingChat) {
-      if (existingChat.status === EChatStatus.in_chat) {
-        if (options.onExistingInChat === 'reuse_and_takeover') {
-          return this.updateExistingChat(
-            t,
-            existingChat,
-            contactData,
-            requiredData
-          );
-        }
-
-        const sectorName = existingChat.sector?.name;
-        if (sectorName) {
-          throw new Error(
-            t('chat_already_in_service_with_sector', { sector: sectorName })
-          );
-        }
-
-        throw new Error(t('chat_already_in_service'));
-      }
-
-      if (
-        existingChat.status === EChatStatus.queue ||
-        existingChat.status === EChatStatus.ura ||
-        existingChat.status === EChatStatus.ura_output ||
-        existingChat.status === EChatStatus.ura_schedule ||
-        existingChat.status === EChatStatus.ura_webhook
-      ) {
-        return this.updateExistingChat(
-          t,
-          existingChat,
-          contactData,
-          requiredData
+    return withLock(
+      this.redis,
+      lockKey,
+      async () => {
+        const existingChat = await this.chatService.findOpenChatByIdentity(
+          accountId,
+          requiredData.worker.id,
+          {
+            phone: contactData.fullPhone,
+            remoteJid,
+          }
         );
+
+        if (existingChat) {
+          if (existingChat.status === EChatStatus.in_chat) {
+            if (options.onExistingInChat === 'reuse_and_takeover') {
+              return this.updateExistingChat(
+                t,
+                existingChat,
+                contactData,
+                requiredData
+              );
+            }
+
+            const sectorName = existingChat.sector?.name;
+            if (sectorName) {
+              throw new Error(
+                t('chat_already_in_service_with_sector', {
+                  sector: sectorName,
+                })
+              );
+            }
+
+            throw new Error(t('chat_already_in_service'));
+          }
+
+          if (
+            existingChat.status === EChatStatus.queue ||
+            existingChat.status === EChatStatus.ura ||
+            existingChat.status === EChatStatus.ura_output ||
+            existingChat.status === EChatStatus.ura_schedule ||
+            existingChat.status === EChatStatus.ura_webhook
+          ) {
+            return this.updateExistingChat(
+              t,
+              existingChat,
+              contactData,
+              requiredData
+            );
+          }
+        }
+
+        return this.createNewChat(t, contactData, requiredData);
+      },
+      { ttlMs: 30_000, retryMs: 100, maxWaitMs: 30_000 }
+    );
+  }
+
+  private resolveValidationRemoteJid(
+    validationResult: Pick<IPhoneValidationResponse, 'jid' | 'phone'>
+  ): string | null {
+    const candidates = [validationResult.jid, validationResult.phone];
+
+    for (const candidate of candidates) {
+      const raw = candidate?.trim();
+      if (!raw || !raw.includes('@') || raw.endsWith('@lid')) {
+        continue;
       }
+
+      return normalizeJid(raw) ?? raw;
     }
 
-    return this.createNewChat(t, contactData, requiredData);
+    return null;
+  }
+
+  private resolveContactRemoteJid(contactData: IContactData): string | null {
+    return (
+      contactData.remoteJid ??
+      normalizePhoneToJid(
+        contactData.sensitiveData?.phone || null,
+        contactData.contact.phone_ddi || null
+      ) ??
+      null
+    );
   }
 
   private async validateAndGetContactData(
@@ -187,7 +240,10 @@ export class StartChatWithContactUseCase {
     const fallbackPhoneDdi = contact.phone_ddi ?? null;
     const phoneDdiToValidate = fallbackPhoneDdi ?? '55';
 
-    let validationResult: { valid: boolean; phone?: string | null };
+    let validationResult: Pick<
+      IPhoneValidationResponse,
+      'valid' | 'phone' | 'jid'
+    >;
     try {
       validationResult = await this.phoneValidationService.validatePhone(
         accountId,
@@ -216,7 +272,8 @@ export class StartChatWithContactUseCase {
               contact,
               sensitiveData.phone,
               fallbackPhoneDdi,
-              sensitiveData.email
+              sensitiveData.email,
+              null
             );
           }
 
@@ -242,13 +299,15 @@ export class StartChatWithContactUseCase {
           contact,
           sensitiveData.phone,
           fallbackPhoneDdi,
-          sensitiveData.email
+          sensitiveData.email,
+          null
         );
       }
       await this.contactService.updateContactIsValided(contactId, false);
       throw new Error(t('phone_number_not_valid_on_whatsapp'));
     }
 
+    const remoteJid = this.resolveValidationRemoteJid(validationResult);
     let normalizedPhone = sensitiveData.phone;
     let normalizedPhoneDdi = phoneDdiToValidate;
 
@@ -281,7 +340,8 @@ export class StartChatWithContactUseCase {
       contact,
       normalizedPhone,
       normalizedPhoneDdi,
-      sensitiveData.email
+      sensitiveData.email,
+      remoteJid
     );
   }
 
@@ -308,7 +368,8 @@ export class StartChatWithContactUseCase {
     contact: IContactData['contact'],
     phone: string,
     phoneDdi: string,
-    email?: string | null
+    email?: string | null,
+    remoteJid?: string | null
   ): IContactData {
     const contactName = contact.name ?? contact.last_name ?? '';
     const phonePartial =
@@ -328,6 +389,7 @@ export class StartChatWithContactUseCase {
       contactName,
       phonePartial,
       fullPhone,
+      remoteJid: remoteJid ?? null,
     };
   }
 
@@ -509,10 +571,7 @@ export class StartChatWithContactUseCase {
     currentDate: string
   ): IChat {
     const userData = requiredData.user;
-    const remoteJid = normalizePhoneToJid(
-      contactData.sensitiveData?.phone || null,
-      contactData.contact.phone_ddi || null
-    );
+    const remoteJid = this.resolveContactRemoteJid(contactData);
 
     return {
       ...existingChat,
@@ -574,10 +633,7 @@ export class StartChatWithContactUseCase {
     }
 
     const currentDate = new Date().toISOString();
-    const remoteJid = normalizePhoneToJid(
-      contactData.sensitiveData?.phone || null,
-      contactData.contact.phone_ddi || null
-    );
+    const remoteJid = this.resolveContactRemoteJid(contactData);
 
     const newChat: IChat = {
       chat_id: uuidv7(),

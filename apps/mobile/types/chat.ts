@@ -45,6 +45,9 @@ export interface ChatLabel {
 
 export interface ListChatsResult {
   chat_id: string;
+  remote_jid?: string | null;
+  remote_jid_alt?: string | null;
+  message_key?: Pick<MessageKey, 'remote_jid' | 'remote_jid_alt'> | null;
   summary?: ChatSummary | null;
   account: { id: string; name: string };
   worker: ChatWorker;

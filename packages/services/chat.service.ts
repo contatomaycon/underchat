@@ -9,7 +9,6 @@ import { chatMappings } from '@core/mappings/chat.mappings';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { WorkerConfigForChatViewerRepository } from '@core/repositories/chat/WorkerConfigForChatViewer.repository';
 import { ViewWorkerConfigForChatResponse } from '@core/schema/chat/viewWorkerConfigForChat/response.schema';
 import { ChatQuickMessageTemplatesListerRepository } from '@core/repositories/chat/ChatQuickMessageTemplatesLister.repository';
@@ -33,12 +32,26 @@ import { safeRedisGet } from '@core/plugins/redis';
 import { generateProtocol } from '@core/common/functions/generateProtocol';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
 import { normalizeExternalAdReplyMediaType } from '@core/common/functions/normalizeExternalAdReplyMediaType';
+import {
+  buildMissingChatMessageKeyPatch,
+  normalizeChatIdentity,
+  type ChatIdentityInput,
+} from '@core/common/functions/chatIdentity';
 
 type ElasticHit<T> = {
   _source?: T;
 };
 
 type ChatProtocolType = 'protocol_ura' | 'protocol_start' | 'protocol_transfer';
+
+const OPEN_CHAT_STATUSES = [
+  EChatStatus.in_chat,
+  EChatStatus.queue,
+  EChatStatus.ura,
+  EChatStatus.ura_output,
+  EChatStatus.ura_schedule,
+  EChatStatus.ura_webhook,
+];
 
 @injectable()
 export class ChatService {
@@ -457,11 +470,68 @@ export class ChatService {
     await this.redis.set(key, JSON.stringify(chat), 'PX', 60_000);
   }
 
+  private async ensureNoOpenChatIdentityConflict(
+    chat: IChat
+  ): Promise<boolean> {
+    if (!this.isOpenChatStatus(chat.status)) {
+      return true;
+    }
+
+    if (!chat.account?.id || !chat.worker?.id || !chat.chat_id) {
+      return true;
+    }
+
+    const input: ChatIdentityInput = {
+      phone: chat.phone,
+      remoteJid: chat.message_key?.remote_jid,
+      remoteJidAlt: chat.message_key?.remote_jid_alt,
+    };
+    const identity = normalizeChatIdentity(input);
+    if (!identity.phoneCandidates.length && !identity.jidCandidates.length) {
+      return true;
+    }
+
+    const existingSameChat = await this.findChatByChatId(
+      chat.account.id,
+      chat.chat_id
+    );
+    if (existingSameChat) {
+      return true;
+    }
+
+    const existingChat = await this.findOpenChatByIdentity(
+      chat.account.id,
+      chat.worker.id,
+      input
+    );
+
+    if (existingChat && existingChat.chat_id !== chat.chat_id) {
+      console.warn('[ChatService] Open chat identity conflict prevented', {
+        account_id: chat.account.id,
+        worker_id: chat.worker.id,
+        incoming_chat_id: chat.chat_id,
+        existing_chat_id: existingChat.chat_id,
+        phone: chat.phone,
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+      });
+      return false;
+    }
+
+    return true;
+  }
+
   saveChat = async (
     chat: IChat,
     options?: { refresh?: boolean }
   ): Promise<boolean> => {
     if (!chat) return false;
+
+    const hasNoIdentityConflict =
+      await this.ensureNoOpenChatIdentityConflict(chat);
+    if (!hasNoIdentityConflict) {
+      return false;
+    }
 
     await Promise.all([this.cacheChat(chat), this.cacheChatById(chat)]);
 
@@ -1707,60 +1777,178 @@ export class ChatService {
     }
   };
 
-  findChatByPhone = async (
+  private isOpenChatStatus(
+    status: IChat['status'] | null | undefined
+  ): boolean {
+    return OPEN_CHAT_STATUSES.includes(status as EChatStatus);
+  }
+
+  private buildChatIdentityShouldClauses(
+    identity: ReturnType<typeof normalizeChatIdentity>
+  ): Record<string, unknown>[] {
+    const shouldClauses: Record<string, unknown>[] = [];
+
+    if (identity.phoneCandidates.length > 0) {
+      shouldClauses.push({ terms: { phone: identity.phoneCandidates } });
+    }
+
+    if (identity.jidCandidates.length > 0) {
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: {
+            terms: {
+              'message_key.remote_jid': identity.jidCandidates,
+            },
+          },
+        },
+      });
+      shouldClauses.push({
+        nested: {
+          path: 'message_key',
+          query: {
+            terms: {
+              'message_key.remote_jid_alt': identity.jidCandidates,
+            },
+          },
+        },
+      });
+    }
+
+    return shouldClauses;
+  }
+
+  private async patchChatMissingMessageKeyFields(
+    chatId: string,
+    messageKey: NonNullable<IChat['message_key']>
+  ): Promise<boolean> {
+    const result = await this.elasticDatabaseService.updateWithScriptOCC(
+      EElasticIndex.chat,
+      chatId,
+      {
+        source: `
+          if (ctx._source == null) {
+            ctx.op = 'noop';
+            return;
+          }
+          if (ctx._source.message_key == null) {
+            ctx._source.message_key = [:];
+          }
+          def changed = false;
+          if (params.remote_jid != null && ctx._source.message_key.remote_jid == null) {
+            ctx._source.message_key.remote_jid = params.remote_jid;
+            changed = true;
+          }
+          if (params.remote_jid_alt != null && ctx._source.message_key.remote_jid_alt == null) {
+            ctx._source.message_key.remote_jid_alt = params.remote_jid_alt;
+            changed = true;
+          }
+          if (!changed) {
+            ctx.op = 'noop';
+          }
+        `,
+        params: {
+          remote_jid: messageKey.remote_jid ?? null,
+          remote_jid_alt: messageKey.remote_jid_alt ?? null,
+        },
+      },
+      { maxRetries: 5 }
+    );
+
+    return result === 'updated' || result === 'noop';
+  }
+
+  private async ensureChatIdentityMessageKey(
+    chat: IChat,
+    input: ChatIdentityInput
+  ): Promise<IChat> {
+    const patch = buildMissingChatMessageKeyPatch(chat.message_key, input);
+    if (!patch) {
+      return chat;
+    }
+
+    let patched = false;
+    try {
+      patched = await this.patchChatMissingMessageKeyFields(
+        chat.chat_id,
+        patch
+      );
+    } catch (error) {
+      console.error(
+        `[ChatService] Failed to patch missing message_key fields for chat ${chat.chat_id}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+
+    if (!patched) {
+      return chat;
+    }
+
+    const patchedChat: IChat = {
+      ...chat,
+      message_key: {
+        ...(chat.message_key ?? {}),
+        ...patch,
+      },
+    };
+
+    await Promise.all([
+      this.cacheChat(patchedChat),
+      this.cacheChatById(patchedChat),
+    ]);
+
+    return patchedChat;
+  }
+
+  private async findCachedOpenChatByIdentity(
     accountId: string,
     workerId: string,
-    phone: string,
-    remoteJid?: string | null,
-    remoteJidAlt?: string | null
+    input: ChatIdentityInput
+  ): Promise<IChat | null> {
+    const identity = normalizeChatIdentity(input);
+
+    for (const phone of identity.phoneCandidates) {
+      const cacheKey = createChatCacheKey(accountId, workerId, phone);
+      const cache = await safeRedisGet(this.redis, cacheKey);
+      if (!cache) {
+        continue;
+      }
+
+      const cachedChat = this.normalizeChatData(JSON.parse(cache) as IChat);
+      if (cachedChat && this.isOpenChatStatus(cachedChat.status)) {
+        return this.ensureChatIdentityMessageKey(cachedChat, input);
+      }
+
+      await this.redis.del(cacheKey);
+    }
+
+    return null;
+  }
+
+  findOpenChatByIdentity = async (
+    accountId: string,
+    workerId: string,
+    input: ChatIdentityInput
   ): Promise<IChat | null> => {
-    const cacheKey = createChatCacheKey(accountId, workerId, phone);
-    const cache = await safeRedisGet(this.redis, cacheKey);
-
-    if (cache) {
-      return this.normalizeChatData(JSON.parse(cache) as IChat);
+    const cachedChat = await this.findCachedOpenChatByIdentity(
+      accountId,
+      workerId,
+      input
+    );
+    if (cachedChat) {
+      return cachedChat;
     }
 
-    const candidates = buildCandidates(phone);
-    const shouldClauses: any[] = [];
-
-    if (Array.isArray(candidates) && candidates.length) {
-      shouldClauses.push({ terms: { phone: candidates } });
-    }
-
-    if (remoteJid) {
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid': remoteJid } },
-        },
-      });
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid_alt': remoteJid } },
-        },
-      });
-    }
-
-    if (remoteJidAlt) {
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid_alt': remoteJidAlt } },
-        },
-      });
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid': remoteJidAlt } },
-        },
-      });
+    const identity = normalizeChatIdentity(input);
+    const shouldClauses = this.buildChatIdentityShouldClauses(identity);
+    if (!shouldClauses.length) {
+      return null;
     }
 
     const queryElastic = {
       size: 1,
       _source: true,
+      sort: [{ date: { order: 'asc' } }],
       query: {
         bool: {
           filter: [
@@ -1778,24 +1966,11 @@ export class ChatService {
             },
             {
               terms: {
-                status: [
-                  EChatStatus.in_chat,
-                  EChatStatus.queue,
-                  EChatStatus.ura,
-                  EChatStatus.ura_output,
-                  EChatStatus.ura_schedule,
-                  EChatStatus.ura_webhook,
-                ],
+                status: OPEN_CHAT_STATUSES,
               },
             },
+            { bool: { should: shouldClauses, minimum_should_match: 1 } },
           ],
-          ...(shouldClauses.length
-            ? {
-                must: [
-                  { bool: { should: shouldClauses, minimum_should_match: 1 } },
-                ],
-              }
-            : {}),
         },
       },
     };
@@ -1812,9 +1987,24 @@ export class ChatService {
       return null;
     }
 
-    await this.cacheChat(chat);
+    const patchedChat = await this.ensureChatIdentityMessageKey(chat, input);
+    await this.cacheChat(patchedChat);
 
-    return chat;
+    return patchedChat;
+  };
+
+  findChatByPhone = async (
+    accountId: string,
+    workerId: string,
+    phone: string,
+    remoteJid?: string | null,
+    remoteJidAlt?: string | null
+  ): Promise<IChat | null> => {
+    return this.findOpenChatByIdentity(accountId, workerId, {
+      phone,
+      remoteJid,
+      remoteJidAlt,
+    });
   };
 
   findChatByMessageKeyJid = async (
@@ -1823,93 +2013,10 @@ export class ChatService {
     remoteJid?: string | null,
     remoteJidAlt?: string | null
   ): Promise<IChat | null> => {
-    const shouldClauses: any[] = [];
-
-    if (remoteJid) {
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid': remoteJid } },
-        },
-      });
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid_alt': remoteJid } },
-        },
-      });
-    }
-
-    if (remoteJidAlt) {
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid': remoteJidAlt } },
-        },
-      });
-      shouldClauses.push({
-        nested: {
-          path: 'message_key',
-          query: { term: { 'message_key.remote_jid_alt': remoteJidAlt } },
-        },
-      });
-    }
-
-    if (!shouldClauses.length) {
-      return null;
-    }
-
-    const queryElastic = {
-      size: 1,
-      _source: true,
-      query: {
-        bool: {
-          filter: [
-            {
-              nested: {
-                path: 'account',
-                query: { term: { 'account.id': accountId } },
-              },
-            },
-            {
-              nested: {
-                path: 'worker',
-                query: { term: { 'worker.id': workerId } },
-              },
-            },
-            {
-              terms: {
-                status: [
-                  EChatStatus.in_chat,
-                  EChatStatus.queue,
-                  EChatStatus.ura,
-                  EChatStatus.ura_output,
-                  EChatStatus.ura_schedule,
-                  EChatStatus.ura_webhook,
-                ],
-              },
-            },
-          ],
-          must: [{ bool: { should: shouldClauses, minimum_should_match: 1 } }],
-        },
-      },
-    };
-
-    const result = await this.elasticDatabaseService.select<IChat>(
-      EElasticIndex.chat,
-      queryElastic
-    );
-
-    const hit = result?.hits?.hits?.[0] as ElasticHit<IChat> | undefined;
-    const chat = this.normalizeChatData(hit?._source ?? null);
-
-    if (!chat) {
-      return null;
-    }
-
-    await this.cacheChat(chat);
-
-    return chat;
+    return this.findOpenChatByIdentity(accountId, workerId, {
+      remoteJid,
+      remoteJidAlt,
+    });
   };
 
   updateChatSector = async (
