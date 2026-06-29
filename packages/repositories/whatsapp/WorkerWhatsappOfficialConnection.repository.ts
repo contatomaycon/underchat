@@ -4,7 +4,7 @@ import { ICreateWorkerWhatsappOfficialConnection } from '@core/common/interfaces
 import { currentTime } from '@core/common/functions/currentTime';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, isNull, ne } from 'drizzle-orm';
 
 @injectable()
 export class WorkerWhatsappOfficialConnectionRepository {
@@ -58,6 +58,25 @@ export class WorkerWhatsappOfficialConnectionRepository {
       });
 
     return record ?? null;
+  };
+
+  countActiveByWabaIdExceptWorkerId = async (
+    wabaId: string,
+    workerId: string
+  ): Promise<number> => {
+    const [result] = await this.dbRo
+      .select({ value: count() })
+      .from(workerWhatsappOfficialConnection)
+      .where(
+        and(
+          eq(workerWhatsappOfficialConnection.waba_id, wabaId),
+          ne(workerWhatsappOfficialConnection.worker_id, workerId),
+          isNull(workerWhatsappOfficialConnection.deleted_at)
+        )
+      )
+      .execute();
+
+    return result?.value ?? 0;
   };
 
   createWithWorker = async (

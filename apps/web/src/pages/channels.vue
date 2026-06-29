@@ -125,6 +125,9 @@ const isDialogDeleterShow = ref(false);
 const channelToDelete = ref<string | null>(null);
 const openConversationsCount = ref<number | null>(null);
 
+const isDialogDisconnectOfficialShow = ref(false);
+const channelToDisconnectOfficial = ref<string | null>(null);
+
 const isDialogRecreatorShow = ref(false);
 const channelToRecreate = ref<string | null>(null);
 
@@ -275,6 +278,11 @@ const deleteChannel = async (id: string) => {
   isDialogDeleterShow.value = true;
 };
 
+const disconnectWhatsappOfficial = (id: string) => {
+  channelToDisconnectOfficial.value = id;
+  isDialogDisconnectOfficialShow.value = true;
+};
+
 const recreateChannelTooltip = (channel: ListWorkerResponse) => {
   if (!isRecreateCooldownActive(channel)) {
     return t('recreate_channel');
@@ -344,6 +352,20 @@ const handleDelete = async () => {
 
   channelToDelete.value = null;
   openConversationsCount.value = null;
+};
+
+const handleDisconnectWhatsappOfficial = async () => {
+  if (!channelToDisconnectOfficial.value) return;
+
+  const channelId = channelToDisconnectOfficial.value;
+  const result = await channelsStore.disconnectWhatsappOfficial(channelId);
+
+  if (result?.disconnected) {
+    dashboardStore.removeOfflineChannel(channelId);
+    await channelsStore.listChannels(query.value);
+  }
+
+  channelToDisconnectOfficial.value = null;
 };
 
 const handleRecreate = async () => {
@@ -442,6 +464,12 @@ watch(isDialogDeleterShow, (isOpen) => {
   if (!isOpen) {
     openConversationsCount.value = null;
     channelToDelete.value = null;
+  }
+});
+
+watch(isDialogDisconnectOfficialShow, (isOpen) => {
+  if (!isOpen) {
+    channelToDisconnectOfficial.value = null;
   }
 });
 
@@ -826,6 +854,24 @@ onUnmounted(async () => {
                     @click="openConfigDialog(item.id)"
                 /></IconBtn>
 
+                <IconBtn
+                  v-if="
+                    item.type?.id === EWorkerType.whatsapp &&
+                    $canPermission(permissionsDelete)
+                  "
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('disconnect_whatsapp_official') }}</span>
+                  </VTooltip>
+                  <VIcon
+                    icon="tabler-plug-connected-x"
+                    :data-testid="`channel-disconnect-official-${item.id}`"
+                    @click="disconnectWhatsappOfficial(item.id)"
+                /></IconBtn>
+
                 <IconBtn v-if="$canPermission(permissionsViewLogs)"
                   ><VTooltip
                     location="top"
@@ -911,6 +957,14 @@ onUnmounted(async () => {
         :title="$t('recreate_channel')"
         :message="$t('recreate_channel_confirmation')"
         @confirm="handleRecreate"
+      />
+
+      <VDialogHandler
+        v-if="isDialogDisconnectOfficialShow"
+        v-model="isDialogDisconnectOfficialShow"
+        :title="$t('disconnect_whatsapp_official')"
+        :message="$t('disconnect_whatsapp_official_confirmation')"
+        @confirm="handleDisconnectWhatsappOfficial"
       />
 
       <AppEditChannel

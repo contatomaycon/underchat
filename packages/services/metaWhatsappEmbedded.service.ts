@@ -286,6 +286,28 @@ export class MetaWhatsappEmbeddedService {
     return payload.success !== false;
   }
 
+  async unsubscribeWabaApp(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+  }): Promise<boolean> {
+    const url = new URL(
+      this.graphUrl(input.apiVersion, `${input.wabaId}/subscribed_apps`)
+    );
+    url.searchParams.set('access_token', input.accessToken);
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+      },
+    });
+    const payload =
+      await this.parseGraphResponse<MetaSuccessResponse>(response);
+
+    return payload.success !== false;
+  }
+
   async uploadProfilePicture(input: {
     apiVersion: string;
     accessToken: string;

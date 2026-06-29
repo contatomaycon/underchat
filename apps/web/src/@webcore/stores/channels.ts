@@ -52,6 +52,7 @@ import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck
 import { WorkerWhatsappEmbeddedConfigResponse } from '@core/schema/worker/whatsappEmbeddedConfig/response.schema';
 import { ConnectWhatsappEmbeddedRequest } from '@core/schema/worker/connectWhatsappEmbedded/request.schema';
 import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
+import { DisconnectWhatsappOfficialResponse } from '@core/schema/worker/disconnectWhatsappOfficial/response.schema';
 import { WhatsappBusinessProfileVertical } from '@core/common/enums/EWhatsappBusinessProfileVertical';
 import {
   connectionLifecycleDebugHeaders,
@@ -561,6 +562,57 @@ export const useChannelsStore = defineStore('channels', {
         this.loading = false;
 
         return false;
+      }
+    },
+
+    async disconnectWhatsappOfficial(
+      workerId: string
+    ): Promise<DisconnectWhatsappOfficialResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<DisconnectWhatsappOfficialResponse>
+        >(`/worker/${workerId}/whatsapp-official/disconnect`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('whatsapp_official_disconnect_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t(
+              data.data.meta_warning
+                ? 'whatsapp_official_disconnect_partial_success'
+                : 'whatsapp_official_disconnect_success'
+            ),
+          data.data.meta_warning ? EColor.warning : EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'whatsapp_official_disconnect_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
       }
     },
 
