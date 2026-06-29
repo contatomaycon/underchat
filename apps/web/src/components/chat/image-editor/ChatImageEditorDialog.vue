@@ -37,7 +37,7 @@ const viewportRef = useTemplateRef<HTMLElement>('viewportRef');
 const editor = useChatImageCanvasEditor({ canvasRef, viewportRef });
 
 const activePhotoId = shallowRef<string | null>(null);
-const activeTool = shallowRef<ChatImageEditorTool>('crop');
+const activeTool = shallowRef<ChatImageEditorTool | null>(null);
 const brushColor = shallowRef('#25d366');
 const shapeColor = shallowRef('#ffffff');
 const brushWidth = shallowRef(5);
@@ -156,7 +156,12 @@ const setActivePhoto = async (photoId: string) => {
   }
 
   await editor.loadImage(photo.preview);
-  selectTool(activeTool.value);
+  if (activeTool.value) {
+    selectTool(activeTool.value);
+    return;
+  }
+
+  editor.resetInteraction();
 };
 
 const selectFirstEditablePhoto = async () => {
@@ -231,7 +236,7 @@ const updatePhoto = (
 
 const applyCurrentImage = async (): Promise<boolean> => {
   const photo = activePhoto.value;
-  if (!photo || !canEditActivePhoto.value) return false;
+  if (!photo || !canEditActivePhoto.value || !activeTool.value) return false;
 
   isExporting.value = true;
   try {
@@ -342,6 +347,7 @@ watch(
   openModel,
   async (isOpen) => {
     if (!isOpen) return;
+    activeTool.value = null;
     await nextTick();
     await selectFirstEditablePhoto();
   }
@@ -375,7 +381,7 @@ watch(blurIntensity, updateBlurIntensity);
           <VBtn
             variant="tonal"
             color="primary"
-            :disabled="!canEditActivePhoto || isExporting"
+            :disabled="!canEditActivePhoto || !activeTool || isExporting"
             :loading="isExporting"
             @click="handleApply"
           >
