@@ -8,6 +8,14 @@ export const workerProfileInfoSchema = Type.Object({
   photo: Type.Union([Type.String(), Type.Null()]),
   created_at: Type.Union([Type.String(), Type.Null()]),
   updated_at: Type.Union([Type.String(), Type.Null()]),
+  is_official: Type.Optional(Type.Boolean()),
+  about: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  address: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  email: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  websites: Type.Optional(Type.Array(Type.String())),
+  vertical: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  profile_picture_url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
 export const uploadProfileInfoResponseSchema = workerProfileInfoSchema;

@@ -4,6 +4,7 @@ import { WorkerProfileStatusService } from '@core/services/workerProfileStatus.s
 import { WorkerService } from '@core/services/worker.service';
 import { WorkerProfileStatusViewerRepository } from '@core/repositories/worker/WorkerProfileStatusViewer.repository';
 import { UpdateProfileStatusRequest } from '@core/schema/worker/updateProfileStatus/request.schema';
+import { assertNonOfficialRuntimeFeature } from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class WorkerProfileStatusUpdaterUseCase {
@@ -61,14 +62,19 @@ export class WorkerProfileStatusUpdaterUseCase {
       throw new Error(t('profile_status_not_found'));
     }
 
-    const existsWorkerById = await this.workerService.existsWorkerById(
+    const worker = await this.workerService.viewWorker(
       accountId,
       profileStatus.worker_id
     );
 
-    if (!existsWorkerById) {
+    if (!worker) {
       throw new Error(t('worker_not_found'));
     }
+
+    assertNonOfficialRuntimeFeature(
+      worker.type?.id,
+      t('whatsapp_official_runtime_action_not_supported')
+    );
 
     const isPermanent = this.normalizeIsPermanent(body.is_permanent);
 

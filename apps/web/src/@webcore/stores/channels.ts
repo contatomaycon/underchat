@@ -70,6 +70,16 @@ type ConnectionLifecycleDebugRequestOptions = {
 
 type ChannelUpdateResult = boolean | IWorkerLifecycleAck;
 
+type OfficialWorkerProfileInfoPayload = {
+  about?: string | null;
+  description?: string | null;
+  address?: string | null;
+  email?: string | null;
+  websites?: string | null;
+  vertical?: string | null;
+  profile_picture_handle?: string | null;
+};
+
 const isWorkerLifecycleAck = (value: unknown): value is IWorkerLifecycleAck =>
   typeof value === 'object' &&
   value !== null &&
@@ -1191,7 +1201,8 @@ export const useChannelsStore = defineStore('channels', {
       name?: string | null,
       message?: string | null,
       photo?: File | null,
-      removePhoto?: boolean
+      removePhoto?: boolean,
+      officialProfile?: OfficialWorkerProfileInfoPayload
     ): Promise<WorkerProfileInfo | null> {
       if (!workerId) return null;
 
@@ -1214,6 +1225,14 @@ export const useChannelsStore = defineStore('channels', {
 
         if (removePhoto) {
           formData.append('remove_photo', 'true');
+        }
+
+        if (officialProfile) {
+          for (const [key, value] of Object.entries(officialProfile)) {
+            if (value !== undefined && value !== null) {
+              formData.append(key, value);
+            }
+          }
         }
 
         const config: AxiosRequestConfig<FormData> = {

@@ -5,6 +5,7 @@ import { inject, injectable } from 'tsyringe';
 import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 @injectable()
 export class WorkerMonitorViewerRepository {
@@ -32,7 +33,8 @@ export class WorkerMonitorViewerRepository {
       .where(
         and(
           isNull(worker.deleted_at),
-          ne(worker.worker_status_id, EWorkerStatus.stopped)
+          ne(worker.worker_status_id, EWorkerStatus.stopped),
+          ne(worker.worker_type_id, EWorkerType.whatsapp)
         )
       )
       .orderBy(sql`CASE WHEN ${worker.updated_at} IS NULL THEN 0 ELSE 1 END`)
@@ -62,7 +64,12 @@ export class WorkerMonitorViewerRepository {
         last_connection_check_at: worker.last_connection_check_at,
       })
       .from(worker)
-      .where(eq(worker.worker_id, workerId))
+      .where(
+        and(
+          eq(worker.worker_id, workerId),
+          ne(worker.worker_type_id, EWorkerType.whatsapp)
+        )
+      )
       .execute();
 
     if (!result?.length) {

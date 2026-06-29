@@ -4,7 +4,6 @@ import { v7 as uuidv7 } from 'uuid';
 import { AccountService } from '@core/services/account.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
 import { WorkerService } from '@core/services/worker.service';
-import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
 import {
@@ -31,8 +30,6 @@ export class WhatsappEmbeddedConnectorUseCase {
     private readonly planAccountService: PlanAccountService,
     @inject(WorkerService)
     private readonly workerService: WorkerService,
-    @inject(WorkerConfigService)
-    private readonly workerConfigService: WorkerConfigService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(WhatsappEmbeddedService)
@@ -192,11 +189,6 @@ export class WhatsappEmbeddedConnectorUseCase {
       api_version: config.api_version,
       connected_at: connectedAt,
     });
-
-    await Promise.all([
-      this.workerConfigService.ensureTypingSimulationDefault(workerId),
-      this.workerConfigService.ensureSecurityKeyDefault(workerId),
-    ]);
 
     const payload: IWorkerPayload = {
       action: EWorkerAction.create,

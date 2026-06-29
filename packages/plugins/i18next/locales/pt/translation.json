@@ -587,6 +587,7 @@
   "profile_info_upload_success": "Informações do perfil salvas com sucesso!",
   "profile_info_upload_error": "Erro ao salvar as informações do perfil!",
   "profile_info_file_size_exceeded": "Arquivo excede o tamanho máximo permitido de {{max}}.",
+  "whatsapp_official_connection_not_found": "Conexão oficial do WhatsApp não encontrada!",
   "brazilian_phone_must_have_10_or_11_digits": "Telefone brasileiro deve ter 10 ou 11 dígitos!",
   "brazilian_phone_must_have_ddd_and_8_or_9_digits": "Telefone brasileiro deve ter DDD (2 dígitos) e número com 8 ou 9 dígitos!",
   "invalid_phone_format": "Formato de telefone inválido!",

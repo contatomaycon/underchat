@@ -4,6 +4,7 @@ import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { WorkerService } from '@core/services/worker.service';
 import { UpdateTypingSimulationRequest } from '@core/schema/worker/updateTypingSimulation/request.schema';
 import { ITypingSimulationConfig } from '@core/common/interfaces/ITypingSimulationConfig';
+import { assertNonOfficialRuntimeFeature } from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class UpdateTypingSimulationUseCase {
@@ -20,14 +21,16 @@ export class UpdateTypingSimulationUseCase {
     workerId: string,
     body: UpdateTypingSimulationRequest
   ): Promise<ITypingSimulationConfig> {
-    const existsWorkerById = await this.workerService.existsWorkerById(
-      accountId,
-      workerId
-    );
+    const worker = await this.workerService.viewWorker(accountId, workerId);
 
-    if (!existsWorkerById) {
+    if (!worker) {
       throw new Error(t('worker_not_found'));
     }
+
+    assertNonOfficialRuntimeFeature(
+      worker.type?.id,
+      t('whatsapp_official_runtime_action_not_supported')
+    );
 
     return this.workerConfigService.updateTypingSimulation(
       workerId,

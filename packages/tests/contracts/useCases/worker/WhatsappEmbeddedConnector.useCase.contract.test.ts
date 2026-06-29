@@ -17,10 +17,6 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     viewWorkerServer: jest.fn(async () => ({ server_id: 'server-1' })),
     listWorkerServers: jest.fn(async () => [{ server_id: 'server-1' }]),
   };
-  const workerConfigService = {
-    ensureTypingSimulationDefault: jest.fn(async () => undefined),
-    ensureSecurityKeyDefault: jest.fn(async () => undefined),
-  };
   const centrifugoService = {
     publishSub: jest.fn(async () => undefined),
   };
@@ -64,7 +60,6 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     accountService,
     planAccountService,
     workerService,
-    workerConfigService,
     centrifugoService,
     whatsappEmbeddedService,
     metaWhatsappEmbeddedService,
@@ -77,7 +72,6 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
     deps.accountService as never,
     deps.planAccountService as never,
     deps.workerService as never,
-    deps.workerConfigService as never,
     deps.centrifugoService as never,
     deps.whatsappEmbeddedService as never,
     deps.metaWhatsappEmbeddedService as never,
@@ -191,12 +185,6 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
         access_token_encrypted: 'enc:token-1',
       })
     );
-    expect(
-      deps.workerConfigService.ensureTypingSimulationDefault
-    ).toHaveBeenCalled();
-    expect(
-      deps.workerConfigService.ensureSecurityKeyDefault
-    ).toHaveBeenCalled();
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
       expect.objectContaining({

@@ -31,6 +31,35 @@ export class WorkerWhatsappOfficialConnectionRepository {
     return record ?? null;
   };
 
+  findActiveByWorkerId = async (
+    workerId: string
+  ): Promise<{
+    worker_whatsapp_official_connection_id: string;
+    worker_id: string;
+    waba_id: string;
+    phone_number_id: string;
+    access_token_encrypted: string;
+    api_version: string;
+  } | null> => {
+    const record =
+      await this.dbRo.query.workerWhatsappOfficialConnection.findFirst({
+        where: and(
+          eq(workerWhatsappOfficialConnection.worker_id, workerId),
+          isNull(workerWhatsappOfficialConnection.deleted_at)
+        ),
+        columns: {
+          worker_whatsapp_official_connection_id: true,
+          worker_id: true,
+          waba_id: true,
+          phone_number_id: true,
+          access_token_encrypted: true,
+          api_version: true,
+        },
+      });
+
+    return record ?? null;
+  };
+
   createWithWorker = async (
     input: ICreateWorkerWhatsappOfficialConnection
   ): Promise<boolean> => {

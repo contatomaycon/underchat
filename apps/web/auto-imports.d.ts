@@ -93,6 +93,7 @@ declare global {
   const isReadonly: typeof import('vue').isReadonly
   const isRef: typeof import('vue').isRef
   const isShallow: typeof import('vue').isShallow
+  const isSilentWhatsappEmbeddedSignupError: typeof import('./src/composables/useWhatsappEmbeddedSignup').isSilentWhatsappEmbeddedSignupError
   const isToday: typeof import('./src/@webcore/utils/helpers').isToday
   const isValidIP: typeof import('./src/@webcore/utils/validators').isValidIP
   const kFormatter: typeof import('./src/@webcore/utils/formatters').kFormatter
@@ -540,6 +541,7 @@ declare module 'vue' {
     readonly isReadonly: UnwrapRef<typeof import('vue')['isReadonly']>
     readonly isRef: UnwrapRef<typeof import('vue')['isRef']>
     readonly isShallow: UnwrapRef<typeof import('vue')['isShallow']>
+    readonly isSilentWhatsappEmbeddedSignupError: UnwrapRef<typeof import('./src/composables/useWhatsappEmbeddedSignup')['isSilentWhatsappEmbeddedSignupError']>
     readonly isToday: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['isToday']>
     readonly isValidIP: UnwrapRef<typeof import('./src/@webcore/utils/validators')['isValidIP']>
     readonly kFormatter: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['kFormatter']>

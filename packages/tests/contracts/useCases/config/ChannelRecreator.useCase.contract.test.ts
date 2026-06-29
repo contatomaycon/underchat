@@ -25,6 +25,7 @@ jest.mock('@core/services/workerLifecycleQueue.service', () => ({
 
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { ChannelRecreatorUseCase } from '@core/useCases/config/ChannelRecreator.useCase';
 
 describe('ChannelRecreatorUseCase', () => {
@@ -207,6 +208,44 @@ describe('ChannelRecreatorUseCase', () => {
         operation_id: expect.any(String),
       })
     );
+  });
+
+  it('blocks official WhatsApp channel recreate', async () => {
+    const workerService = {
+      viewWorker: jest.fn(async () => ({
+        status: { id: EWorkerStatus.online },
+        type: { id: EWorkerType.whatsapp },
+      })),
+      updateWorkerById: jest.fn(async () => true),
+    };
+    const accountService = { existsAccountById: jest.fn(async () => true) };
+    const configService = {
+      viewChannelBalancer: jest.fn(async () => ({
+        account_id: 'acc-1',
+        server_id: 'srv-1',
+      })),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => undefined),
+      publish: jest.fn(async () => undefined),
+    };
+    const workerLifecycleQueueService = {
+      publish: jest.fn(async () => undefined),
+    };
+    const useCase = new ChannelRecreatorUseCase(
+      workerService as never,
+      accountService as never,
+      configService as never,
+      centrifugoService as never,
+      workerLifecycleQueueService as never
+    );
+    const t = jest.fn((key: string) => key);
+
+    await expect(useCase.execute(t as never, 'worker-1')).rejects.toThrow(
+      'whatsapp_official_runtime_action_not_supported'
+    );
+    expect(workerService.updateWorkerById).not.toHaveBeenCalled();
+    expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
   });
 
   it('includes reserved recreate server slot in lifecycle message', async () => {

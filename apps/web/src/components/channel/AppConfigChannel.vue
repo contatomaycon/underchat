@@ -23,6 +23,8 @@ import { ViewOperatorReplyPendingAlertResponse } from '@core/schema/worker/viewO
 import { UpdateOperatorReplyPendingAlertRequest } from '@core/schema/worker/updateOperatorReplyPendingAlert/request.schema';
 import { ViewSecurityKeyResponse } from '@core/schema/worker/viewSecurityKey/response.schema';
 import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/request.schema';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 import AppSecurityKeyConfigDialog from '@/components/channel/AppSecurityKeyConfigDialog.vue';
@@ -122,10 +124,15 @@ const isVisible = computed({
   set: (value) => emit('update:modelValue', value),
 });
 
+type ChannelConfigTab = 'general' | 'proxy' | 'profile-status' | 'profile-info';
+
 const channelId = toRef(props, 'channelId');
-const currentTab = ref<'general' | 'proxy' | 'profile-status' | 'profile-info'>(
-  'general'
+const currentTab = ref<ChannelConfigTab>('general');
+const currentWorker = ref<ViewWorkerResponse | null>(null);
+const isOfficialChannel = computed(
+  () => currentWorker.value?.type?.id === EWorkerType.whatsapp
 );
+const showProxyTab = computed(() => !isOfficialChannel.value);
 const isInitialLoad = ref(false);
 const selectedStatusPreviews = ref<StatusPreview[]>([]);
 const existingStatus = ref<ProfileStatus[]>([]);
@@ -174,8 +181,19 @@ const isUploadingProfilePhoto = ref(false);
 const isRemovingProfilePhoto = ref(false);
 const profileName = ref<string | null>(null);
 const profileDescription = ref<string | null>(null);
+const profileAbout = ref<string | null>(null);
+const profileAddress = ref<string | null>(null);
+const profileEmail = ref<string | null>(null);
+const profileWebsites = ref<string | null>(null);
+const profileCategory = ref<string | null>(null);
 const isSavingProfileInfo = ref(false);
 const MAX_DESCRIPTION_LENGTH = 120;
+const OFFICIAL_MAX_DESCRIPTION_LENGTH = 512;
+const profileDescriptionMaxLength = computed(() =>
+  isOfficialChannel.value
+    ? OFFICIAL_MAX_DESCRIPTION_LENGTH
+    : MAX_DESCRIPTION_LENGTH
+);
 const cropDialog = ref({
   open: false,
   imageSrc: '',
@@ -1111,7 +1129,9 @@ const permissionsProfileStatus = [
   EWorkerPermissions.profile_status_worker,
 ];
 
-const canAccessProfileStatus = computed(() => can(permissionsProfileStatus));
+const canAccessProfileStatus = computed(
+  () => !isOfficialChannel.value && can(permissionsProfileStatus)
+);
 
 const permissionsProfileInfo = [
   EGeneralPermissions.full_access,
@@ -1121,6 +1141,41 @@ const permissionsProfileInfo = [
 ];
 
 const canAccessProfileInfo = computed(() => can(permissionsProfileInfo));
+
+const loadCurrentWorker = async (force = false): Promise<void> => {
+  if (!channelId.value) {
+    currentWorker.value = null;
+    return;
+  }
+
+  if (!force && currentWorker.value?.id === channelId.value) {
+    return;
+  }
+
+  currentWorker.value = await channelStore.getWorkerById(channelId.value);
+};
+
+const isTabAvailable = (tab: ChannelConfigTab): boolean => {
+  if (tab === 'proxy') {
+    return showProxyTab.value;
+  }
+
+  if (tab === 'profile-status') {
+    return canAccessProfileStatus.value;
+  }
+
+  if (tab === 'profile-info') {
+    return canAccessProfileInfo.value;
+  }
+
+  return true;
+};
+
+const ensureCurrentTabAvailable = (): void => {
+  if (!isTabAvailable(currentTab.value)) {
+    currentTab.value = 'general';
+  }
+};
 
 const formatDate = (dateString: string): string => {
   if (!dateString) return '';
@@ -1478,6 +1533,13 @@ const loadWorkerConfig = async (force = false) => {
     applyWorkerConfig(result);
     workerConfigLoadedFor.value = channelId.value;
 
+    const typingSimulationPromise = isOfficialChannel.value
+      ? Promise.resolve(null)
+      : channelStore.fetchTypingSimulation(channelId.value);
+    const securityKeyPromise = isOfficialChannel.value
+      ? Promise.resolve(null)
+      : channelStore.fetchSecurityKey(channelId.value);
+
     const [
       protocolTransferData,
       protocolTransferSectorData,
@@ -1499,8 +1561,8 @@ const loadWorkerConfig = async (force = false) => {
       channelStore.fetchTransferProtocolSectorAndUserText(channelId.value),
       channelStore.fetchStartProtocolText(channelId.value),
       channelStore.fetchSimultaneousAttendance(channelId.value),
-      channelStore.fetchTypingSimulation(channelId.value),
-      channelStore.fetchSecurityKey(channelId.value),
+      typingSimulationPromise,
+      securityKeyPromise,
       channelStore.fetchShowMessageOnCall(channelId.value),
       channelStore.fetchSendMessageOnFinishAttendance(channelId.value),
       channelStore.fetchAttendanceInactivityAlert(channelId.value),
@@ -1562,8 +1624,21 @@ const loadWorkerConfig = async (force = false) => {
       simultaneousAttendanceInput.value = '';
     }
 
-    applyTypingSimulationState(typingSimulationData);
-    applySecurityKeyState(securityKeyData);
+    applyTypingSimulationState(
+      isOfficialChannel.value
+        ? { enabled: false, speed: TYPING_SIMULATION_DEFAULT_SPEED }
+        : typingSimulationData
+    );
+    applySecurityKeyState(
+      isOfficialChannel.value
+        ? {
+            enabled: false,
+            chatbot: false,
+            schedule: false,
+            quick_message: false,
+          }
+        : securityKeyData
+    );
 
     if (showMessageOnCallData) {
       showMessageOnCallText.value =
@@ -2877,112 +2952,127 @@ const saveAttendanceHours = async () => {
   }
 };
 
-const workerConfigOptions = computed(() => [
-  {
-    key: 'show_attendee_name' as WorkerConfigField,
-    title: t('channel_general_config_show_attendee_name_title'),
-    description: t('channel_general_config_show_attendee_name_description'),
-  },
-  {
-    key: 'show_worker_name' as WorkerConfigField,
-    title: t('channel_general_config_show_worker_name_title'),
-    description: t('channel_general_config_show_worker_name_description'),
-  },
-  {
-    key: 'show_protocol_in_chat' as WorkerConfigField,
-    title: t('channel_general_config_show_protocol_in_chat_title'),
-    description: t('channel_general_config_show_protocol_in_chat_description'),
-  },
-  {
-    key: 'allow_attendance_only_online' as WorkerConfigField,
-    title: t('channel_general_config_allow_attendance_only_online_title'),
-    description: t(
-      'channel_general_config_allow_attendance_only_online_description'
-    ),
-  },
-  {
-    key: 'simultaneous_attendance' as WorkerConfigField,
-    title: t('channel_general_config_simultaneous_attendance_title'),
-    description: t(
-      'channel_general_config_simultaneous_attendance_description'
-    ),
-  },
-  {
-    key: 'generate_protocol_at_start' as WorkerConfigField,
-    title: t('channel_general_config_generate_protocol_start_title'),
-    description: t(
-      'channel_general_config_generate_protocol_start_description'
-    ),
-  },
-  {
-    key: 'generate_protocol_at_transfer' as WorkerConfigField,
-    title: t('channel_general_config_generate_protocol_transfer_title'),
-    description: t(
-      'channel_general_config_generate_protocol_transfer_description'
-    ),
-  },
-  {
-    key: 'show_message_on_call' as WorkerConfigField,
-    title: t('channel_general_config_show_message_on_call_title'),
-    description: t('channel_general_config_show_message_on_call_description'),
-  },
-  {
-    key: 'send_message_on_finish_attendance' as WorkerConfigField,
-    title: t('channel_general_config_send_message_on_finish_attendance_title'),
-    description: t(
-      'channel_general_config_send_message_on_finish_attendance_description'
-    ),
-  },
-  {
-    key: 'auto_save_contacts' as WorkerConfigField,
-    title: t('channel_general_config_auto_save_contacts_title'),
-    description: t('channel_general_config_auto_save_contacts_description'),
-  },
-  {
-    key: 'mark_as_read' as WorkerConfigField,
-    title: t('channel_general_config_mark_as_read_title'),
-    description: t('channel_general_config_mark_as_read_description'),
-  },
-  {
-    key: 'typing_simulation' as WorkerConfigField,
-    title: t('channel_general_config_typing_simulation_title'),
-    description: t('channel_general_config_typing_simulation_description'),
-  },
-  {
-    key: 'security_key' as WorkerConfigField,
-    title: t('channel_general_config_security_key_title'),
-    description: t('channel_general_config_security_key_description'),
-  },
-  {
-    key: 'attendance_inactivity_alert' as WorkerConfigField,
-    title: t('channel_general_config_attendance_inactivity_alert_title'),
-    description: t(
-      'channel_general_config_attendance_inactivity_alert_description'
-    ),
-  },
-  {
-    key: 'operator_reply_pending_alert' as WorkerConfigField,
-    title: t('channel_general_config_operator_reply_pending_alert_title'),
-    description: t(
-      'channel_general_config_operator_reply_pending_alert_description'
-    ),
-  },
-  {
-    key: 'attendance_hours' as WorkerConfigField,
-    title: t('channel_general_config_attendance_hours_title'),
-    description: t('channel_general_config_attendance_hours_description'),
-  },
-  {
-    key: 'chatbot' as WorkerConfigField,
-    title: t('channel_general_config_chatbot_title'),
-    description: t('channel_general_config_chatbot_description'),
-  },
-  {
-    key: 'ai_agent' as WorkerConfigField,
-    title: t('channel_general_config_ai_agent_title'),
-    description: t('channel_general_config_ai_agent_description'),
-  },
-]);
+const workerConfigOptions = computed(() => {
+  const options = [
+    {
+      key: 'show_attendee_name' as WorkerConfigField,
+      title: t('channel_general_config_show_attendee_name_title'),
+      description: t('channel_general_config_show_attendee_name_description'),
+    },
+    {
+      key: 'show_worker_name' as WorkerConfigField,
+      title: t('channel_general_config_show_worker_name_title'),
+      description: t('channel_general_config_show_worker_name_description'),
+    },
+    {
+      key: 'show_protocol_in_chat' as WorkerConfigField,
+      title: t('channel_general_config_show_protocol_in_chat_title'),
+      description: t(
+        'channel_general_config_show_protocol_in_chat_description'
+      ),
+    },
+    {
+      key: 'allow_attendance_only_online' as WorkerConfigField,
+      title: t('channel_general_config_allow_attendance_only_online_title'),
+      description: t(
+        'channel_general_config_allow_attendance_only_online_description'
+      ),
+    },
+    {
+      key: 'simultaneous_attendance' as WorkerConfigField,
+      title: t('channel_general_config_simultaneous_attendance_title'),
+      description: t(
+        'channel_general_config_simultaneous_attendance_description'
+      ),
+    },
+    {
+      key: 'generate_protocol_at_start' as WorkerConfigField,
+      title: t('channel_general_config_generate_protocol_start_title'),
+      description: t(
+        'channel_general_config_generate_protocol_start_description'
+      ),
+    },
+    {
+      key: 'generate_protocol_at_transfer' as WorkerConfigField,
+      title: t('channel_general_config_generate_protocol_transfer_title'),
+      description: t(
+        'channel_general_config_generate_protocol_transfer_description'
+      ),
+    },
+    {
+      key: 'show_message_on_call' as WorkerConfigField,
+      title: t('channel_general_config_show_message_on_call_title'),
+      description: t('channel_general_config_show_message_on_call_description'),
+    },
+    {
+      key: 'send_message_on_finish_attendance' as WorkerConfigField,
+      title: t(
+        'channel_general_config_send_message_on_finish_attendance_title'
+      ),
+      description: t(
+        'channel_general_config_send_message_on_finish_attendance_description'
+      ),
+    },
+    {
+      key: 'auto_save_contacts' as WorkerConfigField,
+      title: t('channel_general_config_auto_save_contacts_title'),
+      description: t('channel_general_config_auto_save_contacts_description'),
+    },
+    {
+      key: 'mark_as_read' as WorkerConfigField,
+      title: t('channel_general_config_mark_as_read_title'),
+      description: t('channel_general_config_mark_as_read_description'),
+    },
+    {
+      key: 'typing_simulation' as WorkerConfigField,
+      title: t('channel_general_config_typing_simulation_title'),
+      description: t('channel_general_config_typing_simulation_description'),
+    },
+    {
+      key: 'security_key' as WorkerConfigField,
+      title: t('channel_general_config_security_key_title'),
+      description: t('channel_general_config_security_key_description'),
+    },
+    {
+      key: 'attendance_inactivity_alert' as WorkerConfigField,
+      title: t('channel_general_config_attendance_inactivity_alert_title'),
+      description: t(
+        'channel_general_config_attendance_inactivity_alert_description'
+      ),
+    },
+    {
+      key: 'operator_reply_pending_alert' as WorkerConfigField,
+      title: t('channel_general_config_operator_reply_pending_alert_title'),
+      description: t(
+        'channel_general_config_operator_reply_pending_alert_description'
+      ),
+    },
+    {
+      key: 'attendance_hours' as WorkerConfigField,
+      title: t('channel_general_config_attendance_hours_title'),
+      description: t('channel_general_config_attendance_hours_description'),
+    },
+    {
+      key: 'chatbot' as WorkerConfigField,
+      title: t('channel_general_config_chatbot_title'),
+      description: t('channel_general_config_chatbot_description'),
+    },
+    {
+      key: 'ai_agent' as WorkerConfigField,
+      title: t('channel_general_config_ai_agent_title'),
+      description: t('channel_general_config_ai_agent_description'),
+    },
+  ];
+
+  if (!isOfficialChannel.value) {
+    return options;
+  }
+
+  return options.filter(
+    (option) =>
+      option.key !== 'typing_simulation' && option.key !== 'security_key'
+  );
+});
 
 const hasModal = (key: WorkerConfigField): boolean => {
   return (
@@ -3884,9 +3974,16 @@ const loadProfileInfo = async () => {
   );
 
   if (profileInfo) {
-    profilePhoto.value = profileInfo.photo;
+    profilePhoto.value =
+      profileInfo.profile_picture_url ?? profileInfo.photo ?? null;
     profileName.value = profileInfo.name;
-    profileDescription.value = profileInfo.message;
+    profileDescription.value =
+      profileInfo.description ?? profileInfo.message ?? null;
+    profileAbout.value = profileInfo.about ?? null;
+    profileAddress.value = profileInfo.address ?? null;
+    profileEmail.value = profileInfo.email ?? null;
+    profileWebsites.value = profileInfo.websites?.join('\n') ?? null;
+    profileCategory.value = profileInfo.vertical ?? null;
 
     return;
   }
@@ -3894,6 +3991,11 @@ const loadProfileInfo = async () => {
   profilePhoto.value = null;
   profileName.value = null;
   profileDescription.value = null;
+  profileAbout.value = null;
+  profileAddress.value = null;
+  profileEmail.value = null;
+  profileWebsites.value = null;
+  profileCategory.value = null;
 };
 
 const isProfilePhotoBusy = computed(
@@ -4384,17 +4486,35 @@ const saveProfilePhoto = async () => {
   try {
     isUploadingProfilePhoto.value = true;
 
+    const officialPayload = isOfficialChannel.value
+      ? {
+          about: profileAbout.value,
+          description: profileDescription.value,
+          address: profileAddress.value,
+          email: profileEmail.value,
+          websites: profileWebsites.value,
+          vertical: profileCategory.value,
+        }
+      : undefined;
     const result = await channelStore.uploadWorkerProfileInfo(
       channelId.value,
       profileName.value,
       profileDescription.value,
-      profilePhotoFile.value
+      profilePhotoFile.value,
+      false,
+      officialPayload
     );
 
     if (result) {
-      profilePhoto.value = result.photo;
+      profilePhoto.value =
+        result.profile_picture_url ?? result.photo ?? profilePhoto.value;
       profileName.value = result.name;
-      profileDescription.value = result.message;
+      profileDescription.value = result.description ?? result.message;
+      profileAbout.value = result.about ?? null;
+      profileAddress.value = result.address ?? null;
+      profileEmail.value = result.email ?? null;
+      profileWebsites.value = result.websites?.join('\n') ?? null;
+      profileCategory.value = result.vertical ?? null;
       cropDialog.value.croppedImage = '';
       profilePhotoFile.value = null;
     }
@@ -4415,17 +4535,35 @@ const saveProfileInfo = async () => {
   try {
     isSavingProfileInfo.value = true;
 
+    const officialPayload = isOfficialChannel.value
+      ? {
+          about: profileAbout.value,
+          description: profileDescription.value,
+          address: profileAddress.value,
+          email: profileEmail.value,
+          websites: profileWebsites.value,
+          vertical: profileCategory.value,
+        }
+      : undefined;
     const result = await channelStore.uploadWorkerProfileInfo(
       channelId.value,
       profileName.value,
       profileDescription.value,
-      profilePhotoFile.value || null
+      profilePhotoFile.value || null,
+      false,
+      officialPayload
     );
 
     if (result) {
-      profilePhoto.value = result.photo;
+      profilePhoto.value =
+        result.profile_picture_url ?? result.photo ?? profilePhoto.value;
       profileName.value = result.name;
-      profileDescription.value = result.message;
+      profileDescription.value = result.description ?? result.message;
+      profileAbout.value = result.about ?? null;
+      profileAddress.value = result.address ?? null;
+      profileEmail.value = result.email ?? null;
+      profileWebsites.value = result.websites?.join('\n') ?? null;
+      profileCategory.value = result.vertical ?? null;
       profilePhotoFile.value = null;
       cropDialog.value.croppedImage = '';
     }
@@ -4439,6 +4577,7 @@ const saveProfileInfo = async () => {
 };
 
 const removeProfilePhoto = async () => {
+  if (isOfficialChannel.value) return;
   if (!channelId.value || !profilePhoto.value) return;
 
   try {
@@ -4483,6 +4622,7 @@ watch(isVisible, async (visible, oldVisible) => {
     closePreview();
     cancelCrop();
     resetWorkerConfigState();
+    currentWorker.value = null;
     isProxyPasswordVisible.value = false;
     isInitialLoad.value = false;
     return;
@@ -4493,6 +4633,8 @@ watch(isVisible, async (visible, oldVisible) => {
     isInitialLoad.value = true;
 
     if (channelId.value) {
+      await loadCurrentWorker(true);
+      ensureCurrentTabAvailable();
       await loadWorkerConfig(true);
       isInitialLoad.value = false;
     }
@@ -4512,6 +4654,8 @@ watch(
     }
 
     resetWorkerConfigState();
+    await loadCurrentWorker(true);
+    ensureCurrentTabAvailable();
 
     if (currentTab.value === 'general' || currentTab.value === 'proxy') {
       await loadWorkerConfig(true);
@@ -4527,6 +4671,10 @@ watch(
 watch(currentTab, async (newTab, oldTab) => {
   if (!isVisible.value || !channelId.value) return;
   if (newTab === oldTab) return;
+  if (!isTabAvailable(newTab)) {
+    ensureCurrentTabAvailable();
+    return;
+  }
 
   if (newTab === 'general' || newTab === 'proxy') {
     await loadWorkerConfig(true);
@@ -4549,6 +4697,8 @@ onMounted(async () => {
   if (isVisible.value && channelId.value) {
     currentTab.value = 'general';
 
+    await loadCurrentWorker(true);
+    ensureCurrentTabAvailable();
     await loadWorkerConfig(true);
   }
 });
@@ -4585,7 +4735,7 @@ onMounted(async () => {
 
       <VTabs v-model="currentTab" grow>
         <VTab value="general">{{ $t('general_settings') }}</VTab>
-        <VTab value="proxy">{{ $t('proxy_tab') }}</VTab>
+        <VTab v-if="showProxyTab" value="proxy">{{ $t('proxy_tab') }}</VTab>
         <VTab v-if="canAccessProfileStatus" value="profile-status">{{
           $t('profile_status_tab')
         }}</VTab>
@@ -4676,7 +4826,7 @@ onMounted(async () => {
             </div>
           </VWindowItem>
 
-          <VWindowItem value="proxy">
+          <VWindowItem v-if="showProxyTab" value="proxy">
             <div
               class="proxy-config-wrapper position-relative pa-4 d-flex flex-column gap-4"
             >
@@ -4790,7 +4940,7 @@ onMounted(async () => {
             </div>
           </VWindowItem>
 
-          <VWindowItem value="profile-status">
+          <VWindowItem v-if="canAccessProfileStatus" value="profile-status">
             <div class="d-flex flex-column gap-4 position-relative pa-4">
               <VOverlay
                 v-model="isLoadingProfileStatus"
@@ -5287,7 +5437,11 @@ onMounted(async () => {
                   @click="openFileSelector"
                 >
                   <VTooltip
-                    v-if="profilePhoto && !cropDialog.croppedImage"
+                    v-if="
+                      !isOfficialChannel &&
+                      profilePhoto &&
+                      !cropDialog.croppedImage
+                    "
                     location="bottom"
                     :text="$t('profile_photo_remove_tooltip')"
                   >
@@ -5339,7 +5493,7 @@ onMounted(async () => {
                 </div>
 
                 <p class="text-body-2 text-medium-emphasis text-center">
-                  Clique na imagem para fazer upload de uma nova foto de perfil
+                  {{ $t('profile_info_photo_upload_hint') }}
                 </p>
               </div>
 
@@ -5347,7 +5501,7 @@ onMounted(async () => {
 
               <VForm @submit.prevent="saveProfileInfo">
                 <VRow>
-                  <VCol cols="12">
+                  <VCol v-if="!isOfficialChannel" cols="12">
                     <VLabel class="text-body-2 mb-1">{{ $t('name') }}:</VLabel>
                     <AppTextField
                       v-model="profileName"
@@ -5362,12 +5516,69 @@ onMounted(async () => {
                     <VTextarea
                       v-model="profileDescription"
                       :placeholder="$t('description')"
-                      :counter="MAX_DESCRIPTION_LENGTH"
-                      :maxlength="MAX_DESCRIPTION_LENGTH"
+                      :counter="profileDescriptionMaxLength"
+                      :maxlength="profileDescriptionMaxLength"
                       rows="4"
                       auto-grow
                     />
                   </VCol>
+
+                  <template v-if="isOfficialChannel">
+                    <VCol cols="12">
+                      <VLabel class="text-body-2 mb-1"
+                        >{{ $t('profile_info_about') }}:</VLabel
+                      >
+                      <VTextarea
+                        v-model="profileAbout"
+                        :placeholder="$t('profile_info_about')"
+                        rows="3"
+                        auto-grow
+                      />
+                    </VCol>
+
+                    <VCol cols="12" md="6">
+                      <VLabel class="text-body-2 mb-1"
+                        >{{ $t('address') }}:</VLabel
+                      >
+                      <AppTextField
+                        v-model="profileAddress"
+                        :placeholder="$t('address')"
+                      />
+                    </VCol>
+
+                    <VCol cols="12" md="6">
+                      <VLabel class="text-body-2 mb-1"
+                        >{{ $t('email') }}:</VLabel
+                      >
+                      <AppTextField
+                        v-model="profileEmail"
+                        :placeholder="$t('email')"
+                        type="email"
+                      />
+                    </VCol>
+
+                    <VCol cols="12" md="6">
+                      <VLabel class="text-body-2 mb-1"
+                        >{{ $t('profile_info_websites') }}:</VLabel
+                      >
+                      <VTextarea
+                        v-model="profileWebsites"
+                        :placeholder="$t('profile_info_websites')"
+                        rows="2"
+                        auto-grow
+                      />
+                    </VCol>
+
+                    <VCol cols="12" md="6">
+                      <VLabel class="text-body-2 mb-1"
+                        >{{ $t('profile_info_category') }}:</VLabel
+                      >
+                      <AppTextField
+                        v-model="profileCategory"
+                        :placeholder="$t('profile_info_category')"
+                      />
+                    </VCol>
+                  </template>
 
                   <VCol cols="12" class="d-flex justify-end">
                     <VBtn

@@ -15,6 +15,7 @@ import {
   eq,
   ilike,
   isNull,
+  ne,
   SQLWrapper,
   count,
   SQL,
@@ -24,6 +25,7 @@ import { ListChannelsRequest } from '@core/schema/config/listChannels/request.sc
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
 import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 import { IConfigChannelRecreateTarget } from '@core/common/interfaces/IConfigChannelRecreateTarget';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 @injectable()
 export class ChannelsListerRepository {
@@ -217,6 +219,7 @@ export class ChannelsListerRepository {
     const filters: SQLWrapper[] = [
       isNull(worker.deleted_at),
       isNull(account.deleted_at),
+      ne(workerType.worker_type_id, EWorkerType.whatsapp),
     ];
 
     if (filtersInput.status) {

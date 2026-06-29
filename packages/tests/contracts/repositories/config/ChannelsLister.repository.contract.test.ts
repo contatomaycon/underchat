@@ -166,6 +166,7 @@ describe('ChannelsListerRepository', () => {
 
     expect(whereSql).toContain(EWorkerStatus.error);
     expect(whereSql).toContain(EWorkerType.baileys);
+    expect(whereSql).toContain(EWorkerType.whatsapp);
     expect(whereSql).toContain('acc-1');
     expect(whereSql).toContain('%Display%');
     expect(whereSql).toContain('%5511999999999%');

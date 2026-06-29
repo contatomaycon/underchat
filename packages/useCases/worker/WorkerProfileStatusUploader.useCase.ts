@@ -7,6 +7,7 @@ import { UploadProfileStatusRequest } from '@core/schema/worker/uploadProfileSta
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { VisibilityType } from '@core/common/interfaces/IVisibilityData';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
+import { assertNonOfficialRuntimeFeature } from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class WorkerProfileStatusUploaderUseCase {
@@ -107,14 +108,16 @@ export class WorkerProfileStatusUploaderUseCase {
     workerId: string,
     body: UploadProfileStatusRequest
   ): Promise<UploadProfileStatusResponse> {
-    const existsWorkerById = await this.workerService.existsWorkerById(
-      accountId,
-      workerId
-    );
+    const worker = await this.workerService.viewWorker(accountId, workerId);
 
-    if (!existsWorkerById) {
+    if (!worker) {
       throw new Error(t('worker_not_found'));
     }
+
+    assertNonOfficialRuntimeFeature(
+      worker.type?.id,
+      t('whatsapp_official_runtime_action_not_supported')
+    );
 
     const workerProfileStatusTypeId = this.normalizeField(
       body.worker_profile_status_type_id

@@ -1,6 +1,45 @@
 import 'reflect-metadata';
 import { WorkerMonitorViewerRepository } from '@core/repositories/worker/WorkerMonitorViewer.repository';
 import { createSelectDbMock } from '../../../helpers/drizzleMock';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+
+function collectSqlParts(value: unknown): string[] {
+  if (!value) {
+    return [];
+  }
+
+  if (typeof value !== 'object') {
+    return [String(value)];
+  }
+
+  const record = value as {
+    queryChunks?: unknown[];
+    value?: unknown;
+    name?: unknown;
+    columnType?: unknown;
+  };
+
+  if (Array.isArray(record.queryChunks)) {
+    return record.queryChunks.flatMap((chunk) => collectSqlParts(chunk));
+  }
+
+  if (Array.isArray(record.value)) {
+    return record.value.map(String);
+  }
+
+  if ('value' in record && typeof record.value !== 'object') {
+    return [String(record.value)];
+  }
+
+  if (
+    typeof record.name === 'string' &&
+    typeof record.columnType === 'string'
+  ) {
+    return [record.name];
+  }
+
+  return [];
+}
 
 describe('WorkerMonitorViewerRepository', () => {
   it('listWorkers returns empty array when query has no rows', async () => {
@@ -30,6 +69,9 @@ describe('WorkerMonitorViewerRepository', () => {
     const repository = new WorkerMonitorViewerRepository(dbMock.db as never);
 
     await expect(repository.listWorkers()).resolves.toEqual(rows);
+    expect(collectSqlParts(dbMock.where.mock.calls[0][0]).join(' ')).toContain(
+      EWorkerType.whatsapp
+    );
   });
 
   it('viewWorker returns null when worker is not found', async () => {

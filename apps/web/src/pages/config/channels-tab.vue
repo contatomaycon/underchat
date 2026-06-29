@@ -60,7 +60,6 @@ const itemsType = ref([
   { id: EWorkerType.baileys, text: t('unofficial_socket') },
   { id: EWorkerType.wwebjs, text: t('unofficial_browser') },
   { id: EWorkerType.whatsmeow, text: t('unofficial_whatsmeow') },
-  { id: EWorkerType.whatsapp, text: t('official') },
 ]);
 
 const itemsAccount = ref<Array<{ id: string; text: string }>>([]);

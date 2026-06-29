@@ -3,6 +3,7 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { WorkerRecreateCooldownError } from '@core/common/exceptions/WorkerRecreateCooldownError';
 
@@ -38,6 +39,7 @@ function makeSut() {
     })),
     viewWorker: jest.fn(async () => ({
       status: { id: EWorkerStatus.online },
+      type: { id: EWorkerType.baileys },
       recreate_available_at: '2026-06-11T12:01:00.000Z',
     })),
     updateWorkerById: jest.fn(async () => true),
@@ -241,6 +243,27 @@ describe('WorkerRecreatorUseCase', () => {
       })
     ).rejects.toBeInstanceOf(WorkerRecreateCooldownError);
 
+    expect(centrifugoService.publishSub).not.toHaveBeenCalled();
+    expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
+  });
+
+  it('blocks official WhatsApp worker recreate', async () => {
+    const {
+      sut,
+      workerService,
+      centrifugoService,
+      workerLifecycleQueueService,
+    } = makeSut();
+    workerService.viewWorker.mockResolvedValue({
+      status: { id: EWorkerStatus.online },
+      type: { id: EWorkerType.whatsapp },
+      recreate_available_at: '2026-06-11T12:01:00.000Z',
+    });
+
+    await expect(sut.execute(t, 'account-1', 'worker-1')).rejects.toThrow(
+      'whatsapp_official_runtime_action_not_supported'
+    );
+    expect(workerService.updateWorkerById).not.toHaveBeenCalled();
     expect(centrifugoService.publishSub).not.toHaveBeenCalled();
     expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
   });

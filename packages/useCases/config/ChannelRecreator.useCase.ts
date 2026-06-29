@@ -26,6 +26,7 @@ import {
   createConnectionLifecycleDebugTraceId,
   isConnectionLifecycleDebugEnabled,
 } from '@core/services/connectionLifecycleDebug.service';
+import { assertNonOfficialRuntimeFeature } from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class ChannelRecreatorUseCase {
@@ -162,6 +163,12 @@ export class ChannelRecreatorUseCase {
       viewWorkerBalancer.account_id,
       channelId
     );
+
+    assertNonOfficialRuntimeFeature(
+      viewWorker?.type?.id,
+      t('whatsapp_official_runtime_action_not_supported')
+    );
+
     const lifecycleOperationId = uuidv7();
     const inputRecreate: IWorkerPayload = {
       action: EWorkerAction.recreate,

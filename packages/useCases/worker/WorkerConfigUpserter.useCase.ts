@@ -5,6 +5,10 @@ import { WorkerService } from '@core/services/worker.service';
 import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig';
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
+import {
+  hasWorkerConfigProxyFields,
+  isOfficialWhatsappWorker,
+} from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class WorkerConfigUpserterUseCase {
@@ -21,13 +25,17 @@ export class WorkerConfigUpserterUseCase {
     workerId: string,
     body: UpdateWorkerConfigRequest
   ): Promise<WorkerConfig> {
-    const existsWorkerById = await this.workerService.existsWorkerById(
-      accountId,
-      workerId
-    );
+    const worker = await this.workerService.viewWorker(accountId, workerId);
 
-    if (!existsWorkerById) {
+    if (!worker) {
       throw new Error(t('worker_not_found'));
+    }
+
+    if (
+      isOfficialWhatsappWorker(worker.type?.id) &&
+      hasWorkerConfigProxyFields(body as Record<string, unknown>)
+    ) {
+      throw new Error(t('whatsapp_official_runtime_action_not_supported'));
     }
 
     return this.workerConfigService.upsertWorkerConfig(
