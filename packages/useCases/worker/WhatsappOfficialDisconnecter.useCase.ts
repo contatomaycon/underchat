@@ -8,6 +8,7 @@ import {
   isMetaSmbDeregisterUnsupportedError,
   MetaWhatsappEmbeddedService,
 } from '@core/services/metaWhatsappEmbedded.service';
+import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { DisconnectWhatsappOfficialResponse } from '@core/schema/worker/disconnectWhatsappOfficial/response.schema';
@@ -31,6 +32,8 @@ export class WhatsappOfficialDisconnecterUseCase {
     private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository,
     @inject(MetaWhatsappEmbeddedService)
     private readonly metaWhatsappEmbeddedService: MetaWhatsappEmbeddedService,
+    @inject(WhatsappEmbeddedService)
+    private readonly whatsappEmbeddedService: WhatsappEmbeddedService,
     @inject(PasswordEncryptorService)
     private readonly passwordEncryptorService: PasswordEncryptorService
   ) {}
@@ -188,20 +191,27 @@ export class WhatsappOfficialDisconnecterUseCase {
         workerId
       );
 
-    const metaResult = connection
-      ? await this.disconnectMetaConnection({
-          t,
-          workerId,
-          wabaId: connection.waba_id,
-          phoneNumberId: connection.phone_number_id,
-          accessTokenEncrypted: connection.access_token_encrypted,
-          apiVersion: connection.api_version,
-        })
-      : {
-          meta_deregistered: false,
-          meta_unsubscribed: false,
-          meta_warning: null,
-        };
+    let metaResult: Pick<
+      DisconnectWhatsappOfficialResponse,
+      'meta_deregistered' | 'meta_unsubscribed' | 'meta_warning'
+    > = {
+      meta_deregistered: false,
+      meta_unsubscribed: false,
+      meta_warning: null,
+    };
+
+    if (connection) {
+      const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
+
+      metaResult = await this.disconnectMetaConnection({
+        t,
+        workerId,
+        wabaId: connection.waba_id,
+        phoneNumberId: connection.phone_number_id,
+        accessTokenEncrypted: connection.access_token_encrypted,
+        apiVersion: config.api_version,
+      });
+    }
 
     const disconnected =
       await this.workerWhatsappOfficialConnectionRepository.disconnectPreservingWorker(

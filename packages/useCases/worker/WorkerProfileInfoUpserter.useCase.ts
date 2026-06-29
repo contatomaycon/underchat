@@ -220,15 +220,15 @@ export class WorkerProfileInfoUpserterUseCase {
     const accessToken = this.passwordEncryptorService.decrypt(
       connection.access_token_encrypted
     );
+    const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
     const payload = this.buildOfficialProfilePayload(t, body);
 
     try {
       if (body.photo) {
         const fileBuffer = await this.validateFileSize(body.photo, t);
-        const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
         payload.profile_picture_handle =
           await this.metaWhatsappEmbeddedService.uploadProfilePicture({
-            apiVersion: connection.api_version,
+            apiVersion: config.api_version,
             accessToken,
             appId: config.app_id,
             filename: body.photo.filename,
@@ -238,14 +238,14 @@ export class WorkerProfileInfoUpserterUseCase {
       }
 
       await this.metaWhatsappEmbeddedService.updateBusinessProfile({
-        apiVersion: connection.api_version,
+        apiVersion: config.api_version,
         accessToken,
         phoneNumberId: connection.phone_number_id,
         data: payload,
       });
       const profile =
         await this.metaWhatsappEmbeddedService.viewBusinessProfile({
-          apiVersion: connection.api_version,
+          apiVersion: config.api_version,
           accessToken,
           phoneNumberId: connection.phone_number_id,
         });

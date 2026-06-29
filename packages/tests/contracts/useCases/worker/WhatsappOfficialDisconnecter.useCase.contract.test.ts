@@ -53,6 +53,14 @@ function buildDeps() {
       deregisterPhoneNumber: jest.fn(async () => true),
       unsubscribeWabaApp: jest.fn(async () => true),
     },
+    whatsappEmbeddedService: {
+      viewInternalConfig: jest.fn(async () => ({
+        app_id: 'app-1',
+        app_secret: 'secret-1',
+        configuration_id: 'config-1',
+        api_version: 'v25.0',
+      })),
+    },
     passwordEncryptorService: {
       decrypt: jest.fn(() => 'plain-token'),
     },
@@ -66,6 +74,7 @@ function buildUseCase(deps = buildDeps()) {
     deps.centrifugoService as never,
     deps.officialConnectionRepository as never,
     deps.metaWhatsappEmbeddedService as never,
+    deps.whatsappEmbeddedService as never,
     deps.passwordEncryptorService as never
   );
 }
@@ -114,16 +123,19 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
       'encrypted-token'
     );
     expect(
+      deps.whatsappEmbeddedService.viewInternalConfig
+    ).toHaveBeenCalledWith(t);
+    expect(
       deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
     ).toHaveBeenCalledWith({
-      apiVersion: 'v24.0',
+      apiVersion: 'v25.0',
       accessToken: 'plain-token',
       phoneNumberId: 'phone-1',
     });
     expect(
       deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
     ).toHaveBeenCalledWith({
-      apiVersion: 'v24.0',
+      apiVersion: 'v25.0',
       accessToken: 'plain-token',
       wabaId: 'waba-1',
     });
@@ -150,7 +162,7 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     expect(
       deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
     ).toHaveBeenCalledWith({
-      apiVersion: 'v24.0',
+      apiVersion: 'v25.0',
       accessToken: 'plain-token',
       phoneNumberId: 'phone-1',
     });
@@ -207,6 +219,9 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     });
     expect(
       deps.officialConnectionRepository.countActiveByWabaIdExceptWorkerId
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.whatsappEmbeddedService.viewInternalConfig
     ).not.toHaveBeenCalled();
     expect(
       deps.metaWhatsappEmbeddedService.deregisterPhoneNumber

@@ -11,6 +11,7 @@ import {
   MetaWhatsappEmbeddedService,
 } from '@core/services/metaWhatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
 
 @injectable()
 export class WorkerProfileInfoViewerUseCase {
@@ -24,7 +25,9 @@ export class WorkerProfileInfoViewerUseCase {
     @inject(MetaWhatsappEmbeddedService)
     private readonly metaWhatsappEmbeddedService: MetaWhatsappEmbeddedService,
     @inject(PasswordEncryptorService)
-    private readonly passwordEncryptorService: PasswordEncryptorService
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(WhatsappEmbeddedService)
+    private readonly whatsappEmbeddedService: WhatsappEmbeddedService
   ) {}
 
   private mapOfficialProfile(input: {
@@ -67,11 +70,12 @@ export class WorkerProfileInfoViewerUseCase {
     const accessToken = this.passwordEncryptorService.decrypt(
       connection.access_token_encrypted
     );
+    const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
     let profile;
 
     try {
       profile = await this.metaWhatsappEmbeddedService.viewBusinessProfile({
-        apiVersion: connection.api_version,
+        apiVersion: config.api_version,
         accessToken,
         phoneNumberId: connection.phone_number_id,
       });

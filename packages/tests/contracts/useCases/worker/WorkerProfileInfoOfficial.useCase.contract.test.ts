@@ -57,7 +57,7 @@ function buildDeps() {
         app_id: 'app-1',
         app_secret: 'secret-1',
         configuration_id: 'config-1',
-        api_version: 'v24.0',
+        api_version: 'v25.0',
       })),
     },
   };
@@ -71,7 +71,8 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
       deps.workerService as never,
       deps.officialConnectionRepository as never,
       deps.metaWhatsappEmbeddedService as never,
-      deps.passwordEncryptorService as never
+      deps.passwordEncryptorService as never,
+      deps.whatsappEmbeddedService as never
     );
 
     await expect(
@@ -94,7 +95,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
     expect(
       deps.metaWhatsappEmbeddedService.viewBusinessProfile
     ).toHaveBeenCalledWith({
-      apiVersion: 'v24.0',
+      apiVersion: 'v25.0',
       accessToken: 'plain-token',
       phoneNumberId: 'phone-1',
     });
@@ -140,7 +141,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
     expect(
       deps.metaWhatsappEmbeddedService.uploadProfilePicture
     ).toHaveBeenCalledWith({
-      apiVersion: 'v24.0',
+      apiVersion: 'v25.0',
       accessToken: 'plain-token',
       appId: 'app-1',
       filename: 'profile.jpg',
@@ -150,7 +151,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
     expect(
       deps.metaWhatsappEmbeddedService.updateBusinessProfile
     ).toHaveBeenCalledWith({
-      apiVersion: 'v24.0',
+      apiVersion: 'v25.0',
       accessToken: 'plain-token',
       phoneNumberId: 'phone-1',
       data: {
@@ -228,7 +229,8 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
       deps.workerService as never,
       deps.officialConnectionRepository as never,
       deps.metaWhatsappEmbeddedService as never,
-      deps.passwordEncryptorService as never
+      deps.passwordEncryptorService as never,
+      deps.whatsappEmbeddedService as never
     );
 
     await expect(useCase.execute(t, 'account-1', 'worker-1')).rejects.toThrow(
