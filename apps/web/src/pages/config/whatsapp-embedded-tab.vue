@@ -14,7 +14,7 @@ const form = reactive({
   app_id: '',
   app_secret: '',
   configuration_id: '',
-  api_version: 'v24.0',
+  api_version: '',
 });
 
 const hasSecret = computed(
@@ -30,7 +30,7 @@ const loadConfig = async () => {
 
   form.app_id = config.app_id ?? '';
   form.configuration_id = config.configuration_id ?? '';
-  form.api_version = config.api_version ?? 'v24.0';
+  form.api_version = config.api_version ?? '';
   form.app_secret = '';
 };
 
@@ -63,7 +63,7 @@ watch(
 
     form.app_id = config.app_id ?? '';
     form.configuration_id = config.configuration_id ?? '';
-    form.api_version = config.api_version ?? 'v24.0';
+    form.api_version = config.api_version ?? '';
   }
 );
 
@@ -131,7 +131,7 @@ onMounted(loadConfig);
             </VLabel>
             <AppTextField
               v-model="form.api_version"
-              placeholder="v24.0"
+              placeholder="vXX.X"
               :rules="[
                 requiredValidator(form.api_version, $t('field_required')),
               ]"
