@@ -120,7 +120,9 @@ export class MetaWhatsappEmbeddedService {
     response: Response
   ): Promise<T> {
     const responseText = await response.text();
-    const payload = responseText ? (JSON.parse(responseText) as T) : ({} as T);
+    const payload = responseText.trim()
+      ? (JSON.parse(responseText) as T)
+      : ({} as T);
 
     if (!response.ok || payload.error) {
       if (payload.error) {
