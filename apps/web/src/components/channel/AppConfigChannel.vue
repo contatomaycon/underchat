@@ -4746,7 +4746,7 @@ onMounted(async () => {
 
       <VDivider />
 
-      <VCardText class="scrollable-content">
+      <VCardText class="scrollable-content channel-config-tab-content">
         <VWindow v-model="currentTab">
           <VWindowItem value="general">
             <div
@@ -7172,6 +7172,10 @@ onMounted(async () => {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(var(--v-theme-on-surface), 0.2) transparent;
+}
+
+.channel-config-tab-content {
+  padding-block-start: 0 !important;
 }
 
 .scrollable-content::-webkit-scrollbar {
