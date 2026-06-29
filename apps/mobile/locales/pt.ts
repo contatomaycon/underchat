@@ -152,6 +152,7 @@ export const pt = {
   profile_photo_remove_error: 'Erro ao remover a foto do perfil.',
   chat_config_update_error:
     'Não foi possível atualizar as configurações do chat.',
+  chat_user_status_update_error: 'Não foi possível atualizar seu status.',
   image_permission_denied: 'Permissão de galeria negada.',
   logout: 'Sair',
   contacts: 'Contatos',

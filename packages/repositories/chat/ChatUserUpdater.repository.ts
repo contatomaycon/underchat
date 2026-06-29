@@ -177,7 +177,7 @@ export class ChatUserUpdaterRepository {
     const updateInput = this.updateInput(input);
 
     if (Object.keys(updateInput).length === 0) {
-      return false;
+      return input.status !== undefined;
     }
 
     const result = await tx

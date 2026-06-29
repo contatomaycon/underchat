@@ -49,6 +49,21 @@ describe('ChatUserUpdaterRepository', () => {
     expect(tx.update).not.toHaveBeenCalled();
   });
 
+  it('updateChatUserById returns true for status-only input without touching chat_user fields', async () => {
+    const updateStep = createUpdateStep(1);
+    const tx = {
+      update: jest.fn(() => ({ set: updateStep.set })),
+    };
+    const repository = new ChatUserUpdaterRepository({} as never);
+
+    await expect(
+      repository.updateChatUserById(tx as never, 'user-1', {
+        status: 'away',
+      } as never)
+    ).resolves.toBe(true);
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
   it('updateChatUserById applies update fields and returns status', async () => {
     const updateStep = createUpdateStep(1);
     const tx = {

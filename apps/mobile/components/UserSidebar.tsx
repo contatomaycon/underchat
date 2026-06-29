@@ -23,6 +23,7 @@ import {
   updateChatUser,
   uploadUserPhoto,
 } from '../api/chatApi';
+import { publishPresence } from '../socket/presence';
 import { getPermissions, getUser, patchUser } from '../storage/authStorage';
 import {
   canUpdateOwnChatStatusPermission,
@@ -47,6 +48,7 @@ import {
   isBiometricLoginEnabled,
   type BiometricCapability,
 } from '../utils/biometricAuth';
+import { changeUserPresenceStatus } from '../utils/userPresenceStatus';
 
 type SidebarStatus = 'online' | 'busy' | 'do_not_disturb' | 'away' | 'offline';
 type PhotoPickerSource = 'camera' | 'gallery';
@@ -440,25 +442,10 @@ export function UserSidebar({
   }, []);
 
   const persistProfile = useCallback(
-    async (input?: {
-      about?: string;
-      status?: SidebarStatus;
-    }): Promise<boolean> => {
+    async (input?: { about?: string }): Promise<boolean> => {
       const resolvedAbout = input?.about ?? about;
-      const resolvedStatus = input?.status ?? status;
 
-      const payload: {
-        about: string;
-        status?: ChatUserStatus;
-      } = {
-        about: resolvedAbout,
-      };
-
-      if (input?.status && canUpdateOwnStatus) {
-        payload.status = resolvedStatus as ChatUserStatus;
-      }
-
-      const ok = await updateChatUser(payload);
+      const ok = await updateChatUser({ about: resolvedAbout });
       if (!ok) {
         Alert.alert(pt.error_title, pt.chat_config_update_error);
         return false;
@@ -467,19 +454,12 @@ export function UserSidebar({
       await patchUser({
         chat_user: {
           about: resolvedAbout,
-          ...(input?.status && canUpdateOwnStatus
-            ? { status: resolvedStatus }
-            : {}),
         },
       });
 
-      if (input?.status) {
-        onStatusUpdated?.(resolvedStatus);
-      }
-
       return true;
     },
-    [about, canUpdateOwnStatus, onStatusUpdated, status]
+    [about]
   );
 
   useEffect(() => {
@@ -613,18 +593,21 @@ export function UserSidebar({
 
       if (statusSaving || nextStatus === status) return;
 
-      const previous = status;
-      setStatus(nextStatus);
-      setStatusSaving(true);
-
-      const ok = await persistProfile({ status: nextStatus });
-      if (!ok) {
-        setStatus(previous);
-      }
-
-      setStatusSaving(false);
+      await changeUserPresenceStatus({
+        currentStatus: status,
+        nextStatus,
+        canUpdateOwnStatus,
+        isSaving: statusSaving,
+        publishPresence,
+        setStatus,
+        setSaving: setStatusSaving,
+        onStatusUpdated,
+        onError: () => {
+          Alert.alert(pt.error_title, pt.chat_user_status_update_error);
+        },
+      });
     },
-    [canUpdateOwnStatus, persistProfile, status, statusSaving]
+    [canUpdateOwnStatus, onStatusUpdated, status, statusSaving]
   );
 
   const uploadPhotoByAsset = useCallback(
