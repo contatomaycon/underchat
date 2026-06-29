@@ -1250,5 +1250,6 @@
   "whatsapp_official_type_change_not_allowed": "El canal WhatsApp Oficial no puede convertirse a otro tipo.",
   "whatsapp_official_connect_required": "Usa el flujo de conexión de Meta para crear un canal WhatsApp Oficial.",
   "whatsapp_official_runtime_action_not_supported": "Esta acción de runtime no está disponible para canales WhatsApp Oficial.",
+  "whatsapp_profile_category_invalid": "Categoría de perfil de WhatsApp Oficial inválida.",
   "chatbot_flow_validation_holiday_options_required": "Las salidas \"Es feriado\" y \"No es feriado\" son obligatorias en el nodo \"{{nodeLabel}}\""
 }

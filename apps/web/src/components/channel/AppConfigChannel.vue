@@ -25,6 +25,11 @@ import { ViewSecurityKeyResponse } from '@core/schema/worker/viewSecurityKey/res
 import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/request.schema';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
+import {
+  isWhatsappBusinessProfileVertical,
+  WHATSAPP_BUSINESS_PROFILE_VERTICALS,
+  WhatsappBusinessProfileVertical,
+} from '@core/common/enums/EWhatsappBusinessProfileVertical';
 import AppInfoTooltip from '@/components/AppInfoTooltip.vue';
 import AppSelectSearch from '@/components/AppSelectSearch.vue';
 import AppSecurityKeyConfigDialog from '@/components/channel/AppSecurityKeyConfigDialog.vue';
@@ -185,7 +190,7 @@ const profileAbout = ref<string | null>(null);
 const profileAddress = ref<string | null>(null);
 const profileEmail = ref<string | null>(null);
 const profileWebsites = ref<string | null>(null);
-const profileCategory = ref<string | null>(null);
+const profileCategory = ref<WhatsappBusinessProfileVertical | null>(null);
 const isSavingProfileInfo = ref(false);
 const MAX_DESCRIPTION_LENGTH = 120;
 const OFFICIAL_MAX_DESCRIPTION_LENGTH = 512;
@@ -193,6 +198,12 @@ const profileDescriptionMaxLength = computed(() =>
   isOfficialChannel.value
     ? OFFICIAL_MAX_DESCRIPTION_LENGTH
     : MAX_DESCRIPTION_LENGTH
+);
+const profileCategoryOptions = computed(() =>
+  WHATSAPP_BUSINESS_PROFILE_VERTICALS.map((value) => ({
+    value,
+    title: t(`whatsapp_business_profile_category_${value.toLowerCase()}`),
+  }))
 );
 const cropDialog = ref({
   open: false,
@@ -3983,7 +3994,11 @@ const loadProfileInfo = async () => {
     profileAddress.value = profileInfo.address ?? null;
     profileEmail.value = profileInfo.email ?? null;
     profileWebsites.value = profileInfo.websites?.join('\n') ?? null;
-    profileCategory.value = profileInfo.vertical ?? null;
+    profileCategory.value = isWhatsappBusinessProfileVertical(
+      profileInfo.vertical
+    )
+      ? profileInfo.vertical
+      : null;
 
     return;
   }
@@ -4514,7 +4529,9 @@ const saveProfilePhoto = async () => {
       profileAddress.value = result.address ?? null;
       profileEmail.value = result.email ?? null;
       profileWebsites.value = result.websites?.join('\n') ?? null;
-      profileCategory.value = result.vertical ?? null;
+      profileCategory.value = isWhatsappBusinessProfileVertical(result.vertical)
+        ? result.vertical
+        : null;
       cropDialog.value.croppedImage = '';
       profilePhotoFile.value = null;
     }
@@ -4563,7 +4580,9 @@ const saveProfileInfo = async () => {
       profileAddress.value = result.address ?? null;
       profileEmail.value = result.email ?? null;
       profileWebsites.value = result.websites?.join('\n') ?? null;
-      profileCategory.value = result.vertical ?? null;
+      profileCategory.value = isWhatsappBusinessProfileVertical(result.vertical)
+        ? result.vertical
+        : null;
       profilePhotoFile.value = null;
       cropDialog.value.croppedImage = '';
     }
@@ -5573,9 +5592,13 @@ onMounted(async () => {
                       <VLabel class="text-body-2 mb-1"
                         >{{ $t('profile_info_category') }}:</VLabel
                       >
-                      <AppTextField
+                      <VSelect
                         v-model="profileCategory"
+                        :items="profileCategoryOptions"
+                        item-title="title"
+                        item-value="value"
                         :placeholder="$t('profile_info_category')"
+                        clearable
                       />
                     </VCol>
                   </template>

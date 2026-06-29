@@ -52,6 +52,7 @@ import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck
 import { WorkerWhatsappEmbeddedConfigResponse } from '@core/schema/worker/whatsappEmbeddedConfig/response.schema';
 import { ConnectWhatsappEmbeddedRequest } from '@core/schema/worker/connectWhatsappEmbedded/request.schema';
 import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
+import { WhatsappBusinessProfileVertical } from '@core/common/enums/EWhatsappBusinessProfileVertical';
 import {
   connectionLifecycleDebugHeaders,
   createConnectionLifecycleDebugTraceId,
@@ -76,7 +77,7 @@ type OfficialWorkerProfileInfoPayload = {
   address?: string | null;
   email?: string | null;
   websites?: string | null;
-  vertical?: string | null;
+  vertical?: WhatsappBusinessProfileVertical | null;
   profile_picture_handle?: string | null;
 };
 

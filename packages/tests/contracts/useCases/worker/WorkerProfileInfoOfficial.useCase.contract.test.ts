@@ -21,7 +21,7 @@ const metaProfile = {
   email: 'perfil@underchat.test',
   profile_picture_url: 'https://cdn.test/profile.jpg',
   websites: ['https://underchat.test'],
-  vertical: 'PROFESSIONAL_SERVICES',
+  vertical: 'PROF_SERVICES',
 };
 
 function buildDeps() {
@@ -86,7 +86,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
       about: 'Sobre oficial',
       description: 'Descricao oficial',
       websites: ['https://underchat.test'],
-      vertical: 'PROFESSIONAL_SERVICES',
+      vertical: 'PROF_SERVICES',
     });
     expect(deps.passwordEncryptorService.decrypt).toHaveBeenCalledWith(
       'encrypted-token'
@@ -129,7 +129,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
         address: 'Nova rua',
         email: 'novo@underchat.test',
         websites: 'https://underchat.test, https://app.underchat.test',
-        vertical: 'PROFESSIONAL_SERVICES',
+        vertical: 'PROF_SERVICES',
         photo,
       } as never)
     ).resolves.toMatchObject({
@@ -159,7 +159,7 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
         address: 'Nova rua',
         email: 'novo@underchat.test',
         websites: ['https://underchat.test', 'https://app.underchat.test'],
-        vertical: 'PROFESSIONAL_SERVICES',
+        vertical: 'PROF_SERVICES',
         profile_picture_handle: 'profile-picture-handle',
       },
     });
@@ -167,5 +167,28 @@ describe('WorkerProfileInfo official WhatsApp flow', () => {
       deps.workerProfileInfoService.upsertWorkerProfileInfo
     ).not.toHaveBeenCalled();
     expect(deps.streamProducerService.send).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid official business profile category before calling Meta', async () => {
+    const deps = buildDeps();
+    const useCase = new WorkerProfileInfoUpserterUseCase(
+      deps.workerProfileInfoService as never,
+      deps.workerService as never,
+      deps.streamProducerService as never,
+      deps.kafkaBaileysQueueService as never,
+      deps.officialConnectionRepository as never,
+      deps.metaWhatsappEmbeddedService as never,
+      deps.passwordEncryptorService as never,
+      deps.whatsappEmbeddedService as never
+    );
+
+    await expect(
+      useCase.execute(t, 'account-1', 'worker-1', {
+        vertical: 'EnOTHER',
+      } as never)
+    ).rejects.toThrow('whatsapp_profile_category_invalid');
+    expect(
+      deps.metaWhatsappEmbeddedService.updateBusinessProfile
+    ).not.toHaveBeenCalled();
   });
 });

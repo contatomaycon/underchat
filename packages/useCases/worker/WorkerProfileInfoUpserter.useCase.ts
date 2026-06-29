@@ -17,6 +17,7 @@ import {
 } from '@core/services/metaWhatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
+import { isWhatsappBusinessProfileVertical } from '@core/common/enums/EWhatsappBusinessProfileVertical';
 
 @injectable()
 export class WorkerProfileInfoUpserterUseCase {
@@ -153,6 +154,7 @@ export class WorkerProfileInfoUpserterUseCase {
   }
 
   private buildOfficialProfilePayload(
+    t: TFunction<'translation', undefined>,
     body: UploadProfileInfoRequest
   ): UpdateMetaWhatsappBusinessProfile {
     const payload: UpdateMetaWhatsappBusinessProfile = {};
@@ -178,7 +180,13 @@ export class WorkerProfileInfoUpserterUseCase {
     if (websites !== undefined) payload.websites = websites;
 
     const vertical = this.normalizeNullableField(body.vertical);
-    if (vertical !== undefined) payload.vertical = vertical;
+    if (vertical !== undefined && vertical !== null) {
+      if (!isWhatsappBusinessProfileVertical(vertical)) {
+        throw new Error(t('whatsapp_profile_category_invalid'));
+      }
+
+      payload.vertical = vertical;
+    }
 
     const profilePictureHandle = this.normalizeNullableField(
       body.profile_picture_handle
@@ -211,7 +219,7 @@ export class WorkerProfileInfoUpserterUseCase {
     const accessToken = this.passwordEncryptorService.decrypt(
       connection.access_token_encrypted
     );
-    const payload = this.buildOfficialProfilePayload(body);
+    const payload = this.buildOfficialProfilePayload(t, body);
 
     if (body.photo) {
       const fileBuffer = await this.validateFileSize(body.photo, t);
