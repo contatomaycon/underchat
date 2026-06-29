@@ -1412,7 +1412,7 @@ onMounted(resetForm);
   <VDialog v-model="isVisible" max-width="1200">
     <DialogCloseBtn @click="isVisible = false" />
 
-    <VCard class="mx-2 my-2">
+    <VCard class="user-dialog-card mx-2 my-2">
       <VOverlay
         :model-value="isInitializingModal || userStore.loading"
         class="align-center justify-center"
@@ -1425,7 +1425,11 @@ onMounted(resetForm);
       </VCardTitle>
       <VDivider />
 
-      <VTabs :model-value="tab" @update:model-value="onTabChange" class="px-6">
+      <VTabs
+        :model-value="tab"
+        @update:model-value="onTabChange"
+        class="user-dialog-tabs px-6"
+      >
         <VTab value="user_data">{{ t('user_data') }}</VTab>
         <VTab value="permissions">{{ t('permissions') }}</VTab>
         <VTab value="additional_info">{{ t('additional_info') }}</VTab>
@@ -1433,20 +1437,24 @@ onMounted(resetForm);
       </VTabs>
       <VDivider />
 
-      <VCard flat>
-        <VCardText class="pa-6">
+      <VCard flat class="user-dialog-shell">
+        <VCardText class="user-dialog-body pa-6">
           <VWindow
             :model-value="tab"
             @update:model-value="onTabChange"
-            class="disable-tab-transition"
+            class="user-dialog-window disable-tab-transition"
           >
             <VWindowItem value="user_data">
-              <VForm class="mt-4" ref="refFormStep1" @submit.prevent>
-                <VRow>
+              <VForm
+                class="user-step-form mt-4"
+                ref="refFormStep1"
+                @submit.prevent
+              >
+                <VRow class="user-data-row">
                   <VCol
                     cols="12"
                     md="4"
-                    class="d-flex flex-column align-center justify-center pa-6"
+                    class="user-photo-pane d-flex flex-column align-center justify-center pa-6"
                   >
                     <div class="d-flex flex-column align-center gap-3 w-100">
                       <VAvatar
@@ -1494,8 +1502,7 @@ onMounted(resetForm);
                       </div>
                     </div>
                   </VCol>
-                  <VDivider vertical class="d-none d-md-block" />
-                  <VCol cols="12" md="8" class="pa-6">
+                  <VCol cols="12" md="8" class="user-form-pane pa-6">
                     <VRow class="mb-4">
                       <VCol cols="12">
                         <VLabel class="text-body-2 mb-1"
@@ -1653,7 +1660,9 @@ onMounted(resetForm);
                     </VRow>
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
+                <VCardText
+                  class="user-step-actions d-flex justify-end flex-wrap gap-3 mt-4 pt-4"
+                >
                   <VBtn
                     variant="tonal"
                     color="secondary"
@@ -1667,7 +1676,7 @@ onMounted(resetForm);
             </VWindowItem>
 
             <VWindowItem value="permissions">
-              <VForm class="mt-4" @submit.prevent>
+              <VForm class="user-step-form mt-4" @submit.prevent>
                 <VRow class="mb-4">
                   <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1"
@@ -1730,7 +1739,9 @@ onMounted(resetForm);
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-space-between px-0">
+                <VCardText
+                  class="user-step-actions d-flex justify-space-between px-0"
+                >
                   <VBtn variant="outlined" @click="goPrev">{{
                     $t('back')
                   }}</VBtn>
@@ -1740,7 +1751,11 @@ onMounted(resetForm);
             </VWindowItem>
 
             <VWindowItem value="additional_info">
-              <VForm class="mt-4" ref="refFormStep2" @submit.prevent>
+              <VForm
+                class="user-step-form mt-4"
+                ref="refFormStep2"
+                @submit.prevent
+              >
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1"
@@ -1828,7 +1843,9 @@ onMounted(resetForm);
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
+                <VCardText
+                  class="user-step-actions d-flex justify-end flex-wrap gap-3 mt-4 pt-4"
+                >
                   <VBtn variant="tonal" color="secondary" @click="goPrev">
                     {{ $t('previous') }}
                   </VBtn>
@@ -1838,7 +1855,11 @@ onMounted(resetForm);
             </VWindowItem>
 
             <VWindowItem value="address">
-              <VForm class="mt-4" ref="refFormAddUser" @submit.prevent>
+              <VForm
+                class="user-step-form mt-4"
+                ref="refFormAddUser"
+                @submit.prevent
+              >
                 <VRow class="mb-2">
                   <VCol cols="12" md="6">
                     <VLabel class="text-body-2 mb-1"
@@ -1939,7 +1960,9 @@ onMounted(resetForm);
                     />
                   </VCol>
                 </VRow>
-                <VCardText class="d-flex justify-end flex-wrap gap-3 mt-4 pt-4">
+                <VCardText
+                  class="user-step-actions d-flex justify-end flex-wrap gap-3 mt-4 pt-4"
+                >
                   <VBtn variant="tonal" color="secondary" @click="goPrev">
                     {{ $t('previous') }}
                   </VBtn>
@@ -2034,6 +2057,81 @@ onMounted(resetForm);
 </template>
 
 <style lang="scss" scoped>
+.user-dialog-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-block-size: calc(100vh - 48px);
+}
+
+.user-dialog-tabs {
+  flex: 0 0 auto;
+}
+
+.user-dialog-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+.user-dialog-body {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+.user-step-form {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
+}
+
+.user-step-actions {
+  position: sticky;
+  z-index: 2;
+  inset-block-end: 0;
+  margin-block-start: auto;
+  background: rgb(var(--v-theme-surface));
+  border-block-start: 1px solid
+    rgba(var(--v-border-color), var(--v-border-opacity));
+  padding-block: 24px 0 !important;
+  padding-inline: 0 !important;
+}
+
+.user-photo-pane {
+  border-block-end: 1px solid
+    rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+@media (min-width: 960px) {
+  .user-photo-pane {
+    border-block-end: 0;
+    border-inline-end: 1px solid
+      rgba(var(--v-border-color), var(--v-border-opacity));
+  }
+}
+
+@media (max-width: 600px) {
+  .user-dialog-card {
+    max-block-size: calc(100vh - 24px);
+    margin: 0 !important;
+  }
+
+  .user-dialog-tabs {
+    padding-inline: 16px !important;
+  }
+
+  .user-dialog-body {
+    padding: 16px !important;
+  }
+
+  .user-photo-pane,
+  .user-form-pane {
+    padding: 16px !important;
+  }
+}
+
 .crop-container {
   width: 100%;
   max-width: 400px;
