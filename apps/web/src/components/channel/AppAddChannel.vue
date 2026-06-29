@@ -9,7 +9,10 @@ import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResp
 import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
 import { VForm } from 'vuetify/components/VForm';
 import { can } from '@layouts/plugins/casl';
-import { useWhatsappEmbeddedSignup } from '@/composables/useWhatsappEmbeddedSignup';
+import {
+  isSilentWhatsappEmbeddedSignupError,
+  useWhatsappEmbeddedSignup,
+} from '@/composables/useWhatsappEmbeddedSignup';
 import AppChannelTypeCards from './AppChannelTypeCards.vue';
 
 type CreatedChannelPayload =
@@ -157,6 +160,10 @@ const addChannel = async () => {
 
     await addUnofficialChannel();
   } catch (error) {
+    if (isSilentWhatsappEmbeddedSignupError(error)) {
+      return;
+    }
+
     const message =
       error instanceof Error && error.message
         ? t(error.message)
@@ -255,7 +262,6 @@ watch(
                 item-title="title"
               />
             </VCol>
-
           </VRow>
         </VCardText>
 

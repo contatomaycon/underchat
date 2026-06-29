@@ -7,7 +7,10 @@ import { WorkerService } from '@core/services/worker.service';
 import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
-import { MetaWhatsappEmbeddedService } from '@core/services/metaWhatsappEmbedded.service';
+import {
+  MetaWhatsappEmbeddedService,
+  MetaWhatsappPhoneNumber,
+} from '@core/services/metaWhatsappEmbedded.service';
 import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { ConnectWhatsappEmbeddedRequest } from '@core/schema/worker/connectWhatsappEmbedded/request.schema';
@@ -76,6 +79,34 @@ export class WhatsappEmbeddedConnectorUseCase {
     return digits ? digits.slice(0, 20) : null;
   }
 
+  private async resolvePhoneNumber(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+    phoneNumberId?: string;
+  }): Promise<MetaWhatsappPhoneNumber> {
+    if (input.phoneNumberId) {
+      return this.metaWhatsappEmbeddedService.viewPhoneNumber({
+        apiVersion: input.apiVersion,
+        accessToken: input.accessToken,
+        wabaId: input.wabaId,
+        phoneNumberId: input.phoneNumberId,
+      });
+    }
+
+    const phones = await this.metaWhatsappEmbeddedService.listPhoneNumbers({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      wabaId: input.wabaId,
+    });
+
+    if (phones.length !== 1) {
+      throw new Error('Meta selected WABA does not have exactly one phone');
+    }
+
+    return phones[0];
+  }
+
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -93,15 +124,6 @@ export class WhatsappEmbeddedConnectorUseCase {
       accountId,
     });
 
-    const existing =
-      await this.workerWhatsappOfficialConnectionRepository.findActiveByPhoneNumberId(
-        input.phone_number_id
-      );
-
-    if (existing) {
-      throw new Error(t('whatsapp_official_phone_already_connected'));
-    }
-
     const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
 
     let token;
@@ -118,7 +140,7 @@ export class WhatsappEmbeddedConnectorUseCase {
 
     let phone;
     try {
-      phone = await this.metaWhatsappEmbeddedService.viewPhoneNumber({
+      phone = await this.resolvePhoneNumber({
         apiVersion: config.api_version,
         accessToken: token.access_token,
         wabaId: input.waba_id,
@@ -128,8 +150,17 @@ export class WhatsappEmbeddedConnectorUseCase {
       throw new Error(t('whatsapp_official_phone_not_found'));
     }
 
-    if (phone.id !== input.phone_number_id) {
+    if (input.phone_number_id && phone.id !== input.phone_number_id) {
       throw new Error(t('whatsapp_official_phone_mismatch'));
+    }
+
+    const existing =
+      await this.workerWhatsappOfficialConnectionRepository.findActiveByPhoneNumberId(
+        phone.id
+      );
+
+    if (existing) {
+      throw new Error(t('whatsapp_official_phone_already_connected'));
     }
 
     const workerId = uuidv7();
@@ -151,7 +182,7 @@ export class WhatsappEmbeddedConnectorUseCase {
       connection_date: connectedAt,
       business_id: input.business_id ?? null,
       waba_id: input.waba_id,
-      phone_number_id: input.phone_number_id,
+      phone_number_id: phone.id,
       display_phone_number: phone.display_phone_number,
       verified_name: phone.verified_name,
       access_token_encrypted: accessTokenEncrypted,
@@ -190,7 +221,7 @@ export class WhatsappEmbeddedConnectorUseCase {
       worker_status_id: EWorkerStatus.online,
       number,
       waba_id: input.waba_id,
-      phone_number_id: input.phone_number_id,
+      phone_number_id: phone.id,
     };
   }
 }

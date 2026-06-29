@@ -94,6 +94,26 @@ export class MetaWhatsappEmbeddedService {
     wabaId: string;
     phoneNumberId: string;
   }): Promise<MetaWhatsappPhoneNumber> {
+    const phones = await this.listPhoneNumbers({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      wabaId: input.wabaId,
+    });
+
+    const phone = phones.find((item) => item.id === input.phoneNumberId);
+
+    if (!phone) {
+      throw new Error('Meta phone number not found in selected WABA');
+    }
+
+    return phone;
+  }
+
+  async listPhoneNumbers(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+  }): Promise<MetaWhatsappPhoneNumber[]> {
     const url = new URL(
       this.graphUrl(input.apiVersion, `${input.wabaId}/phone_numbers`)
     );
@@ -105,16 +125,12 @@ export class MetaWhatsappEmbeddedService {
     const payload =
       await this.parseGraphResponse<MetaPhoneNumbersResponse>(response);
 
-    const phone = payload.data?.find((item) => item.id === input.phoneNumberId);
-
-    if (!phone) {
-      throw new Error('Meta phone number not found in selected WABA');
-    }
-
-    return {
-      id: phone.id,
-      display_phone_number: phone.display_phone_number ?? null,
-      verified_name: phone.verified_name ?? null,
-    };
+    return (
+      payload.data?.map((phone) => ({
+        id: phone.id,
+        display_phone_number: phone.display_phone_number ?? null,
+        verified_name: phone.verified_name ?? null,
+      })) ?? []
+    );
   }
 }

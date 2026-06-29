@@ -39,7 +39,7 @@ export interface WhatsappEmbeddedSignupResult {
   code: string;
   business_id?: string;
   waba_id: string;
-  phone_number_id: string;
+  phone_number_id?: string;
 }
 
 declare global {
@@ -51,6 +51,19 @@ declare global {
 
 const sdkLoaded = shallowRef(false);
 let sdkPromise: Promise<void> | null = null;
+
+const WHATSAPP_BUSINESS_APP_ONBOARDING_FEATURE =
+  'whatsapp_business_app_onboarding';
+const WHATSAPP_EMBEDDED_SIGNUP_TIMEOUT_MS = 10 * 60 * 1000;
+const FINISH_EVENTS = new Set([
+  'FINISH',
+  'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+]);
+const SILENT_SIGNUP_ERRORS = new Set([
+  'whatsapp_embedded_signup_cancelled',
+  'whatsapp_embedded_signup_timeout',
+  'whatsapp_embedded_code_missing',
+]);
 
 const allowedOrigins = new Set([
   'https://www.facebook.com',
@@ -117,6 +130,9 @@ const parseSignupMessage = (event: MessageEvent): SignupMessage | null => {
   return null;
 };
 
+export const isSilentWhatsappEmbeddedSignupError = (error: unknown): boolean =>
+  error instanceof Error && SILENT_SIGNUP_ERRORS.has(error.message);
+
 export function useWhatsappEmbeddedSignup() {
   const isLoading = shallowRef(false);
 
@@ -154,14 +170,10 @@ export function useWhatsappEmbeddedSignup() {
       const timeout = window.setTimeout(() => {
         cleanup();
         reject(new Error('whatsapp_embedded_signup_timeout'));
-      }, 120_000);
+      }, WHATSAPP_EMBEDDED_SIGNUP_TIMEOUT_MS);
 
       const tryResolve = () => {
-        if (
-          !authCode ||
-          !sessionPayload?.waba_id ||
-          !sessionPayload?.phone_number_id
-        ) {
+        if (!authCode || !sessionPayload?.waba_id) {
           return;
         }
 
@@ -176,10 +188,23 @@ export function useWhatsappEmbeddedSignup() {
 
       const onMessage = (event: MessageEvent) => {
         const message = parseSignupMessage(event);
-        if (
-          message?.type !== 'WA_EMBEDDED_SIGNUP' ||
-          message.event !== 'FINISH'
-        ) {
+        if (message?.type !== 'WA_EMBEDDED_SIGNUP' || !message.event) {
+          return;
+        }
+
+        if (message.event === 'CANCEL') {
+          cleanup();
+          reject(new Error('whatsapp_embedded_signup_cancelled'));
+          return;
+        }
+
+        if (message.event === 'ERROR') {
+          cleanup();
+          reject(new Error('whatsapp_embedded_signup_error'));
+          return;
+        }
+
+        if (!FINISH_EVENTS.has(message.event)) {
           return;
         }
 
@@ -199,12 +224,6 @@ export function useWhatsappEmbeddedSignup() {
         (response) => {
           authCode = response.authResponse?.code ?? null;
 
-          if (!authCode) {
-            cleanup();
-            reject(new Error('whatsapp_embedded_code_missing'));
-            return;
-          }
-
           tryResolve();
         },
         {
@@ -213,7 +232,7 @@ export function useWhatsappEmbeddedSignup() {
           override_default_response_type: true,
           extras: {
             setup: {},
-            featureType: '',
+            featureType: WHATSAPP_BUSINESS_APP_ONBOARDING_FEATURE,
             sessionInfoVersion: '3',
           },
         }

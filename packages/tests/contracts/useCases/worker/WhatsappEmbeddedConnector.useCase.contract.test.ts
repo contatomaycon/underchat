@@ -44,6 +44,13 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
       display_phone_number: '+55 61 99999-0000',
       verified_name: 'Underchat',
     })),
+    listPhoneNumbers: jest.fn(async () => [
+      {
+        id: 'phone-1',
+        display_phone_number: '+55 61 99999-0000',
+        verified_name: 'Underchat',
+      },
+    ]),
   };
   const passwordEncryptorService = {
     encrypt: jest.fn((value: string) => `enc:${value}`),
@@ -99,9 +106,9 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
       },
     });
 
-    await expect(
-      useCase.execute(t, 'account-1', request)
-    ).rejects.toThrow('whatsapp_embedded_config_not_configured');
+    await expect(useCase.execute(t, 'account-1', request)).rejects.toThrow(
+      'whatsapp_embedded_config_not_configured'
+    );
 
     expect(
       deps.metaWhatsappEmbeddedService.exchangeCode
@@ -115,12 +122,13 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
           throw new Error('invalid code');
         }),
         viewPhoneNumber: jest.fn(),
+        listPhoneNumbers: jest.fn(),
       },
     });
 
-    await expect(
-      useCase.execute(t, 'account-1', request)
-    ).rejects.toThrow('whatsapp_official_code_exchange_failed');
+    await expect(useCase.execute(t, 'account-1', request)).rejects.toThrow(
+      'whatsapp_official_code_exchange_failed'
+    );
 
     expect(
       deps.officialConnectionRepository.createWithWorker
@@ -141,12 +149,13 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
           display_phone_number: '+55 61 99999-0000',
           verified_name: 'Underchat',
         })),
+        listPhoneNumbers: jest.fn(),
       },
     });
 
-    await expect(
-      useCase.execute(t, 'account-1', request)
-    ).rejects.toThrow('whatsapp_official_phone_mismatch');
+    await expect(useCase.execute(t, 'account-1', request)).rejects.toThrow(
+      'whatsapp_official_phone_mismatch'
+    );
 
     expect(
       deps.officialConnectionRepository.createWithWorker
@@ -194,6 +203,39 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
         action: EWorkerAction.create,
         worker_status_id: EWorkerStatus.online,
         worker_type_id: EWorkerType.whatsapp,
+      })
+    );
+  });
+
+  it('resolves the official phone from WABA when Meta does not send phone id', async () => {
+    const { useCase, deps } = buildUseCase();
+    const requestWithoutPhoneId = {
+      ...request,
+      phone_number_id: undefined,
+    };
+
+    await expect(
+      useCase.execute(t, 'account-1', requestWithoutPhoneId)
+    ).resolves.toMatchObject({
+      phone_number_id: 'phone-1',
+      number: '5561999990000',
+    });
+
+    expect(
+      deps.metaWhatsappEmbeddedService.listPhoneNumbers
+    ).toHaveBeenCalledWith({
+      apiVersion: 'v24.0',
+      accessToken: 'token-1',
+      wabaId: 'waba-1',
+    });
+    expect(
+      deps.officialConnectionRepository.findActiveByPhoneNumberId
+    ).toHaveBeenCalledWith('phone-1');
+    expect(
+      deps.officialConnectionRepository.createWithWorker
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone_number_id: 'phone-1',
       })
     );
   });
