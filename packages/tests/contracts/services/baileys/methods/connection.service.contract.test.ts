@@ -2,7 +2,7 @@ import 'reflect-metadata';
 
 jest.mock('@whiskeysockets/baileys', () => ({
   Browsers: {
-    macOS: jest.fn(() => ['Underchat', 'Desktop', '1.0.0']),
+    macOS: jest.fn((browser: string) => ['Mac OS', browser, '14.4.1']),
   },
   DEFAULT_CONNECTION_CONFIG: {
     version: [2, 3000, 1035194821],
@@ -57,6 +57,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { BaileysConnectionService } from '@core/services/baileys/methods/connection.service';
 import {
+  Browsers,
   fetchLatestBaileysVersion,
   fetchLatestWaWebVersion,
   makeWASocket,
@@ -174,6 +175,22 @@ describe('BaileysConnectionService', () => {
     expect(makeWASocket).toHaveBeenCalledWith(
       expect.objectContaining({
         version: [2, 3000, 1035194821],
+      })
+    );
+  });
+
+  it('announces Chrome as the default browser for QR pairing', async () => {
+    const { servicePrivate } = makeService();
+    const socket = { ev: { on: jest.fn() } };
+
+    (makeWASocket as jest.Mock).mockReturnValueOnce(socket);
+
+    await servicePrivate.createSocket();
+
+    expect(Browsers.macOS).toHaveBeenCalledWith('Chrome');
+    expect(makeWASocket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        browser: ['Mac OS', 'Chrome', '14.4.1'],
       })
     );
   });

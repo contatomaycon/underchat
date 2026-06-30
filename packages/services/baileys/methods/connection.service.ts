@@ -108,7 +108,12 @@ const SHOULD_PRINT_QR_IN_TERMINAL =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
 const SHOULD_LOG_CONNECTION_IP =
   process.env.APP_ENVIRONMENT === EAppEnvironment.local;
+const SHOULD_LOG_LOCAL_DETAILS =
+  process.env.APP_ENVIRONMENT === EAppEnvironment.local;
+const BAILEYS_BROWSER_NAME =
+  process.env.BAILEYS_BROWSER_NAME?.trim() || 'Chrome';
 type WaVersion = [number, number, number];
+type BaileysBrowser = [string, string, string];
 
 const DEFAULT_WA_VERSION = [
   DEFAULT_CONNECTION_CONFIG.version[0],
@@ -125,6 +130,10 @@ let cachedWaVersion: {
 
 function cloneWaVersion(version: readonly number[]): WaVersion {
   return [version[0] ?? 2, version[1] ?? 3000, version[2] ?? 0];
+}
+
+function resolveBaileysBrowser(): BaileysBrowser {
+  return Browsers.macOS(BAILEYS_BROWSER_NAME) as BaileysBrowser;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -998,6 +1007,39 @@ export class BaileysConnectionService {
     this.cancelAttempt(false);
   }
 
+  private logSocketConfig(
+    version: WaVersion,
+    browser: BaileysBrowser,
+    proxyEnabled: boolean
+  ): void {
+    const folder = getFolder();
+    let authFileCount = 0;
+    try {
+      authFileCount = fs.existsSync(folder) ? fs.readdirSync(folder).length : 0;
+    } catch {}
+
+    this.logDebug('baileys.provider.socket_config', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      version: version.join('.'),
+      browser_os: browser[0],
+      browser_name: browser[1],
+      browser_version: browser[2],
+      proxy_enabled: proxyEnabled,
+      node_version: process.version,
+      auth_folder_exists: fs.existsSync(folder),
+      auth_file_count: authFileCount,
+      qr_read_session_active: this.qrReadSessionActive,
+      qr_read_session_locked: this.qrReadSessionLocked,
+    });
+  }
+
   private async createSocket() {
     const { state, saveCreds } = await this.runConnectionPhase(
       'auth_state_load',
@@ -1012,10 +1054,12 @@ export class BaileysConnectionService {
       () => getCachedWaWebVersion()
     );
     const proxyConfig = readProxyConfig();
+    const browser = resolveBaileysBrowser();
 
     const proxyAgent = proxyConfig ? createProxyAgent(proxyConfig) : undefined;
     this.activeProxyUrl = proxyConfig?.url ?? null;
     this.activeProxyAgent = proxyAgent;
+    this.logSocketConfig(version, browser, Boolean(proxyConfig));
 
     const socket = await this.runConnectionPhase(
       'socket_create',
@@ -1025,7 +1069,7 @@ export class BaileysConnectionService {
         makeWASocket({
           auth: state,
           version,
-          browser: Browsers.macOS('Desktop'),
+          browser,
           logger: P({ level: 'silent' }),
           getMessage: async (key) =>
             this.baileysIncomingMessageService.getCachedMessage(key),
@@ -1208,6 +1252,10 @@ export class BaileysConnectionService {
         }
 
         const { qr, connection, isNewLogin, lastDisconnect } = u;
+        this.logConnectionUpdate(u, {
+          opened,
+          startedAtMs,
+        });
 
         if (
           qr &&
@@ -1239,6 +1287,60 @@ export class BaileysConnectionService {
 
         this.awaitingNewLogin = false;
       });
+    });
+  }
+
+  private logConnectionUpdate(
+    update: IBaileysUpdateEvent,
+    context: { opened: boolean; startedAtMs: number }
+  ): void {
+    const error = update.lastDisconnect?.error;
+    const ws = this.resolveWebSocket();
+    const elapsedMs = Date.now() - context.startedAtMs;
+    const errorLike = error as
+      | {
+          name?: unknown;
+          stack?: unknown;
+          output?: {
+            statusCode?: unknown;
+            payload?: unknown;
+          };
+          data?: unknown;
+        }
+      | undefined;
+
+    this.logDebug('baileys.provider.connection_update', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      connection: update.connection,
+      is_new_login: update.isNewLogin,
+      has_qr: Boolean(update.qr),
+      qr_length: update.qr?.length ?? 0,
+      elapsed_ms: elapsedMs,
+      opened: context.opened,
+      disconnect_code: this.extractStatusCode(error),
+      disconnect_message: this.extractStatusMessage(error),
+      disconnect_error_name:
+        typeof errorLike?.name === 'string' ? errorLike.name : undefined,
+      disconnect_output_status_code: errorLike?.output?.statusCode,
+      disconnect_output_payload: errorLike?.output?.payload,
+      disconnect_data: errorLike?.data,
+      disconnect_stack:
+        SHOULD_LOG_LOCAL_DETAILS && typeof errorLike?.stack === 'string'
+          ? errorLike.stack
+          : undefined,
+      ws_ready_state: ws?.readyState,
+      ws_is_open: (ws as unknown as { isOpen?: boolean } | undefined)?.isOpen,
+      qr_read_session_active: this.qrReadSessionActive,
+      qr_read_session_locked: this.qrReadSessionLocked,
+      qr_generation_count: this.qrGenerationCount,
+      has_session: this.hasSession(),
     });
   }
 
@@ -1632,6 +1734,25 @@ export class BaileysConnectionService {
     const disconnectionCode =
       statusCode ?? this.code ?? ECodeMessage.connectionLost;
     const shouldRetryAfterClose = this.shouldScheduleRetryAfterClose();
+    this.logDebug('baileys.provider.close_received', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      disconnect_code: statusCode,
+      disconnect_message: statusMessage,
+      disconnection_code: disconnectionCode,
+      is_mismatched_status: isMismatchedStatus,
+      should_retry_after_close: shouldRetryAfterClose,
+      has_session: this.hasSession(),
+      qr_read_session_active: this.qrReadSessionActive,
+      qr_read_session_locked: this.qrReadSessionLocked,
+      awaiting_new_login: this.awaitingNewLogin,
+    });
 
     if (isMismatchedStatus) {
       this.setStatus(Status.disconnected, disconnectionCode);
