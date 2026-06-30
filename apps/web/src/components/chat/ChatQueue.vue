@@ -458,7 +458,7 @@ onBeforeUnmount(() => {
           @click.stop="emit('toggle-pin')"
         >
           <VIcon
-            size="17"
+            size="14"
             :icon="props.isPinned ? 'tabler-pinned-off' : 'tabler-pin'"
           />
           <VTooltip activator="parent" location="top">
@@ -661,7 +661,7 @@ onBeforeUnmount(() => {
   z-index: 8;
   display: grid;
   place-items: center;
-  inline-size: 72px;
+  inline-size: 40px;
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
@@ -682,6 +682,7 @@ onBeforeUnmount(() => {
     );
     box-shadow: inset 1px 0 rgba(var(--v-theme-on-surface), 0.04);
     backdrop-filter: blur(8px);
+    pointer-events: none;
   }
 }
 
@@ -693,23 +694,23 @@ onBeforeUnmount(() => {
 .chat:focus-within .chat-pin-action-panel,
 .chat-pin-action-panel--loading {
   opacity: 1;
-  pointer-events: auto;
   transform: translateX(0);
 }
 
 .chat-pin-btn {
   position: relative;
   z-index: 1;
-  inline-size: 36px;
-  block-size: 36px;
-  min-inline-size: 36px;
+  inline-size: 24px !important;
+  block-size: 24px !important;
+  min-inline-size: 24px !important;
   border: 1px solid rgba(var(--v-theme-primary), 0.18);
-  border-radius: 12px !important;
+  border-radius: 8px !important;
   color: rgb(var(--v-theme-primary));
   background-color: rgba(var(--v-theme-surface), 0.96) !important;
+  pointer-events: auto;
   box-shadow:
-    0 12px 26px rgba(var(--v-theme-on-surface), 0.16),
-    0 3px 8px rgba(var(--v-theme-on-surface), 0.1) !important;
+    0 8px 18px rgba(var(--v-theme-on-surface), 0.14),
+    0 2px 6px rgba(var(--v-theme-on-surface), 0.1) !important;
   transform: scale(0.9);
   transition:
     background-color 0.16s ease,
@@ -724,8 +725,8 @@ onBeforeUnmount(() => {
     border-color: rgba(var(--v-theme-primary), 0.32);
     color: rgb(var(--v-theme-primary));
     box-shadow:
-      0 14px 28px rgba(var(--v-theme-primary), 0.18),
-      0 4px 10px rgba(var(--v-theme-on-surface), 0.14) !important;
+      0 10px 20px rgba(var(--v-theme-primary), 0.18),
+      0 3px 8px rgba(var(--v-theme-on-surface), 0.14) !important;
     transform: scale(1);
   }
 
@@ -763,7 +764,7 @@ onBeforeUnmount(() => {
   background-color: rgba(255, 255, 255, 0.18) !important;
   border-color: rgba(255, 255, 255, 0.28);
   box-shadow:
-    0 14px 28px rgba(0, 0, 0, 0.16),
+    0 10px 20px rgba(0, 0, 0, 0.16),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
 
   &:hover,
