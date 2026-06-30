@@ -59,10 +59,6 @@ const isSubmitDisabled = computed(() => {
     return true;
   }
 
-  if (canChooseServer.value && !isOfficialSelected.value && !serverId.value) {
-    return true;
-  }
-
   return isOfficialSelected.value && !isWhatsappEmbeddedConfigured.value;
 });
 
@@ -257,7 +253,6 @@ watch(
                 :placeholder="$t('select_server')"
                 :loading="serversLoading"
                 :clearable="true"
-                :rules="[requiredValidator(serverId, $t('select_server'))]"
                 item-value="value"
                 item-title="title"
               />

@@ -1,10 +1,12 @@
 <script lang="ts" setup>
 import { computed, nextTick, ref, toRef, watch } from 'vue';
 import { useSettingsStore } from '@/@webcore/stores/settings';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { ListChannelsResponse } from '@core/schema/config/listChannels/response.schema';
 import { UpdateChannelRequest } from '@core/schema/config/updateChannel/request.schema';
 import { VForm } from 'vuetify/components/VForm';
+import { can } from '@layouts/plugins/casl';
 import AppChannelTypeCards from './AppChannelTypeCards.vue';
 
 const settingsStore = useSettingsStore();
@@ -39,21 +41,24 @@ const isOfficialChannel = computed(
   () => initialType.value === EWorkerType.whatsapp
 );
 
+const canChooseServer = computed(() =>
+  can([EGeneralPermissions.full_access, EGeneralPermissions.full_access_group])
+);
+
 const disabledTypes = computed(() =>
   isOfficialChannel.value
     ? [EWorkerType.baileys, EWorkerType.wwebjs, EWorkerType.whatsmeow]
     : [EWorkerType.whatsapp]
 );
 
-const isSubmitDisabled = computed(() => {
-  if (!type.value || !name.value?.trim()) {
-    return true;
-  }
-
-  return !isOfficialChannel.value && !serverId.value;
-});
+const isSubmitDisabled = computed(() => !type.value || !name.value?.trim());
 
 const loadServerOptions = async () => {
+  if (!canChooseServer.value || isOfficialChannel.value) {
+    serverItems.value = [];
+    return;
+  }
+
   const result = await settingsStore.getChannelServers();
   const items =
     result?.map((server) => ({
@@ -108,7 +113,7 @@ const updateChannel = async () => {
     worker_type: type.value ?? undefined,
   };
 
-  if (!isOfficialChannel.value && serverId.value) {
+  if (canChooseServer.value && !isOfficialChannel.value && serverId.value) {
     payload.server_id = serverId.value;
   }
 
@@ -188,19 +193,21 @@ watch(
               />
             </VCol>
 
-            <VCol v-if="type && !isOfficialChannel" cols="12" md="6">
+            <VCol
+              v-if="type && canChooseServer && !isOfficialChannel"
+              cols="12"
+              md="6"
+            >
               <VLabel class="text-body-2 mb-1">{{ $t('server') }}:</VLabel>
               <AppSelectSearch
                 v-model="serverId"
                 :items="serverItems"
                 :placeholder="$t('select_server')"
-                :rules="[requiredValidator(serverId, $t('select_server'))]"
-                :clearable="false"
+                :clearable="true"
                 item-value="value"
                 item-title="title"
               />
             </VCol>
-
           </VRow>
         </VCardText>
 
@@ -208,11 +215,7 @@ watch(
           <VBtn variant="tonal" color="secondary" @click="isVisible = false">
             {{ $t('cancel') }}
           </VBtn>
-          <VBtn
-            type="submit"
-            :loading="isSaving"
-            :disabled="isSubmitDisabled"
-          >
+          <VBtn type="submit" :loading="isSaving" :disabled="isSubmitDisabled">
             {{ $t('save') }}
           </VBtn>
         </VCardText>
