@@ -7,8 +7,11 @@ import {
 } from 'vue-router';
 import { routes as autoRoutes } from 'vue-router/auto-routes';
 import { setupGuards } from './guards';
+import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
+import { EWorkerPermissions } from '@core/common/enums/EPermissions/worker';
 
 const externalConnectionRouteName = 'connection-external-token';
+const whatsappTemplatesRouteName = 'channels-whatsapp-templates';
 
 const isExternalConnectionRoute = (route: RouteRecordRaw): boolean =>
   route.name === externalConnectionRouteName ||
@@ -50,6 +53,22 @@ const routes = setupLayouts([
     meta: {
       layout: 'blank',
       public: true,
+    },
+  },
+  {
+    path: '/channels/:worker_id/whatsapp-templates',
+    name: whatsappTemplatesRouteName,
+    component: () =>
+      import('@/pages/official-whatsapp-templates/[worker_id].vue'),
+    meta: {
+      permissions: [
+        EGeneralPermissions.full_access,
+        EGeneralPermissions.full_access_group,
+        EWorkerPermissions.worker_group,
+        EWorkerPermissions.view_worker,
+        EWorkerPermissions.update_worker,
+        EWorkerPermissions.delete_worker,
+      ],
     },
   },
   ...removeAutoExternalConnectionRoute(autoRoutes),

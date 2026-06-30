@@ -1,12 +1,10 @@
-import { ComponentOptions, DefineComponent } from 'vue';
-
 declare module '*.vue' {
-  const component: DefineComponent<{}, {}, any>;
+  const component: import('vue').DefineComponent<{}, {}, any>;
   export default component;
 }
 
 declare module 'vue-prism-component' {
-  const component: ComponentOptions;
+  const component: import('vue').ComponentOptions;
   export default component;
 }
 declare module 'vue-shepherd';
