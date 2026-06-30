@@ -160,6 +160,54 @@ const handleMetaAppMenu = (isOpen: boolean) => {
   }
 };
 
+const isBrazilCountryCode = (countryCode: string) => countryCode === '+55';
+
+const normalizeBrazilPhoneDigits = (value: unknown) => {
+  const digits = String(value ?? '').replace(/\D/gu, '');
+  const nationalDigits =
+    digits.length > 11 && digits.startsWith('55') ? digits.slice(2) : digits;
+
+  return nationalDigits.slice(0, 11);
+};
+
+const formatBrazilPhoneNumber = (value: string) => {
+  const digits = normalizeBrazilPhoneDigits(value);
+
+  if (digits.length <= 2) return digits ? `(${digits}` : '';
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
+const isBrazilPhoneButton = (button: ButtonDraft) =>
+  button.type === 'PHONE_NUMBER' &&
+  isBrazilCountryCode(button.phone_country_code);
+
+const phoneNumberInputValue = (button: ButtonDraft) =>
+  isBrazilPhoneButton(button)
+    ? formatBrazilPhoneNumber(button.phone_number)
+    : button.phone_number;
+
+const phoneNumberMaxLength = (button: ButtonDraft) =>
+  isBrazilPhoneButton(button) ? 15 : 20;
+
+const updatePhoneCountryCode = (button: ButtonDraft, value: unknown) => {
+  button.phone_country_code = String(value ?? '');
+
+  if (isBrazilPhoneButton(button)) {
+    button.phone_number = normalizeBrazilPhoneDigits(button.phone_number);
+  }
+};
+
+const updatePhoneNumber = (button: ButtonDraft, value: unknown) => {
+  button.phone_number = isBrazilPhoneButton(button)
+    ? normalizeBrazilPhoneDigits(value)
+    : String(value ?? '');
+};
+
 const resetButtonDrag = () => {
   draggingButtonIndex.value = null;
   dragOverButtonIndex.value = null;
@@ -692,22 +740,26 @@ const isButtonDropTarget = (index: number) =>
 
             <template v-if="entry.button.type === 'PHONE_NUMBER'">
               <AppAutocomplete
-                v-model="entry.button.phone_country_code"
+                :model-value="entry.button.phone_country_code"
                 :label="t('whatsapp_template_country_label')"
                 :items="countryCodeOptions"
                 item-title="title"
                 item-value="value"
                 density="compact"
+                @update:model-value="
+                  updatePhoneCountryCode(entry.button, $event)
+                "
               />
               <AppTextField
-                v-model="entry.button.phone_number"
+                :model-value="phoneNumberInputValue(entry.button)"
                 :label="t('whatsapp_template_phone_label')"
                 :placeholder="t('whatsapp_template_phone_placeholder')"
-                maxlength="20"
-                :counter="20"
+                :maxlength="phoneNumberMaxLength(entry.button)"
+                :counter="phoneNumberMaxLength(entry.button)"
                 :error-messages="
                   buttonFieldErrors(entry.button, 'phone_number')
                 "
+                @update:model-value="updatePhoneNumber(entry.button, $event)"
               />
             </template>
 
