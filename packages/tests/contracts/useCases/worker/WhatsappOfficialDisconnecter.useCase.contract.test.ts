@@ -72,24 +72,21 @@ function buildUseCase(deps = buildDeps()) {
     deps.workerService as never,
     deps.chatService as never,
     deps.centrifugoService as never,
-    deps.officialConnectionRepository as never,
-    deps.metaWhatsappEmbeddedService as never,
-    deps.whatsappEmbeddedService as never,
-    deps.passwordEncryptorService as never
+    deps.officialConnectionRepository as never
   );
 }
 
 describe('WhatsappOfficialDisconnecterUseCase', () => {
-  it('disconnects official WhatsApp locally and unsubscribes Meta when it is the last WABA connection', async () => {
+  it('disconnects official WhatsApp locally without calling Meta cleanup APIs', async () => {
     const deps = buildDeps();
     const useCase = buildUseCase(deps);
 
     await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
       worker_id: 'worker-1',
       disconnected: true,
-      meta_deregistered: true,
-      meta_unsubscribed: true,
-      meta_warning: null,
+      meta_deregistered: false,
+      meta_unsubscribed: false,
+      meta_warning: 'whatsapp_official_disconnect_meta_manual_cleanup_warning',
     });
 
     expect(
@@ -118,60 +115,20 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     ).not.toHaveBeenCalled();
     expect(
       deps.officialConnectionRepository.countActiveByWabaIdExceptWorkerId
-    ).toHaveBeenCalledWith('waba-1', 'worker-1');
-    expect(deps.passwordEncryptorService.decrypt).toHaveBeenCalledWith(
-      'encrypted-token'
-    );
+    ).not.toHaveBeenCalled();
+    expect(deps.passwordEncryptorService.decrypt).not.toHaveBeenCalled();
     expect(
       deps.whatsappEmbeddedService.viewInternalConfig
-    ).toHaveBeenCalledWith(t);
+    ).not.toHaveBeenCalled();
     expect(
       deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
-    ).toHaveBeenCalledWith({
-      apiVersion: 'v25.0',
-      accessToken: 'plain-token',
-      phoneNumberId: 'phone-1',
-    });
-    expect(
-      deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
-    ).toHaveBeenCalledWith({
-      apiVersion: 'v25.0',
-      accessToken: 'plain-token',
-      wabaId: 'waba-1',
-    });
-  });
-
-  it('does not unsubscribe Meta when another active channel uses the same WABA', async () => {
-    const deps = buildDeps();
-    deps.officialConnectionRepository.countActiveByWabaIdExceptWorkerId.mockResolvedValue(
-      1
-    );
-    const useCase = buildUseCase(deps);
-
-    await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
-      worker_id: 'worker-1',
-      disconnected: true,
-      meta_deregistered: true,
-      meta_unsubscribed: false,
-      meta_warning: null,
-    });
-
-    expect(deps.passwordEncryptorService.decrypt).toHaveBeenCalledWith(
-      'encrypted-token'
-    );
-    expect(
-      deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
-    ).toHaveBeenCalledWith({
-      apiVersion: 'v25.0',
-      accessToken: 'plain-token',
-      phoneNumberId: 'phone-1',
-    });
+    ).not.toHaveBeenCalled();
     expect(
       deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
     ).not.toHaveBeenCalled();
   });
 
-  it('keeps local disconnect complete when Meta returns permission error', async () => {
+  it('ignores Meta service failures because coexistence cleanup is manual', async () => {
     const deps = buildDeps();
     deps.metaWhatsappEmbeddedService.unsubscribeWabaApp.mockRejectedValue(
       new Error('(#200) Permissions error')
@@ -181,10 +138,9 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
       worker_id: 'worker-1',
       disconnected: true,
-      meta_deregistered: true,
+      meta_deregistered: false,
       meta_unsubscribed: false,
-      meta_warning:
-        'whatsapp_official_disconnect_meta_permission_warning (#200) Permissions error',
+      meta_warning: 'whatsapp_official_disconnect_meta_manual_cleanup_warning',
     });
 
     expect(deps.workerService.deleteWorkerById).not.toHaveBeenCalled();
@@ -194,6 +150,12 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
       accountId: 'account-1',
       workerId: 'worker-1',
     });
+    expect(
+      deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.metaWhatsappEmbeddedService.deregisterPhoneNumber
+    ).not.toHaveBeenCalled();
   });
 
   it('is idempotent when the official worker has no active connection', async () => {
@@ -229,56 +191,6 @@ describe('WhatsappOfficialDisconnecterUseCase', () => {
     expect(
       deps.metaWhatsappEmbeddedService.unsubscribeWabaApp
     ).not.toHaveBeenCalled();
-  });
-
-  it('keeps local disconnect complete when Meta does not deregister the phone number', async () => {
-    const deps = buildDeps();
-    deps.metaWhatsappEmbeddedService.deregisterPhoneNumber.mockRejectedValue(
-      new Error('(#200) Permissions error')
-    );
-    const useCase = buildUseCase(deps);
-
-    await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
-      worker_id: 'worker-1',
-      disconnected: true,
-      meta_deregistered: false,
-      meta_unsubscribed: true,
-      meta_warning:
-        'whatsapp_official_disconnect_meta_deregister_permission_warning (#200) Permissions error',
-    });
-
-    expect(
-      deps.officialConnectionRepository.disconnectPreservingWorker
-    ).toHaveBeenCalledWith({
-      accountId: 'account-1',
-      workerId: 'worker-1',
-    });
-  });
-
-  it('explains Meta SMB deregister limitation without exposing the raw Graph error', async () => {
-    const deps = buildDeps();
-    deps.metaWhatsappEmbeddedService.deregisterPhoneNumber.mockRejectedValue(
-      new Error(
-        'Deregister endpoint is not available for API solution for SMB businesses.'
-      )
-    );
-    const useCase = buildUseCase(deps);
-
-    await expect(useCase.execute(t, 'account-1', 'worker-1')).resolves.toEqual({
-      worker_id: 'worker-1',
-      disconnected: true,
-      meta_deregistered: false,
-      meta_unsubscribed: true,
-      meta_warning:
-        'whatsapp_official_disconnect_meta_deregister_smb_unsupported_warning',
-    });
-
-    expect(
-      deps.officialConnectionRepository.disconnectPreservingWorker
-    ).toHaveBeenCalledWith({
-      accountId: 'account-1',
-      workerId: 'worker-1',
-    });
   });
 
   it('rejects non-official workers', async () => {

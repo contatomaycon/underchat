@@ -2,6 +2,7 @@ import { singleton, inject } from 'tsyringe';
 import { baileysEnvironment } from '@core/config/environments';
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { BaileysService } from '@core/services/baileys';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { BalanceWorkerStatusGrpcClientService } from '@core/services/balanceWorkerStatusGrpcClient.service';
@@ -10,6 +11,13 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+
+interface PublishQrCodeAttemptFailedOptions {
+  attempt: number;
+  maxAttempts: number;
+  reason: string;
+  degradedReason?: string;
+}
 
 @singleton()
 export class WorkerConnectionStatusConsume {
@@ -37,6 +45,49 @@ export class WorkerConnectionStatusConsume {
     }
 
     return this.handleConnectionStatus(payload);
+  }
+
+  cancelConnectionAttempt(): void {
+    this.stopConnectionRetry();
+    void this.baileysService.shutdown().catch(() => {});
+  }
+
+  async publishQrCodeAttemptFailed(
+    request: StatusConnectionWorkerRequest,
+    options: PublishQrCodeAttemptFailedOptions
+  ): Promise<IBaileysConnectionState> {
+    const payload: IBaileysConnectionState = {
+      status: EBaileysConnectionStatus.disconnected,
+      code: ECodeMessage.connectionClosed,
+      worker_id: baileysEnvironment.baileysWorkerId,
+      account_id: baileysEnvironment.baileysAccountId,
+      worker_type_id: EWorkerType.baileys,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: request.connection_attempt_id,
+      debug_trace_id: request.debug_trace_id,
+      runtime_generation: request.runtime_generation,
+      warm_pool_id: request.warm_pool_id,
+      qr_pending: false,
+      attempt: options.attempt,
+      max_attempts: options.maxAttempts,
+      reason: options.reason,
+      session_ready: false,
+      can_send: false,
+      can_receive_runtime: false,
+      authenticated: false,
+      provider_state: 'disconnected',
+      degraded_reason: options.degradedReason ?? options.reason,
+    };
+
+    await Promise.allSettled([
+      this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(payload),
+      this.centrifugoService.publishSub(
+        workerCentrifugoQueue(payload.account_id),
+        payload
+      ),
+    ]);
+
+    return payload;
   }
 
   async close(): Promise<void> {

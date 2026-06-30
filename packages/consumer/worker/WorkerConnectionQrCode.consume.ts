@@ -8,11 +8,13 @@ import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import {
   WorkerConnectionQrCodeRedisQueueService,
   WorkerConnectionQrCodeRedisStreamMessage,
 } from '@core/services/workerConnectionQrCodeRedisQueue.service';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
+import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 
 interface ActiveQrAttemptEnvelope {
   worker_type_id?: string;
@@ -39,6 +41,29 @@ export class WorkerConnectionQrCodeConsume {
     Math.min(
       600_000,
       Number(process.env.CONNECTION_QRCODE_MAX_AGE_MS) || 120_000
+    )
+  );
+  private static readonly LOCAL_REQUEST_TIMEOUT_MS = Math.max(
+    10_000,
+    Math.min(
+      180_000,
+      Number(process.env.CONNECTION_QRCODE_BAILEYS_LOCAL_REQUEST_TIMEOUT_MS) ||
+        45_000
+    )
+  );
+  private static readonly LOCAL_REQUEST_MAX_ATTEMPTS = Math.max(
+    1,
+    Math.min(
+      4,
+      Number(process.env.CONNECTION_QRCODE_BAILEYS_LOCAL_MAX_ATTEMPTS) || 2
+    )
+  );
+  private static readonly LOCAL_REQUEST_RETRY_DELAY_MS = Math.max(
+    250,
+    Math.min(
+      30_000,
+      Number(process.env.CONNECTION_QRCODE_BAILEYS_LOCAL_RETRY_DELAY_MS) ||
+        2_000
     )
   );
   private isRunning = false;
@@ -233,15 +258,7 @@ export class WorkerConnectionQrCodeConsume {
           stream_id: message.stream_id,
         }
       );
-      const state = await this.workerConnectionStatusConsume.requestConnection({
-        worker_id: data.worker_id,
-        status: EWorkerStatus.online,
-        type: EBaileysConnectionType.qrcode,
-        connection_attempt_id: data.connection_attempt_id,
-        debug_trace_id: data.debug_trace_id,
-        runtime_generation: data.runtime_generation,
-        qr_pending: true,
-      });
+      const state = await this.requestLocalConnectionWithRetries(data, message);
 
       await this.cacheQrAttemptState(state, data);
       void this.connectionLifecycleDebugService.log(
@@ -265,6 +282,30 @@ export class WorkerConnectionQrCodeConsume {
         }
       );
 
+      if (this.isTerminalNoQrState(state)) {
+        await this.releaseActiveAttemptIfCurrent(
+          data.worker_id,
+          data.connection_attempt_id
+        );
+        await this.redisQueueService.markProcessed(data);
+        await this.ackAndDelete(message);
+        void this.connectionLifecycleDebugService.log(
+          'baileys.qr_stream.completed_terminal_no_qr',
+          {
+            trace_id: data.debug_trace_id,
+            layer: 'baileys',
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_type_id: data.worker_type_id,
+            connection_attempt_id: data.connection_attempt_id,
+            runtime_generation: data.runtime_generation,
+            stream_id: message.stream_id,
+            reason: state.reason,
+          }
+        );
+        return;
+      }
+
       if (!this.shouldCompleteQrRequest(state)) {
         return;
       }
@@ -286,6 +327,15 @@ export class WorkerConnectionQrCodeConsume {
         }
       );
     } catch (error) {
+      if (this.isLocalRequestTimeoutError(error)) {
+        await this.releaseActiveAttemptIfCurrent(
+          data.worker_id,
+          data.connection_attempt_id
+        );
+        await this.redisQueueService.markProcessed(data);
+        await this.ackAndDelete(message);
+      }
+
       void this.connectionLifecycleDebugService.log('baileys.qr_stream.error', {
         trace_id: data.debug_trace_id,
         layer: 'baileys',
@@ -298,6 +348,245 @@ export class WorkerConnectionQrCodeConsume {
         reason: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private async requestLocalConnectionWithRetries(
+    data: IWorkerConnectionQrCodeQueueMessage,
+    message: WorkerConnectionQrCodeRedisStreamMessage
+  ): Promise<IBaileysConnectionState> {
+    let lastNoQrState: IBaileysConnectionState | null = null;
+
+    for (
+      let attempt = 1;
+      attempt <= WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        const state = await this.requestLocalConnectionWithTimeout(
+          this.buildQrRequestPayload(data)
+        );
+
+        if (!this.isRetryableNoQrState(state)) {
+          return state;
+        }
+
+        lastNoQrState = state;
+        if (
+          attempt >= WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS
+        ) {
+          return this.publishTerminalNoQrState(data, state);
+        }
+
+        void this.connectionLifecycleDebugService.log(
+          'baileys.qr_stream.retry_after_no_qr',
+          {
+            trace_id: data.debug_trace_id,
+            layer: 'baileys',
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_type_id: data.worker_type_id,
+            connection_attempt_id: data.connection_attempt_id,
+            runtime_generation: data.runtime_generation,
+            stream_id: message.stream_id,
+            local_attempt: attempt,
+            next_local_attempt: attempt + 1,
+            max_local_attempts:
+              WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS,
+            status: state.status,
+            code: state.code,
+            reason: this.resolveNoQrReason(state),
+          }
+        );
+      } catch (error) {
+        if (
+          !this.isLocalRequestTimeoutError(error) ||
+          attempt >= WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS
+        ) {
+          if (this.isLocalRequestTimeoutError(error)) {
+            return this.publishTerminalNoQrState(data, lastNoQrState, error);
+          }
+
+          throw error;
+        }
+
+        void this.connectionLifecycleDebugService.log(
+          'baileys.qr_stream.retry_after_local_timeout',
+          {
+            trace_id: data.debug_trace_id,
+            layer: 'baileys',
+            worker_id: data.worker_id,
+            account_id: data.account_id,
+            worker_type_id: data.worker_type_id,
+            connection_attempt_id: data.connection_attempt_id,
+            runtime_generation: data.runtime_generation,
+            stream_id: message.stream_id,
+            local_attempt: attempt,
+            next_local_attempt: attempt + 1,
+            max_local_attempts:
+              WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS,
+            reason: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+
+      await this.delay(
+        WorkerConnectionQrCodeConsume.LOCAL_REQUEST_RETRY_DELAY_MS
+      );
+    }
+
+    return this.publishTerminalNoQrState(data, lastNoQrState);
+  }
+
+  private buildQrRequestPayload(
+    data: IWorkerConnectionQrCodeQueueMessage
+  ): StatusConnectionWorkerRequest {
+    return {
+      worker_id: data.worker_id,
+      status: EWorkerStatus.online,
+      type: EBaileysConnectionType.qrcode,
+      connection_attempt_id: data.connection_attempt_id,
+      debug_trace_id: data.debug_trace_id,
+      runtime_generation: data.runtime_generation,
+      qr_pending: true,
+    };
+  }
+
+  private requestLocalConnectionWithTimeout(
+    payload: StatusConnectionWorkerRequest
+  ): Promise<IBaileysConnectionState> {
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.workerConnectionStatusConsume.cancelConnectionAttempt();
+        reject(
+          new Error(
+            `Baileys local QR request timed out after ${WorkerConnectionQrCodeConsume.LOCAL_REQUEST_TIMEOUT_MS}ms`
+          )
+        );
+      }, WorkerConnectionQrCodeConsume.LOCAL_REQUEST_TIMEOUT_MS);
+
+      this.workerConnectionStatusConsume.requestConnection(payload).then(
+        (state) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          resolve(state);
+        },
+        (error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timeout);
+          reject(error);
+        }
+      );
+    });
+  }
+
+  private isRetryableNoQrState(state: IBaileysConnectionState): boolean {
+    if (state.qrcode || state.pairing_code) {
+      return false;
+    }
+
+    if (state.status === EBaileysConnectionStatus.connected) {
+      return false;
+    }
+
+    if (this.isTerminalNoQrState(state)) {
+      return false;
+    }
+
+    return (
+      state.qr_pending === true ||
+      state.status === EBaileysConnectionStatus.connecting ||
+      state.code === ECodeMessage.awaitConnection ||
+      state.code === ECodeMessage.awaitingReadQrCode
+    );
+  }
+
+  private isTerminalNoQrState(state: IBaileysConnectionState): boolean {
+    if (state.qrcode || state.pairing_code) {
+      return false;
+    }
+
+    if (
+      state.status === EBaileysConnectionStatus.disconnected &&
+      typeof state.attempt === 'number' &&
+      typeof state.max_attempts === 'number' &&
+      state.max_attempts > 0 &&
+      state.attempt > state.max_attempts
+    ) {
+      return true;
+    }
+
+    return (
+      state.reason === 'qr_event_timeout' ||
+      state.reason === 'first_qr_timeout' ||
+      state.reason === 'connection_attempt_guard_timeout' ||
+      state.reason === 'connection_closed_before_qr'
+    );
+  }
+
+  private async publishTerminalNoQrState(
+    data: IWorkerConnectionQrCodeQueueMessage,
+    state: IBaileysConnectionState | null,
+    error?: unknown
+  ): Promise<IBaileysConnectionState> {
+    const reason = this.resolveNoQrReason(state, error);
+    return this.workerConnectionStatusConsume.publishQrCodeAttemptFailed(
+      {
+        worker_id: data.worker_id,
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+        connection_attempt_id: data.connection_attempt_id,
+        debug_trace_id: data.debug_trace_id,
+        runtime_generation: data.runtime_generation,
+        qr_pending: false,
+      },
+      {
+        attempt: WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS + 1,
+        maxAttempts: WorkerConnectionQrCodeConsume.LOCAL_REQUEST_MAX_ATTEMPTS,
+        reason,
+        degradedReason: state?.degraded_reason,
+      }
+    );
+  }
+
+  private resolveNoQrReason(
+    state?: IBaileysConnectionState | null,
+    error?: unknown
+  ): string {
+    if (state?.reason) {
+      return state.reason;
+    }
+
+    if (state?.degraded_reason) {
+      return state.degraded_reason;
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (error) {
+      return String(error);
+    }
+
+    return 'connection_closed_before_qr';
+  }
+
+  private isLocalRequestTimeoutError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      error.message.includes('Baileys local QR request timed out')
+    );
   }
 
   private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
@@ -316,6 +605,30 @@ export class WorkerConnectionQrCodeConsume {
       state.max_attempts > 0 &&
       state.attempt > state.max_attempts
     );
+  }
+
+  private async releaseActiveAttemptIfCurrent(
+    workerId: string,
+    connectionAttemptId: string
+  ): Promise<void> {
+    if (!this.isRedisReady()) {
+      return;
+    }
+
+    try {
+      const key = this.activeAttemptKey(workerId, EWorkerType.baileys);
+      const raw = await this.redisGetWithTimeout(key, 'active_attempt_release');
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as ActiveQrAttemptEnvelope;
+      if (parsed.ack?.connection_attempt_id !== connectionAttemptId) {
+        return;
+      }
+
+      await this.redis.del(key);
+    } catch {}
   }
 
   private isMessageForThisWorker(

@@ -137,6 +137,11 @@ const reconnectingWhatsappOfficialId = ref<string | null>(null);
 type DisconnectOfficialProgressResult = 'success' | 'warning' | null;
 type DisconnectOfficialProgressStepStatus =
   'pending' | 'running' | 'done' | 'warning';
+type DisconnectOfficialProgressStep = {
+  key: string;
+  text: string;
+  status: DisconnectOfficialProgressStepStatus;
+};
 const isDisconnectOfficialProgressShow = ref(false);
 const isDisconnectOfficialRunning = ref(false);
 const disconnectOfficialProgressResult =
@@ -367,32 +372,31 @@ const isWhatsappOfficialReconnectable = (channel: ListWorkerResponse) =>
   channel.status?.id !== EWorkerStatus.online;
 
 const disconnectOfficialProgressSteps = computed<
-  Array<{
-    key: string;
-    text: string;
-    status: DisconnectOfficialProgressStepStatus;
-  }>
+  DisconnectOfficialProgressStep[]
 >(() => {
   const isFinished = disconnectOfficialProgressResult.value !== null;
 
-  return [
-    {
-      key: 'meta',
-      text: t('whatsapp_official_disconnect_progress_meta'),
-      status: isDisconnectOfficialRunning.value
-        ? 'running'
-        : disconnectOfficialProgressResult.value === 'warning'
-          ? 'warning'
-          : isFinished
-            ? 'done'
-            : 'pending',
-    },
+  const steps: DisconnectOfficialProgressStep[] = [
     {
       key: 'underchat',
       text: t('whatsapp_official_disconnect_progress_underchat'),
-      status: isFinished ? 'done' : 'pending',
+      status: isDisconnectOfficialRunning.value
+        ? 'running'
+        : isFinished
+          ? 'done'
+          : 'pending',
     },
   ];
+
+  if (disconnectOfficialProgressResult.value === 'warning') {
+    steps.push({
+      key: 'meta',
+      text: t('whatsapp_official_disconnect_progress_meta'),
+      status: 'warning',
+    });
+  }
+
+  return steps;
 });
 
 const resetDisconnectOfficialProgress = () => {
@@ -1175,7 +1179,7 @@ onUnmounted(async () => {
               <p>
                 {{
                   isDisconnectOfficialRunning
-                    ? $t('whatsapp_official_disconnect_progress_meta')
+                    ? $t('whatsapp_official_disconnect_progress_underchat')
                     : disconnectOfficialProgressResult === 'warning'
                       ? $t('whatsapp_official_disconnect_progress_warning')
                       : $t('whatsapp_official_disconnect_progress_success')

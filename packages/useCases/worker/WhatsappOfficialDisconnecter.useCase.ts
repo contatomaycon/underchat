@@ -3,13 +3,6 @@ import { TFunction } from 'i18next';
 import { WorkerService } from '@core/services/worker.service';
 import { ChatService } from '@core/services/chat.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import {
-  isMetaPermissionsError,
-  isMetaSmbDeregisterUnsupportedError,
-  MetaWhatsappEmbeddedService,
-} from '@core/services/metaWhatsappEmbedded.service';
-import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
-import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
 import { DisconnectWhatsappOfficialResponse } from '@core/schema/worker/disconnectWhatsappOfficial/response.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
@@ -29,26 +22,8 @@ export class WhatsappOfficialDisconnecterUseCase {
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(WorkerWhatsappOfficialConnectionRepository)
-    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository,
-    @inject(MetaWhatsappEmbeddedService)
-    private readonly metaWhatsappEmbeddedService: MetaWhatsappEmbeddedService,
-    @inject(WhatsappEmbeddedService)
-    private readonly whatsappEmbeddedService: WhatsappEmbeddedService,
-    @inject(PasswordEncryptorService)
-    private readonly passwordEncryptorService: PasswordEncryptorService
+    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository
   ) {}
-
-  private buildMetaWarning(
-    t: TFunction<'translation', undefined>,
-    key: string,
-    error?: unknown
-  ): string {
-    if (error instanceof Error && error.message) {
-      return `${t(key)} ${error.message}`;
-    }
-
-    return t(key);
-  }
 
   private async assertCanDisconnect(input: {
     t: TFunction<'translation', undefined>;
@@ -84,97 +59,6 @@ export class WhatsappOfficialDisconnecterUseCase {
     return { worker, workerBalancer };
   }
 
-  private async disconnectMetaConnection(input: {
-    t: TFunction<'translation', undefined>;
-    workerId: string;
-    wabaId: string;
-    phoneNumberId: string;
-    accessTokenEncrypted: string;
-    apiVersion: string;
-  }): Promise<
-    Pick<
-      DisconnectWhatsappOfficialResponse,
-      'meta_deregistered' | 'meta_unsubscribed' | 'meta_warning'
-    >
-  > {
-    const accessToken = this.passwordEncryptorService.decrypt(
-      input.accessTokenEncrypted
-    );
-    const warnings = new Set<string>();
-    let metaDeregistered = false;
-    let metaUnsubscribed = false;
-
-    try {
-      metaDeregistered =
-        await this.metaWhatsappEmbeddedService.deregisterPhoneNumber({
-          apiVersion: input.apiVersion,
-          accessToken,
-          phoneNumberId: input.phoneNumberId,
-        });
-
-      if (!metaDeregistered) {
-        warnings.add(
-          input.t('whatsapp_official_disconnect_meta_deregister_warning')
-        );
-      }
-    } catch (error) {
-      if (isMetaSmbDeregisterUnsupportedError(error)) {
-        warnings.add(
-          input.t(
-            'whatsapp_official_disconnect_meta_deregister_smb_unsupported_warning'
-          )
-        );
-      } else {
-        const warningKey = isMetaPermissionsError(error)
-          ? 'whatsapp_official_disconnect_meta_deregister_permission_warning'
-          : 'whatsapp_official_disconnect_meta_deregister_warning';
-
-        warnings.add(this.buildMetaWarning(input.t, warningKey, error));
-      }
-    }
-
-    const otherWabaConnections =
-      await this.workerWhatsappOfficialConnectionRepository.countActiveByWabaIdExceptWorkerId(
-        input.wabaId,
-        input.workerId
-      );
-
-    if (otherWabaConnections > 0) {
-      return {
-        meta_deregistered: metaDeregistered,
-        meta_unsubscribed: false,
-        meta_warning: warnings.size ? Array.from(warnings).join(' ') : null,
-      };
-    }
-
-    try {
-      metaUnsubscribed =
-        await this.metaWhatsappEmbeddedService.unsubscribeWabaApp({
-          apiVersion: input.apiVersion,
-          accessToken,
-          wabaId: input.wabaId,
-        });
-
-      if (!metaUnsubscribed) {
-        warnings.add(
-          input.t('whatsapp_official_disconnect_meta_cleanup_warning')
-        );
-      }
-    } catch (error) {
-      const warningKey = isMetaPermissionsError(error)
-        ? 'whatsapp_official_disconnect_meta_permission_warning'
-        : 'whatsapp_official_disconnect_meta_cleanup_warning';
-
-      warnings.add(this.buildMetaWarning(input.t, warningKey, error));
-    }
-
-    return {
-      meta_deregistered: metaDeregistered,
-      meta_unsubscribed: metaUnsubscribed,
-      meta_warning: warnings.size ? Array.from(warnings).join(' ') : null,
-    };
-  }
-
   async execute(
     t: TFunction<'translation', undefined>,
     accountId: string,
@@ -191,27 +75,16 @@ export class WhatsappOfficialDisconnecterUseCase {
         workerId
       );
 
-    let metaResult: Pick<
+    const metaResult: Pick<
       DisconnectWhatsappOfficialResponse,
       'meta_deregistered' | 'meta_unsubscribed' | 'meta_warning'
     > = {
       meta_deregistered: false,
       meta_unsubscribed: false,
-      meta_warning: null,
+      meta_warning: connection
+        ? t('whatsapp_official_disconnect_meta_manual_cleanup_warning')
+        : null,
     };
-
-    if (connection) {
-      const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
-
-      metaResult = await this.disconnectMetaConnection({
-        t,
-        workerId,
-        wabaId: connection.waba_id,
-        phoneNumberId: connection.phone_number_id,
-        accessTokenEncrypted: connection.access_token_encrypted,
-        apiVersion: config.api_version,
-      });
-    }
 
     const disconnected =
       await this.workerWhatsappOfficialConnectionRepository.disconnectPreservingWorker(

@@ -47,6 +47,10 @@ https://developers.facebook.com/documentation/business-messaging/whatsapp/webhoo
 - Nao usar `assigned_users` como fluxo de desconexao. Essa API gerencia tarefas
   de usuarios/systems users na WABA, mas nao remove o parceiro do Business
   Manager do cliente.
+- No fluxo de desconexao local do Underchat, nao chamar nenhuma API Meta de
+  limpeza para tentar liberar o numero. Como a coexistencia SMB nao permite
+  deregister por API, o backend deve apenas desconectar localmente e devolver
+  uma mensagem orientando a remocao manual na Meta.
 
 Referencia de assigned users:
 https://developers.facebook.com/docs/graph-api/reference/whats-app-business-account/assigned_users/
@@ -97,9 +101,16 @@ O botao "Desconectar" no Underchat deve apenas:
 - marcar o canal como offline;
 - remover/invalidar a conexao oficial local;
 - manter o canal listado para reconexao limpa pelo Embedded Signup;
-- tentar limpezas Meta apenas quando elas forem seguras para a WABA inteira.
+- devolver um aviso informando que a remocao do vinculo na Meta deve ser feita
+  manualmente.
 
 Para liberar o numero do parceiro no Business Manager, o cliente precisa remover
 o parceiro/acesso no ambiente Meta ou desconectar a conta no WhatsApp Business
 App. Quando o webhook for implementado, `account_update` com `PARTNER_REMOVED`
 deve ser usado como fonte oficial de que a remocao foi concluida.
+
+O fluxo de desconexao nao deve chamar:
+
+- `/{phone_number_id}/deregister`;
+- `DELETE /{waba_id}/subscribed_apps`;
+- `assigned_users` para remover tarefas/acessos.
