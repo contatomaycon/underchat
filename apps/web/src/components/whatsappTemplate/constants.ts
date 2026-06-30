@@ -326,10 +326,26 @@ export const getHeaderFormatOptions = (
   t: TranslateFn
 ): SelectOption<HeaderFormat>[] => [
   { title: t('whatsapp_template_header_none'), value: 'NONE' },
-  { title: t('whatsapp_template_header_image'), value: 'IMAGE' },
-  { title: t('whatsapp_template_header_video'), value: 'VIDEO' },
-  { title: t('whatsapp_template_header_document'), value: 'DOCUMENT' },
-  { title: t('whatsapp_template_header_location'), value: 'LOCATION' },
+  {
+    title: t('whatsapp_template_header_image'),
+    value: 'IMAGE',
+    icon: 'tabler-photo',
+  },
+  {
+    title: t('whatsapp_template_header_video'),
+    value: 'VIDEO',
+    icon: 'tabler-player-play',
+  },
+  {
+    title: t('whatsapp_template_header_document'),
+    value: 'DOCUMENT',
+    icon: 'tabler-file-text',
+  },
+  {
+    title: t('whatsapp_template_header_location'),
+    value: 'LOCATION',
+    icon: 'tabler-map-pin',
+  },
 ];
 
 export const getParameterFormatOptions = (

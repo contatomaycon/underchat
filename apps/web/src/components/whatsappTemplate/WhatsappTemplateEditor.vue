@@ -220,6 +220,7 @@ const close = () => {
 
         <WhatsappTemplatePreview
           :components="components"
+          :header-format="draft.header_format"
           :media-attachment="mediaAttachment"
         />
       </VCardText>

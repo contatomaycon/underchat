@@ -3650,6 +3650,7 @@
   "whatsapp_template_parameter_type_tooltip": "Las variables son marcadores usados para insertar datos en el modelo. Usa nombres como {named} o números como {numeric}.",
   "whatsapp_template_phone_label": "Teléfono",
   "whatsapp_template_phone_placeholder": "11999999999",
+  "whatsapp_template_all_options_title": "Todas las opciones",
   "whatsapp_template_preview_play": "Reproducir vista previa",
   "whatsapp_template_preview_time": "11:59",
   "whatsapp_template_preview_title": "Vista previa del modelo",

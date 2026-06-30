@@ -3650,6 +3650,7 @@
   "whatsapp_template_parameter_type_tooltip": "Variables are placeholders used to insert data into the template. Use names like {named} or numbers like {numeric}.",
   "whatsapp_template_phone_label": "Phone",
   "whatsapp_template_phone_placeholder": "11999999999",
+  "whatsapp_template_all_options_title": "All options",
   "whatsapp_template_preview_play": "Play preview",
   "whatsapp_template_preview_time": "11:59",
   "whatsapp_template_preview_title": "Template preview",

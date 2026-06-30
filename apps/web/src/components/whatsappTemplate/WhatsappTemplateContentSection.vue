@@ -34,6 +34,7 @@ const emit = defineEmits<{
 const draft = defineModel<TemplateDraft>({ required: true });
 const { t } = useI18n();
 const isDraggingFile = shallowRef(false);
+const headerFormatMenu = shallowRef(false);
 const mediaInputRef = shallowRef<HTMLInputElement | null>(null);
 
 const mediaHeaderFormats = ['IMAGE', 'VIDEO', 'DOCUMENT'];
@@ -53,6 +54,11 @@ const mediaAttachmentIcon = computed(() => {
 
   return 'tabler-photo';
 });
+const selectedHeaderFormatOption = computed(() =>
+  props.headerFormatOptions.find(
+    (option) => option.value === draft.value.header_format
+  )
+);
 const isTextHeaderDisabled = computed(() =>
   nonTextHeaderFormats.includes(draft.value.header_format)
 );
@@ -72,6 +78,11 @@ const parameterTypeTooltip = () =>
 
 const updateMediaFile = (value: File | File[] | null) => {
   emit('handleMediaFile', value);
+};
+
+const updateHeaderFormat = (value: HeaderFormat) => {
+  draft.value.header_format = value;
+  headerFormatMenu.value = false;
 };
 
 const openMediaPicker = () => {
@@ -152,13 +163,54 @@ const handleDrop = (event: DragEvent) => {
             • {{ t('whatsapp_template_optional') }}
           </span>
         </div>
-        <AppSelect
-          v-model="draft.header_format"
-          :aria-label="t('whatsapp_template_media_sample_label')"
-          :items="headerFormatOptions"
-          item-title="title"
-          item-value="value"
-        />
+        <VMenu
+          v-model="headerFormatMenu"
+          location="bottom start"
+          :close-on-content-click="true"
+        >
+          <template #activator="{ props: menuProps }">
+            <button
+              v-bind="menuProps"
+              class="template-editor__header-format-select"
+              type="button"
+              :aria-label="t('whatsapp_template_media_sample_label')"
+            >
+              <span class="template-editor__header-format-selected">
+                <VIcon
+                  v-if="selectedHeaderFormatOption?.icon"
+                  :icon="selectedHeaderFormatOption.icon"
+                  size="18"
+                />
+                <span>{{ selectedHeaderFormatOption?.title }}</span>
+              </span>
+              <VIcon
+                :icon="
+                  headerFormatMenu ? 'tabler-chevron-up' : 'tabler-chevron-down'
+                "
+                size="18"
+              />
+            </button>
+          </template>
+          <VList
+            class="template-editor__header-format-menu"
+            density="compact"
+            min-width="240"
+          >
+            <VListItem
+              v-for="option in headerFormatOptions"
+              :key="option.value"
+              :active="draft.header_format === option.value"
+              color="primary"
+              rounded="sm"
+              @click="updateHeaderFormat(option.value)"
+            >
+              <template v-if="option.icon" #prepend>
+                <VIcon :icon="option.icon" size="18" />
+              </template>
+              <VListItemTitle>{{ option.title }}</VListItemTitle>
+            </VListItem>
+          </VList>
+        </VMenu>
       </div>
     </div>
 
@@ -236,14 +288,6 @@ const handleDrop = (event: DragEvent) => {
       >
         {{ headerMediaError }}
       </div>
-    </div>
-
-    <div
-      v-if="draft.header_format === 'LOCATION'"
-      class="template-editor__notice"
-    >
-      <VIcon icon="tabler-map-pin" size="18" />
-      {{ t('whatsapp_template_location_header_notice') }}
     </div>
 
     <div class="template-editor__field-stack">
@@ -391,3 +435,44 @@ const handleDrop = (event: DragEvent) => {
     />
   </section>
 </template>
+
+<style scoped>
+.template-editor__header-format-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  inline-size: 100%;
+  min-block-size: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 6px;
+  background: rgb(var(--v-theme-surface));
+  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+  cursor: pointer;
+  font: inherit;
+  outline: none;
+  text-align: start;
+}
+
+.template-editor__header-format-select:focus-visible {
+  border-color: rgb(var(--v-theme-primary));
+  box-shadow: 0 0 0 1px rgb(var(--v-theme-primary));
+}
+
+.template-editor__header-format-selected {
+  display: inline-flex;
+  align-items: center;
+  min-inline-size: 0;
+  gap: 8px;
+}
+
+.template-editor__header-format-selected span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-editor__header-format-menu {
+  padding: 4px;
+}
+</style>
