@@ -72,7 +72,6 @@ const {
   insertBodyMarkup,
   insertBodyVariable,
   insertHeaderVariable,
-  insertUrlVariable,
   isEditingRemote,
   isMarketingStandard,
   languageOptions,
@@ -95,6 +94,7 @@ const {
   voiceCallTtlOptions,
   updateButtonType,
   updateQuickReplyType,
+  updateUrlType,
 } = useWhatsappTemplateEditor({
   template: templateRef,
   uploadMedia: props.uploadMedia,
@@ -188,12 +188,12 @@ const close = () => {
                   :meta-app-options="metaAppOptions"
                   :voice-call-ttl-options="voiceCallTtlOptions"
                   @add-button="addButton"
-                  @insert-url-variable="insertUrlVariable"
                   @open-meta-app-select="emit('loadMetaApps')"
                   @remove-button="removeButton"
                   @reorder-button="reorderButton"
                   @update-button-type="updateButtonType"
                   @update-quick-reply-type="updateQuickReplyType"
+                  @update-url-type="updateUrlType"
                 />
 
                 <WhatsappTemplateTtlSection
@@ -451,6 +451,7 @@ const close = () => {
 .template-editor__field-with-info > .app-select,
 .template-editor__field-with-info > .app-autocomplete,
 .template-editor__field-with-info > .app-text-field {
+  flex: 1 1 auto;
   min-inline-size: 0;
 }
 
@@ -667,6 +668,10 @@ const close = () => {
   display: inline-flex;
 }
 
+.template-editor__select-option--disabled {
+  opacity: 0.48;
+}
+
 .template-editor__button-group h4 {
   margin: 0 0 8px;
   font-size: 0.9rem;
@@ -736,6 +741,20 @@ const close = () => {
   min-inline-size: 810px;
 }
 
+.template-editor__cta-grid--voice-call {
+  grid-template-columns: minmax(150px, 180px) minmax(320px, 1fr) minmax(
+      140px,
+      180px
+    );
+}
+
+.template-editor__cta-grid--copy-code {
+  grid-template-columns: minmax(150px, 190px) minmax(280px, 1fr) minmax(
+      280px,
+      1fr
+    );
+}
+
 .template-editor__wide-field,
 .template-editor__deep-link-panel {
   grid-column: 1 / -1;
@@ -754,6 +773,73 @@ const close = () => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.template-editor__field-with-url-variable {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-inline-size: 0;
+}
+
+.template-editor__url-input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.template-editor__url-variable-suffix {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-block-start: 10px;
+  white-space: nowrap;
+}
+
+.template-editor__field-with-url-variable--labeled
+  .template-editor__url-variable-suffix {
+  margin-block-start: 31px;
+}
+
+.template-editor__url-sample-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-block-start: 4px;
+}
+
+.template-editor__url-sample-heading {
+  color: rgba(var(--v-theme-on-surface), 0.86);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.template-editor__url-sample-description {
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.template-editor__url-sample-input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-block-start: 8px;
+}
+
+.template-editor__url-sample-token {
+  color: rgba(var(--v-theme-on-surface), 0.86);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 38px;
+  white-space: nowrap;
+}
+
+.template-editor__url-sample-input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 .template-editor__conversion-checkbox .v-selection-control {

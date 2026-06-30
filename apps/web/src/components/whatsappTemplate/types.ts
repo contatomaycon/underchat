@@ -10,11 +10,13 @@ export type ButtonType =
 
 export type QuickReplyType = 'CUSTOM' | 'PRESET';
 
+export type UrlType = 'STATIC' | 'DYNAMIC';
+
 export interface ButtonDraft {
   type: ButtonType;
   text: string;
   url: string;
-  url_type: 'STATIC' | 'DYNAMIC';
+  url_type: UrlType;
   url_example: string;
   phone_country_code: string;
   phone_number: string;

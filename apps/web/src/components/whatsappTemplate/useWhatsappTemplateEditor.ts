@@ -37,6 +37,7 @@ import {
   parseNamedSamples,
   parseSampleArray,
   readFirstString,
+  stripUrlVariableToken,
 } from './payload';
 import type {
   ButtonDraft,
@@ -46,6 +47,7 @@ import type {
   QuickReplyType,
   TemplateDraft,
   TranslateFn,
+  UrlType,
   ValidationMessage,
 } from './types';
 import {
@@ -303,7 +305,7 @@ export const useWhatsappTemplateEditor = ({
             return {
               ...defaultButton(t, type),
               text: String(button.text ?? defaultButton(t, type).text),
-              url: String(button.url ?? ''),
+              url: stripUrlVariableToken(String(button.url ?? '')),
               url_type:
                 String(button.url ?? '').includes('{{') || example
                   ? 'DYNAMIC'
@@ -314,9 +316,11 @@ export const useWhatsappTemplateEditor = ({
               offer_code: type === 'COPY_CODE' ? example : '',
               track_app_conversions: Object.keys(appDeepLink).length > 0,
               meta_app_id: String(appDeepLink.meta_app_id ?? ''),
-              android_deep_link: String(appDeepLink.android_deep_link ?? ''),
-              android_fallback_playstore_url: String(
-                appDeepLink.android_fallback_playstore_url ?? ''
+              android_deep_link: stripUrlVariableToken(
+                String(appDeepLink.android_deep_link ?? '')
+              ),
+              android_fallback_playstore_url: stripUrlVariableToken(
+                String(appDeepLink.android_fallback_playstore_url ?? '')
               ),
               voice_call_ttl_minutes:
                 typeof button.ttl_minutes === 'number'
@@ -626,9 +630,16 @@ export const useWhatsappTemplateEditor = ({
     draft.body_text = appendWithSpace(draft.body_text, markup);
   };
 
-  const insertUrlVariable = (button: ButtonDraft) => {
-    button.url = `${button.url}${button.url ? '/' : ''}{{1}}`;
-    button.url_type = 'DYNAMIC';
+  const updateUrlType = (index: number, urlType: UrlType) => {
+    const button = draft.buttons[index];
+    if (!button || button.type !== 'URL') return;
+
+    button.url_type = urlType;
+    button.url = stripUrlVariableToken(button.url);
+    button.android_deep_link = stripUrlVariableToken(button.android_deep_link);
+    button.android_fallback_playstore_url = stripUrlVariableToken(
+      button.android_fallback_playstore_url
+    );
   };
 
   const handleMediaFile = async (value: File | File[] | null) => {
@@ -694,7 +705,6 @@ export const useWhatsappTemplateEditor = ({
     insertBodyMarkup,
     insertBodyVariable,
     insertHeaderVariable,
-    insertUrlVariable,
     isEditingRemote,
     isMarketingStandard,
     languageOptions,
@@ -718,6 +728,7 @@ export const useWhatsappTemplateEditor = ({
     voiceCallTtlOptions,
     updateButtonType,
     updateQuickReplyType,
+    updateUrlType,
     addButton,
   };
 };

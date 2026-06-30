@@ -6,6 +6,7 @@ import type {
   QuickReplyType,
   SelectOption,
   TranslateFn,
+  UrlType,
 } from './types';
 
 const languageCodes = [
@@ -358,7 +359,7 @@ export const getQuickReplyTypeOptions = (t: TranslateFn): SelectOption[] => [
   { title: t('whatsapp_template_quick_reply_preset'), value: 'PRESET' },
 ];
 
-export const getUrlTypeOptions = (t: TranslateFn): SelectOption[] => [
+export const getUrlTypeOptions = (t: TranslateFn): SelectOption<UrlType>[] => [
   { title: t('whatsapp_template_url_type_static'), value: 'STATIC' },
   { title: t('whatsapp_template_url_type_dynamic'), value: 'DYNAMIC' },
 ];

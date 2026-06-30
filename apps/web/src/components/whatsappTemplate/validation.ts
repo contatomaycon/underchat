@@ -153,7 +153,8 @@ export const validateButton = (button: ButtonDraft): ValidationMessage[] => {
       errors.push({ key: 'whatsapp_template_validation_url_required' });
     }
     if (
-      (button.url_type === 'DYNAMIC' || button.url.includes('{{')) &&
+      button.url_type === 'DYNAMIC' &&
+      button.url.trim() &&
       !button.url_example.trim()
     ) {
       errors.push({ key: 'whatsapp_template_validation_url_example_required' });
@@ -213,7 +214,8 @@ export const validateButtonField = (
   if (
     field === 'url_example' &&
     button.type === 'URL' &&
-    (button.url_type === 'DYNAMIC' || button.url.includes('{{')) &&
+    button.url_type === 'DYNAMIC' &&
+    button.url.trim() &&
     !button.url_example.trim()
   ) {
     return [{ key: 'whatsapp_template_validation_url_example_required' }];

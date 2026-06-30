@@ -92,6 +92,17 @@ export const toE164Digits = (button: ButtonDraft) =>
     .replace(/[^\d+]/gu, '')
     .replace(/^\+/u, '');
 
+export const urlVariableToken = '{{1}}';
+
+export const hasUrlVariableToken = (value: string) =>
+  /\{\{1\}\}\s*$/u.test(value.trim());
+
+export const stripUrlVariableToken = (value: string) =>
+  value.replace(/\s*\{\{1\}\}\s*$/u, '').trim();
+
+export const appendUrlVariableToken = (value: string) =>
+  `${stripUrlVariableToken(value)}${urlVariableToken}`;
+
 const buildTextExample = (
   draft: TemplateDraft,
   kind: 'header' | 'body',
@@ -204,19 +215,29 @@ export const buildButtonPayloads = (draft: TemplateDraft, t: TranslateFn) =>
     if (button.type === 'QUICK_REPLY') return payload;
 
     if (button.type === 'URL') {
-      payload.url = button.url.trim();
-      if (button.url_type === 'DYNAMIC' || button.url.includes('{{')) {
+      const isDynamicUrl = button.url_type === 'DYNAMIC';
+
+      payload.url = isDynamicUrl
+        ? appendUrlVariableToken(button.url)
+        : button.url.trim();
+
+      if (isDynamicUrl) {
         payload.example = [button.url_example.trim()];
       }
+
       if (button.track_app_conversions) {
         const appDeepLink: Record<string, string> = {
           meta_app_id: button.meta_app_id.trim(),
-          android_deep_link: button.android_deep_link.trim(),
+          android_deep_link: isDynamicUrl
+            ? appendUrlVariableToken(button.android_deep_link)
+            : button.android_deep_link.trim(),
         };
 
         const androidFallbackUrl = button.android_fallback_playstore_url.trim();
         if (androidFallbackUrl) {
-          appDeepLink.android_fallback_playstore_url = androidFallbackUrl;
+          appDeepLink.android_fallback_playstore_url = isDynamicUrl
+            ? appendUrlVariableToken(androidFallbackUrl)
+            : androidFallbackUrl;
         }
 
         payload.app_deep_link = appDeepLink;

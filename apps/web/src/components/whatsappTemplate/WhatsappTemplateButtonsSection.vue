@@ -9,6 +9,7 @@ import type {
   QuickReplyType,
   SelectOption,
   TemplateDraft,
+  UrlType,
 } from './types';
 import type { ButtonField } from './validation';
 
@@ -26,7 +27,7 @@ const props = withDefaults(
     metaAppOptions?: SelectOption[];
     quickReplyButtonEntries: ButtonEntry[];
     quickReplyTypeOptions: SelectOption[];
-    urlTypeOptions: SelectOption[];
+    urlTypeOptions: SelectOption<UrlType>[];
     voiceCallTtlOptions: SelectOption<number>[];
   }>(),
   {
@@ -37,21 +38,29 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   addButton: [type: ButtonType];
-  insertUrlVariable: [button: ButtonDraft];
   openMetaAppSelect: [];
   removeButton: [index: number];
   reorderButton: [fromIndex: number, toIndex: number];
   updateButtonType: [index: number, type: ButtonType];
   updateQuickReplyType: [index: number, type: QuickReplyType];
+  updateUrlType: [index: number, type: UrlType];
 }>();
 
 const draft = defineModel<TemplateDraft>({ required: true });
 const { t } = useI18n();
 type ButtonDragGroup = 'quick' | 'cta';
+type ButtonTypeSelectItem = SelectOption<ButtonType> & {
+  disabled: boolean;
+  limitText: string;
+  props: {
+    disabled: boolean;
+  };
+};
 
 const draggingButtonIndex = shallowRef<number | null>(null);
 const dragOverButtonIndex = shallowRef<number | null>(null);
 const draggingButtonGroup = shallowRef<ButtonDragGroup | null>(null);
+const urlDynamicVariableToken = '{{1}}';
 
 const canAddAnyButton = computed(() =>
   props.marketingStandardButtonTypes.some((option) =>
@@ -73,12 +82,42 @@ const buttonTypeLimitText = (type: ButtonType) => {
 };
 
 const ctaButtonTypeItems = (index: number) =>
-  props.ctaButtonTypes.map((option) => ({
-    ...option,
+  props.ctaButtonTypes.map<ButtonTypeSelectItem>((option) => {
+    const disabled = !props.canUseButtonType(option.value, index);
+
+    return {
+      ...option,
+      disabled,
+      limitText: disabled ? buttonTypeLimitText(option.value) : '',
+      props: {
+        disabled,
+      },
+    };
+  });
+
+const getCtaSelectItem = (item: unknown) => {
+  const candidate = item as {
+    raw?: ButtonTypeSelectItem;
+    props?: { disabled?: boolean };
+    title?: string;
+    value?: ButtonType;
+  };
+
+  if (candidate.raw) return candidate.raw;
+
+  return {
+    title: candidate.title ?? '',
+    value: candidate.value as ButtonType,
+    disabled: Boolean(candidate.props?.disabled),
+    limitText: '',
     props: {
-      disabled: !props.canUseButtonType(option.value, index),
+      disabled: Boolean(candidate.props?.disabled),
     },
-  }));
+  };
+};
+
+const isCtaSelectItemDisabled = (item: unknown) =>
+  getCtaSelectItem(item).disabled;
 
 const handleAddButton = (type: ButtonType) => {
   if (!props.canAddButtonType(type)) return;
@@ -87,11 +126,32 @@ const handleAddButton = (type: ButtonType) => {
 };
 
 const updateButtonType = (index: number, value: unknown) => {
-  emit('updateButtonType', index, value as ButtonType);
+  const nextType = value as ButtonType;
+
+  if (!props.canUseButtonType(nextType, index)) return;
+
+  emit('updateButtonType', index, nextType);
 };
 
 const updateQuickReplyType = (index: number, value: unknown) => {
   emit('updateQuickReplyType', index, value as QuickReplyType);
+};
+
+const updateUrlType = (index: number, value: unknown) => {
+  emit('updateUrlType', index, value as UrlType);
+};
+
+const isDynamicUrlButton = (button: ButtonDraft) =>
+  button.type === 'URL' && button.url_type === 'DYNAMIC';
+
+const shouldShowUrlSample = (button: ButtonDraft) =>
+  isDynamicUrlButton(button) && Boolean(button.url.trim());
+
+const urlSampleTarget = (button: ButtonDraft) => {
+  const baseUrl = button.url.trim();
+  if (!baseUrl) return urlDynamicVariableToken;
+
+  return `${baseUrl}${baseUrl.endsWith('/') ? '' : '/'}${urlDynamicVariableToken}`;
 };
 
 const handleMetaAppMenu = (isOpen: boolean) => {
@@ -349,7 +409,15 @@ const isButtonDropTarget = (index: number) =>
           @dragend.stop="resetButtonDrag"
         />
         <div class="template-editor__cta-scroll">
-          <div class="template-editor__cta-grid">
+          <div
+            class="template-editor__cta-grid"
+            :class="{
+              'template-editor__cta-grid--voice-call':
+                entry.button.type === 'VOICE_CALL',
+              'template-editor__cta-grid--copy-code':
+                entry.button.type === 'COPY_CODE',
+            }"
+          >
             <AppSelect
               :model-value="entry.button.type"
               :label="t('whatsapp_template_action_type_label')"
@@ -358,7 +426,27 @@ const isButtonDropTarget = (index: number) =>
               item-value="value"
               item-props
               @update:model-value="updateButtonType(entry.index, $event)"
-            />
+            >
+              <template #item="{ item, props: itemProps }">
+                <VListItem
+                  v-bind="itemProps"
+                  :title="undefined"
+                  :subtitle="undefined"
+                  :disabled="isCtaSelectItemDisabled(item)"
+                  :class="{
+                    'template-editor__select-option--disabled':
+                      isCtaSelectItemDisabled(item),
+                  }"
+                >
+                  <VListItemTitle>
+                    {{ getCtaSelectItem(item).title }}
+                  </VListItemTitle>
+                  <VListItemSubtitle v-if="getCtaSelectItem(item).limitText">
+                    {{ getCtaSelectItem(item).limitText }}
+                  </VListItemSubtitle>
+                </VListItem>
+              </template>
+            </AppSelect>
 
             <AppTextField
               v-if="entry.button.type !== 'COPY_CODE'"
@@ -371,41 +459,75 @@ const isButtonDropTarget = (index: number) =>
 
             <template v-if="entry.button.type === 'URL'">
               <AppSelect
-                v-model="entry.button.url_type"
+                :model-value="entry.button.url_type"
                 :label="t('whatsapp_template_url_type_label')"
                 :items="urlTypeOptions"
                 item-title="title"
                 item-value="value"
+                @update:model-value="updateUrlType(entry.index, $event)"
               />
-              <AppTextField
-                v-model="entry.button.url"
-                :label="t('whatsapp_template_website_url_label')"
-                :placeholder="t('whatsapp_template_website_url_placeholder')"
-                maxlength="2000"
-                :counter="2000"
-                :error-messages="buttonFieldErrors(entry.button, 'url')"
+              <div
+                class="template-editor__field-with-url-variable template-editor__field-with-url-variable--labeled"
               >
-                <template #append-inner>
-                  <VBtn
-                    v-if="entry.button.url_type === 'DYNAMIC'"
-                    variant="text"
-                    size="x-small"
-                    @click.stop="emit('insertUrlVariable', entry.button)"
+                <AppTextField
+                  v-model="entry.button.url"
+                  class="template-editor__url-input"
+                  :label="t('whatsapp_template_website_url_label')"
+                  :placeholder="t('whatsapp_template_website_url_placeholder')"
+                  maxlength="2000"
+                  :counter="2000"
+                  :error-messages="buttonFieldErrors(entry.button, 'url')"
+                />
+                <span
+                  v-if="isDynamicUrlButton(entry.button)"
+                  class="template-editor__url-variable-suffix"
+                >
+                  {{ urlDynamicVariableToken }}
+                  <VTooltip
+                    location="top"
+                    max-width="360"
+                    content-class="template-editor__tooltip"
                   >
-                    {{ t('whatsapp_template_url_variable') }}
-                  </VBtn>
-                </template>
-              </AppTextField>
-              <AppTextField
-                v-if="
-                  entry.button.url_type === 'DYNAMIC' ||
-                  entry.button.url.includes('{{')
-                "
-                v-model="entry.button.url_example"
-                :label="t('whatsapp_template_url_sample_label')"
-                :placeholder="t('whatsapp_template_url_sample_placeholder')"
-                :error-messages="buttonFieldErrors(entry.button, 'url_example')"
-              />
+                    <template #activator="{ props: tooltipProps }">
+                      <VIcon
+                        v-bind="tooltipProps"
+                        icon="tabler-info-circle"
+                        size="16"
+                        class="template-editor__info-icon"
+                      />
+                    </template>
+                    {{ t('whatsapp_template_url_dynamic_variable_tooltip') }}
+                  </VTooltip>
+                </span>
+              </div>
+              <div
+                v-if="shouldShowUrlSample(entry.button)"
+                class="template-editor__url-sample-panel template-editor__wide-field"
+              >
+                <div class="template-editor__url-sample-heading">
+                  {{ t('whatsapp_template_url_sample_title') }}
+                </div>
+                <div class="template-editor__url-sample-description">
+                  {{ t('whatsapp_template_url_sample_description') }}
+                </div>
+                <div class="template-editor__url-sample-input-row">
+                  <span class="template-editor__url-sample-token">
+                    {{ urlDynamicVariableToken }}
+                  </span>
+                  <AppTextField
+                    v-model="entry.button.url_example"
+                    class="template-editor__url-sample-input"
+                    :placeholder="
+                      t('whatsapp_template_url_sample_full_placeholder', {
+                        url: urlSampleTarget(entry.button),
+                      })
+                    "
+                    :error-messages="
+                      buttonFieldErrors(entry.button, 'url_example')
+                    "
+                  />
+                </div>
+              </div>
               <VCheckbox
                 v-model="entry.button.track_app_conversions"
                 hide-details
@@ -471,15 +593,41 @@ const isButtonDropTarget = (index: number) =>
                       {{ t('whatsapp_template_android_deep_link_tooltip') }}
                     </VTooltip>
                   </VLabel>
-                  <AppTextField
-                    v-model="entry.button.android_deep_link"
-                    :placeholder="
-                      t('whatsapp_template_android_deep_link_placeholder')
-                    "
-                    :error-messages="
-                      buttonFieldErrors(entry.button, 'android_deep_link')
-                    "
-                  />
+                  <div class="template-editor__field-with-url-variable">
+                    <AppTextField
+                      v-model="entry.button.android_deep_link"
+                      class="template-editor__url-input"
+                      :placeholder="
+                        t('whatsapp_template_android_deep_link_placeholder')
+                      "
+                      :error-messages="
+                        buttonFieldErrors(entry.button, 'android_deep_link')
+                      "
+                    />
+                    <span
+                      v-if="isDynamicUrlButton(entry.button)"
+                      class="template-editor__url-variable-suffix"
+                    >
+                      {{ urlDynamicVariableToken }}
+                      <VTooltip
+                        location="top"
+                        max-width="360"
+                        content-class="template-editor__tooltip"
+                      >
+                        <template #activator="{ props: tooltipProps }">
+                          <VIcon
+                            v-bind="tooltipProps"
+                            icon="tabler-info-circle"
+                            size="16"
+                            class="template-editor__info-icon"
+                          />
+                        </template>
+                        {{
+                          t('whatsapp_template_url_dynamic_variable_tooltip')
+                        }}
+                      </VTooltip>
+                    </span>
+                  </div>
                 </div>
                 <div class="template-editor__labeled-field">
                   <VLabel class="template-editor__inline-label">
@@ -500,18 +648,44 @@ const isButtonDropTarget = (index: number) =>
                       {{ t('whatsapp_template_android_fallback_tooltip') }}
                     </VTooltip>
                   </VLabel>
-                  <AppTextField
-                    v-model="entry.button.android_fallback_playstore_url"
-                    :placeholder="
-                      t('whatsapp_template_android_fallback_placeholder')
-                    "
-                    :error-messages="
-                      buttonFieldErrors(
-                        entry.button,
-                        'android_fallback_playstore_url'
-                      )
-                    "
-                  />
+                  <div class="template-editor__field-with-url-variable">
+                    <AppTextField
+                      v-model="entry.button.android_fallback_playstore_url"
+                      class="template-editor__url-input"
+                      :placeholder="
+                        t('whatsapp_template_android_fallback_placeholder')
+                      "
+                      :error-messages="
+                        buttonFieldErrors(
+                          entry.button,
+                          'android_fallback_playstore_url'
+                        )
+                      "
+                    />
+                    <span
+                      v-if="isDynamicUrlButton(entry.button)"
+                      class="template-editor__url-variable-suffix"
+                    >
+                      {{ urlDynamicVariableToken }}
+                      <VTooltip
+                        location="top"
+                        max-width="360"
+                        content-class="template-editor__tooltip"
+                      >
+                        <template #activator="{ props: tooltipProps }">
+                          <VIcon
+                            v-bind="tooltipProps"
+                            icon="tabler-info-circle"
+                            size="16"
+                            class="template-editor__info-icon"
+                          />
+                        </template>
+                        {{
+                          t('whatsapp_template_url_dynamic_variable_tooltip')
+                        }}
+                      </VTooltip>
+                    </span>
+                  </div>
                 </div>
               </div>
             </template>
