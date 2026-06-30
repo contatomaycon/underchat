@@ -3457,5 +3457,19 @@
   "chat_image_shape_rect": "Rectangle",
   "chat_image_shape_circle": "Circle",
   "chat_image_shape_line": "Line",
-  "chat_image_shape_arrow": "Arrow"
+  "chat_image_shape_arrow": "Arrow",
+  "whatsapp_template_list_error": "Error listing Official WhatsApp templates.",
+  "whatsapp_template_sync_error": "Error syncing Official WhatsApp templates.",
+  "whatsapp_template_sync_success": "Official templates synced successfully.",
+  "whatsapp_template_create_error": "Error creating Official WhatsApp template.",
+  "whatsapp_template_create_success": "Official template submitted for review successfully.",
+  "whatsapp_template_view_error": "Error loading Official WhatsApp template.",
+  "whatsapp_template_update_error": "Error updating Official WhatsApp template.",
+  "whatsapp_template_update_success": "Official template updated successfully.",
+  "whatsapp_template_delete_error": "Error deleting Official template in Meta.",
+  "whatsapp_template_delete_success": "Official template deleted successfully.",
+  "whatsapp_template_deactivate_error": "Error deactivating Official template in Underchat.",
+  "whatsapp_template_deactivate_success": "Official template deactivated in Underchat.",
+  "whatsapp_template_media_upload_error": "Error uploading Official template media.",
+  "whatsapp_template_media_upload_success": "Media uploaded successfully."
 }

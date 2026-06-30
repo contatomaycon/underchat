@@ -184,6 +184,10 @@ declare module 'vue' {
     UploadProgressBadge: typeof import('./src/components/chat/UploadProgressBadge.vue')['default']
     VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
     WarmChannelsSettingsDialog: typeof import('./src/components/warmChannels/WarmChannelsSettingsDialog.vue')['default']
+    WhatsappTemplateEditor: typeof import('./src/components/whatsappTemplate/WhatsappTemplateEditor.vue')['default']
+    WhatsappTemplatePreview: typeof import('./src/components/whatsappTemplate/WhatsappTemplatePreview.vue')['default']
+    WhatsappTemplateTable: typeof import('./src/components/whatsappTemplate/WhatsappTemplateTable.vue')['default']
+    WhatsappTemplateToolbar: typeof import('./src/components/whatsappTemplate/WhatsappTemplateToolbar.vue')['default']
   }
 }
 
@@ -361,4 +365,8 @@ declare global {
   const UploadProgressBadge: typeof import('./src/components/chat/UploadProgressBadge.vue')['default']
   const VDialogHandler: typeof import('./src/components/VDialogHandler.vue')['default']
   const WarmChannelsSettingsDialog: typeof import('./src/components/warmChannels/WarmChannelsSettingsDialog.vue')['default']
+  const WhatsappTemplateEditor: typeof import('./src/components/whatsappTemplate/WhatsappTemplateEditor.vue')['default']
+  const WhatsappTemplatePreview: typeof import('./src/components/whatsappTemplate/WhatsappTemplatePreview.vue')['default']
+  const WhatsappTemplateTable: typeof import('./src/components/whatsappTemplate/WhatsappTemplateTable.vue')['default']
+  const WhatsappTemplateToolbar: typeof import('./src/components/whatsappTemplate/WhatsappTemplateToolbar.vue')['default']
 }

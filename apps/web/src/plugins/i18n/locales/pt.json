@@ -3464,5 +3464,19 @@
   "chat_image_shape_rect": "Retângulo",
   "chat_image_shape_circle": "Círculo",
   "chat_image_shape_line": "Linha",
-  "chat_image_shape_arrow": "Seta"
+  "chat_image_shape_arrow": "Seta",
+  "whatsapp_template_list_error": "Erro ao listar modelos oficiais do WhatsApp.",
+  "whatsapp_template_sync_error": "Erro ao sincronizar modelos oficiais do WhatsApp.",
+  "whatsapp_template_sync_success": "Modelos oficiais sincronizados com sucesso.",
+  "whatsapp_template_create_error": "Erro ao criar modelo oficial do WhatsApp.",
+  "whatsapp_template_create_success": "Modelo oficial enviado para análise com sucesso.",
+  "whatsapp_template_view_error": "Erro ao carregar modelo oficial do WhatsApp.",
+  "whatsapp_template_update_error": "Erro ao atualizar modelo oficial do WhatsApp.",
+  "whatsapp_template_update_success": "Modelo oficial atualizado com sucesso.",
+  "whatsapp_template_delete_error": "Erro ao excluir modelo oficial na Meta.",
+  "whatsapp_template_delete_success": "Modelo oficial excluído com sucesso.",
+  "whatsapp_template_deactivate_error": "Erro ao desativar modelo oficial na Underchat.",
+  "whatsapp_template_deactivate_success": "Modelo oficial desativado na Underchat.",
+  "whatsapp_template_media_upload_error": "Erro ao enviar mídia do modelo oficial.",
+  "whatsapp_template_media_upload_success": "Mídia enviada com sucesso."
 }

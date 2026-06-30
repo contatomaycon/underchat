@@ -37,6 +37,7 @@ import pushRoutes from './push.route';
 import releaseRoutes from './release.route';
 import integrationRoutes from './integration.route';
 import randomMessageRoutes from './randomMessage.route';
+import whatsappOfficialTemplateRoutes from './whatsappOfficialTemplate.route';
 
 export default function registerRoutes(server: FastifyInstance) {
   server.register(authRoutes);
@@ -76,5 +77,6 @@ export default function registerRoutes(server: FastifyInstance) {
   server.register(releaseRoutes);
   server.register(integrationRoutes);
   server.register(randomMessageRoutes);
+  server.register(whatsappOfficialTemplateRoutes);
   server.register(regRoutes);
 }

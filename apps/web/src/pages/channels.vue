@@ -87,8 +87,15 @@ const permissionsProfileStatus = [
   EWorkerPermissions.worker_group,
   EWorkerPermissions.profile_status_worker,
 ];
+const permissionsManageOfficialTemplates = [
+  EGeneralPermissions.full_access,
+  EGeneralPermissions.full_access_group,
+  EWorkerPermissions.worker_group,
+  EWorkerPermissions.view_worker,
+];
 
 const { t } = useI18n();
+const router = useRouter();
 const channelsStore = useChannelsStore();
 const dashboardStore = useDashboardStore();
 useSnackbarCleanup(channelsStore);
@@ -358,6 +365,10 @@ const openConnectionLogDialog = (id: string) => {
 const openConfigDialog = (id: string) => {
   channelConfig.value = id;
   isDialogConfigChannelShow.value = true;
+};
+
+const openWhatsappTemplatesPage = (id: string) => {
+  router.push(`/channels/${id}/whatsapp-templates`);
 };
 
 const isWhatsappOfficialChannel = (channel: ListWorkerResponse) =>
@@ -1022,6 +1033,23 @@ onUnmounted(async () => {
                     icon="tabler-settings"
                     @click="openConfigDialog(item.id)"
                 /></IconBtn>
+
+                <IconBtn
+                  v-if="
+                    isWhatsappOfficialChannel(item) &&
+                    $canPermission(permissionsManageOfficialTemplates)
+                  "
+                  :data-testid="`channel-whatsapp-templates-${item.id}`"
+                  @click.stop="openWhatsappTemplatesPage(item.id)"
+                  ><VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>Gerenciar modelos</span>
+                  </VTooltip>
+                  <VIcon icon="tabler-file-description" />
+                </IconBtn>
 
                 <IconBtn
                   v-if="
