@@ -8,6 +8,7 @@ import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import {
   CreateWhatsappTemplateRequest,
   DeleteWhatsappTemplateResponse,
+  ListWhatsappTemplateMetaAppsResponse,
   ListWhatsappTemplatesQuery,
   ListWhatsappTemplatesResponse,
   SyncWhatsappTemplatesResponse,
@@ -32,6 +33,7 @@ import {
 interface OfficialTemplateConnection {
   worker_whatsapp_official_connection_id: string;
   worker_id: string;
+  business_id: string | null;
   waba_id: string;
   phone_number_id: string;
   access_token_encrypted: string;
@@ -264,6 +266,30 @@ export class WhatsappMessageTemplateService {
     );
 
     return { pagings, results };
+  }
+
+  async listMetaApps(
+    t: TFunction<'translation', undefined>,
+    accountId: string,
+    workerId: string
+  ): Promise<ListWhatsappTemplateMetaAppsResponse> {
+    const { connection, accessToken } = await this.resolveConnection({
+      t,
+      accountId,
+      workerId,
+    });
+
+    if (!connection.business_id) {
+      throw new Error(t('whatsapp_template_meta_apps_business_id_missing'));
+    }
+
+    const results = await this.metaWhatsappEmbeddedService.listBusinessApps({
+      apiVersion: connection.api_version,
+      accessToken,
+      businessId: connection.business_id,
+    });
+
+    return { results };
   }
 
   async view(

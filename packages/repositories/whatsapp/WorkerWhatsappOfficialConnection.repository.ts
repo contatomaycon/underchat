@@ -57,6 +57,7 @@ export class WorkerWhatsappOfficialConnectionRepository {
   ): Promise<{
     worker_whatsapp_official_connection_id: string;
     worker_id: string;
+    business_id: string | null;
     waba_id: string;
     phone_number_id: string;
     access_token_encrypted: string;
@@ -71,6 +72,7 @@ export class WorkerWhatsappOfficialConnectionRepository {
         columns: {
           worker_whatsapp_official_connection_id: true,
           worker_id: true,
+          business_id: true,
           waba_id: true,
           phone_number_id: true,
           access_token_encrypted: true,

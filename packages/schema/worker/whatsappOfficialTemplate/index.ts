@@ -176,6 +176,15 @@ export const uploadWhatsappTemplateMediaResponseSchema = Type.Object({
   mimetype: Type.String(),
 });
 
+export const whatsappTemplateMetaAppSchema = Type.Object({
+  id: Type.String(),
+  name: Type.Union([Type.String(), Type.Null()]),
+});
+
+export const listWhatsappTemplateMetaAppsResponseSchema = Type.Object({
+  results: Type.Array(whatsappTemplateMetaAppSchema),
+});
+
 export const listWhatsappTemplatesSchema = {
   description: 'Lista modelos oficiais do WhatsApp',
   tags: [ETagSwagger.worker],
@@ -186,6 +195,21 @@ export const listWhatsappTemplatesSchema = {
   querystring: listWhatsappTemplatesQuerySchema,
   response: {
     200: responseEnvelope(listWhatsappTemplatesResponseSchema),
+    401: errorEnvelope,
+    403: errorEnvelope,
+    500: errorEnvelope,
+  },
+};
+
+export const listWhatsappTemplateMetaAppsSchema = {
+  description: 'Lista apps da Meta disponíveis para deep link',
+  tags: [ETagSwagger.worker],
+  produces: ['application/json'],
+  security: [{ authenticateJwt: [] }],
+  headers: headersSchema,
+  params: whatsappTemplateParamsSchema,
+  response: {
+    200: responseEnvelope(listWhatsappTemplateMetaAppsResponseSchema),
     401: errorEnvelope,
     403: errorEnvelope,
     500: errorEnvelope,
@@ -334,4 +358,10 @@ export type DeleteWhatsappTemplateResponse = Static<
 >;
 export type UploadWhatsappTemplateMediaResponse = Static<
   typeof uploadWhatsappTemplateMediaResponseSchema
+>;
+export type WhatsappTemplateMetaApp = Static<
+  typeof whatsappTemplateMetaAppSchema
+>;
+export type ListWhatsappTemplateMetaAppsResponse = Static<
+  typeof listWhatsappTemplateMetaAppsResponseSchema
 >;

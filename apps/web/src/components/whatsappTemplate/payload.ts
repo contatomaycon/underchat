@@ -209,12 +209,17 @@ export const buildButtonPayloads = (draft: TemplateDraft, t: TranslateFn) =>
         payload.example = [button.url_example.trim()];
       }
       if (button.track_app_conversions) {
-        payload.app_deep_link = {
+        const appDeepLink: Record<string, string> = {
           meta_app_id: button.meta_app_id.trim(),
           android_deep_link: button.android_deep_link.trim(),
-          android_fallback_playstore_url:
-            button.android_fallback_playstore_url.trim(),
         };
+
+        const androidFallbackUrl = button.android_fallback_playstore_url.trim();
+        if (androidFallbackUrl) {
+          appDeepLink.android_fallback_playstore_url = androidFallbackUrl;
+        }
+
+        payload.app_deep_link = appDeepLink;
       }
     }
 

@@ -9,11 +9,13 @@ import { PagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
 import {
   CreateWhatsappTemplateRequest,
   DeleteWhatsappTemplateResponse,
+  ListWhatsappTemplateMetaAppsResponse,
   ListWhatsappTemplatesQuery,
   ListWhatsappTemplatesResponse,
   SyncWhatsappTemplatesResponse,
   UpdateWhatsappTemplateRequest,
   UploadWhatsappTemplateMediaResponse,
+  WhatsappTemplateMetaApp,
   WhatsappTemplateResponse,
 } from '@core/schema/worker/whatsappOfficialTemplate';
 
@@ -39,6 +41,8 @@ export const useWhatsappOfficialTemplateStore = defineStore(
       saving: false,
       syncing: false,
       uploading: false,
+      loadingMetaApps: false,
+      metaApps: [] as WhatsappTemplateMetaApp[],
       list: [] as WhatsappTemplateResponse[],
       pagings: defaultPagings(),
       selected: null as WhatsappTemplateResponse | null,
@@ -201,6 +205,43 @@ export const useWhatsappOfficialTemplateStore = defineStore(
           return null;
         } finally {
           this.loading = false;
+        }
+      },
+      async listMetaApps(
+        workerId: string
+      ): Promise<ListWhatsappTemplateMetaAppsResponse | null> {
+        try {
+          this.loadingMetaApps = true;
+          const response = await axios.get<
+            IApiResponse<ListWhatsappTemplateMetaAppsResponse>
+          >(`/worker/${workerId}/whatsapp-official/meta-apps`);
+          const data = response.data;
+
+          if (!data?.status || !data.data) {
+            this.metaApps = [];
+            this.showSnackbar(
+              data?.message ??
+                this.i18n.global.t('whatsapp_template_meta_apps_list_error'),
+              EColor.error
+            );
+            return null;
+          }
+
+          this.metaApps = data.data.results;
+
+          return data.data;
+        } catch (error) {
+          this.metaApps = [];
+          this.showSnackbar(
+            this.extractErrorMessage(
+              error,
+              'whatsapp_template_meta_apps_list_error'
+            ),
+            EColor.error
+          );
+          return null;
+        } finally {
+          this.loadingMetaApps = false;
         }
       },
       async updateTemplate(

@@ -15,18 +15,27 @@ import WhatsappTemplateReviewStep from './WhatsappTemplateReviewStep.vue';
 import WhatsappTemplateStepper from './WhatsappTemplateStepper.vue';
 import WhatsappTemplateTtlSection from './WhatsappTemplateTtlSection.vue';
 import { useWhatsappTemplateEditor } from './useWhatsappTemplateEditor';
-import type { TranslateFn } from './types';
+import type { SelectOption, TranslateFn } from './types';
 
-const props = defineProps<{
-  modelValue: boolean;
-  template: WhatsappTemplateResponse | null;
-  saving: boolean;
-  uploading: boolean;
-  uploadMedia: (file: File) => Promise<string | null>;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    template: WhatsappTemplateResponse | null;
+    saving: boolean;
+    uploading: boolean;
+    loadingMetaApps?: boolean;
+    metaAppOptions?: SelectOption[];
+    uploadMedia: (file: File) => Promise<string | null>;
+  }>(),
+  {
+    loadingMetaApps: false,
+    metaAppOptions: () => [],
+  }
+);
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
+  loadMetaApps: [];
   save: [
     payload: CreateWhatsappTemplateRequest | UpdateWhatsappTemplateRequest,
   ];
@@ -42,8 +51,10 @@ const {
   bodyVariables,
   buttonFieldErrors,
   buttonLimitErrors,
+  canAddButtonType,
   canContinueConfig,
   canSubmit,
+  canUseButtonType,
   categoryOptions,
   components,
   countryCodeOptions,
@@ -55,6 +66,7 @@ const {
   footerTextError,
   handleMediaFile,
   headerFormatOptions,
+  headerMediaError,
   headerTextError,
   headerVariables,
   insertBodyMarkup,
@@ -65,10 +77,13 @@ const {
   isMarketingStandard,
   languageOptions,
   marketingStandardButtonTypes,
+  mediaAttachment,
   parameterFormatOptions,
   quickReplyButtonEntries,
   quickReplyTypeOptions,
+  removeMediaFile,
   removeButton,
+  reorderButton,
   selectedLanguageTitle,
   submit,
   subtypeOptions,
@@ -78,6 +93,8 @@ const {
   urlTypeOptions,
   validationErrors,
   voiceCallTtlOptions,
+  updateButtonType,
+  updateQuickReplyType,
 } = useWhatsappTemplateEditor({
   template: templateRef,
   uploadMedia: props.uploadMedia,
@@ -138,14 +155,17 @@ const close = () => {
                   :body-variables="bodyVariables"
                   :footer-text-error="footerTextError"
                   :header-format-options="headerFormatOptions"
+                  :header-media-error="headerMediaError"
                   :header-text-error="headerTextError"
                   :header-variables="headerVariables"
+                  :media-attachment="mediaAttachment"
                   :parameter-format-options="parameterFormatOptions"
                   :uploading="uploading"
                   @handle-media-file="handleMediaFile"
                   @insert-body-markup="insertBodyMarkup"
                   @insert-body-variable="insertBodyVariable"
                   @insert-header-variable="insertHeaderVariable"
+                  @remove-media-file="removeMediaFile"
                 />
 
                 <WhatsappTemplateButtonsSection
@@ -153,6 +173,8 @@ const close = () => {
                   v-model="draft"
                   :button-field-errors="buttonFieldErrors"
                   :button-limit-errors="buttonLimitErrors"
+                  :can-add-button-type="canAddButtonType"
+                  :can-use-button-type="canUseButtonType"
                   :country-code-options="countryCodeOptions"
                   :cta-button-entries="ctaButtonEntries"
                   :cta-button-types="ctaButtonTypes"
@@ -162,10 +184,16 @@ const close = () => {
                   :quick-reply-button-entries="quickReplyButtonEntries"
                   :quick-reply-type-options="quickReplyTypeOptions"
                   :url-type-options="urlTypeOptions"
+                  :loading-meta-apps="loadingMetaApps"
+                  :meta-app-options="metaAppOptions"
                   :voice-call-ttl-options="voiceCallTtlOptions"
                   @add-button="addButton"
                   @insert-url-variable="insertUrlVariable"
+                  @open-meta-app-select="emit('loadMetaApps')"
                   @remove-button="removeButton"
+                  @reorder-button="reorderButton"
+                  @update-button-type="updateButtonType"
+                  @update-quick-reply-type="updateQuickReplyType"
                 />
 
                 <WhatsappTemplateTtlSection
@@ -190,7 +218,10 @@ const close = () => {
           </WhatsappTemplateStepper>
         </div>
 
-        <WhatsappTemplatePreview :components="components" />
+        <WhatsappTemplatePreview
+          :components="components"
+          :media-attachment="mediaAttachment"
+        />
       </VCardText>
 
       <VDivider />
@@ -329,9 +360,9 @@ const close = () => {
 }
 
 .template-editor__category-toggle .v-btn--active {
-  background: rgba(var(--v-theme-primary), 0.12);
-  box-shadow: inset 0 -2px 0 rgb(var(--v-theme-primary));
-  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-on-surface), 0.12);
+  box-shadow: none;
+  color: rgb(var(--v-theme-on-surface));
 }
 
 .template-editor__category-toggle .v-btn__overlay {
@@ -401,7 +432,7 @@ const close = () => {
 .template-editor__compact-grid,
 .template-editor__media-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) minmax(180px, 240px);
+  grid-template-columns: minmax(180px, 240px);
   gap: 14px;
   margin-block-start: 16px;
 }
@@ -411,12 +442,157 @@ const close = () => {
 }
 
 .template-editor__field-with-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   position: relative;
+}
+
+.template-editor__field-with-info > .app-select,
+.template-editor__field-with-info > .app-autocomplete,
+.template-editor__field-with-info > .app-text-field {
+  min-inline-size: 0;
+}
+
+.template-editor__select-block {
+  max-inline-size: 240px;
+}
+
+.template-editor__inline-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-block-end: 6px;
+  color: rgba(var(--v-theme-on-surface), 0.86);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .template-editor__info-icon {
   color: rgba(var(--v-theme-on-surface), 0.72);
   cursor: help;
+}
+
+.template-editor__media-upload-wrapper {
+  margin-block-start: 16px;
+}
+
+.template-editor__media-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 78px;
+  inline-size: 100%;
+  border: 2px dashed rgba(var(--v-border-color), 0.46);
+  border-radius: 2px;
+  background: rgba(var(--v-theme-surface), 0.72);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 14px;
+  text-align: center;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.template-editor__media-upload:hover {
+  border-color: rgba(var(--v-theme-primary), 0.42);
+  background: rgba(var(--v-theme-primary), 0.025);
+}
+
+.template-editor__media-upload--dragging {
+  border-color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+
+.template-editor__media-upload:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.template-editor__media-input {
+  display: none;
+}
+
+.template-editor__media-upload-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.template-editor__media-upload-copy strong {
+  color: rgba(var(--v-theme-on-surface), 0.82);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.template-editor__media-upload-link {
+  color: rgb(var(--v-theme-primary));
+  font: inherit;
+}
+
+.template-editor__media-upload:hover .template-editor__media-upload-link {
+  text-decoration: underline;
+}
+
+.template-editor__media-ready {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: rgb(var(--v-theme-success));
+  font-weight: 600;
+}
+
+.template-editor__media-attachment {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 36px;
+  align-items: center;
+  min-block-size: 52px;
+  gap: 10px;
+  border-radius: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.14);
+  padding: 8px;
+}
+
+.template-editor__media-attachment-preview {
+  display: grid;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(var(--v-theme-on-surface), 0.16);
+  color: rgba(var(--v-theme-on-surface), 0.68);
+}
+
+.template-editor__media-attachment-preview img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.template-editor__media-attachment-name {
+  overflow: hidden;
+  color: rgba(var(--v-theme-on-surface), 0.88);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-editor__media-error {
+  margin-block-start: 8px;
+}
+
+.template-editor__field-error {
+  color: rgb(var(--v-theme-error));
+  font-size: 0.78rem;
 }
 
 .template-editor__field-stack {
@@ -482,6 +658,15 @@ const close = () => {
   margin-block-start: 18px;
 }
 
+.template-editor__button-menu-row {
+  display: flex;
+  margin-block-start: 10px;
+}
+
+.template-editor__button-limit-activator {
+  display: inline-flex;
+}
+
 .template-editor__button-group h4 {
   margin: 0 0 8px;
   font-size: 0.9rem;
@@ -492,14 +677,50 @@ const close = () => {
   position: relative;
   border-radius: 6px;
   background: rgba(var(--v-theme-on-surface), 0.035);
-  padding: 10px;
+  padding: 12px;
 }
 
-.template-editor__button-row {
+.template-editor__button-row,
+.template-editor__cta-row {
   display: grid;
   align-items: start;
-  grid-template-columns: 240px minmax(0, 1fr) 40px;
+  grid-template-columns: 18px minmax(0, 1fr) 40px;
   gap: 10px;
+}
+
+.template-editor__drag-handle {
+  align-self: center;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+  cursor: grab;
+}
+
+.template-editor__drag-handle--active,
+.template-editor__drag-handle:active {
+  cursor: grabbing;
+}
+
+.template-editor__sortable-row--dragging {
+  opacity: 0.52;
+}
+
+.template-editor__sortable-row--drop-target {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.template-editor__button-scroll,
+.template-editor__cta-scroll {
+  min-inline-size: 0;
+  overflow-x: auto;
+  padding-block-end: 3px;
+}
+
+.template-editor__button-scroll {
+  display: grid;
+  grid-template-columns: 250px minmax(360px, 1fr);
+  gap: 10px;
+  min-inline-size: 640px;
 }
 
 .template-editor__button-row + .template-editor__button-row,
@@ -510,9 +731,9 @@ const close = () => {
 .template-editor__cta-grid {
   display: grid;
   align-items: start;
-  grid-template-columns: 160px minmax(180px, 1fr) 120px minmax(200px, 1.2fr);
+  grid-template-columns: 150px minmax(190px, 250px) 120px minmax(260px, 1fr);
   gap: 10px;
-  padding-inline-end: 42px;
+  min-inline-size: 810px;
 }
 
 .template-editor__wide-field,
@@ -521,9 +742,22 @@ const close = () => {
 }
 
 .template-editor__button-remove {
-  position: absolute;
-  inset-block-start: 28px;
-  inset-inline-end: 8px;
+  align-self: start;
+  margin-block-start: 24px;
+}
+
+.template-editor__conversion-checkbox {
+  margin-block-start: -2px;
+}
+
+.template-editor__checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.template-editor__conversion-checkbox .v-selection-control {
+  min-height: 32px;
 }
 
 .template-editor__ttl-header {
@@ -568,6 +802,11 @@ const close = () => {
   padding: 12px 14px !important;
 }
 
+.template-editor__tooltip-title {
+  font-weight: 600;
+  margin-block-end: 6px;
+}
+
 @media (max-width: 1180px) {
   .template-editor__content {
     grid-template-columns: 1fr;
@@ -583,6 +822,11 @@ const close = () => {
   .template-editor__button-row,
   .template-editor__cta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .template-editor__button-scroll,
+  .template-editor__cta-grid {
+    min-inline-size: 720px;
   }
 
   .template-editor__category-toggle .v-btn {

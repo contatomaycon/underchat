@@ -8,6 +8,8 @@ export type HeaderFormat =
 export type ButtonType =
   'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'VOICE_CALL' | 'COPY_CODE';
 
+export type QuickReplyType = 'CUSTOM' | 'PRESET';
+
 export interface ButtonDraft {
   type: ButtonType;
   text: string;
@@ -17,7 +19,7 @@ export interface ButtonDraft {
   phone_country_code: string;
   phone_number: string;
   offer_code: string;
-  quick_reply_type: 'CUSTOM' | 'PRESET';
+  quick_reply_type: QuickReplyType;
   track_app_conversions: boolean;
   meta_app_id: string;
   android_deep_link: string;
@@ -48,6 +50,12 @@ export interface SelectOption<T = string> {
   value: T;
   icon?: string;
   description?: string;
+}
+
+export interface MediaAttachmentPreview {
+  name: string;
+  url: string | null;
+  format: HeaderFormat;
 }
 
 export interface ButtonEntry {

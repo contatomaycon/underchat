@@ -5,6 +5,7 @@ import {
   createWhatsappTemplateSchema,
   deactivateWhatsappTemplateSchema,
   deleteWhatsappTemplateSchema,
+  listWhatsappTemplateMetaAppsSchema,
   listWhatsappTemplatesSchema,
   syncWhatsappTemplatesSchema,
   updateWhatsappTemplateSchema,
@@ -27,6 +28,17 @@ export default function whatsappOfficialTemplateRoutes(
   server.get('/worker/:worker_id/whatsapp-official/templates', {
     schema: listWhatsappTemplatesSchema,
     handler: controller.listWhatsappTemplates,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/whatsapp-official/meta-apps', {
+    schema: listWhatsappTemplateMetaAppsSchema,
+    handler: controller.listWhatsappTemplateMetaApps,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerViewPermissions),

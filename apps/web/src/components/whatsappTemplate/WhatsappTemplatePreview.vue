@@ -2,9 +2,11 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { WhatsappTemplateComponent } from '@core/schema/worker/whatsappOfficialTemplate';
+import type { MediaAttachmentPreview } from './types';
 
 const props = defineProps<{
   components: WhatsappTemplateComponent[];
+  mediaAttachment?: MediaAttachmentPreview | null;
 }>();
 
 const { t } = useI18n();
@@ -33,10 +35,16 @@ const bodyText = computed(() =>
   String(body.value?.text || t('whatsapp_template_default_body'))
 );
 const footerText = computed(() => String(footer.value?.text ?? ''));
+const mediaAttachment = computed(() => props.mediaAttachment ?? null);
+const hasFilledMediaHeader = computed(
+  () =>
+    Boolean(mediaAttachment.value?.url) &&
+    ['IMAGE', 'VIDEO'].includes(mediaAttachment.value?.format ?? '')
+);
 
 const mediaHeader = computed(() => {
   const format = headerFormat.value;
-  if (!['IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'].includes(format)) return null;
+  if (!['IMAGE', 'VIDEO', 'DOCUMENT'].includes(format)) return null;
 
   const mediaMap: Record<string, { icon: string; label: string }> = {
     IMAGE: { icon: 'tabler-photo', label: t('whatsapp_template_header_image') },
@@ -48,14 +56,12 @@ const mediaHeader = computed(() => {
       icon: 'tabler-file-text',
       label: t('whatsapp_template_header_document'),
     },
-    LOCATION: {
-      icon: 'tabler-map-pin',
-      label: t('whatsapp_template_header_location'),
-    },
   };
 
   return mediaMap[format];
 });
+
+const isLocationHeader = computed(() => headerFormat.value === 'LOCATION');
 
 const visibleButtons = computed(() =>
   buttons.value.length > 3
@@ -101,9 +107,53 @@ const buttonText = (button: Record<string, unknown>) => {
     </div>
     <div class="template-preview__phone">
       <div class="template-preview__bubble">
-        <div v-if="mediaHeader" class="template-preview__media-header">
-          <VIcon :icon="mediaHeader.icon" size="34" />
-          <span>{{ mediaHeader.label }}</span>
+        <div
+          v-if="mediaHeader"
+          class="template-preview__media-header"
+          :class="{
+            'template-preview__media-header--filled': hasFilledMediaHeader,
+          }"
+        >
+          <img
+            v-if="mediaAttachment?.format === 'IMAGE' && mediaAttachment.url"
+            class="template-preview__media-image"
+            :src="mediaAttachment.url"
+            :alt="mediaAttachment.name"
+          />
+          <video
+            v-else-if="
+              mediaAttachment?.format === 'VIDEO' && mediaAttachment.url
+            "
+            class="template-preview__media-video"
+            :src="mediaAttachment.url"
+            muted
+            playsinline
+          />
+          <div
+            v-else-if="
+              mediaAttachment?.format === 'DOCUMENT' && mediaAttachment.name
+            "
+            class="template-preview__media-document"
+          >
+            <VIcon icon="tabler-file-text" size="26" />
+            <span>{{ mediaAttachment.name }}</span>
+          </div>
+          <template v-else>
+            <VIcon :icon="mediaHeader.icon" size="34" />
+            <span>{{ mediaHeader.label }}</span>
+          </template>
+        </div>
+        <div
+          v-else-if="isLocationHeader"
+          class="template-preview__location-header"
+        >
+          <div class="template-preview__location-icon">
+            <VIcon icon="tabler-map-pin" size="26" />
+          </div>
+          <div>
+            <strong>{{ t('whatsapp_template_location_name_sample') }}</strong>
+            <span>{{ t('whatsapp_template_location_address_sample') }}</span>
+          </div>
         </div>
         <div v-else-if="headerText" class="template-preview__text-header">
           {{ headerText }}
@@ -114,7 +164,9 @@ const buttonText = (button: Record<string, unknown>) => {
         <div v-if="footerText" class="template-preview__footer">
           {{ footerText }}
         </div>
-        <div class="template-preview__time">11:59</div>
+        <div class="template-preview__time">
+          {{ t('whatsapp_template_preview_time') }}
+        </div>
         <div v-if="buttons.length" class="template-preview__buttons">
           <button
             v-for="(button, index) in visibleButtons"
@@ -188,11 +240,71 @@ const buttonText = (button: Record<string, unknown>) => {
   display: grid;
   place-items: center;
   min-block-size: 104px;
+  overflow: hidden;
   padding: 12px;
   background: #eef2f6;
   color: #64748b;
   font-weight: 600;
   gap: 6px;
+}
+
+.template-preview__media-header--filled {
+  min-block-size: 0;
+  padding: 0;
+}
+
+.template-preview__media-image,
+.template-preview__media-video {
+  display: block;
+  inline-size: 100%;
+  block-size: 132px;
+  object-fit: cover;
+}
+
+.template-preview__media-document {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  inline-size: 100%;
+  gap: 8px;
+  padding: 10px;
+}
+
+.template-preview__media-document span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-preview__location-header {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+  margin: 10px 10px 0;
+  border-radius: 8px;
+  background: #f1f3f5;
+  padding: 10px;
+}
+
+.template-preview__location-icon {
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #cfd4d9;
+  color: #6b7280;
+}
+
+.template-preview__location-header strong,
+.template-preview__location-header span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-preview__location-header span {
+  color: #64748b;
+  font-size: 0.8rem;
 }
 
 .template-preview__text-header {

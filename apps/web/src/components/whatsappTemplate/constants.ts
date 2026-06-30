@@ -3,6 +3,7 @@ import type {
   ButtonType,
   HeaderFormat,
   ParameterFormat,
+  QuickReplyType,
   SelectOption,
   TranslateFn,
 } from './types';
@@ -88,12 +89,104 @@ const languageCodes = [
 ] as const;
 
 const countryCodeSpecs = [
-  { key: 'br', value: '+55' },
-  { key: 'us', value: '+1' },
-  { key: 'pt', value: '+351' },
-  { key: 'es', value: '+34' },
-  { key: 'mx', value: '+52' },
-  { key: 'ar', value: '+54' },
+  { country: 'AF', value: '+93' },
+  { country: 'AL', value: '+355' },
+  { country: 'DZ', value: '+213' },
+  { country: 'AD', value: '+376' },
+  { country: 'AO', value: '+244' },
+  { country: 'AR', value: '+54' },
+  { country: 'AM', value: '+374' },
+  { country: 'AU', value: '+61' },
+  { country: 'AT', value: '+43' },
+  { country: 'AZ', value: '+994' },
+  { country: 'BH', value: '+973' },
+  { country: 'BD', value: '+880' },
+  { country: 'BE', value: '+32' },
+  { country: 'BJ', value: '+229' },
+  { country: 'BO', value: '+591' },
+  { country: 'BA', value: '+387' },
+  { country: 'BR', value: '+55' },
+  { country: 'BG', value: '+359' },
+  { country: 'US', value: '+1' },
+  { country: 'CA', value: '+1' },
+  { country: 'CL', value: '+56' },
+  { country: 'CN', value: '+86' },
+  { country: 'CO', value: '+57' },
+  { country: 'CR', value: '+506' },
+  { country: 'HR', value: '+385' },
+  { country: 'CY', value: '+357' },
+  { country: 'CZ', value: '+420' },
+  { country: 'DK', value: '+45' },
+  { country: 'DO', value: '+1' },
+  { country: 'EC', value: '+593' },
+  { country: 'EG', value: '+20' },
+  { country: 'SV', value: '+503' },
+  { country: 'EE', value: '+372' },
+  { country: 'FI', value: '+358' },
+  { country: 'FR', value: '+33' },
+  { country: 'GE', value: '+995' },
+  { country: 'DE', value: '+49' },
+  { country: 'GH', value: '+233' },
+  { country: 'GR', value: '+30' },
+  { country: 'GT', value: '+502' },
+  { country: 'HN', value: '+504' },
+  { country: 'HK', value: '+852' },
+  { country: 'HU', value: '+36' },
+  { country: 'IS', value: '+354' },
+  { country: 'IN', value: '+91' },
+  { country: 'ID', value: '+62' },
+  { country: 'IE', value: '+353' },
+  { country: 'IL', value: '+972' },
+  { country: 'IT', value: '+39' },
+  { country: 'JP', value: '+81' },
+  { country: 'JO', value: '+962' },
+  { country: 'KZ', value: '+7' },
+  { country: 'KE', value: '+254' },
+  { country: 'KW', value: '+965' },
+  { country: 'LV', value: '+371' },
+  { country: 'LB', value: '+961' },
+  { country: 'LT', value: '+370' },
+  { country: 'LU', value: '+352' },
+  { country: 'MY', value: '+60' },
+  { country: 'MT', value: '+356' },
+  { country: 'MX', value: '+52' },
+  { country: 'MA', value: '+212' },
+  { country: 'NL', value: '+31' },
+  { country: 'NZ', value: '+64' },
+  { country: 'NI', value: '+505' },
+  { country: 'NG', value: '+234' },
+  { country: 'NO', value: '+47' },
+  { country: 'OM', value: '+968' },
+  { country: 'PK', value: '+92' },
+  { country: 'PA', value: '+507' },
+  { country: 'PY', value: '+595' },
+  { country: 'PE', value: '+51' },
+  { country: 'PH', value: '+63' },
+  { country: 'PL', value: '+48' },
+  { country: 'PT', value: '+351' },
+  { country: 'QA', value: '+974' },
+  { country: 'RO', value: '+40' },
+  { country: 'SA', value: '+966' },
+  { country: 'RS', value: '+381' },
+  { country: 'SG', value: '+65' },
+  { country: 'SK', value: '+421' },
+  { country: 'SI', value: '+386' },
+  { country: 'ZA', value: '+27' },
+  { country: 'KR', value: '+82' },
+  { country: 'ES', value: '+34' },
+  { country: 'SE', value: '+46' },
+  { country: 'CH', value: '+41' },
+  { country: 'TW', value: '+886' },
+  { country: 'TH', value: '+66' },
+  { country: 'TN', value: '+216' },
+  { country: 'TR', value: '+90' },
+  { country: 'UA', value: '+380' },
+  { country: 'AE', value: '+971' },
+  { country: 'GB', value: '+44' },
+  { country: 'UY', value: '+598' },
+  { country: 'UZ', value: '+998' },
+  { country: 'VE', value: '+58' },
+  { country: 'VN', value: '+84' },
 ] as const;
 
 export const defaultMessageTtlSeconds = 12 * 60 * 60;
@@ -114,8 +207,9 @@ export const getTtlOptions = (t: TranslateFn): SelectOption<number>[] => [
   { title: t('whatsapp_template_ttl_48_hours'), value: 48 * 60 * 60 },
   { title: t('whatsapp_template_ttl_72_hours'), value: 72 * 60 * 60 },
   { title: t('whatsapp_template_ttl_96_hours'), value: 96 * 60 * 60 },
-  ...Array.from({ length: 26 }, (_, index) => {
-    const days = index + 5;
+  { title: t('whatsapp_template_ttl_168_hours'), value: 168 * 60 * 60 },
+  ...Array.from({ length: 23 }, (_, index) => {
+    const days = index + 8;
 
     return {
       title: t('whatsapp_template_ttl_days', { count: days }),
@@ -126,7 +220,10 @@ export const getTtlOptions = (t: TranslateFn): SelectOption<number>[] => [
 
 export const getCountryCodeOptions = (t: TranslateFn): SelectOption[] =>
   countryCodeSpecs.map((option) => ({
-    title: t(`whatsapp_template_country_${option.key}`),
+    title: t('whatsapp_template_country_option', {
+      code: option.value,
+      country: option.country,
+    }),
     value: option.value,
   }));
 
@@ -246,8 +343,8 @@ export const getMarketingStandardButtonTypes = (
 ): SelectOption<ButtonType>[] => [
   { title: t('whatsapp_template_button_quick_reply'), value: 'QUICK_REPLY' },
   { title: t('whatsapp_template_button_open_website'), value: 'URL' },
-  { title: t('whatsapp_template_button_call_phone'), value: 'PHONE_NUMBER' },
   { title: t('whatsapp_template_button_call_whatsapp'), value: 'VOICE_CALL' },
+  { title: t('whatsapp_template_button_call_phone'), value: 'PHONE_NUMBER' },
   { title: t('whatsapp_template_button_copy_code'), value: 'COPY_CODE' },
 ];
 
@@ -268,13 +365,18 @@ export const getUrlTypeOptions = (t: TranslateFn): SelectOption[] => [
 
 export const getVoiceCallTtlOptions = (
   t: TranslateFn
-): SelectOption<number>[] => [
-  { title: t('whatsapp_template_voice_ttl_1_day'), value: 1440 },
-  { title: t('whatsapp_template_voice_ttl_3_days'), value: 4320 },
-  { title: t('whatsapp_template_voice_ttl_7_days'), value: 10080 },
-  { title: t('whatsapp_template_voice_ttl_14_days'), value: 20160 },
-  { title: t('whatsapp_template_voice_ttl_30_days'), value: 43200 },
-];
+): SelectOption<number>[] =>
+  Array.from({ length: 30 }, (_, index) => {
+    const days = index + 1;
+
+    return {
+      title:
+        days === 1
+          ? t('whatsapp_template_voice_ttl_1_day')
+          : t('whatsapp_template_voice_ttl_days', { count: days }),
+      value: days * 24 * 60,
+    };
+  });
 
 export const getButtonIcon = (type: ButtonType | string) => {
   if (type === 'QUICK_REPLY') return 'tabler-arrow-back-up';
@@ -285,6 +387,14 @@ export const getButtonIcon = (type: ButtonType | string) => {
 
   return 'tabler-arrow-back-up';
 };
+
+export const getDefaultQuickReplyButtonText = (
+  quickReplyType: QuickReplyType,
+  t: TranslateFn
+) =>
+  quickReplyType === 'PRESET'
+    ? t('whatsapp_template_button_default_preconfigured_response')
+    : t('whatsapp_template_button_default_quick_reply');
 
 export const getDefaultButtonText = (type: ButtonType, t: TranslateFn) => {
   if (type === 'URL') return t('whatsapp_template_button_default_url');
@@ -298,7 +408,7 @@ export const getDefaultButtonText = (type: ButtonType, t: TranslateFn) => {
     return t('whatsapp_template_button_default_copy_code');
   }
 
-  return t('whatsapp_template_button_default_quick_reply');
+  return getDefaultQuickReplyButtonText('CUSTOM', t);
 };
 
 export const defaultButton = (

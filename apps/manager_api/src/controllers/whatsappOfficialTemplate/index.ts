@@ -7,6 +7,7 @@ import { updateWhatsappTemplate } from './methods/updateWhatsappTemplate';
 import { deleteWhatsappTemplate } from './methods/deleteWhatsappTemplate';
 import { deactivateWhatsappTemplate } from './methods/deactivateWhatsappTemplate';
 import { uploadWhatsappTemplateMedia } from './methods/uploadWhatsappTemplateMedia';
+import { listWhatsappTemplateMetaApps } from './methods/listWhatsappTemplateMetaApps';
 
 @injectable()
 class WhatsappOfficialTemplateController {
@@ -18,6 +19,7 @@ class WhatsappOfficialTemplateController {
   public deleteWhatsappTemplate = deleteWhatsappTemplate;
   public deactivateWhatsappTemplate = deactivateWhatsappTemplate;
   public uploadWhatsappTemplateMedia = uploadWhatsappTemplateMedia;
+  public listWhatsappTemplateMetaApps = listWhatsappTemplateMetaApps;
 }
 
 export default WhatsappOfficialTemplateController;

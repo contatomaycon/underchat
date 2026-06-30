@@ -1,5 +1,10 @@
 import { toE164Digits } from './payload';
-import type { ButtonDraft, TemplateDraft, ValidationMessage } from './types';
+import type {
+  ButtonDraft,
+  HeaderFormat,
+  TemplateDraft,
+  ValidationMessage,
+} from './types';
 
 export type ButtonField =
   | 'text'
@@ -18,15 +23,14 @@ export const textStartsOrEndsWithVariable = (text: string) => {
 };
 
 export const hasHighVariableDensity = (text: string, variableCount: number) => {
-  if (variableCount <= 1) return false;
+  if (!variableCount) return false;
   const words = text
     .replace(/\{\{[^}]+\}\}/gu, ' ')
     .trim()
     .split(/\s+/u);
+  const staticWordCount = words.filter(Boolean).length;
 
-  return (
-    variableCount > Math.max(1, Math.floor(words.filter(Boolean).length / 2))
-  );
+  return staticWordCount <= variableCount * 2;
 };
 
 export const isValidUrl = (value: string) =>
@@ -60,11 +64,22 @@ export const validateHeaderText = (
       params: { count: 60 },
     };
   }
-  if (textStartsOrEndsWithVariable(draft.header_text)) {
-    return { key: 'whatsapp_template_validation_header_variable_edges' };
-  }
   if (variables.length > 1) {
     return { key: 'whatsapp_template_validation_header_variable_max' };
+  }
+
+  return null;
+};
+
+export const validateHeaderMedia = (
+  headerFormat: HeaderFormat,
+  headerHandle: string
+): ValidationMessage | null => {
+  if (
+    ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerFormat) &&
+    !headerHandle.trim()
+  ) {
+    return { key: 'whatsapp_template_validation_header_media_required' };
   }
 
   return null;
@@ -83,10 +98,10 @@ export const validateBodyText = (
       params: { count: 1024 },
     };
   }
-  if (textStartsOrEndsWithVariable(draft.body_text)) {
-    return { key: 'whatsapp_template_validation_body_variable_edges' };
-  }
-  if (hasHighVariableDensity(draft.body_text, variables.length)) {
+  if (
+    textStartsOrEndsWithVariable(draft.body_text) ||
+    hasHighVariableDensity(draft.body_text, variables.length)
+  ) {
     return { key: 'whatsapp_template_validation_body_variable_density' };
   }
 
@@ -152,10 +167,9 @@ export const validateButton = (button: ButtonDraft): ValidationMessage[] => {
           key: 'whatsapp_template_validation_android_deep_link_required',
         });
       }
-      if (!isValidUrl(button.android_fallback_playstore_url.trim())) {
-        errors.push({
-          key: 'whatsapp_template_validation_android_fallback_required',
-        });
+      const androidFallbackUrl = button.android_fallback_playstore_url.trim();
+      if (androidFallbackUrl && !isValidUrl(androidFallbackUrl)) {
+        errors.push({ key: 'whatsapp_template_validation_url_short' });
       }
     }
   }
@@ -238,7 +252,8 @@ export const validateButtonField = (
     field === 'android_fallback_playstore_url' &&
     button.type === 'URL' &&
     button.track_app_conversions &&
-    !isValidUrl(button.android_fallback_playstore_url)
+    button.android_fallback_playstore_url.trim() &&
+    !isValidUrl(button.android_fallback_playstore_url.trim())
   ) {
     return [{ key: 'whatsapp_template_validation_url_short' }];
   }

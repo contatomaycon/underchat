@@ -1,4 +1,11 @@
-import { computed, reactive, shallowRef, watch, type Ref } from 'vue';
+import {
+  computed,
+  onUnmounted,
+  reactive,
+  shallowRef,
+  watch,
+  type Ref,
+} from 'vue';
 import type {
   CreateWhatsappTemplateRequest,
   UpdateWhatsappTemplateRequest,
@@ -10,6 +17,7 @@ import {
   getCategoryOptions,
   getCountryCodeOptions,
   getCtaButtonTypes,
+  getDefaultQuickReplyButtonText,
   getHeaderFormatOptions,
   getLanguageOptions,
   getMarketingStandardButtonTypes,
@@ -34,6 +42,8 @@ import type {
   ButtonDraft,
   ButtonType,
   HeaderFormat,
+  MediaAttachmentPreview,
+  QuickReplyType,
   TemplateDraft,
   TranslateFn,
   ValidationMessage,
@@ -45,6 +55,7 @@ import {
   validateButtonField,
   validateButtonLimits,
   validateFooterText,
+  validateHeaderMedia,
   validateHeaderText,
   validateSampleValues,
   validateTemplateName,
@@ -61,7 +72,7 @@ interface UseWhatsappTemplateEditorOptions {
 
 const defaultDraft = (t: TranslateFn): TemplateDraft => ({
   name: '',
-  language: 'en',
+  language: 'pt_BR',
   category: 'MARKETING',
   sub_category: 'STANDARD',
   parameter_format: 'POSITIONAL',
@@ -83,6 +94,17 @@ const translateMessage = (message: ValidationMessage | null, t: TranslateFn) =>
 const translateMessages = (messages: ValidationMessage[], t: TranslateFn) =>
   messages.map((message) => t(message.key, message.params));
 
+const mediaHeaderFormats: HeaderFormat[] = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+
+const isMediaHeaderFormat = (format: HeaderFormat) =>
+  mediaHeaderFormats.includes(format);
+
+const deepLinkFieldNames: ButtonField[] = [
+  'meta_app_id',
+  'android_deep_link',
+  'android_fallback_playstore_url',
+];
+
 export const useWhatsappTemplateEditor = ({
   template,
   uploadMedia,
@@ -91,6 +113,9 @@ export const useWhatsappTemplateEditor = ({
 }: UseWhatsappTemplateEditorOptions) => {
   const currentStep = shallowRef(1);
   const selectedFile = shallowRef<File | File[] | null>(null);
+  const mediaAttachmentName = shallowRef('');
+  const mediaAttachmentUrl = shallowRef<string | null>(null);
+  const mediaUploadAttempt = shallowRef(0);
   const isHydratingDraft = shallowRef(false);
   const draft = reactive<TemplateDraft>(defaultDraft(t));
 
@@ -135,17 +160,53 @@ export const useWhatsappTemplateEditor = ({
     return `${category} • ${subtype}`;
   });
 
+  const mediaAttachment = computed<MediaAttachmentPreview | null>(() => {
+    if (!isMediaHeaderFormat(draft.header_format)) return null;
+    if (!draft.header_handle && !mediaAttachmentName.value) return null;
+
+    return {
+      name: mediaAttachmentName.value || t('whatsapp_template_media_uploaded'),
+      url: mediaAttachmentUrl.value,
+      format: draft.header_format,
+    };
+  });
+
+  const revokeMediaAttachmentUrl = () => {
+    if (mediaAttachmentUrl.value) {
+      URL.revokeObjectURL(mediaAttachmentUrl.value);
+      mediaAttachmentUrl.value = null;
+    }
+  };
+
+  const resetMediaAttachment = () => {
+    selectedFile.value = null;
+    mediaAttachmentName.value = '';
+    revokeMediaAttachmentUrl();
+  };
+
+  const removeMediaFile = () => {
+    mediaUploadAttempt.value += 1;
+    draft.header_handle = '';
+    resetMediaAttachment();
+  };
+
   const resetDraft = () => {
+    mediaUploadAttempt.value += 1;
+    resetMediaAttachment();
     Object.assign(draft, defaultDraft(t));
     currentStep.value = 1;
-    selectedFile.value = null;
   };
 
   const splitPhone = (phone: string) => {
     const sanitized = phone.replace(/[^\d+]/gu, '');
-    const knownCode = countryCodeOptions.value.find((option) =>
-      sanitized.startsWith(String(option.value).replace('+', ''))
-    );
+    const knownCode = [...countryCodeOptions.value]
+      .sort(
+        (first, second) =>
+          String(second.value).length - String(first.value).length
+      )
+      .find((option) =>
+        sanitized.startsWith(String(option.value).replace('+', ''))
+      );
 
     if (!knownCode) {
       return {
@@ -172,7 +233,7 @@ export const useWhatsappTemplateEditor = ({
     }
 
     draft.name = nextTemplate.name;
-    draft.language = nextTemplate.language || 'en';
+    draft.language = nextTemplate.language || 'pt_BR';
     draft.category = nextTemplate.category || 'MARKETING';
     draft.sub_category = nextTemplate.sub_category || 'STANDARD';
     draft.parameter_format =
@@ -294,6 +355,17 @@ export const useWhatsappTemplateEditor = ({
   );
 
   watch(
+    () => draft.header_format,
+    (headerFormat, previousHeaderFormat) => {
+      if (isHydratingDraft.value) return;
+
+      if (headerFormat !== previousHeaderFormat) {
+        removeMediaFile();
+      }
+    }
+  );
+
+  watch(
     () => draft.custom_ttl_enabled,
     (enabled) => {
       if (enabled && !draft.message_send_ttl_seconds) {
@@ -356,6 +428,9 @@ export const useWhatsappTemplateEditor = ({
   const headerTextValidation = computed(() =>
     validateHeaderText(draft, headerVariables.value)
   );
+  const headerMediaValidation = computed(() =>
+    validateHeaderMedia(draft.header_format, draft.header_handle)
+  );
   const bodyTextValidation = computed(() =>
     validateBodyText(draft, bodyVariables.value)
   );
@@ -366,6 +441,9 @@ export const useWhatsappTemplateEditor = ({
   );
   const headerTextError = computed(() =>
     translateMessage(headerTextValidation.value, t)
+  );
+  const headerMediaError = computed(() =>
+    translateMessage(headerMediaValidation.value, t)
   );
   const bodyTextError = computed(() =>
     translateMessage(bodyTextValidation.value, t)
@@ -397,6 +475,7 @@ export const useWhatsappTemplateEditor = ({
   const validationMessages = computed(() => [
     ...(templateNameValidation.value ? [templateNameValidation.value] : []),
     ...(headerTextValidation.value ? [headerTextValidation.value] : []),
+    ...(headerMediaValidation.value ? [headerMediaValidation.value] : []),
     ...(bodyTextValidation.value ? [bodyTextValidation.value] : []),
     ...(footerTextValidation.value ? [footerTextValidation.value] : []),
     ...headerSampleErrors.value,
@@ -411,11 +490,43 @@ export const useWhatsappTemplateEditor = ({
   const firstValidationError = computed(() => validationErrors.value[0] ?? '');
   const canSubmit = computed(() => validationErrors.value.length === 0);
 
-  const buttonFieldErrors = (button: ButtonDraft, field: ButtonField) =>
-    translateMessages(validateButtonField(button, field), t);
+  const buttonFieldErrors = (button: ButtonDraft, field: ButtonField) => {
+    if (deepLinkFieldNames.includes(field)) {
+      return [];
+    }
+
+    return translateMessages(validateButtonField(button, field), t);
+  };
+
+  const isSupportedButtonType = (type: ButtonType) =>
+    marketingStandardButtonTypes.value.some((option) => option.value === type);
+
+  const countButtonsByType = (type: ButtonType, exceptIndex?: number) =>
+    draft.buttons.filter(
+      (button, buttonIndex) =>
+        button.type === type && buttonIndex !== exceptIndex
+    ).length;
+
+  const getButtonTypeLimit = (type: ButtonType) => {
+    if (type === 'URL') return 2;
+    if (type === 'PHONE_NUMBER') return 1;
+    if (type === 'VOICE_CALL') return 1;
+    if (type === 'COPY_CODE') return 1;
+
+    return 10;
+  };
+
+  const canUseButtonType = (type: ButtonType, exceptIndex?: number) => {
+    if (!isSupportedButtonType(type)) return false;
+
+    return countButtonsByType(type, exceptIndex) < getButtonTypeLimit(type);
+  };
+
+  const canAddButtonType = (type: ButtonType) =>
+    draft.buttons.length < 10 && canUseButtonType(type);
 
   const addButton = (type: ButtonType = 'QUICK_REPLY') => {
-    if (draft.buttons.length >= 10) return;
+    if (!canAddButtonType(type)) return;
     if (
       !marketingStandardButtonTypes.value.some(
         (option) => option.value === type
@@ -431,7 +542,73 @@ export const useWhatsappTemplateEditor = ({
     draft.buttons.splice(index, 1);
   };
 
+  const reorderButton = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+
+    const targetButton = draft.buttons[toIndex];
+    const movingButton = draft.buttons[fromIndex];
+
+    if (!targetButton || !movingButton) return;
+
+    const [removedButton] = draft.buttons.splice(fromIndex, 1);
+
+    if (!removedButton) return;
+
+    draft.buttons.splice(toIndex, 0, removedButton);
+  };
+
+  const updateButtonType = (index: number, type: ButtonType) => {
+    if (
+      !marketingStandardButtonTypes.value.some(
+        (option) => option.value === type
+      )
+    ) {
+      return;
+    }
+
+    const existingButton = draft.buttons[index];
+    if (!existingButton || existingButton.type === type) return;
+
+    if (!canUseButtonType(type, index)) {
+      return;
+    }
+
+    draft.buttons.splice(index, 1, defaultButton(t, type));
+  };
+
+  const updateQuickReplyType = (
+    index: number,
+    quickReplyType: QuickReplyType
+  ) => {
+    const button = draft.buttons[index];
+
+    if (
+      !button ||
+      button.type !== 'QUICK_REPLY' ||
+      button.quick_reply_type === quickReplyType
+    ) {
+      return;
+    }
+
+    const currentDefaultText = getDefaultQuickReplyButtonText(
+      button.quick_reply_type,
+      t
+    );
+    const shouldReplaceText =
+      !button.text.trim() || button.text === currentDefaultText;
+
+    button.quick_reply_type = quickReplyType;
+
+    if (shouldReplaceText) {
+      button.text = getDefaultQuickReplyButtonText(quickReplyType, t);
+    }
+  };
+
   const insertHeaderVariable = () => {
+    if (getVariables(draft.header_text, draft.parameter_format).length >= 1) {
+      return;
+    }
+
     draft.header_text = appendWithSpace(
       draft.header_text,
       makeNextVariable(draft.header_text, draft.parameter_format)
@@ -457,13 +634,24 @@ export const useWhatsappTemplateEditor = ({
   const handleMediaFile = async (value: File | File[] | null) => {
     selectedFile.value = value;
     const file = Array.isArray(value) ? value[0] : value;
-    if (!file) return;
+    if (!file) {
+      removeMediaFile();
+      return;
+    }
 
+    mediaUploadAttempt.value += 1;
+    const uploadAttempt = mediaUploadAttempt.value;
+    draft.header_handle = '';
+    mediaAttachmentName.value = file.name;
+    revokeMediaAttachmentUrl();
+    mediaAttachmentUrl.value = URL.createObjectURL(file);
     const handle = await uploadMedia(file);
-    if (handle) {
+    if (uploadAttempt === mediaUploadAttempt.value && handle) {
       draft.header_handle = handle;
     }
   };
+
+  onUnmounted(revokeMediaAttachmentUrl);
 
   const submit = () => {
     if (!canSubmit.value) return;
@@ -486,6 +674,8 @@ export const useWhatsappTemplateEditor = ({
     bodyVariables,
     buttonFieldErrors,
     buttonLimitErrors,
+    canAddButtonType,
+    canUseButtonType,
     canContinueConfig,
     canSubmit,
     categoryOptions,
@@ -497,6 +687,7 @@ export const useWhatsappTemplateEditor = ({
     draft,
     footerTextError,
     handleMediaFile,
+    headerMediaError,
     headerFormatOptions,
     headerTextError,
     headerVariables,
@@ -508,10 +699,13 @@ export const useWhatsappTemplateEditor = ({
     isMarketingStandard,
     languageOptions,
     marketingStandardButtonTypes,
+    mediaAttachment,
     parameterFormatOptions,
     quickReplyButtonEntries,
     quickReplyTypeOptions,
+    removeMediaFile,
     removeButton,
+    reorderButton,
     selectedLanguageTitle,
     submit,
     subtypeOptions,
@@ -522,6 +716,8 @@ export const useWhatsappTemplateEditor = ({
     validationErrors,
     firstValidationError,
     voiceCallTtlOptions,
+    updateButtonType,
+    updateQuickReplyType,
     addButton,
   };
 };

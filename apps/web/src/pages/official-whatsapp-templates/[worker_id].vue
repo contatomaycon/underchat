@@ -79,6 +79,13 @@ const toolbarFilters = computed(() => ({
   is_active: options.is_active,
 }));
 
+const metaAppOptions = computed(() =>
+  templateStore.metaApps.map((app) => ({
+    title: app.name ? `${app.name} (${app.id})` : app.id,
+    value: app.id,
+  }))
+);
+
 const confirmTitle = computed(() =>
   confirmAction.value === 'delete'
     ? 'Excluir modelo na Meta'
@@ -118,6 +125,14 @@ const loadTemplates = async () => {
   await templateStore.listTemplates(workerId.value, query.value);
 };
 
+const loadMetaApps = async () => {
+  if (!workerId.value || templateStore.loadingMetaApps) {
+    return;
+  }
+
+  await templateStore.listMetaApps(workerId.value);
+};
+
 const updateFilters = (filters: {
   search: string | null;
   status: string | null;
@@ -136,6 +151,7 @@ const updateFilters = (filters: {
 const openAddEditor = () => {
   editingTemplate.value = null;
   isEditorOpen.value = true;
+  void loadMetaApps();
 };
 
 const openEditEditor = async (template: WhatsappTemplateResponse) => {
@@ -145,6 +161,7 @@ const openEditEditor = async (template: WhatsappTemplateResponse) => {
       template.whatsapp_message_template_id
     )) ?? template;
   isEditorOpen.value = true;
+  void loadMetaApps();
 };
 
 const syncTemplates = async () => {
@@ -287,7 +304,10 @@ watch(
       :template="editingTemplate"
       :saving="templateStore.saving"
       :uploading="templateStore.uploading"
+      :loading-meta-apps="templateStore.loadingMetaApps"
+      :meta-app-options="metaAppOptions"
       :upload-media="uploadMedia"
+      @load-meta-apps="loadMetaApps"
       @save="saveTemplate"
     />
 
@@ -303,6 +323,7 @@ watch(
     <VSnackbar
       v-model="templateStore.snackbar.status"
       :color="templateStore.snackbar.color"
+      location="top end"
     >
       {{ templateStore.snackbar.message }}
     </VSnackbar>

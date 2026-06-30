@@ -165,6 +165,7 @@ export default {
     hideDetails: 'auto',
   },
   VSnackbar: {
+    location: 'top end',
     VBtn: {
       density: 'comfortable',
     },

@@ -118,6 +118,16 @@ interface MetaMessageTemplatesResponse extends MetaGraphErrorResponse {
   paging?: MetaPaging;
 }
 
+interface MetaBusinessApp {
+  id: string;
+  name?: string;
+}
+
+interface MetaBusinessAppsResponse extends MetaGraphErrorResponse {
+  data?: MetaBusinessApp[];
+  paging?: MetaPaging;
+}
+
 export interface MetaWhatsappMessageTemplateMutationResponse extends MetaGraphErrorResponse {
   id?: string;
   status?: string;
@@ -180,6 +190,11 @@ export interface MetaWhatsappMessageTemplatePayload {
   parameter_format?: string | null;
   components?: MetaMessageTemplateComponent[];
   message_send_ttl_seconds?: number | null;
+}
+
+export interface MetaWhatsappBusinessApp {
+  id: string;
+  name: string | null;
 }
 
 @injectable()
@@ -355,6 +370,74 @@ export class MetaWhatsappEmbeddedService {
     }
 
     return templates;
+  }
+
+  private async listBusinessAppEdge(input: {
+    apiVersion: string;
+    accessToken: string;
+    businessId: string;
+    edge: 'owned_apps' | 'client_apps';
+  }): Promise<MetaWhatsappBusinessApp[]> {
+    const url = new URL(
+      this.graphUrl(input.apiVersion, `${input.businessId}/${input.edge}`)
+    );
+    url.searchParams.set('fields', 'id,name');
+    url.searchParams.set('limit', '100');
+    url.searchParams.set('access_token', input.accessToken);
+
+    const apps: MetaWhatsappBusinessApp[] = [];
+    let nextUrl: string | null = url.toString();
+
+    while (nextUrl) {
+      const response: Response = await fetch(nextUrl);
+      const payload =
+        await this.parseGraphResponse<MetaBusinessAppsResponse>(response);
+
+      apps.push(
+        ...(payload.data?.map((app) => ({
+          id: app.id,
+          name: app.name ?? null,
+        })) ?? [])
+      );
+
+      nextUrl = payload.paging?.next ?? null;
+    }
+
+    return apps;
+  }
+
+  async listBusinessApps(input: {
+    apiVersion: string;
+    accessToken: string;
+    businessId: string;
+  }): Promise<MetaWhatsappBusinessApp[]> {
+    const appsById = new Map<string, MetaWhatsappBusinessApp>();
+    let fetchedAtLeastOneEdge = false;
+    let lastError: unknown = null;
+
+    for (const edge of ['owned_apps', 'client_apps'] as const) {
+      try {
+        const apps = await this.listBusinessAppEdge({
+          ...input,
+          edge,
+        });
+        fetchedAtLeastOneEdge = true;
+
+        for (const app of apps) {
+          appsById.set(app.id, app);
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (!fetchedAtLeastOneEdge && lastError) {
+      throw lastError;
+    }
+
+    return [...appsById.values()].sort((first, second) =>
+      (first.name ?? first.id).localeCompare(second.name ?? second.id)
+    );
   }
 
   async createMessageTemplate(input: {

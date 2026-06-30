@@ -35,7 +35,11 @@ const samplePlaceholder = (variable: string) =>
           :placeholder="samplePlaceholder(variable)"
           :error-messages="
             !draft.header_variable_samples[variable]?.trim()
-              ? [t('whatsapp_template_validation_offer_sample_required')]
+              ? [
+                  t('whatsapp_template_validation_header_sample_required', {
+                    variable: `{{${variable}}}`,
+                  }),
+                ]
               : []
           "
         />
@@ -55,7 +59,11 @@ const samplePlaceholder = (variable: string) =>
           :placeholder="samplePlaceholder(variable)"
           :error-messages="
             !draft.body_variable_samples[variable]?.trim()
-              ? [t('whatsapp_template_validation_offer_sample_required')]
+              ? [
+                  t('whatsapp_template_validation_body_sample_required', {
+                    variable: `{{${variable}}}`,
+                  }),
+                ]
               : []
           "
         />

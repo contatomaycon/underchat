@@ -17,7 +17,7 @@ const { t } = useI18n();
 <template>
   <section class="template-editor__summary">
     <div class="template-editor__summary-icon">
-      <VIcon icon="tabler-speakerphone" size="26" />
+      <VIcon icon="tabler-speakerphone" size="26" color="white" />
     </div>
     <div>
       <strong>
