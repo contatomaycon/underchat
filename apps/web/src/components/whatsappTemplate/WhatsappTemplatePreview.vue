@@ -66,6 +66,12 @@ const mediaHeader = computed(() => {
 });
 
 const isLocationHeader = computed(() => headerFormat.value === 'LOCATION');
+const locationNameSample = computed(
+  () => `{{${t('whatsapp_template_location_name_sample')}}}`
+);
+const locationAddressSample = computed(
+  () => `{{${t('whatsapp_template_location_address_sample')}}}`
+);
 
 const visibleButtons = computed(() =>
   buttons.value.length > 3
@@ -188,8 +194,8 @@ watch(canOpenAllOptions, (canOpen) => {
             <VIcon icon="tabler-map-pin" size="58" />
           </div>
           <div class="template-preview__location-copy">
-            <strong>{{ t('whatsapp_template_location_name_sample') }}</strong>
-            <span>{{ t('whatsapp_template_location_address_sample') }}</span>
+            <strong>{{ locationNameSample }}</strong>
+            <span>{{ locationAddressSample }}</span>
           </div>
         </div>
         <div v-else-if="headerText" class="template-preview__text-header">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, onMounted, shallowRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import WhatsappTemplateVariableSamples from './WhatsappTemplateVariableSamples.vue';
 import type {
@@ -35,6 +35,7 @@ const draft = defineModel<TemplateDraft>({ required: true });
 const { t } = useI18n();
 const isDraggingFile = shallowRef(false);
 const headerFormatMenu = shallowRef(false);
+const headerFormatSelectRef = shallowRef<HTMLElement | null>(null);
 const mediaInputRef = shallowRef<HTMLInputElement | null>(null);
 
 const mediaHeaderFormats = ['IMAGE', 'VIDEO', 'DOCUMENT'];
@@ -54,10 +55,11 @@ const mediaAttachmentIcon = computed(() => {
 
   return 'tabler-photo';
 });
-const selectedHeaderFormatOption = computed(() =>
-  props.headerFormatOptions.find(
-    (option) => option.value === draft.value.header_format
-  )
+const selectedHeaderFormatOption = computed(
+  () =>
+    props.headerFormatOptions.find(
+      (option) => option.value === draft.value.header_format
+    ) ?? props.headerFormatOptions[0]
 );
 const isTextHeaderDisabled = computed(() =>
   nonTextHeaderFormats.includes(draft.value.header_format)
@@ -81,7 +83,21 @@ const updateMediaFile = (value: File | File[] | null) => {
 };
 
 const updateHeaderFormat = (value: HeaderFormat) => {
+  headerFormatMenu.value = false;
   draft.value.header_format = value;
+};
+
+const toggleHeaderFormatMenu = () => {
+  headerFormatMenu.value = !headerFormatMenu.value;
+};
+
+const closeHeaderFormatMenuOnOutsideClick = (event: MouseEvent) => {
+  const target = event.target;
+
+  if (target instanceof Node && headerFormatSelectRef.value?.contains(target)) {
+    return;
+  }
+
   headerFormatMenu.value = false;
 };
 
@@ -104,6 +120,17 @@ const handleDrop = (event: DragEvent) => {
 
   if (file) updateMediaFile(file);
 };
+
+onMounted(() => {
+  document.addEventListener('mousedown', closeHeaderFormatMenuOnOutsideClick);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener(
+    'mousedown',
+    closeHeaderFormatMenuOnOutsideClick
+  );
+});
 </script>
 
 <template>
@@ -163,54 +190,62 @@ const handleDrop = (event: DragEvent) => {
             • {{ t('whatsapp_template_optional') }}
           </span>
         </div>
-        <VMenu
-          v-model="headerFormatMenu"
-          location="bottom start"
-          :close-on-content-click="true"
+        <div
+          ref="headerFormatSelectRef"
+          class="template-editor__header-format-control"
         >
-          <template #activator="{ props: menuProps }">
-            <button
-              v-bind="menuProps"
-              class="template-editor__header-format-select"
-              type="button"
-              :aria-label="t('whatsapp_template_media_sample_label')"
-            >
-              <span class="template-editor__header-format-selected">
-                <VIcon
-                  v-if="selectedHeaderFormatOption?.icon"
-                  :icon="selectedHeaderFormatOption.icon"
-                  size="18"
-                />
-                <span>{{ selectedHeaderFormatOption?.title }}</span>
-              </span>
+          <button
+            class="template-editor__header-format-select"
+            type="button"
+            :aria-label="t('whatsapp_template_media_sample_label')"
+            :aria-expanded="headerFormatMenu"
+            @click.stop="toggleHeaderFormatMenu"
+            @keydown.enter.prevent.stop="toggleHeaderFormatMenu"
+            @keydown.space.prevent.stop="toggleHeaderFormatMenu"
+            @keydown.esc.prevent.stop="headerFormatMenu = false"
+          >
+            <span class="template-editor__header-format-selected">
               <VIcon
-                :icon="
-                  headerFormatMenu ? 'tabler-chevron-up' : 'tabler-chevron-down'
-                "
+                v-if="selectedHeaderFormatOption?.icon"
+                :icon="selectedHeaderFormatOption.icon"
                 size="18"
               />
-            </button>
-          </template>
-          <VList
+              <span>{{ selectedHeaderFormatOption?.title }}</span>
+            </span>
+            <VIcon
+              :icon="
+                headerFormatMenu ? 'tabler-chevron-up' : 'tabler-chevron-down'
+              "
+              size="18"
+            />
+          </button>
+          <div
+            v-if="headerFormatMenu"
             class="template-editor__header-format-menu"
-            density="compact"
-            min-width="240"
+            role="listbox"
+            :aria-label="t('whatsapp_template_media_sample_label')"
           >
-            <VListItem
+            <button
               v-for="option in headerFormatOptions"
               :key="option.value"
-              :active="draft.header_format === option.value"
-              color="primary"
-              rounded="sm"
-              @click="updateHeaderFormat(option.value)"
+              class="template-editor__header-format-option"
+              :class="{
+                'template-editor__header-format-option--active':
+                  draft.header_format === option.value,
+              }"
+              type="button"
+              role="option"
+              :aria-selected="draft.header_format === option.value"
+              @pointerdown.prevent.stop="updateHeaderFormat(option.value)"
+              @click.prevent.stop
+              @keydown.enter.prevent.stop="updateHeaderFormat(option.value)"
+              @keydown.space.prevent.stop="updateHeaderFormat(option.value)"
             >
-              <template v-if="option.icon" #prepend>
-                <VIcon :icon="option.icon" size="18" />
-              </template>
-              <VListItemTitle>{{ option.title }}</VListItemTitle>
-            </VListItem>
-          </VList>
-        </VMenu>
+              <VIcon v-if="option.icon" :icon="option.icon" size="18" />
+              <span>{{ option.title }}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -437,6 +472,10 @@ const handleDrop = (event: DragEvent) => {
 </template>
 
 <style scoped>
+.template-editor__header-format-control {
+  position: relative;
+}
+
 .template-editor__header-format-select {
   display: flex;
   align-items: center;
@@ -473,6 +512,43 @@ const handleDrop = (event: DragEvent) => {
 }
 
 .template-editor__header-format-menu {
+  position: absolute;
+  z-index: 20;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-start: 0;
+  display: grid;
+  min-inline-size: 240px;
   padding: 4px;
+  border-radius: 6px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+}
+
+.template-editor__header-format-option {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: 40px;
+  gap: 10px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+  cursor: pointer;
+  font: inherit;
+  outline: none;
+  text-align: start;
+}
+
+.template-editor__header-format-option:hover,
+.template-editor__header-format-option--active {
+  background: rgba(var(--v-theme-primary), 0.12);
+  color: rgb(var(--v-theme-primary));
+}
+
+.template-editor__header-format-option:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 1px;
 }
 </style>
