@@ -4796,11 +4796,15 @@ onMounted(async () => {
                 <VCol
                   v-for="option in workerConfigOptions"
                   :key="option.key"
+                  class="d-flex"
                   cols="12"
                   md="6"
                 >
                   <VCard
                     class="general-config-card h-100 position-relative"
+                    :class="{
+                      'general-config-card--with-action': hasModal(option.key),
+                    }"
                     variant="outlined"
                   >
                     <VTooltip
@@ -7237,8 +7241,12 @@ onMounted(async () => {
 
 .general-config-card {
   border-radius: 12px !important;
-  padding: 16px;
-  height: 100%;
+  padding: 16px 16px 18px;
+  width: 100%;
+}
+
+.general-config-card--with-action {
+  padding-bottom: 48px;
 }
 
 .general-config-card :deep(.v-selection-control) {
@@ -7247,8 +7255,6 @@ onMounted(async () => {
 
 .general-config-content {
   padding-right: 60px;
-  padding-top: 36px;
-  padding-bottom: 48px;
 }
 
 .general-config-toggle-wrapper {
@@ -7276,6 +7282,7 @@ onMounted(async () => {
 }
 
 .general-config-grid {
+  align-items: stretch;
   row-gap: 16px;
 }
 
