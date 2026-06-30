@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 interface TemplateFilters {
   search: string | null;
@@ -20,6 +21,8 @@ const emit = defineEmits<{
   'update:filters': [value: TemplateFilters];
 }>();
 
+const { t } = useI18n();
+
 const localFilters = reactive<TemplateFilters>({
   search: props.filters.search,
   status: props.filters.status,
@@ -29,26 +32,29 @@ const localFilters = reactive<TemplateFilters>({
 });
 
 const statusItems = computed(() => [
-  { title: 'Todos', value: null },
-  { title: 'Aprovado', value: 'APPROVED' },
-  { title: 'Pendente', value: 'PENDING' },
-  { title: 'Rejeitado', value: 'REJECTED' },
-  { title: 'Pausado', value: 'PAUSED' },
-  { title: 'Desativado', value: 'DISABLED' },
-  { title: 'Erro de sync', value: 'SYNC_ERROR' },
+  { title: t('whatsapp_template_filter_all_masculine'), value: null },
+  { title: t('whatsapp_template_status_approved'), value: 'APPROVED' },
+  { title: t('whatsapp_template_status_pending'), value: 'PENDING' },
+  { title: t('whatsapp_template_status_rejected'), value: 'REJECTED' },
+  { title: t('whatsapp_template_status_paused'), value: 'PAUSED' },
+  { title: t('whatsapp_template_status_disabled'), value: 'DISABLED' },
+  { title: t('whatsapp_template_status_sync_error'), value: 'SYNC_ERROR' },
 ]);
 
 const categoryItems = computed(() => [
-  { title: 'Todas', value: null },
-  { title: 'Marketing', value: 'MARKETING' },
-  { title: 'Utilidade', value: 'UTILITY' },
-  { title: 'Autenticação', value: 'AUTHENTICATION' },
+  { title: t('whatsapp_template_filter_all_feminine'), value: null },
+  { title: t('whatsapp_template_category_marketing'), value: 'MARKETING' },
+  { title: t('whatsapp_template_category_utility'), value: 'UTILITY' },
+  {
+    title: t('whatsapp_template_category_authentication'),
+    value: 'AUTHENTICATION',
+  },
 ]);
 
 const activeItems = computed(() => [
-  { title: 'Todos', value: null },
-  { title: 'Ativos', value: true },
-  { title: 'Desativados', value: false },
+  { title: t('whatsapp_template_filter_all_masculine'), value: null },
+  { title: t('whatsapp_template_active_only'), value: true },
+  { title: t('whatsapp_template_inactive_only'), value: false },
 ]);
 
 const emitFilters = () => {
@@ -60,7 +66,7 @@ const emitFilters = () => {
   <div class="template-toolbar">
     <div class="template-toolbar__primary">
       <VBtn prepend-icon="tabler-plus" @click="emit('add')">
-        Adicionar modelo
+        {{ t('whatsapp_template_add_model') }}
       </VBtn>
       <VBtn
         variant="tonal"
@@ -68,14 +74,14 @@ const emitFilters = () => {
         :loading="syncing"
         @click="emit('sync')"
       >
-        Sincronizar modelos
+        {{ t('whatsapp_template_sync_models') }}
       </VBtn>
     </div>
 
     <div class="template-toolbar__filters">
       <AppTextField
         v-model="localFilters.search"
-        placeholder="Buscar..."
+        :placeholder="t('whatsapp_template_search_placeholder')"
         append-inner-icon="tabler-search"
         single-line
         hide-details
@@ -87,7 +93,7 @@ const emitFilters = () => {
         :items="categoryItems"
         item-title="title"
         item-value="value"
-        placeholder="Categoria"
+        :placeholder="t('whatsapp_template_category_placeholder')"
         clearable
         hide-details
         density="compact"
@@ -98,7 +104,7 @@ const emitFilters = () => {
         :items="statusItems"
         item-title="title"
         item-value="value"
-        placeholder="Status"
+        :placeholder="t('whatsapp_template_status_placeholder')"
         clearable
         hide-details
         density="compact"
@@ -106,7 +112,7 @@ const emitFilters = () => {
       />
       <AppTextField
         v-model="localFilters.language"
-        placeholder="Idioma"
+        :placeholder="t('whatsapp_template_language_filter_placeholder')"
         hide-details
         density="compact"
         @update:model-value="emitFilters"
@@ -116,7 +122,7 @@ const emitFilters = () => {
         :items="activeItems"
         item-title="title"
         item-value="value"
-        placeholder="Ativação"
+        :placeholder="t('whatsapp_template_activation_placeholder')"
         clearable
         hide-details
         density="compact"

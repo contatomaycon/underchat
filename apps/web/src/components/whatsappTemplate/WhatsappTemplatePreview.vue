@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { WhatsappTemplateComponent } from '@core/schema/worker/whatsappOfficialTemplate';
 
 const props = defineProps<{
   components: WhatsappTemplateComponent[];
 }>();
+
+const { t } = useI18n();
 
 const header = computed(() =>
   props.components.find((component) => component.type === 'HEADER')
@@ -24,40 +27,111 @@ const buttons = computed(() => {
     : [];
 });
 
-const headerLabel = computed(() => {
-  if (!header.value) return null;
-  const format = String(header.value.format ?? 'TEXT');
-  if (format === 'IMAGE') return 'Imagem';
-  if (format === 'VIDEO') return 'Vídeo';
-  if (format === 'DOCUMENT') return 'Documento';
-  if (format === 'LOCATION') return 'Localização';
-  return String(header.value.text ?? '');
+const headerFormat = computed(() => String(header.value?.format ?? 'TEXT'));
+const headerText = computed(() => String(header.value?.text ?? ''));
+const bodyText = computed(() =>
+  String(body.value?.text || t('whatsapp_template_default_body'))
+);
+const footerText = computed(() => String(footer.value?.text ?? ''));
+
+const mediaHeader = computed(() => {
+  const format = headerFormat.value;
+  if (!['IMAGE', 'VIDEO', 'DOCUMENT', 'LOCATION'].includes(format)) return null;
+
+  const mediaMap: Record<string, { icon: string; label: string }> = {
+    IMAGE: { icon: 'tabler-photo', label: t('whatsapp_template_header_image') },
+    VIDEO: {
+      icon: 'tabler-player-play',
+      label: t('whatsapp_template_header_video'),
+    },
+    DOCUMENT: {
+      icon: 'tabler-file-text',
+      label: t('whatsapp_template_header_document'),
+    },
+    LOCATION: {
+      icon: 'tabler-map-pin',
+      label: t('whatsapp_template_header_location'),
+    },
+  };
+
+  return mediaMap[format];
 });
+
+const visibleButtons = computed(() =>
+  buttons.value.length > 3
+    ? buttons.value.slice(0, 2)
+    : buttons.value.slice(0, 3)
+);
+const showMoreButton = computed(() => buttons.value.length > 3);
+
+const buttonIcon = (button: Record<string, unknown>) => {
+  const type = String(button.type ?? '');
+  if (type === 'URL') return 'tabler-external-link';
+  if (type === 'PHONE_NUMBER') return 'tabler-phone';
+  if (type === 'VOICE_CALL') return 'tabler-phone-call';
+  if (type === 'COPY_CODE') return 'tabler-copy';
+  return 'tabler-arrow-back-up';
+};
+
+const buttonText = (button: Record<string, unknown>) => {
+  const type = String(button.type ?? '');
+  if (type === 'COPY_CODE') {
+    return t('whatsapp_template_button_default_copy_code');
+  }
+
+  return String(button.text ?? button.type ?? t('whatsapp_template_button'));
+};
 </script>
 
 <template>
   <aside class="template-preview">
-    <div class="template-preview__title">Prévia do modelo</div>
+    <div class="template-preview__title-row">
+      <div class="template-preview__title">
+        {{ t('whatsapp_template_preview_title') }}
+      </div>
+      <VBtn
+        v-if="buttons.length"
+        icon
+        variant="outlined"
+        size="small"
+        :aria-label="t('whatsapp_template_preview_play')"
+      >
+        <VIcon icon="tabler-player-play-filled" size="16" />
+      </VBtn>
+    </div>
     <div class="template-preview__phone">
       <div class="template-preview__bubble">
-        <div v-if="headerLabel" class="template-preview__header">
-          {{ headerLabel }}
+        <div v-if="mediaHeader" class="template-preview__media-header">
+          <VIcon :icon="mediaHeader.icon" size="34" />
+          <span>{{ mediaHeader.label }}</span>
+        </div>
+        <div v-else-if="headerText" class="template-preview__text-header">
+          {{ headerText }}
         </div>
         <div class="template-preview__body">
-          {{ body?.text || 'Sua mensagem aparecerá aqui.' }}
+          {{ bodyText }}
         </div>
-        <div v-if="footer?.text" class="template-preview__footer">
-          {{ footer.text }}
+        <div v-if="footerText" class="template-preview__footer">
+          {{ footerText }}
         </div>
         <div class="template-preview__time">11:59</div>
         <div v-if="buttons.length" class="template-preview__buttons">
           <button
-            v-for="(button, index) in buttons"
+            v-for="(button, index) in visibleButtons"
             :key="`${button.type}-${index}`"
             class="template-preview__button"
             type="button"
           >
-            {{ button.text || button.type }}
+            <VIcon :icon="buttonIcon(button)" size="16" />
+            <span>{{ buttonText(button) }}</span>
+          </button>
+          <button
+            v-if="showMoreButton"
+            class="template-preview__button"
+            type="button"
+          >
+            <VIcon icon="tabler-list" size="16" />
+            <span>{{ t('whatsapp_template_view_all_options') }}</span>
           </button>
         </div>
       </div>
@@ -75,10 +149,17 @@ const headerLabel = computed(() => {
   background: rgb(var(--v-theme-surface));
 }
 
-.template-preview__title {
-  padding: 16px;
+.template-preview__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: 56px;
+  padding: 12px 16px;
   border-block-end: 1px solid
     rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.template-preview__title {
   font-weight: 700;
 }
 
@@ -103,19 +184,29 @@ const headerLabel = computed(() => {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
-.template-preview__header {
-  min-block-size: 72px;
+.template-preview__media-header {
   display: grid;
   place-items: center;
+  min-block-size: 104px;
   padding: 12px;
   background: #eef2f6;
-  color: #475569;
+  color: #64748b;
   font-weight: 600;
+  gap: 6px;
+}
+
+.template-preview__text-header {
+  padding: 12px 12px 0;
+  color: #111827;
+  font-weight: 700;
+  white-space: pre-wrap;
 }
 
 .template-preview__body {
-  padding: 12px 12px 4px;
+  padding: 10px 12px 4px;
+  color: #111827;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .template-preview__footer {
@@ -136,12 +227,16 @@ const headerLabel = computed(() => {
 }
 
 .template-preview__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   inline-size: 100%;
   min-block-size: 42px;
+  gap: 6px;
   border: 0;
   border-block-end: 1px solid #e5e7eb;
   background: white;
-  color: #0f8f78;
+  color: #09846c;
   cursor: default;
   font-weight: 700;
 }

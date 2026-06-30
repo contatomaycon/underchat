@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { DataTableHeader } from 'vuetify';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 import { WhatsappTemplateResponse } from '@core/schema/worker/whatsappOfficialTemplate';
@@ -21,14 +22,20 @@ const emit = defineEmits<{
   'update:itemsPerPage': [value: number];
 }>();
 
+const { t } = useI18n();
+
 const headers = computed<DataTableHeader<WhatsappTemplateResponse>[]>(() => [
-  { title: 'Nome', key: 'name' },
-  { title: 'Idioma', key: 'language' },
-  { title: 'Categoria', key: 'category' },
-  { title: 'Status', key: 'status' },
-  { title: 'Qualidade', key: 'quality_score' },
-  { title: 'Última sync', key: 'last_synced_at' },
-  { title: 'Ações', key: 'actions', sortable: false },
+  { title: t('whatsapp_template_table_name'), key: 'name' },
+  { title: t('whatsapp_template_table_language'), key: 'language' },
+  { title: t('whatsapp_template_table_category'), key: 'category' },
+  { title: t('whatsapp_template_table_status'), key: 'status' },
+  { title: t('whatsapp_template_table_quality'), key: 'quality_score' },
+  { title: t('whatsapp_template_table_last_sync'), key: 'last_synced_at' },
+  {
+    title: t('whatsapp_template_table_actions'),
+    key: 'actions',
+    sortable: false,
+  },
 ]);
 
 const statusColor = (status: string): EColor => {
@@ -40,9 +47,13 @@ const statusColor = (status: string): EColor => {
 };
 
 const categoryLabel = (category: string): string => {
-  if (category === 'MARKETING') return 'Marketing';
-  if (category === 'UTILITY') return 'Utilidade';
-  if (category === 'AUTHENTICATION') return 'Autenticação';
+  if (category === 'MARKETING')
+    return t('whatsapp_template_category_marketing');
+  if (category === 'UTILITY') return t('whatsapp_template_category_utility');
+  if (category === 'AUTHENTICATION') {
+    return t('whatsapp_template_category_authentication');
+  }
+
   return category;
 };
 </script>
@@ -56,7 +67,7 @@ const categoryLabel = (category: string): string => {
     :items-length="props.totalItems"
     :page="props.page"
     :items-per-page="props.itemsPerPage"
-    loading-text="Carregando..."
+    :loading-text="t('whatsapp_template_loading')"
     @update:page="emit('update:page', $event)"
     @update:items-per-page="emit('update:itemsPerPage', $event)"
   >
@@ -83,7 +94,7 @@ const categoryLabel = (category: string): string => {
         {{ item.status }}
       </VChip>
       <VChip v-if="!item.is_active" size="small" color="secondary" class="ms-1">
-        Local inativo
+        {{ t('whatsapp_template_local_inactive') }}
       </VChip>
     </template>
 
@@ -101,28 +112,30 @@ const categoryLabel = (category: string): string => {
       <div class="template-actions">
         <IconBtn @click="emit('edit', item)">
           <VTooltip activator="parent" location="top">
-            <span>Editar modelo</span>
+            <span>{{ t('whatsapp_template_edit_action') }}</span>
           </VTooltip>
           <VIcon icon="tabler-edit" />
         </IconBtn>
 
         <IconBtn :disabled="!item.is_active" @click="emit('deactivate', item)">
           <VTooltip activator="parent" location="top">
-            <span>Desativar no Underchat</span>
+            <span>{{ t('whatsapp_template_deactivate_action') }}</span>
           </VTooltip>
           <VIcon icon="tabler-ban" />
         </IconBtn>
 
         <IconBtn @click="emit('delete', item)">
           <VTooltip activator="parent" location="top">
-            <span>Excluir na Meta</span>
+            <span>{{ t('whatsapp_template_delete_action') }}</span>
           </VTooltip>
           <VIcon icon="tabler-trash" />
         </IconBtn>
       </div>
     </template>
 
-    <template #no-data> Nenhum modelo oficial encontrado. </template>
+    <template #no-data>
+      {{ t('whatsapp_template_no_data') }}
+    </template>
 
     <template #bottom>
       <TablePagination
