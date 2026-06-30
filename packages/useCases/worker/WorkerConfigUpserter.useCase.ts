@@ -6,7 +6,7 @@ import { IUpdateWorkerConfig } from '@core/common/interfaces/IUpdateWorkerConfig
 import { WorkerConfig } from '@core/schema/worker/updateWorkerConfig/response.schema';
 import { UpdateWorkerConfigRequest } from '@core/schema/worker/updateWorkerConfig/request.schema';
 import {
-  hasWorkerConfigProxyFields,
+  hasOfficialCoexistenceUnsupportedConfigFields,
   isOfficialWhatsappWorker,
 } from '@core/common/functions/workerOfficialCapabilities';
 
@@ -33,7 +33,9 @@ export class WorkerConfigUpserterUseCase {
 
     if (
       isOfficialWhatsappWorker(worker.type?.id) &&
-      hasWorkerConfigProxyFields(body as Record<string, unknown>)
+      hasOfficialCoexistenceUnsupportedConfigFields(
+        body as Record<string, unknown>
+      )
     ) {
       throw new Error(t('whatsapp_official_runtime_action_not_supported'));
     }

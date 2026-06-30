@@ -24,3 +24,11 @@ export const hasWorkerConfigProxyFields = (
     'proxy_username',
     'proxy_password',
   ].some((field) => Object.prototype.hasOwnProperty.call(input, field));
+
+export const hasOfficialCoexistenceUnsupportedConfigFields = (
+  input: Record<string, unknown>
+): boolean =>
+  hasWorkerConfigProxyFields(input) ||
+  ['reject_call'].some((field) =>
+    Object.prototype.hasOwnProperty.call(input, field)
+  );

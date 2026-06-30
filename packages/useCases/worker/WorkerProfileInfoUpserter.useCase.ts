@@ -9,16 +9,6 @@ import { UploadProfileInfoRequest } from '@core/schema/worker/uploadProfileInfo/
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { IProfileInfoMessage } from '@core/common/interfaces/IProfileInfoMessage';
 import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
-import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
-import {
-  isMetaPermissionsError,
-  MetaWhatsappBusinessProfile,
-  MetaWhatsappEmbeddedService,
-  UpdateMetaWhatsappBusinessProfile,
-} from '@core/services/metaWhatsappEmbedded.service';
-import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
-import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
-import { isWhatsappBusinessProfileVertical } from '@core/common/enums/EWhatsappBusinessProfileVertical';
 
 @injectable()
 export class WorkerProfileInfoUpserterUseCase {
@@ -32,15 +22,7 @@ export class WorkerProfileInfoUpserterUseCase {
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
-    @inject(WorkerWhatsappOfficialConnectionRepository)
-    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository,
-    @inject(MetaWhatsappEmbeddedService)
-    private readonly metaWhatsappEmbeddedService: MetaWhatsappEmbeddedService,
-    @inject(PasswordEncryptorService)
-    private readonly passwordEncryptorService: PasswordEncryptorService,
-    @inject(WhatsappEmbeddedService)
-    private readonly whatsappEmbeddedService: WhatsappEmbeddedService
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
   ) {}
 
   private normalizeField(field: unknown): string | undefined {
@@ -84,39 +66,6 @@ export class WorkerProfileInfoUpserterUseCase {
     return false;
   }
 
-  private normalizeNullableField(field: unknown): string | null | undefined {
-    const value = this.normalizeField(field);
-    if (value === undefined) return undefined;
-
-    const normalized = value.trim();
-    return normalized ? normalized : null;
-  }
-
-  private normalizeWebsitesField(field: unknown): string[] | undefined {
-    const value = this.normalizeField(field);
-    if (value === undefined) return undefined;
-
-    const normalized = value.trim();
-    if (!normalized) return [];
-
-    try {
-      const parsed = JSON.parse(normalized) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter(Boolean);
-      }
-    } catch {
-      // Falls back to comma/newline parsing for multipart text fields.
-    }
-
-    return normalized
-      .split(/[\n,]/u)
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
   private async validateFileSize(
     file: UploadFileRequest,
     t: TFunction<'translation', undefined>
@@ -128,140 +77,6 @@ export class WorkerProfileInfoUpserterUseCase {
     }
 
     return buffer;
-  }
-
-  private mapOfficialProfile(input: {
-    workerId: string;
-    connectionId: string;
-    profile: MetaWhatsappBusinessProfile;
-  }): UploadProfileInfoResponse {
-    return {
-      worker_profile_info_id: input.connectionId,
-      worker_id: input.workerId,
-      name: null,
-      message: input.profile.description ?? input.profile.about,
-      photo: input.profile.profile_picture_url,
-      created_at: null,
-      updated_at: null,
-      is_official: true,
-      about: input.profile.about,
-      description: input.profile.description,
-      address: input.profile.address,
-      email: input.profile.email,
-      websites: input.profile.websites,
-      vertical: input.profile.vertical,
-      profile_picture_url: input.profile.profile_picture_url,
-    };
-  }
-
-  private buildOfficialProfilePayload(
-    t: TFunction<'translation', undefined>,
-    body: UploadProfileInfoRequest
-  ): UpdateMetaWhatsappBusinessProfile {
-    const payload: UpdateMetaWhatsappBusinessProfile = {};
-
-    const about = this.normalizeNullableField(body.about);
-    if (about !== undefined) payload.about = about;
-
-    const description = this.normalizeNullableField(body.description);
-    const message = this.normalizeNullableField(body.message);
-    if (description !== undefined) {
-      payload.description = description;
-    } else if (message !== undefined) {
-      payload.description = message;
-    }
-
-    const address = this.normalizeNullableField(body.address);
-    if (address !== undefined) payload.address = address;
-
-    const email = this.normalizeNullableField(body.email);
-    if (email !== undefined) payload.email = email;
-
-    const websites = this.normalizeWebsitesField(body.websites);
-    if (websites !== undefined) payload.websites = websites;
-
-    const vertical = this.normalizeNullableField(body.vertical);
-    if (vertical !== undefined && vertical !== null) {
-      if (!isWhatsappBusinessProfileVertical(vertical)) {
-        throw new Error(t('whatsapp_profile_category_invalid'));
-      }
-
-      payload.vertical = vertical;
-    }
-
-    const profilePictureHandle = this.normalizeNullableField(
-      body.profile_picture_handle
-    );
-    if (profilePictureHandle !== undefined) {
-      payload.profile_picture_handle = profilePictureHandle;
-    }
-
-    return payload;
-  }
-
-  private async updateOfficialProfile(
-    t: TFunction<'translation', undefined>,
-    workerId: string,
-    body: UploadProfileInfoRequest
-  ): Promise<UploadProfileInfoResponse> {
-    const connection =
-      await this.workerWhatsappOfficialConnectionRepository.findActiveByWorkerId(
-        workerId
-      );
-
-    if (!connection) {
-      throw new Error(t('whatsapp_official_connection_not_found'));
-    }
-
-    if (this.normalizeBooleanField(body.remove_photo)) {
-      throw new Error(t('whatsapp_official_runtime_action_not_supported'));
-    }
-
-    const accessToken = this.passwordEncryptorService.decrypt(
-      connection.access_token_encrypted
-    );
-    const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
-    const payload = this.buildOfficialProfilePayload(t, body);
-
-    try {
-      if (body.photo) {
-        const fileBuffer = await this.validateFileSize(body.photo, t);
-        payload.profile_picture_handle =
-          await this.metaWhatsappEmbeddedService.uploadProfilePicture({
-            apiVersion: config.api_version,
-            accessToken,
-            appId: config.app_id,
-            filename: body.photo.filename,
-            fileType: body.photo.mimetype ?? 'image/jpeg',
-            fileBuffer,
-          });
-      }
-
-      await this.metaWhatsappEmbeddedService.updateBusinessProfile({
-        apiVersion: config.api_version,
-        accessToken,
-        phoneNumberId: connection.phone_number_id,
-        data: payload,
-      });
-      const profile =
-        await this.metaWhatsappEmbeddedService.viewBusinessProfile({
-          apiVersion: config.api_version,
-          accessToken,
-          phoneNumberId: connection.phone_number_id,
-        });
-
-      return this.mapOfficialProfile({
-        workerId,
-        connectionId: connection.worker_whatsapp_official_connection_id,
-        profile,
-      });
-    } catch (error) {
-      if (isMetaPermissionsError(error)) {
-        throw new Error(t('whatsapp_official_profile_permission_error'));
-      }
-
-      throw error;
-    }
   }
 
   async execute(
@@ -277,7 +92,7 @@ export class WorkerProfileInfoUpserterUseCase {
     }
 
     if (isOfficialWhatsappWorker(worker.type?.id)) {
-      return this.updateOfficialProfile(t, workerId, body);
+      throw new Error(t('whatsapp_official_profile_info_not_supported'));
     }
 
     const name = this.normalizeField(body.name);

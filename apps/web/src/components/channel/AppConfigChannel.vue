@@ -1151,7 +1151,9 @@ const permissionsProfileInfo = [
   EWorkerPermissions.profile_info_worker,
 ];
 
-const canAccessProfileInfo = computed(() => can(permissionsProfileInfo));
+const canAccessProfileInfo = computed(
+  () => !isOfficialChannel.value && can(permissionsProfileInfo)
+);
 
 const loadCurrentWorker = async (force = false): Promise<void> => {
   if (!channelId.value) {
@@ -3081,7 +3083,9 @@ const workerConfigOptions = computed(() => {
 
   return options.filter(
     (option) =>
-      option.key !== 'typing_simulation' && option.key !== 'security_key'
+      option.key !== 'show_message_on_call' &&
+      option.key !== 'typing_simulation' &&
+      option.key !== 'security_key'
   );
 });
 
@@ -5448,7 +5452,7 @@ onMounted(async () => {
             </div>
           </VWindowItem>
 
-          <VWindowItem value="profile-info">
+          <VWindowItem v-if="canAccessProfileInfo" value="profile-info">
             <div class="d-flex flex-column gap-6 pa-4">
               <div class="d-flex flex-column align-center gap-4">
                 <div

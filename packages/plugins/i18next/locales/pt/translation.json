@@ -1263,6 +1263,7 @@
   "whatsapp_official_type_change_not_allowed": "Canal WhatsApp Oficial não pode ser convertido para outro tipo.",
   "whatsapp_official_connect_required": "Use o fluxo de conexão da Meta para criar um canal WhatsApp Oficial.",
   "whatsapp_official_runtime_action_not_supported": "Esta ação de runtime não está disponível para canais WhatsApp Oficial.",
+  "whatsapp_official_profile_info_not_supported": "Informações do perfil não estão disponíveis para WhatsApp Oficial em coexistência.",
   "whatsapp_official_profile_permission_error": "A Meta negou permissão para alterar o perfil deste número. O token possui whatsapp_business_management, mas a WABA não concedeu permissão de gerenciamento do número ao system user. No Business Manager, acesse Contas do WhatsApp > Parceiros > Gerenciar e habilite Números de telefone (ver e gerenciar) ou Acesso total para o parceiro. Depois reconecte o canal oficial.",
   "whatsapp_profile_category_invalid": "Categoria do perfil do WhatsApp Oficial inválida.",
   "chatbot_flow_validation_holiday_options_required": "As saídas \"É feriado\" e \"Não é feriado\" são obrigatórias no nó \"{{nodeLabel}}\""
