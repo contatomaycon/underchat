@@ -1491,7 +1491,21 @@ const getOfficialMetadataTitle = (
 const isOfficialUnsupportedMessage = (message: ListMessageResult): boolean =>
   Boolean(getOfficialMetadata(message)?.unsupported);
 
-const getOfficialUnsupportedDescription = (): string =>
+const NON_OFFICIAL_UNSUPPORTED_MESSAGE =
+  'Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp.';
+
+const normalizeUnsupportedMessageText = (message?: string | null): string =>
+  message?.trim().replace(/\s+/g, ' ') ?? '';
+
+const isNonOfficialUnsupportedMessage = (message: ListMessageResult): boolean =>
+  normalizeUnsupportedMessageText(message.content?.message) ===
+  NON_OFFICIAL_UNSUPPORTED_MESSAGE;
+
+const isUnsupportedProviderMessage = (message: ListMessageResult): boolean =>
+  isOfficialUnsupportedMessage(message) ||
+  isNonOfficialUnsupportedMessage(message);
+
+const getUnsupportedProviderDescription = (): string =>
   t('official_whatsapp_unsupported_hint');
 
 const getOfficialMetadataDescription = (
@@ -3747,13 +3761,13 @@ onUnmounted(() => {
                       item.message.content?.type ===
                         EMessageType.contact_card ||
                       item.message.content?.type === EMessageType.contacts,
-                    'has-official-unsupported': isOfficialUnsupportedMessage(
+                    'has-official-unsupported': isUnsupportedProviderMessage(
                       item.message
                     ),
                   },
                 ]"
                 :style="{
-                  backgroundColor: isOfficialUnsupportedMessage(item.message)
+                  backgroundColor: isUnsupportedProviderMessage(item.message)
                     ? undefined
                     : item.message.content?.type === EMessageType.annotation
                       ? 'rgb(255, 243, 205)'
@@ -4381,7 +4395,7 @@ onUnmounted(() => {
                   </div>
 
                   <div
-                    v-if="isOfficialUnsupportedMessage(item.message)"
+                    v-if="isUnsupportedProviderMessage(item.message)"
                     class="official-unsupported-card"
                   >
                     <div class="official-unsupported-card__icon">
@@ -4392,7 +4406,7 @@ onUnmounted(() => {
                         {{ t('official_whatsapp_unsupported') }}
                       </span>
                       <span class="official-unsupported-card__description">
-                        {{ getOfficialUnsupportedDescription() }}
+                        {{ getUnsupportedProviderDescription() }}
                       </span>
                     </div>
                   </div>
@@ -5247,7 +5261,7 @@ onUnmounted(() => {
                       item.message.content?.type !== EMessageType.system &&
                       !item.message.message_key?.is_view_once &&
                       !item.message.content?.template &&
-                      !isOfficialUnsupportedMessage(item.message)
+                      !isUnsupportedProviderMessage(item.message)
                     "
                     class="d-flex align-center"
                   >

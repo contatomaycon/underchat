@@ -2802,6 +2802,9 @@ func (m *WhatsAppManager) buildIncomingUpsert(ctx context.Context, evt *events.M
 	if messageType == "" {
 		return nil, nil
 	}
+	if messageType == MessageTypeEditText {
+		normalizeIncomingEditMessageMapForBaileys(messageMap, evt, content)
+	}
 	key := m.buildIncomingMessageKey(evt)
 	photo := m.incomingProfilePhoto(ctx, evt)
 	_, hasQuoted := content["quoted"]
@@ -2845,6 +2848,69 @@ func normalizeIncomingMessageMapForBaileys(messageMap map[string]any) {
 			normalizeIncomingMessageMapForBaileys(inner)
 		}
 	}
+}
+
+func normalizeIncomingEditMessageMapForBaileys(messageMap map[string]any, evt *events.Message, content map[string]any) {
+	if len(messageMap) == 0 || evt == nil {
+		return
+	}
+
+	protocolMessage := firstIncomingProtocolMessageMap(messageMap)
+	if len(protocolMessage) == 0 {
+		protocolMessage = map[string]any{}
+		messageMap["protocolMessage"] = protocolMessage
+	}
+
+	if stringValue(protocolMessage["type"]) == "" {
+		protocolMessage["type"] = "MESSAGE_EDIT"
+	}
+
+	key := asMap(protocolMessage["key"])
+	if len(key) == 0 {
+		key = map[string]any{}
+		protocolMessage["key"] = key
+	}
+	if stringValue(key["id"]) == "" {
+		key["id"] = evt.Info.ID
+	}
+	if stringValue(key["remoteJid"]) == "" {
+		key["remoteJid"] = evt.Info.Chat.String()
+	}
+	if _, ok := key["fromMe"]; !ok {
+		key["fromMe"] = evt.Info.IsFromMe
+	}
+	if stringValue(key["participant"]) == "" && !evt.Info.Sender.IsEmpty() && evt.Info.Sender != evt.Info.Chat {
+		key["participant"] = evt.Info.Sender.String()
+	}
+
+	message := stringValue(content["message"])
+	editedMessage := asMap(protocolMessage["editedMessage"])
+	if len(editedMessage) == 0 {
+		editedMessage = map[string]any{}
+		protocolMessage["editedMessage"] = editedMessage
+	}
+	if stringValue(editedMessage["conversation"]) == "" {
+		editedMessage["conversation"] = message
+	}
+	extendedTextMessage := asMap(editedMessage["extendedTextMessage"])
+	if len(extendedTextMessage) == 0 {
+		extendedTextMessage = map[string]any{}
+		editedMessage["extendedTextMessage"] = extendedTextMessage
+	}
+	if stringValue(extendedTextMessage["text"]) == "" {
+		extendedTextMessage["text"] = message
+	}
+}
+
+func firstIncomingProtocolMessageMap(messageMap map[string]any) map[string]any {
+	if protocolMessage := asMap(messageMap["protocolMessage"]); len(protocolMessage) > 0 {
+		return protocolMessage
+	}
+	editedMessage := asMap(messageMap["editedMessage"])
+	if protocolMessage := asMap(asMap(editedMessage["message"])["protocolMessage"]); len(protocolMessage) > 0 {
+		return protocolMessage
+	}
+	return nil
 }
 
 func normalizeReactionMessagePayload(messageMap map[string]any, field string) {

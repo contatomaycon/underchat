@@ -676,6 +676,9 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		return m.withIncomingQuoted(evt, msg, MessageTypeViewOnce, map[string]any{"type": MessageTypeViewOnce})
 	}
 	base := map[string]any{}
+	if messageType, content := m.incomingEditedContent(evt, msg); messageType != "" {
+		return messageType, content
+	}
 	if text := msg.GetConversation(); text != "" {
 		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
 	}
@@ -782,6 +785,41 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		return m.withIncomingQuoted(evt, msg, MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items})
 	}
 	return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+}
+
+func (m *WhatsAppManager) incomingEditedContent(evt *events.Message, msg *waE2E.Message) (string, map[string]any) {
+	if evt == nil || evt.Message == nil || evt.Message.GetEditedMessage() == nil {
+		return "", nil
+	}
+
+	edited := futureProofInner(evt.Message.GetEditedMessage())
+	if edited == nil {
+		return "", nil
+	}
+
+	if protocolMsg := edited.GetProtocolMessage(); protocolMsg != nil && protocolMsg.GetType() == waE2E.ProtocolMessage_MESSAGE_EDIT {
+		edited = protocolMsg.GetEditedMessage()
+	}
+
+	message := incomingEditedMessageText(edited)
+	if message == "" {
+		return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+	}
+
+	return m.withIncomingQuoted(evt, msg, MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message})
+}
+
+func incomingEditedMessageText(msg *waE2E.Message) string {
+	if msg == nil {
+		return ""
+	}
+	if message := msg.GetConversation(); message != "" {
+		return message
+	}
+	if ext := msg.GetExtendedTextMessage(); ext != nil {
+		return ext.GetText()
+	}
+	return ""
 }
 
 func unwrapIncomingMessage(msg *waE2E.Message) (*waE2E.Message, bool) {

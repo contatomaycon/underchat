@@ -116,6 +116,67 @@ describe('BaileysIncomingMessageService', () => {
     jest.restoreAllMocks();
   });
 
+  it('publishes message edit updates from Baileys messages.update as edit_text upserts', async () => {
+    const { service, streamProducerService } = makeService();
+    const sut = service as unknown as {
+      currentSocket?: unknown;
+      handleMessagesUpdate: (events: unknown[]) => Promise<void>;
+    };
+    sut.currentSocket = {
+      user: { id: '5500000000000@s.whatsapp.net' },
+      profilePictureUrl: jest.fn(async () => undefined),
+    };
+
+    await sut.handleMessagesUpdate([
+      {
+        key: {
+          id: 'message-1',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: false,
+        },
+        update: {
+          message: {
+            protocolMessage: {
+              type: 1,
+              editedMessage: {
+                conversation: 'Oi editado',
+                extendedTextMessage: { text: 'Oi editado' },
+              },
+            },
+          },
+        },
+      },
+    ]);
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert-message',
+      expect.objectContaining({
+        type: EMessageType.edit_text,
+        message: expect.objectContaining({
+          key: expect.objectContaining({
+            id: expect.stringMatching(/^edit_message-1_/),
+            remoteJid: '5511999999999@s.whatsapp.net',
+          }),
+          message: expect.objectContaining({
+            protocolMessage: expect.objectContaining({
+              key: expect.objectContaining({
+                id: 'message-1',
+                remoteJid: '5511999999999@s.whatsapp.net',
+              }),
+              editedMessage: expect.objectContaining({
+                conversation: 'Oi editado',
+              }),
+            }),
+          }),
+        }),
+      }),
+      'account-1:worker-1:5511999999999@s.whatsapp.net'
+    );
+  });
+
   it('does not drop new messages when the legacy retry queue is full', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
 

@@ -513,6 +513,52 @@ func TestIncomingContentMapsCommonMessageTypes(t *testing.T) {
 	}
 }
 
+func TestBuildIncomingUpsertNormalizesEditedMessageWrapper(t *testing.T) {
+	manager := &WhatsAppManager{}
+	chat := types.NewJID("5511999999999", types.DefaultUserServer)
+	evt := incomingTextEvent(chat, false, "")
+	evt.Info.ID = "message-1"
+	evt.Message = &waE2E.Message{
+		EditedMessage: &waE2E.FutureProofMessage{
+			Message: &waE2E.Message{
+				Conversation: proto.String("Oi editado"),
+			},
+		},
+	}
+
+	upsert, err := manager.buildIncomingUpsert(context.Background(), evt)
+	if err != nil {
+		t.Fatalf("buildIncomingUpsert returned error: %v", err)
+	}
+	if upsert == nil {
+		t.Fatal("expected edited message upsert")
+	}
+	if upsert.Type != MessageTypeEditText {
+		t.Fatalf("unexpected upsert type %q", upsert.Type)
+	}
+	if got := stringValue(upsert.Content["message"]); got != "Oi editado" {
+		t.Fatalf("unexpected edit content %#v", upsert.Content)
+	}
+
+	messageMap := asMap(upsert.Message["message"])
+	protocolMessage := asMap(messageMap["protocolMessage"])
+	key := asMap(protocolMessage["key"])
+	if got := stringValue(key["id"]); got != "message-1" {
+		t.Fatalf("unexpected edit target id %q", got)
+	}
+	if got := stringValue(key["remoteJid"]); got != chat.String() {
+		t.Fatalf("unexpected edit target remote jid %q", got)
+	}
+	editedMessage := asMap(protocolMessage["editedMessage"])
+	if got := stringValue(editedMessage["conversation"]); got != "Oi editado" {
+		t.Fatalf("unexpected normalized edited message %#v", editedMessage)
+	}
+	extendedText := asMap(editedMessage["extendedTextMessage"])
+	if got := stringValue(extendedText["text"]); got != "Oi editado" {
+		t.Fatalf("unexpected normalized extended text %#v", extendedText)
+	}
+}
+
 func TestIncomingContentMapsQuotedText(t *testing.T) {
 	manager := &WhatsAppManager{cfg: Config{WorkerID: "worker-1"}}
 	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)

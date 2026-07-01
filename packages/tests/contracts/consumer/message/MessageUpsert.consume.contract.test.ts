@@ -311,6 +311,40 @@ describe('MessageUpsertConsume edit fallback', () => {
     },
   });
 
+  const makeNestedEditUpsert = (): IUpsertMessage => ({
+    account_id: 'account-1',
+    worker_id: 'worker-1',
+    type: EMessageType.edit_text,
+    has_quoted: false,
+    message: {
+      key: {
+        id: editEventId,
+        remoteJid: phoneJid,
+        remoteJidAlt: lidJid,
+        fromMe: false,
+      },
+      message: {
+        editedMessage: {
+          message: {
+            protocolMessage: {
+              key: {
+                id: targetMessageId,
+              },
+              editedMessage: {
+                conversation: adBody,
+                extendedTextMessage: {
+                  text: adBody,
+                },
+              },
+            },
+          },
+        },
+      },
+      messageTimestamp: 1778190016,
+      pushName: 'Luh',
+    },
+  });
+
   const elasticHit = (message: IChatMessage) => ({
     hits: {
       hits: [
@@ -1400,6 +1434,36 @@ describe('MessageUpsertConsume edit fallback', () => {
     expect(lookupQuery).toBeDefined();
     expect(queryHasNestedPath(lookupQuery, 'worker')).toBe(false);
     expect(queryHasTerm(lookupQuery, 'worker.id', 'worker-1')).toBe(true);
+
+    const updatedMessage = chatService.updateMessageChat.mock
+      .calls[0][0] as IChatMessage;
+    expect(updatedMessage.message_id).toBe(existingMessage.message_id);
+    expect(updatedMessage.content?.version).toEqual([
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: adBody,
+      }),
+    ]);
+  });
+
+  it('keeps edit behavior when the protocol message is inside an editedMessage wrapper', async () => {
+    const existingMessage = makeExistingMessage();
+    const { consumer, chat, chatService, elasticDatabaseService } =
+      makeConsumer();
+    elasticDatabaseService.select.mockImplementation(async (_index, query) =>
+      queryHasTerm(query, 'worker.id', 'worker-1')
+        ? elasticHit(existingMessage)
+        : emptyElasticResult
+    );
+
+    const result = await (consumer as any).createChatMessage(
+      chat,
+      makeNestedEditUpsert()
+    );
+
+    expect(result.handled).toBe(true);
+    expect(chatService.createMessageIdempotent).not.toHaveBeenCalled();
+    expect(chatService.updateMessageChat).toHaveBeenCalledTimes(1);
 
     const updatedMessage = chatService.updateMessageChat.mock
       .calls[0][0] as IChatMessage;

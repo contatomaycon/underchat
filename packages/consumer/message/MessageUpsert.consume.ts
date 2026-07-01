@@ -645,9 +645,11 @@ export class MessageUpsertConsume {
     const rawMessage = this.toRecord(baseMessage?.message);
     const editedWrapper =
       this.toRecord(rawMessage?.editedMessage) ?? rawMessage;
+    const nestedMessage = this.toRecord(editedWrapper?.message);
 
     return (
-      this.toRecord(editedWrapper?.message) ??
+      this.toRecord(nestedMessage?.protocolMessage) ??
+      nestedMessage ??
       this.toRecord(editedWrapper?.protocolMessage)
     );
   }

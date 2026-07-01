@@ -1832,13 +1832,163 @@ export class BaileysIncomingMessageService {
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
     if (!events?.length) return;
 
-    const promises = events.map((event) => {
+    const statusPromises = events.map((event) => {
       this.trackDeliveryConfirmation(event.key, event.update?.status);
       const patch = this.mapStatusToPatch(event.update?.status);
       return this.applyStatusPatch(event.key, patch);
     });
 
-    await Promise.allSettled(promises);
+    const incomingUpdatePromises = events
+      .map((event) => this.buildIncomingMessageFromUpdate(event))
+      .filter((message): message is WAMessage => Boolean(message))
+      .map((message) => {
+        const socket = this.currentSocket;
+        if (!socket) return Promise.resolve();
+
+        return this.processIncomingMessage(
+          socket,
+          message,
+          EMessageUpsertType.notify,
+          this.kafkaServiceQueueService.upsertMessage()
+        );
+      });
+
+    await Promise.allSettled([...statusPromises, ...incomingUpdatePromises]);
+  }
+
+  private buildIncomingMessageFromUpdate(
+    event: WAMessageUpdate
+  ): WAMessage | null {
+    const updateMessage = event.update?.message as proto.IMessage | undefined;
+    if (!updateMessage || !event.key?.id) {
+      return null;
+    }
+
+    const protocolMessage = this.ensureEditProtocolMessage(
+      updateMessage,
+      event.key
+    );
+    if (!protocolMessage) {
+      return null;
+    }
+
+    const candidate: WAMessage = {
+      key: {
+        ...event.key,
+        id: `edit_${event.key.id}_${Date.now()}`,
+      },
+      message: updateMessage,
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    } as WAMessage;
+
+    if (mapIncomingToType(candidate) !== EMessageType.edit_text) {
+      return null;
+    }
+
+    this.logLifecycle(candidate, {
+      stage: 'baileys.event.messages_update',
+      decision: 'map_to_edit_upsert',
+      outcome: 'mapped',
+      message_type: EMessageType.edit_text,
+      kafka_key: this.getMessageKey(candidate) ?? undefined,
+    });
+
+    return candidate;
+  }
+
+  private ensureEditProtocolMessage(
+    message: proto.IMessage,
+    key: WAMessageKey
+  ): proto.Message.IProtocolMessage | null {
+    const protocolMessage = this.findEditProtocolMessage(message);
+    if (protocolMessage) {
+      if (!protocolMessage.key) {
+        protocolMessage.key = key as proto.IMessageKey;
+      }
+      return protocolMessage;
+    }
+
+    const editedMessage = this.findEditedMessageContent(message);
+    const editedText = this.getEditedTextFromMessage(editedMessage);
+    if (!editedMessage || !editedText) {
+      return null;
+    }
+
+    message.protocolMessage = {
+      type: proto.Message.ProtocolMessage.Type.MESSAGE_EDIT,
+      key: key as proto.IMessageKey,
+      editedMessage: {
+        conversation: editedText,
+        extendedTextMessage: {
+          text: editedText,
+        },
+      },
+    };
+
+    return message.protocolMessage;
+  }
+
+  private findEditProtocolMessage(
+    message: proto.IMessage
+  ): proto.Message.IProtocolMessage | null {
+    if (
+      message.protocolMessage?.type ===
+      proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
+    ) {
+      return message.protocolMessage;
+    }
+
+    const editedMessage = this.getEditedMessageWrapper(message);
+    const protocolMessage = editedMessage?.protocolMessage;
+    if (
+      protocolMessage?.type === proto.Message.ProtocolMessage.Type.MESSAGE_EDIT
+    ) {
+      return protocolMessage;
+    }
+
+    return null;
+  }
+
+  private getEditedMessageWrapper(
+    message: proto.IMessage
+  ): proto.IMessage | undefined {
+    const editedMessage = (
+      message as unknown as {
+        editedMessage?: { message?: proto.IMessage } | proto.IMessage;
+      }
+    ).editedMessage;
+    if (!editedMessage) {
+      return undefined;
+    }
+
+    if (
+      typeof editedMessage === 'object' &&
+      editedMessage !== null &&
+      'message' in editedMessage
+    ) {
+      return editedMessage.message;
+    }
+
+    return editedMessage as proto.IMessage;
+  }
+
+  private findEditedMessageContent(
+    message: proto.IMessage
+  ): proto.IMessage | undefined {
+    const protocolMessage = this.findEditProtocolMessage(message);
+    if (protocolMessage?.editedMessage) {
+      return protocolMessage.editedMessage;
+    }
+
+    return this.getEditedMessageWrapper(message);
+  }
+
+  private getEditedTextFromMessage(message?: proto.IMessage): string {
+    return (
+      message?.conversation?.trim() ||
+      message?.extendedTextMessage?.text?.trim() ||
+      ''
+    );
   }
 
   private trackDeliveryConfirmation(
