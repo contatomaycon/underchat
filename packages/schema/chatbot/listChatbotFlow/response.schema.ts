@@ -50,8 +50,14 @@ const nodeDataSchema = Type.Object({
   flowAction: Type.Optional(Type.String()),
   flowActionPayload: Type.Optional(Type.Any()),
   payload: Type.Optional(Type.Any()),
-  latitude: Type.Optional(Type.Number()),
-  longitude: Type.Optional(Type.Number()),
+  latitude: Type.Optional(
+    Type.Union([Type.Number(), Type.String(), Type.Null()])
+  ),
+  longitude: Type.Optional(
+    Type.Union([Type.Number(), Type.String(), Type.Null()])
+  ),
+  latitudeText: Type.Optional(Type.String()),
+  longitudeText: Type.Optional(Type.String()),
   name: Type.Optional(Type.String()),
   address: Type.Optional(Type.String()),
   templateName: Type.Optional(Type.String()),

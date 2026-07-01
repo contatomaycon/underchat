@@ -38,6 +38,8 @@ type ElasticHit<T> = {
   _source?: T;
 };
 
+type ChatbotFlowNode = SaveChatbotFlowRequestData['nodes'][number];
+
 @injectable()
 export class ChatbotService {
   constructor(
@@ -247,6 +249,109 @@ export class ChatbotService {
     );
   };
 
+  private normalizeCoordinateValueForStorage(value: unknown): string | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      const numericValue = Number(trimmed);
+      return Number.isFinite(numericValue) ? trimmed : null;
+    }
+
+    return null;
+  }
+
+  private normalizeFlowNodesForStorage(
+    nodes: SaveChatbotFlowRequestData['nodes']
+  ): SaveChatbotFlowRequestData['nodes'] {
+    return nodes.map((node) => {
+      const data = node.data as Record<string, unknown>;
+      const hasLatitude = Object.prototype.hasOwnProperty.call(
+        data,
+        'latitude'
+      );
+      const hasLongitude = Object.prototype.hasOwnProperty.call(
+        data,
+        'longitude'
+      );
+
+      if (!hasLatitude && !hasLongitude) {
+        return node;
+      }
+
+      const latitudeText = this.normalizeCoordinateValueForStorage(
+        data.latitude
+      );
+      const longitudeText = this.normalizeCoordinateValueForStorage(
+        data.longitude
+      );
+
+      const nextData: Record<string, unknown> = { ...data };
+      delete nextData.latitude;
+      delete nextData.longitude;
+
+      if (latitudeText) {
+        nextData.latitudeText = latitudeText;
+      } else {
+        delete nextData.latitudeText;
+      }
+
+      if (longitudeText) {
+        nextData.longitudeText = longitudeText;
+      } else {
+        delete nextData.longitudeText;
+      }
+
+      return {
+        ...node,
+        data: nextData,
+      } as ChatbotFlowNode;
+    });
+  }
+
+  private hydrateFlowNodesFromStorage(
+    nodes: ListChatbotFlowResponse['nodes']
+  ): ListChatbotFlowResponse['nodes'] {
+    return nodes.map((node): ListChatbotFlowResponse['nodes'][number] => {
+      const data = node.data as Record<string, unknown>;
+      const latitude =
+        typeof data.latitude === 'number' || typeof data.latitude === 'string'
+          ? data.latitude
+          : this.normalizeCoordinateValueForStorage(data.latitudeText);
+      const longitude =
+        typeof data.longitude === 'number' || typeof data.longitude === 'string'
+          ? data.longitude
+          : this.normalizeCoordinateValueForStorage(data.longitudeText);
+
+      if (latitude === data.latitude && longitude === data.longitude) {
+        return node;
+      }
+
+      const nextData: ListChatbotFlowResponse['nodes'][number]['data'] = {
+        ...node.data,
+      };
+
+      if (latitude !== null && latitude !== undefined) {
+        nextData.latitude = latitude;
+      }
+
+      if (longitude !== null && longitude !== undefined) {
+        nextData.longitude = longitude;
+      }
+
+      return {
+        ...node,
+        data: nextData,
+      };
+    });
+  }
+
   listChatbotRandomMessages = async (
     accountId: string
   ): Promise<ListChatbotRandomMessagesResponse> => {
@@ -277,7 +382,7 @@ export class ChatbotService {
       chatbot_flow_id: chatbotFlowId,
       chatbot_id: input.chatbot_id,
       account_id: accountId,
-      nodes: input.nodes,
+      nodes: this.normalizeFlowNodesForStorage(input.nodes),
       edges: input.edges,
       created_at: now,
       updated_at: now,
@@ -349,7 +454,10 @@ export class ChatbotService {
       return null;
     }
 
-    return hit._source;
+    return {
+      ...hit._source,
+      nodes: this.hydrateFlowNodesFromStorage(hit._source.nodes),
+    };
   };
 
   saveChatbotFlowConfigurations = async (

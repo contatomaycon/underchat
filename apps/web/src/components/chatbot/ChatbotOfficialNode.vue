@@ -661,9 +661,17 @@ const updateNodeData = () => {
   data.catalogId = nodeData.value.catalogId || '';
   data.productRetailerId = nodeData.value.productRetailerId || '';
   data.latitude =
-    nodeData.value.latitude === '' ? null : Number(nodeData.value.latitude);
+    nodeData.value.latitude === '' ||
+    nodeData.value.latitude === null ||
+    nodeData.value.latitude === undefined
+      ? null
+      : String(nodeData.value.latitude);
   data.longitude =
-    nodeData.value.longitude === '' ? null : Number(nodeData.value.longitude);
+    nodeData.value.longitude === '' ||
+    nodeData.value.longitude === null ||
+    nodeData.value.longitude === undefined
+      ? null
+      : String(nodeData.value.longitude);
   data.name = nodeData.value.name || '';
   data.address = nodeData.value.address || '';
   data.addressCountry = nodeData.value.addressCountry || 'BR';

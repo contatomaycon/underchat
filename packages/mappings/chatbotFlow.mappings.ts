@@ -271,6 +271,56 @@ export const chatbotFlowMappings = () => {
                 selectedRandomMessage: {
                   type: 'keyword',
                 },
+                official: {
+                  type: 'object',
+                  enabled: false,
+                },
+                latitudeText: {
+                  type: 'keyword',
+                },
+                longitudeText: {
+                  type: 'keyword',
+                },
+                flowActionPayload: {
+                  type: 'object',
+                  enabled: false,
+                },
+                payload: {
+                  type: 'object',
+                  enabled: false,
+                },
+                templateVariables: {
+                  type: 'object',
+                  enabled: false,
+                },
+                products: {
+                  type: 'object',
+                  enabled: false,
+                },
+                sections: {
+                  type: 'object',
+                  enabled: false,
+                },
+                listSections: {
+                  type: 'object',
+                  enabled: false,
+                },
+                cards: {
+                  type: 'object',
+                  enabled: false,
+                },
+                contacts: {
+                  type: 'object',
+                  enabled: false,
+                },
+                parameters: {
+                  type: 'object',
+                  enabled: false,
+                },
+                action: {
+                  type: 'object',
+                  enabled: false,
+                },
                 annotation: {
                   type: 'text',
                 },
