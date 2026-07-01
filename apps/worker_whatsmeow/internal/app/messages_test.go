@@ -616,6 +616,42 @@ func TestIncomingContentMapsQuotedText(t *testing.T) {
 	}
 }
 
+func TestNormalizeIncomingEditMessageMapUsesSecretEncryptedTargetKey(t *testing.T) {
+	chat := types.NewJID("158733669765176", types.HiddenUserServer)
+	evt := incomingTextEvent(chat, false, "")
+	evt.Info.ID = "edit-event-id"
+
+	messageMap := map[string]any{
+		"secretEncryptedMessage": map[string]any{
+			"targetMessageKey": map[string]any{
+				"ID":        "original-message-id",
+				"remoteJID": "128317164409045@lid",
+				"fromMe":    true,
+			},
+		},
+	}
+	content := map[string]any{"message": "texto editado"}
+
+	normalizeIncomingEditMessageMapForBaileys(messageMap, evt, content)
+
+	protocolMessage := asMap(messageMap["protocolMessage"])
+	key := asMap(protocolMessage["key"])
+	if got := stringValue(key["id"]); got != "original-message-id" {
+		t.Fatalf("unexpected target id %q", got)
+	}
+	if got := stringValue(key["remoteJid"]); got != "128317164409045@lid" {
+		t.Fatalf("unexpected target remote jid %q", got)
+	}
+	if got := key["fromMe"]; got != true {
+		t.Fatalf("unexpected target fromMe %#v", got)
+	}
+
+	editedMessage := asMap(protocolMessage["editedMessage"])
+	if got := stringValue(editedMessage["conversation"]); got != "texto editado" {
+		t.Fatalf("unexpected edited text %q", got)
+	}
+}
+
 func TestIncomingContentUnwrapsEphemeralText(t *testing.T) {
 	manager := &WhatsAppManager{}
 

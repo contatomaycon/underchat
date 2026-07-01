@@ -7,7 +7,18 @@ trustLockfile: true
 
 overrides:
   '@expo/dom-webview': 56.0.5
+  '@typescript-eslint/eslint-plugin': 8.62.0
+  '@typescript-eslint/parser': 8.62.0
+  '@typescript-eslint/project-service': 8.62.0
+  '@typescript-eslint/scope-manager': 8.62.0
+  '@typescript-eslint/tsconfig-utils': 8.62.0
+  '@typescript-eslint/type-utils': 8.62.0
+  '@typescript-eslint/types': 8.62.0
+  '@typescript-eslint/typescript-estree': 8.62.0
+  '@typescript-eslint/utils': 8.62.0
+  '@typescript-eslint/visitor-keys': 8.62.0
   inflight: ^1.0.6
+  typescript-eslint: 8.62.0
 
 peerDependencyRules:
   allowedVersions:
@@ -31,6 +42,7 @@ allowBuilds:
   '@parcel/watcher': true
   '@swc/core': true
   '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/233': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/235': true
   core-js: true
   cpu-features: true
   dtrace-provider: true

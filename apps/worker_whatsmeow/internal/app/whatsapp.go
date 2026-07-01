@@ -2870,17 +2870,37 @@ func normalizeIncomingEditMessageMapForBaileys(messageMap map[string]any, evt *e
 		key = map[string]any{}
 		protocolMessage["key"] = key
 	}
+	secretTargetKey := asMap(asMap(messageMap["secretEncryptedMessage"])["targetMessageKey"])
+	targetID := firstNonEmpty(stringValue(secretTargetKey["id"]), stringValue(secretTargetKey["ID"]))
+	targetRemoteJID := firstNonEmpty(
+		stringValue(secretTargetKey["remoteJid"]),
+		stringValue(secretTargetKey["remoteJID"]),
+		stringValue(secretTargetKey["remote_jid"]),
+	)
+	targetParticipant := firstNonEmpty(
+		stringValue(secretTargetKey["participant"]),
+		stringValue(secretTargetKey["participantJID"]),
+		stringValue(secretTargetKey["participantJid"]),
+	)
 	if stringValue(key["id"]) == "" {
-		key["id"] = evt.Info.ID
+		key["id"] = firstNonEmpty(targetID, evt.Info.ID)
 	}
 	if stringValue(key["remoteJid"]) == "" {
-		key["remoteJid"] = evt.Info.Chat.String()
+		key["remoteJid"] = firstNonEmpty(targetRemoteJID, evt.Info.Chat.String())
 	}
 	if _, ok := key["fromMe"]; !ok {
-		key["fromMe"] = evt.Info.IsFromMe
+		if fromMe, hasFromMe := secretTargetKey["fromMe"]; hasFromMe {
+			key["fromMe"] = fromMe
+		} else {
+			key["fromMe"] = evt.Info.IsFromMe
+		}
 	}
-	if stringValue(key["participant"]) == "" && !evt.Info.Sender.IsEmpty() && evt.Info.Sender != evt.Info.Chat {
-		key["participant"] = evt.Info.Sender.String()
+	if stringValue(key["participant"]) == "" {
+		if targetParticipant != "" {
+			key["participant"] = targetParticipant
+		} else if !evt.Info.Sender.IsEmpty() && evt.Info.Sender != evt.Info.Chat {
+			key["participant"] = evt.Info.Sender.String()
+		}
 	}
 
 	message := stringValue(content["message"])

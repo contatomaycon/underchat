@@ -38,6 +38,7 @@ import { EGeneralPermissions } from '@core/common/enums/EPermissions/general';
 import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import type { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
@@ -86,6 +87,7 @@ type QuotedMessageChat = NonNullable<ContentMessageChat['quoted']>;
 type QuotedMessageWithContacts = QuotedMessageChat & {
   contacts?: ContentMessageChat['contacts'];
 };
+type ChatWorker = ListChatsResult['worker'];
 
 const viewerOpen = ref(false);
 const viewerItems = ref<ViewerMediaItem[]>([]);
@@ -881,7 +883,8 @@ const loadForwardTargets = async (append = false) => {
     const response = await chatStore.searchForwardTargetChats({
       filter_worker_id: selectedForwardChannel.value,
       status: selectedForwardStatus.value as
-        EChatStatus.in_chat | EChatStatus.queue,
+        | EChatStatus.in_chat
+        | EChatStatus.queue,
       search,
       current_page: nextPage,
       per_page: 20,
@@ -1351,7 +1354,15 @@ const shouldShowDownload = (message: ListMessageResult): boolean => {
   return false;
 };
 
+const isOfficialWorker = (worker?: ChatWorker | null): boolean =>
+  worker?.is_official === true || worker?.type_id === EWorkerType.whatsapp;
+
+const isOfficialActiveChat = computed(() =>
+  isOfficialWorker(activeChat.value?.worker ?? null)
+);
+
 const canEditMessage = (message: ListMessageResult): boolean => {
+  if (isOfficialActiveChat.value) return false;
   if (!isTextMessage(message)) return false;
   if (isTypeUser(message)) return false;
   if (isDeleted(message)) return false;
@@ -1361,6 +1372,13 @@ const canEditMessage = (message: ListMessageResult): boolean => {
   const diffInMinutes = (now.getTime() - messageDate.getTime()) / (1000 * 60);
 
   return diffInMinutes < 10;
+};
+
+const canDeleteMessage = (message: ListMessageResult): boolean => {
+  if (isOfficialActiveChat.value) return false;
+  if (isDeleted(message)) return false;
+  if (isTypeUser(message)) return false;
+  return message.content?.type !== EMessageType.system;
 };
 
 const hasMessageVersions = (message: ListMessageResult): boolean => {
@@ -1464,7 +1482,9 @@ const officialReferralText = (
   official: OfficialMessageMetadata
 ): string | null => {
   const referral = official.referral as
-    Record<string, unknown> | null | undefined;
+    | Record<string, unknown>
+    | null
+    | undefined;
   const headline = referral?.headline;
   const source = referral?.source_type ?? referral?.source_url;
   if (typeof headline === 'string' && headline.trim()) return headline.trim();
@@ -2080,7 +2100,7 @@ const formatVideoDuration = (duration?: number | null): string => {
 };
 
 const onDelete = async (m: ListMessageResult) => {
-  if (isDeleted(m)) return;
+  if (!canDeleteMessage(m)) return;
   if (!chatStore.activeChat?.chat_id) return;
 
   if (hoveredMessageId.value === m.message_id) {
@@ -3943,10 +3963,7 @@ onUnmounted(() => {
                         </VListItem>
 
                         <VListItem
-                          v-if="
-                            !isTypeUser(item.message) &&
-                            item.message.content?.type !== EMessageType.system
-                          "
+                          v-if="canDeleteMessage(item.message)"
                           @click="onDelete(item.message)"
                         >
                           <template #prepend>

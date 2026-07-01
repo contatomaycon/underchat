@@ -674,6 +674,9 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	if incomingHasEditSignal(evt, msg) {
 		m.logIncomingProviderDebug("incoming.edit_signal", evt)
 	}
+	if incomingIsSecretMessageEdit(msg) {
+		return m.incomingSecretEncryptedContent(ctx, evt, msg)
+	}
 	viewOnce := evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension || wrappedViewOnce
 	if viewOnce {
 		return m.withIncomingQuoted(evt, msg, MessageTypeViewOnce, map[string]any{"type": MessageTypeViewOnce})
@@ -790,6 +793,54 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	return m.unsupportedIncomingFallback(evt, msg, "incoming.unknown_message_type")
 }
 
+func (m *WhatsAppManager) incomingSecretEncryptedContent(ctx context.Context, evt *events.Message, msg *waE2E.Message) (string, map[string]any) {
+	secret := msg.GetSecretEncryptedMessage()
+	if secret == nil {
+		return "", nil
+	}
+
+	if m.client == nil {
+		m.logIncomingProviderDebug("incoming.secret_edit_missing_client", evt)
+		return "", nil
+	}
+
+	decrypted, err := m.client.DecryptSecretEncryptedMessage(ctx, evt)
+	if err != nil {
+		log.Printf(
+			"whatsmeow incoming secret edit decrypt failed worker_id=%s account_id=%s chat=%s sender=%s id=%s target_id=%s error=%q",
+			m.cfg.WorkerID,
+			m.cfg.AccountID,
+			incomingChatString(evt),
+			incomingSenderString(evt),
+			incomingMessageID(evt),
+			secret.GetTargetMessageKey().GetID(),
+			err.Error(),
+		)
+		return "", nil
+	}
+
+	edited := decrypted
+	if protocolMsg := edited.GetProtocolMessage(); protocolMsg != nil && protocolMsg.GetType() == waE2E.ProtocolMessage_MESSAGE_EDIT {
+		edited = protocolMsg.GetEditedMessage()
+	}
+
+	message := incomingEditedMessageText(edited)
+	if message == "" {
+		m.logIncomingProviderDebug("incoming.secret_edit_without_text", evt)
+		return "", nil
+	}
+
+	return m.withIncomingQuoted(evt, msg, MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message})
+}
+
+func incomingIsSecretMessageEdit(msg *waE2E.Message) bool {
+	if msg == nil {
+		return false
+	}
+	secret := msg.GetSecretEncryptedMessage()
+	return secret != nil && secret.GetSecretEncType() == waE2E.SecretEncryptedMessage_MESSAGE_EDIT
+}
+
 func (m *WhatsAppManager) incomingEditedContent(evt *events.Message, msg *waE2E.Message) (string, map[string]any) {
 	if evt == nil || evt.Message == nil || evt.Message.GetEditedMessage() == nil {
 		return "", nil
@@ -865,6 +916,9 @@ func incomingHasEditSignal(evt *events.Message, msg *waE2E.Message) bool {
 		return true
 	}
 	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil && protocolMsg.GetType() == waE2E.ProtocolMessage_MESSAGE_EDIT {
+		return true
+	}
+	if incomingIsSecretMessageEdit(msg) {
 		return true
 	}
 	return false
