@@ -18,6 +18,7 @@ import {
   MessageStatusService,
   MessageSummaryPatch,
 } from '@core/services/messageStatus.service';
+import { WorkerConfigService } from '@core/services/workerConfig.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.service';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
@@ -87,6 +88,8 @@ export class OfficialWhatsappWebhookConsume {
     private readonly storageService: StorageService,
     @inject(MessageStatusService)
     private readonly messageStatusService: MessageStatusService,
+    @inject(WorkerConfigService)
+    private readonly workerConfigService: WorkerConfigService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(InboundMessageSpoolService)
@@ -291,8 +294,73 @@ export class OfficialWhatsappWebhookConsume {
         upsert,
         buildUpsertMessageKafkaKey(upsert, messageId)
       );
+      await this.markIncomingMessageAsReadIfEnabled(context, upsert);
       await this.markProcessed(processedKey);
     }
+  }
+
+  private async markIncomingMessageAsReadIfEnabled(
+    context: IResolvedChangeContext,
+    upsert: IUpsertMessage
+  ): Promise<void> {
+    const connection = context.connection;
+    const key = upsert.message.key;
+    const messageId = key.id?.trim();
+
+    if (!connection || key.fromMe === true || !messageId) {
+      return;
+    }
+
+    try {
+      if (!(await this.shouldMarkAsRead(connection.worker_id))) {
+        return;
+      }
+
+      await this.metaWhatsappEmbeddedService.markMessageAsRead({
+        apiVersion: connection.api_version,
+        accessToken: this.passwordEncryptorService.decrypt(
+          connection.access_token_encrypted
+        ),
+        phoneNumberId: connection.phone_number_id,
+        messageId,
+      });
+
+      const statusUpdate: IMessageStatusUpdate = {
+        account_id: connection.account_id,
+        message_id: messageId,
+        patch: { is_seen: true },
+        key,
+      };
+
+      await this.streamProducerService.send(
+        this.kafkaServiceQueueService.updateMessageStatus(),
+        statusUpdate,
+        MessageStatusService.statusKafkaKey(connection.account_id, messageId)
+      );
+    } catch (error) {
+      console.error('Error marking official WhatsApp message as read:', {
+        worker_id: connection.worker_id,
+        account_id: connection.account_id,
+        message_id: messageId,
+        error,
+      });
+    }
+  }
+
+  private async shouldMarkAsRead(workerId: string): Promise<boolean> {
+    const cacheKey = `worker:${workerId}:mark_as_read`;
+    const cached = await this.redis.get(cacheKey);
+
+    if (cached !== null) {
+      return cached === 'true';
+    }
+
+    const config = await this.workerConfigService.viewWorkerConfig(workerId);
+    const value = config?.mark_as_read ?? false;
+
+    await this.redis.set(cacheKey, String(value), 'EX', 60 * 60 * 24);
+
+    return value;
   }
 
   private async processStatuses(

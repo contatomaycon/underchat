@@ -178,6 +178,39 @@ describe('MetaWhatsappEmbeddedService', () => {
     );
   });
 
+  it('marks incoming messages as read through the Message API', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () => JSON.stringify({ success: true })),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await expect(
+      service.markMessageAsRead({
+        apiVersion: 'v25.0',
+        accessToken: 'token-1',
+        phoneNumberId: 'phone-1',
+        messageId: 'wamid.inbound-1',
+      })
+    ).resolves.toBe(true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v25.0/phone-1/messages',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer token-1',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: 'wamid.inbound-1',
+        }),
+      }
+    );
+  });
+
   it('sends audio messages as voice messages when requested', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

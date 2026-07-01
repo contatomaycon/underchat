@@ -21,7 +21,10 @@ const connection = {
   api_version: 'v25.0',
 };
 
-function makeConsumer() {
+function makeConsumer(overrides?: {
+  markAsRead?: boolean;
+  markMessageAsRead?: jest.Mock;
+}) {
   const redis = {
     exists: jest.fn(async () => 0),
     set: jest.fn(async () => 'OK'),
@@ -42,6 +45,13 @@ function makeConsumer() {
     findActiveByWabaIdWithWorker: jest.fn(async () => [connection]),
     disconnectPreservingWorker: jest.fn(async () => true),
   };
+  const markMessageAsRead =
+    overrides?.markMessageAsRead ?? jest.fn(async () => true);
+  const workerConfigService = {
+    viewWorkerConfig: jest.fn(async () => ({
+      mark_as_read: overrides?.markAsRead ?? false,
+    })),
+  };
   const consumer = new OfficialWhatsappWebhookConsume(
     {} as never,
     redis as never,
@@ -50,11 +60,13 @@ function makeConsumer() {
     {
       getMediaUrl: jest.fn(),
       downloadMedia: jest.fn(),
+      markMessageAsRead,
     } as never,
     { decrypt: jest.fn((value: string) => value.replace('enc:', '')) } as never,
     repository as never,
     { uploadFromBuffer: jest.fn() } as never,
     { markMessageAsNotSentByWhatsAppId: jest.fn() } as never,
+    workerConfigService as never,
     { publish: jest.fn(async () => undefined) } as never,
     { parkConsumerMessage: jest.fn(async () => undefined) } as never
   );
@@ -65,6 +77,8 @@ function makeConsumer() {
     kafkaServiceQueueService,
     streamProducerService,
     repository,
+    markMessageAsRead,
+    workerConfigService,
   };
 }
 
@@ -291,6 +305,43 @@ describe('OfficialWhatsappWebhookConsume', () => {
       '1',
       'EX',
       expect.any(Number)
+    );
+  });
+
+  it('marks incoming official Meta messages as read when worker config enables it', async () => {
+    const { consumer, streamProducerService, markMessageAsRead } = makeConsumer(
+      { markAsRead: true }
+    );
+    const event = makeEvent();
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(markMessageAsRead).toHaveBeenCalledWith({
+      apiVersion: 'v25.0',
+      accessToken: 'token',
+      phoneNumberId: 'phone-number-1',
+      messageId: 'wamid.inbound-1',
+    });
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'update.message.status',
+      expect.objectContaining({
+        account_id: 'account-1',
+        message_id: 'wamid.inbound-1',
+        patch: { is_seen: true },
+        key: expect.objectContaining({
+          id: 'wamid.inbound-1',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: false,
+        }),
+      }),
+      'account-1:wamid.inbound-1'
     );
   });
 

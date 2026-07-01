@@ -440,6 +440,33 @@ export class MetaWhatsappEmbeddedService {
     });
   }
 
+  async markMessageAsRead(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    messageId: string;
+  }): Promise<boolean> {
+    const response = await fetch(
+      this.graphUrl(input.apiVersion, `${input.phoneNumberId}/messages`),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: input.messageId,
+        }),
+      }
+    );
+    const payload =
+      await this.parseGraphResponse<MetaSuccessResponse>(response);
+
+    return payload.success ?? response.ok;
+  }
+
   async sendTextMessage(input: {
     apiVersion: string;
     accessToken: string;
