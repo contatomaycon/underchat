@@ -82,6 +82,11 @@ type ViewerMediaItem = {
   kind: 'image' | 'video';
 };
 
+type QuotedMessageChat = NonNullable<ContentMessageChat['quoted']>;
+type QuotedMessageWithContacts = QuotedMessageChat & {
+  contacts?: ContentMessageChat['contacts'];
+};
+
 const viewerOpen = ref(false);
 const viewerItems = ref<ViewerMediaItem[]>([]);
 const viewerInitialIndex = ref(0);
@@ -2055,121 +2060,204 @@ const onDelete = async (m: ListMessageResult) => {
   }
 };
 
-const showQuoted = (m: ListMessageResult) => !!m.content?.quoted;
+const extractOfficialWamidStanzaId = (value?: string | null): string | null => {
+  if (!value?.startsWith('wamid.')) return null;
+
+  try {
+    const decoded = atob(value.slice('wamid.'.length));
+    return decoded.match(/3A[A-Z0-9]{12,}/)?.[0] ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const getQuotedReferenceId = (m: ListMessageResult): string | null =>
+  m.content?.quoted?.key?.id || m.content?.message_quoted_id || null;
+
+const buildQuotedPayloadFromLoadedMessage = (
+  source: ListMessageResult
+): QuotedMessageWithContacts | null => {
+  if (!source.content) return null;
+
+  return {
+    key: {
+      remote_jid: source.message_key?.remote_jid ?? null,
+      remote_jid_alt: source.message_key?.remote_jid_alt ?? null,
+      from_me: source.message_key?.from_me ?? null,
+      id: source.message_key?.id ?? source.message_id,
+      participant: source.message_key?.participant ?? null,
+      participant_alt: source.message_key?.participant_alt ?? null,
+      addressing_mode: source.message_key?.addressing_mode ?? null,
+      is_view_once: source.message_key?.is_view_once ?? false,
+    },
+    type: source.content.type,
+    message: source.content.message ?? null,
+    image: source.content.image ?? null,
+    video: source.content.video ?? null,
+    audio: source.content.audio ?? null,
+    document: source.content.document ?? null,
+    sticker: source.content.sticker ?? null,
+    location: source.content.location ?? null,
+    contact: source.content.contact ?? null,
+    contacts: source.content.contacts ?? null,
+  };
+};
+
+const findLoadedQuotedMessage = (
+  m: ListMessageResult
+): ListMessageResult | null => {
+  const quotedId = getQuotedReferenceId(m);
+  if (!quotedId) return null;
+
+  const quotedStanzaId = extractOfficialWamidStanzaId(quotedId);
+  const currentMessageId = m.message_id;
+  const currentMessageKeyId = m.message_key?.id ?? null;
+
+  return (
+    chatStore.listMessages.find((candidate) => {
+      if (candidate.message_id === currentMessageId) return false;
+      if (candidate.message_key?.id === currentMessageKeyId) return false;
+
+      const candidateKeyId = candidate.message_key?.id ?? null;
+      const candidateOfficialId =
+        candidate.content?.official?.message_id ?? null;
+
+      if (
+        candidate.message_id === quotedId ||
+        candidateKeyId === quotedId ||
+        candidateOfficialId === quotedId
+      ) {
+        return true;
+      }
+
+      if (!quotedStanzaId) return false;
+
+      return (
+        extractOfficialWamidStanzaId(candidateKeyId) === quotedStanzaId ||
+        extractOfficialWamidStanzaId(candidateOfficialId) === quotedStanzaId
+      );
+    }) ?? null
+  );
+};
+
+const resolveQuotedPayload = (
+  m: ListMessageResult
+): QuotedMessageWithContacts | null => {
+  if (m.content?.quoted) {
+    return m.content.quoted;
+  }
+
+  const source = findLoadedQuotedMessage(m);
+  return source ? buildQuotedPayloadFromLoadedMessage(source) : null;
+};
+
+const showQuoted = (m: ListMessageResult) => !!resolveQuotedPayload(m);
 
 const resolveQuotedName = (m: ListMessageResult): string => {
-  const fromMe = m.content?.quoted?.key?.from_me ?? null;
+  const fromMe = resolveQuotedPayload(m)?.key?.from_me ?? null;
   if (fromMe === true) return chatStore.user?.info.name ?? '';
   if (fromMe === false) return chatStore.activeChat?.name ?? '';
   return '';
 };
 
 const resolveQuotedText = (m: ListMessageResult): string => {
-  if (!m.content?.quoted) {
+  const quoted = resolveQuotedPayload(m);
+  if (!quoted) {
     return '';
   }
 
-  if (m.content.quoted.type === EMessageType.image || m.content.quoted.image) {
-    return m.content.quoted.image?.caption || t('photo_label');
+  if (quoted.type === EMessageType.image || quoted.image) {
+    return quoted.image?.caption || t('photo_label');
+  }
+
+  if (quoted.type === EMessageType.document && quoted.document) {
+    return quoted.message ?? '';
   }
 
   if (
-    m.content.quoted.type === EMessageType.document &&
-    m.content.quoted.document
+    quoted.type === EMessageType.video ||
+    quoted.type === EMessageType.video_note
   ) {
-    return m.content.quoted.message ?? '';
+    return quoted.video?.caption || '';
   }
 
-  if (
-    m.content.quoted.type === EMessageType.video ||
-    m.content.quoted.type === EMessageType.video_note
-  ) {
-    return m.content.quoted.video?.caption || '';
+  if (quoted.type === EMessageType.audio) {
+    return quoted.message ?? t('audio_label');
   }
 
-  if (m.content.quoted.type === EMessageType.audio) {
-    return m.content.quoted.message ?? t('audio_label');
-  }
-
-  if (m.content.quoted.type === EMessageType.sticker) {
+  if (quoted.type === EMessageType.sticker) {
     return t('sticker_label', 'Sticker');
   }
 
-  if (m.content.quoted.type === EMessageType.location) {
+  if (quoted.type === EMessageType.location) {
     return (
-      m.content.quoted.location?.name ||
-      m.content.quoted.location?.address ||
+      quoted.location?.name ||
+      quoted.location?.address ||
       t('location_label', 'Localização')
     );
   }
 
-  return m.content.quoted.message ?? '';
+  return quoted.message ?? '';
 };
 
 const resolveQuotedImageSrc = (m: ListMessageResult): string => {
-  const image = m.content?.quoted?.image;
+  const image = resolveQuotedPayload(m)?.image;
   if (!image) return '';
   return image.url || image.thumbnail || '';
 };
 
 const resolveQuotedStickerSrc = (m: ListMessageResult): string => {
-  const sticker = m.content?.quoted?.sticker;
+  const sticker = resolveQuotedPayload(m)?.sticker;
   if (isLottieSticker(sticker)) return '';
   if (!isRenderableSticker(sticker)) return '';
   return sticker?.url || '';
 };
 
 const resolveQuotedVideoUrl = (m: ListMessageResult): string => {
-  return m.content?.quoted?.video?.url ?? '';
+  return resolveQuotedPayload(m)?.video?.url ?? '';
 };
 
 const resolveQuotedVideoPoster = (m: ListMessageResult): string => {
-  const poster = m.content?.quoted?.video?.thumbnail;
+  const poster = resolveQuotedPayload(m)?.video?.thumbnail;
   if (!poster) return '';
   return poster;
 };
 
 const hasQuotedImage = (m: ListMessageResult): boolean => {
-  const image = m.content?.quoted?.image;
+  const image = resolveQuotedPayload(m)?.image;
   if (!image) return false;
   return !!(image.url || image.thumbnail);
 };
 
 const hasQuotedDocument = (m: ListMessageResult): boolean => {
-  if (!m.content?.quoted) return false;
-  return (
-    m.content.quoted.type === EMessageType.document &&
-    !!m.content.quoted.document
-  );
+  const quoted = resolveQuotedPayload(m);
+  return quoted?.type === EMessageType.document && !!quoted.document;
 };
 
 const hasQuotedVideo = (m: ListMessageResult): boolean =>
-  !!m.content?.quoted?.video;
+  !!resolveQuotedPayload(m)?.video;
 
 const hasQuotedAudio = (m: ListMessageResult): boolean =>
-  !!m.content?.quoted?.audio;
+  !!resolveQuotedPayload(m)?.audio;
 
 const hasQuotedSticker = (m: ListMessageResult): boolean =>
-  !!m.content?.quoted?.sticker;
+  !!resolveQuotedPayload(m)?.sticker;
 
-const hasQuotedLocation = (m: ListMessageResult): boolean =>
-  !!(
-    m.content?.quoted?.type === EMessageType.location &&
-    m.content.quoted.location
-  );
+const hasQuotedLocation = (m: ListMessageResult): boolean => {
+  const quoted = resolveQuotedPayload(m);
+  return quoted?.type === EMessageType.location && !!quoted.location;
+};
 
 const hasQuotedContact = (m: ListMessageResult): boolean => {
-  if (!m.content?.quoted) return false;
+  const quoted = resolveQuotedPayload(m);
+  if (!quoted) return false;
 
-  if (
-    m.content.quoted.type === EMessageType.contact_card &&
-    m.content.quoted.contact
-  ) {
+  if (quoted.type === EMessageType.contact_card && quoted.contact) {
     return true;
   }
 
-  if (m.content.quoted.type === EMessageType.contacts) {
-    const quotedContent = m.content.quoted as any;
+  if (quoted.type === EMessageType.contacts) {
+    const quotedContent = quoted as any;
     if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
       return true;
     }
@@ -2180,17 +2268,15 @@ const hasQuotedContact = (m: ListMessageResult): boolean => {
 };
 
 const resolveQuotedContactName = (m: ListMessageResult): string => {
-  if (!m.content?.quoted) return '';
+  const quoted = resolveQuotedPayload(m);
+  if (!quoted) return '';
 
-  if (
-    m.content.quoted.type === EMessageType.contact_card &&
-    m.content.quoted.contact
-  ) {
-    return m.content.quoted.contact.name || '';
+  if (quoted.type === EMessageType.contact_card && quoted.contact) {
+    return quoted.contact.name || '';
   }
 
-  if (m.content.quoted.type === EMessageType.contacts) {
-    const quotedContent = m.content.quoted as any;
+  if (quoted.type === EMessageType.contacts) {
+    const quotedContent = quoted as any;
     if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
       const firstContact = quotedContent.contacts[0];
       if (quotedContent.contacts.length === 1) {
@@ -2203,8 +2289,8 @@ const resolveQuotedContactName = (m: ListMessageResult): string => {
       }${quotedContent.contacts.length > 1 ? ' outro contato' : ''}`;
     }
 
-    if (m.content.quoted.message) {
-      return m.content.quoted.message;
+    if (quoted.message) {
+      return quoted.message;
     }
 
     return t('contact_label', 'Contato');
@@ -2214,23 +2300,22 @@ const resolveQuotedContactName = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedContactPhoto = (m: ListMessageResult): string | null => {
-  if (!m.content?.quoted) return null;
+  const quoted = resolveQuotedPayload(m);
+  if (!quoted) return null;
 
-  if (
-    m.content.quoted.type === EMessageType.contact_card &&
-    m.content.quoted.contact
-  ) {
-    return m.content.quoted.contact.photo || null;
+  if (quoted.type === EMessageType.contact_card && quoted.contact) {
+    return quoted.contact.photo || null;
   }
 
   return null;
 };
 
 const isQuotedContactGroup = (m: ListMessageResult): boolean => {
-  if (!m.content?.quoted) return false;
+  const quoted = resolveQuotedPayload(m);
+  if (!quoted) return false;
 
-  if (m.content.quoted.type === EMessageType.contacts) {
-    const quotedContent = m.content.quoted as any;
+  if (quoted.type === EMessageType.contacts) {
+    const quotedContent = quoted as any;
     if (quotedContent?.contacts && quotedContent.contacts.length > 0) {
       return quotedContent.contacts.length > 1;
     }
@@ -2241,12 +2326,13 @@ const isQuotedContactGroup = (m: ListMessageResult): boolean => {
 };
 
 const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
-  const ext = m.content?.quoted?.document?.extension?.toLowerCase();
+  const document = resolveQuotedPayload(m)?.document;
+  const ext = document?.extension?.toLowerCase();
   if (ext && documentIconMap[ext]) {
     return documentIconMap[ext];
   }
 
-  const mimetype = m.content?.quoted?.document?.mimetype ?? '';
+  const mimetype = document?.mimetype ?? '';
   if (mimetype.includes('pdf')) return 'tabler-file-type-pdf';
   if (mimetype.includes('word')) return 'tabler-file-type-doc';
   if (mimetype.includes('sheet') || mimetype.includes('excel'))
@@ -2259,10 +2345,10 @@ const resolveQuotedDocumentIcon = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedDocumentName = (m: ListMessageResult): string =>
-  m.content?.quoted?.document?.name ?? t('document_label');
+  resolveQuotedPayload(m)?.document?.name ?? t('document_label');
 
 const resolveQuotedDocumentMeta = (m: ListMessageResult): string => {
-  const doc = m.content?.quoted?.document;
+  const doc = resolveQuotedPayload(m)?.document;
   if (!doc) return '';
   const ext = doc.extension ? doc.extension.toUpperCase() : 'FILE';
   if (!doc.size) return ext;
@@ -2274,7 +2360,7 @@ const resolveQuotedImageName = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedImageMeta = (m: ListMessageResult): string => {
-  const image = m.content?.quoted?.image;
+  const image = resolveQuotedPayload(m)?.image;
   if (!image) return '';
   const ext = image.extension ? image.extension.toUpperCase() : 'IMAGE';
   const size = image.size ? formatDocumentSize(image.size) : null;
@@ -2282,14 +2368,14 @@ const resolveQuotedImageMeta = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedVideoName = (m: ListMessageResult): string => {
-  if (m.content?.quoted?.type === EMessageType.video_note) {
+  if (resolveQuotedPayload(m)?.type === EMessageType.video_note) {
     return t('video_note_label');
   }
   return t('video_label');
 };
 
 const resolveQuotedVideoMeta = (m: ListMessageResult): string => {
-  const video = m.content?.quoted?.video;
+  const video = resolveQuotedPayload(m)?.video;
   if (!video) return '';
   const ext = video.extension ? video.extension.toUpperCase() : 'VIDEO';
   const size = video.size ? formatDocumentSize(video.size) : null;
@@ -2302,18 +2388,56 @@ const resolveQuotedAudioName = (m: ListMessageResult): string => {
 };
 
 const resolveQuotedAudioMeta = (m: ListMessageResult): string => {
-  const audio = m.content?.quoted?.audio;
+  const audio = resolveQuotedPayload(m)?.audio;
   if (!audio) return '';
   const size = audio.size ? formatDocumentSize(audio.size) : null;
   const duration = formatVideoDuration(audio.duration);
   return [size, duration].filter(Boolean).join(' • ');
 };
 
+const isQuotedType = (
+  m: ListMessageResult,
+  ...types: EMessageType[]
+): boolean => {
+  const quotedType = resolveQuotedPayload(m)?.type;
+  return !!quotedType && types.includes(quotedType as EMessageType);
+};
+
+const shouldRenderQuotedText = (m: ListMessageResult): boolean =>
+  !!resolveQuotedText(m) &&
+  !isQuotedType(
+    m,
+    EMessageType.video_note,
+    EMessageType.video,
+    EMessageType.image,
+    EMessageType.audio,
+    EMessageType.sticker,
+    EMessageType.location,
+    EMessageType.contact_card,
+    EMessageType.contacts
+  );
+
+const shouldRenderQuotedTextAsHtml = (m: ListMessageResult): boolean =>
+  isQuotedType(
+    m,
+    EMessageType.text,
+    EMessageType.system,
+    EMessageType.annotation
+  );
+
+const resolveQuotedContactMessage = (m: ListMessageResult): string =>
+  resolveQuotedPayload(m)?.message ?? '';
+
 const getQuotedTargetId = (m: ListMessageResult): string | null => {
-  const byKeyId = m.content?.quoted?.key?.id || null;
+  const quoted = resolveQuotedPayload(m);
+  const byKeyId = quoted?.key?.id || null;
   if (byKeyId) {
     const matchByKey = chatStore.listMessages.find(
-      (x) => x.message_key?.id === byKeyId
+      (x) =>
+        x.message_key?.id === byKeyId ||
+        (extractOfficialWamidStanzaId(byKeyId) &&
+          extractOfficialWamidStanzaId(x.message_key?.id) ===
+            extractOfficialWamidStanzaId(byKeyId))
     );
     if (matchByKey) {
       return matchByKey.message_id;
@@ -2333,7 +2457,11 @@ const getQuotedTargetId = (m: ListMessageResult): string | null => {
     }
 
     const matchByExplicitKey = chatStore.listMessages.find(
-      (x) => x.message_key?.id === explicitIdStr
+      (x) =>
+        x.message_key?.id === explicitIdStr ||
+        (extractOfficialWamidStanzaId(explicitIdStr) &&
+          extractOfficialWamidStanzaId(x.message_key?.id) ===
+            extractOfficialWamidStanzaId(explicitIdStr))
     );
     if (matchByExplicitKey) {
       return matchByExplicitKey.message_id;
@@ -2342,7 +2470,7 @@ const getQuotedTargetId = (m: ListMessageResult): string | null => {
     return explicitIdStr;
   }
 
-  const text = m.content?.quoted?.message?.trim();
+  const text = quoted?.message?.trim();
   if (!text) return null;
 
   const found = chatStore.listMessages.find(
@@ -4006,11 +4134,11 @@ onUnmounted(() => {
                             }}
                           </span>
                           <span
-                            v-if="item.message.content?.quoted?.message"
+                            v-if="resolveQuotedContactMessage(item.message)"
                             class="quoted-contact-message"
                             v-html="
                               formatWhatsAppText(
-                                item.message.content.quoted.message
+                                resolveQuotedContactMessage(item.message)
                               )
                             "
                           ></span>
@@ -4033,25 +4161,7 @@ onUnmounted(() => {
                       </div>
 
                       <div
-                        v-if="
-                          resolveQuotedText(item.message) &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.video_note &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.video &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.image &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.audio &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.sticker &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.location &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.contact_card &&
-                          item.message.content?.quoted?.type !==
-                            EMessageType.contacts
-                        "
+                        v-if="shouldRenderQuotedText(item.message)"
                         class="quoted-text"
                         :style="{
                           color: isTypeUser(item.message)
@@ -4060,14 +4170,7 @@ onUnmounted(() => {
                         }"
                       >
                         <span
-                          v-if="
-                            item.message.content?.quoted?.type ===
-                              EMessageType.text ||
-                            item.message.content?.quoted?.type ===
-                              EMessageType.system ||
-                            item.message.content?.quoted?.type ===
-                              EMessageType.annotation
-                          "
+                          v-if="shouldRenderQuotedTextAsHtml(item.message)"
                           v-html="
                             formatWhatsAppText(resolveQuotedText(item.message))
                           "

@@ -294,6 +294,46 @@ describe('OfficialWhatsappWebhookConsume', () => {
     );
   });
 
+  it('keeps the official quoted message id from Meta context on text messages', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const event = makeEvent();
+    const quotedMessageId =
+      'wamid.HBgTQlIuMTAyMDcwMzI4MzgwMDI2MxUUABIYFDNBRUEyQTdEODVDRjk3QkMyREU2AA==';
+    const firstChange = event.payload.entry?.[0]?.changes?.[0];
+    if (!firstChange) {
+      throw new Error('missing webhook change fixture');
+    }
+    const message = (firstChange.value as any).messages[0];
+    message.id =
+      'wamid.HBgMNTU2MTk1OTk5MDQwFQIAEhgUM0EzRkJEREE2OUIxNUMwNEJEMDMA';
+    message.context = {
+      from: '5511999999999',
+      id: quotedMessageId,
+    };
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert.message',
+      expect.objectContaining({
+        has_quoted: true,
+        content: expect.objectContaining({
+          type: EMessageType.text,
+          message: 'Ola',
+          message_quoted_id: quotedMessageId,
+        }),
+      }),
+      expect.any(String)
+    );
+  });
+
   it('maps official Meta contact cards with normalized phone fields', async () => {
     const { consumer, streamProducerService } = makeConsumer();
     const event = makeContactMessageEvent();

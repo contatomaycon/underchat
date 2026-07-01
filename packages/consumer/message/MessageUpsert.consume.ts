@@ -1001,6 +1001,49 @@ export class MessageUpsertConsume {
     return Array.from(candidates);
   }
 
+  private extractPhoneFromRemoteCandidate(value: string): string | null {
+    const remote = value.split('@')[0] ?? value;
+    const digits = remote.replace(/\D/g, '');
+    return digits || null;
+  }
+
+  private extractOfficialWamidStanzaId(value?: string | null): string | null {
+    const normalized = this.toNonEmptyString(value);
+    if (!normalized?.startsWith('wamid.')) return null;
+
+    try {
+      const decoded = Buffer.from(
+        normalized.slice('wamid.'.length),
+        'base64'
+      ).toString('utf8');
+      return decoded.match(/3A[A-Z0-9]{12,}/)?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildOfficialWamidCandidate(
+    phone: string,
+    stanzaId: string
+  ): string | null {
+    const normalizedPhone = this.extractPhoneFromRemoteCandidate(phone);
+    if (!normalizedPhone || !stanzaId) return null;
+
+    const phoneBuffer = Buffer.from(normalizedPhone, 'utf8');
+    const stanzaBuffer = Buffer.from(stanzaId, 'utf8');
+    if (phoneBuffer.length > 255 || stanzaBuffer.length > 255) return null;
+
+    const payload = Buffer.concat([
+      Buffer.from([0x1c, 0x18, phoneBuffer.length]),
+      phoneBuffer,
+      Buffer.from([0x15, 0x02, 0x00, 0x12, 0x18, stanzaBuffer.length]),
+      stanzaBuffer,
+      Buffer.from([0x00]),
+    ]);
+
+    return `wamid.${payload.toString('base64')}`;
+  }
+
   private collectFromMeCandidatesFromKey(
     keyContext?: IMessageKeyIdContext
   ): boolean[] {
@@ -1031,10 +1074,28 @@ export class MessageUpsertConsume {
 
     candidates.add(stanzaId);
 
+    const officialWamidStanzaId =
+      this.extractOfficialWamidStanzaId(normalizedId);
+    if (officialWamidStanzaId) {
+      candidates.add(officialWamidStanzaId);
+    }
+
     const remoteCandidates = new Set<string>([
       ...this.collectRemoteIdCandidatesFromKey(keyContext),
       ...(parsed?.remoteJid ? [parsed.remoteJid] : []),
     ]);
+
+    if (officialWamidStanzaId) {
+      for (const remoteCandidate of remoteCandidates) {
+        const officialWamidCandidate = this.buildOfficialWamidCandidate(
+          remoteCandidate,
+          officialWamidStanzaId
+        );
+        if (officialWamidCandidate) {
+          candidates.add(officialWamidCandidate);
+        }
+      }
+    }
 
     const fromMeCandidates = this.collectFromMeCandidatesFromKey(keyContext);
     if (parsed && !fromMeCandidates.includes(parsed.fromMe)) {
@@ -3826,22 +3887,23 @@ export class MessageUpsertConsume {
 
     quoted.key = {
       ...quoted.key,
+      id: originalMessage.message_key?.id ?? quoted.key.id,
       remote_jid:
-        quoted.key.remote_jid ?? originalMessage.message_key?.remote_jid,
+        originalMessage.message_key?.remote_jid ?? quoted.key.remote_jid,
       remote_jid_alt:
-        quoted.key.remote_jid_alt ??
-        originalMessage.message_key?.remote_jid_alt,
-      from_me: quoted.key.from_me ?? originalMessage.message_key?.from_me,
+        originalMessage.message_key?.remote_jid_alt ??
+        quoted.key.remote_jid_alt,
+      from_me: originalMessage.message_key?.from_me ?? quoted.key.from_me,
       participant:
-        quoted.key.participant ?? originalMessage.message_key?.participant,
+        originalMessage.message_key?.participant ?? quoted.key.participant,
       participant_alt:
-        quoted.key.participant_alt ??
-        originalMessage.message_key?.participant_alt,
+        originalMessage.message_key?.participant_alt ??
+        quoted.key.participant_alt,
       addressing_mode:
-        quoted.key.addressing_mode ??
-        originalMessage.message_key?.addressing_mode,
+        originalMessage.message_key?.addressing_mode ??
+        quoted.key.addressing_mode,
       is_view_once:
-        quoted.key.is_view_once ?? originalMessage.message_key?.is_view_once,
+        originalMessage.message_key?.is_view_once ?? quoted.key.is_view_once,
     };
 
     if (!quoted.type && originalContent.type) {

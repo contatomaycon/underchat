@@ -1306,6 +1306,72 @@ describe('MessageUpsertConsume edit fallback', () => {
     );
   });
 
+  it('hydrates official quoted messages when Meta sends a BR user wamid reference', async () => {
+    const officialBrQuotedId =
+      'wamid.HBgTQlIuMTAyMDcwMzI4MzgwMDI2MxUUABIYFDNBRUEyQTdEODVDRjk3QkMyREU2AA==';
+    const officialPhoneQuotedId =
+      'wamid.HBgMNTU2OTk5NzE1MDM5FQIAEhgUM0FFQTJBN0Q4NUNGOTdCQzJERTYA';
+    const officialMessageId =
+      'wamid.HBgMNTU2OTk5NzE1MDM5FQIAEhgUM0EzRkJEREE2OUIxNUMwNEJEMDMA';
+    const existingMessage = {
+      ...makeExistingMessage(),
+      message_key: {
+        ...makeExistingMessage().message_key,
+        id: officialPhoneQuotedId,
+        remote_jid: phoneJid,
+        remote_jid_alt: lidJid,
+      },
+    } as IChatMessage;
+    const { consumer, chat, chatService, elasticDatabaseService } =
+      makeConsumer();
+    elasticDatabaseService.select.mockImplementation(async (_index, query) =>
+      queryHasExactMessageKeyId(query, officialPhoneQuotedId)
+        ? elasticHit(existingMessage)
+        : emptyElasticResult
+    );
+
+    const baseUpsert = makeTextUpsert('Teste');
+    const upsert: IUpsertMessage = {
+      ...baseUpsert,
+      source_provider: 'official_whatsapp',
+      has_quoted: true,
+      message: {
+        ...baseUpsert.message,
+        key: {
+          ...baseUpsert.message.key,
+          id: officialMessageId,
+        },
+      },
+      content: {
+        type: EMessageType.text,
+        message: 'Teste',
+        message_quoted_id: officialBrQuotedId,
+      },
+    };
+
+    const result = await (consumer as any).createChatMessage(chat, upsert);
+
+    expect(result.handled).toBe(true);
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+
+    const createdMessage = chatService.createMessageIdempotent.mock
+      .calls[0][0] as IChatMessage;
+    expect(createdMessage.has_quoted).toBe(true);
+    expect(createdMessage.content?.message_quoted_id).toBe(officialBrQuotedId);
+    expect(createdMessage.content?.quoted).toEqual(
+      expect.objectContaining({
+        message: 'texto anterior',
+        type: EMessageType.text,
+        key: expect.objectContaining({
+          id: officialPhoneQuotedId,
+          remote_jid: phoneJid,
+          remote_jid_alt: lidJid,
+          from_me: false,
+        }),
+      })
+    );
+  });
+
   it('keeps normal edit behavior when the target message exists', async () => {
     const existingMessage = makeExistingMessage();
     const { consumer, chat, chatService, elasticDatabaseService } =
