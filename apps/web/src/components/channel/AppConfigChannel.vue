@@ -25,6 +25,7 @@ import { ViewSecurityKeyResponse } from '@core/schema/worker/viewSecurityKey/res
 import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/request.schema';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { ViewWorkerResponse } from '@core/schema/worker/viewWorker/response.schema';
+import { hasOfficialChatbotNodes } from '@core/common/functions/chatbotOfficialNodes';
 import {
   isWhatsappBusinessProfileVertical,
   WHATSAPP_BUSINESS_PROFILE_VERTICALS,
@@ -640,6 +641,7 @@ const chatbotWorkingHoursModalOpen = ref(false);
 const chatbotWorkingHoursEnabledInModal = ref(false);
 const chatbotWorkingHoursTimezoneInModal = ref(CHATBOT_WORKING_HOURS_TIMEZONE);
 const chatbotWorkingHoursRulesInModal = ref<ChatbotWorkingHoursRuleForm[]>([]);
+const chatbotsWithOfficialNodes = ref<Set<string>>(new Set());
 const chatbotWorkingHoursLastSavedEnabled = ref(false);
 const chatbotWorkingHoursLastSavedTimezone = ref(
   CHATBOT_WORKING_HOURS_TIMEZONE
@@ -696,12 +698,23 @@ const statusVisibilityOptions = computed(() => [
   { value: 'contacts', title: t('status_visibility_contacts') },
 ]);
 
+const canUseChatbotInCurrentChannel = (chatbotIdToCheck: string): boolean => {
+  return (
+    isOfficialChannel.value ||
+    !chatbotsWithOfficialNodes.value.has(chatbotIdToCheck)
+  );
+};
+
 const inputChatbotOptions = computed(() =>
-  chatbotStore.list.filter((c) => c.type === 'input')
+  chatbotStore.list.filter(
+    (c) => c.type === 'input' && canUseChatbotInCurrentChannel(c.chatbot_id)
+  )
 );
 
 const outputChatbotOptions = computed(() =>
-  chatbotStore.list.filter((c) => c.type === 'output')
+  chatbotStore.list.filter(
+    (c) => c.type === 'output' && canUseChatbotInCurrentChannel(c.chatbot_id)
+  )
 );
 
 const chatbotWorkingHoursWeekdayOptions = computed(() =>
@@ -2673,10 +2686,65 @@ const saveOperatorReplyPendingAlertConfiguration = async () => {
   }
 };
 
+const loadChatbotOfficialNodeMap = async () => {
+  if (isOfficialChannel.value) {
+    chatbotsWithOfficialNodes.value = new Set();
+    return;
+  }
+
+  const entries = await Promise.all(
+    chatbotStore.list.map(async (chatbot) => {
+      const flow = await chatbotStore.listChatbotFlow(chatbot.chatbot_id);
+      return [chatbot.chatbot_id, hasOfficialChatbotNodes(flow)] as const;
+    })
+  );
+
+  chatbotsWithOfficialNodes.value = new Set(
+    entries
+      .filter(([, hasOfficialNodes]) => hasOfficialNodes)
+      .map(([chatbotId]) => chatbotId)
+  );
+};
+
+const getChatbotName = (chatbotIdToFind: string): string => {
+  return (
+    chatbotStore.list.find((chatbot) => chatbot.chatbot_id === chatbotIdToFind)
+      ?.name || chatbotIdToFind
+  );
+};
+
+const validateSelectedChatbotsForCurrentChannel = (): boolean => {
+  if (isOfficialChannel.value) {
+    return true;
+  }
+
+  const selectedChatbotIds = [
+    selectedInputChatbotId.value,
+    selectedOutputChatbotId.value,
+    ...chatbotWorkingHoursRulesInModal.value.map((rule) => rule.chatbot_id),
+  ].filter((id): id is string => !!id);
+
+  const blockedChatbot = selectedChatbotIds.find((id) =>
+    chatbotsWithOfficialNodes.value.has(id)
+  );
+
+  if (!blockedChatbot) {
+    return true;
+  }
+
+  channelStore.showSnackbar(
+    `O chatbot "${getChatbotName(blockedChatbot)}" possui node oficial e não pode ser vinculado a canal não oficial.`,
+    EColor.error
+  );
+
+  return false;
+};
+
 const openChatbotModal = async () => {
   if (!channelId.value) return;
 
   await chatbotStore.listChatbots();
+  await loadChatbotOfficialNodeMap();
   const data = await channelStore.fetchChatbot(channelId.value);
   applyChatbotState(data as ChatbotConfigResponse | null);
   chatbotModalOpen.value = true;
@@ -2700,6 +2768,10 @@ const toggleChatbotStatus = async () => {
     const chatbotIdValue =
       chatbotId.value || selectedInputChatbotId.value || null;
     const outputChatbotIdValue = selectedOutputChatbotId.value || null;
+
+    if (newEnabled && !validateSelectedChatbotsForCurrentChannel()) {
+      return;
+    }
 
     const result = await channelStore.updateChatbot(
       channelId.value,
@@ -2760,6 +2832,10 @@ const saveChatbotWorkingHours = async () => {
     return;
   }
 
+  if (!validateSelectedChatbotsForCurrentChannel()) {
+    return;
+  }
+
   try {
     isSavingChatbot.value = true;
 
@@ -2786,6 +2862,10 @@ const saveChatbot = async () => {
   if (!channelId.value) return;
 
   if (!validateChatbotWorkingHoursRules()) {
+    return;
+  }
+
+  if (!validateSelectedChatbotsForCurrentChannel()) {
     return;
   }
 

@@ -155,6 +155,7 @@ type MetaWhatsappMessageType =
   | 'sticker'
   | 'location'
   | 'contacts'
+  | 'interactive'
   | 'reaction';
 
 export interface MetaWhatsappContactMessage {
@@ -173,6 +174,8 @@ export interface MetaWhatsappContactMessage {
     type?: string;
   }>;
 }
+
+export type MetaWhatsappInteractiveMessage = Record<string, unknown>;
 
 export type MetaWhatsappTemplateComponentParameter = {
   type: 'text';
@@ -733,6 +736,29 @@ export class MetaWhatsappEmbeddedService {
     });
   }
 
+  async sendInteractiveMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    interactive: MetaWhatsappInteractiveMessage;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendWhatsappMessage({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.to,
+        type: 'interactive',
+        interactive: input.interactive,
+        ...this.messageContext(input.contextMessageId),
+      },
+    });
+  }
+
   private async sendMediaMessage(input: {
     apiVersion: string;
     accessToken: string;
@@ -740,7 +766,7 @@ export class MetaWhatsappEmbeddedService {
     to: string;
     type: Exclude<
       MetaWhatsappMessageType,
-      'text' | 'template' | 'location' | 'contacts' | 'reaction'
+      'text' | 'template' | 'location' | 'contacts' | 'interactive' | 'reaction'
     >;
     media: Record<string, unknown>;
     contextMessageId?: string | null;

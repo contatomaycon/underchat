@@ -30,6 +30,9 @@ import { RandomMessageService } from '@core/services/randomMessage.service';
 import { v7 as uuidv7 } from 'uuid';
 import { WorkerService } from '@core/services/worker.service';
 import { ListChatbotChannelsResponse } from '@core/schema/chatbot/listChannels/response.schema';
+import { OfficialCapabilitiesResponse } from '@core/schema/chatbot/officialCapabilities/response.schema';
+import { ChatbotOfficialCompatibilityRepository } from '@core/repositories/chatbot/ChatbotOfficialCompatibility.repository';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 type ElasticHit<T> = {
   _source?: T;
@@ -60,6 +63,8 @@ export class ChatbotService {
     private readonly workerService: WorkerService,
     @inject(RandomMessageService)
     private readonly randomMessageService: RandomMessageService,
+    @inject(ChatbotOfficialCompatibilityRepository)
+    private readonly chatbotOfficialCompatibilityRepository: ChatbotOfficialCompatibilityRepository,
     @inject(ElasticDatabaseService)
     private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
@@ -141,10 +146,11 @@ export class ChatbotService {
       return sectorUsers;
     }
 
-    const allowedUserIds = await this.userService.listUserIdsWithAccessToChannel(
-      accountId,
-      channelId
-    );
+    const allowedUserIds =
+      await this.userService.listUserIdsWithAccessToChannel(
+        accountId,
+        channelId
+      );
 
     if (allowedUserIds.length === 0) {
       return [];
@@ -164,7 +170,9 @@ export class ChatbotService {
       return channels;
     }
 
-    const allowedChannelIds = new Set(userChannels.map((channel) => channel.id));
+    const allowedChannelIds = new Set(
+      userChannels.map((channel) => channel.id)
+    );
     return channels.filter((channel) => allowedChannelIds.has(channel.id));
   };
 
@@ -172,6 +180,71 @@ export class ChatbotService {
     accountId: string
   ): Promise<ListChatbotAiAgentsResponse> => {
     return this.aiAgentService.listActiveAiAgentsForChatbot(accountId);
+  };
+
+  getOfficialCapabilities = async (
+    accountId: string,
+    chatbotId: string,
+    userChannels: { id: string; name: string }[] = []
+  ): Promise<OfficialCapabilitiesResponse> => {
+    const [channels, linkedWorkerTypes] = await Promise.all([
+      this.listChatbotChannels(accountId, userChannels),
+      this.chatbotOfficialCompatibilityRepository.listActiveLinkedWorkerTypes(
+        accountId,
+        chatbotId
+      ),
+    ]);
+
+    const hasOfficialOnlineChannel = channels.some(
+      (channel) => channel.is_official === true
+    );
+    const linkedOfficial = linkedWorkerTypes.some(
+      (item) => item.worker_type_id === EWorkerType.whatsapp
+    );
+    const linkedNonOfficial = linkedWorkerTypes.some(
+      (item) => item.worker_type_id !== EWorkerType.whatsapp
+    );
+
+    let linkedChannelType: OfficialCapabilitiesResponse['linked_channel_type'] =
+      'none';
+    if (linkedOfficial && linkedNonOfficial) {
+      linkedChannelType = 'mixed';
+    } else if (linkedOfficial) {
+      linkedChannelType = 'official';
+    } else if (linkedNonOfficial) {
+      linkedChannelType = 'non_official';
+    }
+
+    return {
+      has_official_online_channel: hasOfficialOnlineChannel,
+      has_non_official_linked_channel: linkedNonOfficial,
+      linked_channel_type: linkedChannelType,
+      can_use_official_nodes:
+        hasOfficialOnlineChannel && linkedNonOfficial === false,
+    };
+  };
+
+  hasOfficialOnlineChannel = async (
+    accountId: string,
+    userChannels: { id: string; name: string }[] = []
+  ): Promise<boolean> => {
+    const channels = await this.listChatbotChannels(accountId, userChannels);
+    return channels.some((channel) => channel.is_official === true);
+  };
+
+  hasNonOfficialLinkedChannel = async (
+    accountId: string,
+    chatbotId: string
+  ): Promise<boolean> => {
+    const linkedWorkerTypes =
+      await this.chatbotOfficialCompatibilityRepository.listActiveLinkedWorkerTypes(
+        accountId,
+        chatbotId
+      );
+
+    return linkedWorkerTypes.some(
+      (item) => item.worker_type_id !== EWorkerType.whatsapp
+    );
   };
 
   listChatbotRandomMessages = async (
@@ -270,8 +343,7 @@ export class ChatbotService {
       );
 
     const hit = result?.hits?.hits?.[0] as
-      | ElasticHit<ListChatbotFlowResponse>
-      | undefined;
+      ElasticHit<ListChatbotFlowResponse> | undefined;
 
     if (!hit?._source) {
       return null;
@@ -367,8 +439,7 @@ export class ChatbotService {
       );
 
     const hit = result?.hits?.hits?.[0] as
-      | ElasticHit<ListChatbotFlowConfigurationsResponse>
-      | undefined;
+      ElasticHit<ListChatbotFlowConfigurationsResponse> | undefined;
     return hit?._source ?? null;
   };
 

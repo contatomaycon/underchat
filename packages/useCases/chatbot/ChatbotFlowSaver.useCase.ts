@@ -16,6 +16,10 @@ import {
   normalizeChatbotWorkingHoursTimezone,
   toChatbotWorkingHoursMinutes,
 } from '@core/common/functions/chatbotWorkingHours';
+import {
+  getOfficialChatbotNodes,
+  isOfficialChatbotNodeType,
+} from '@core/common/functions/chatbotOfficialNodes';
 
 type MediaType = 'image' | 'video' | 'audio' | 'document';
 type WeekdayOptionId =
@@ -281,7 +285,10 @@ export class ChatbotFlowSaverUseCase {
       node.type !== 'hours' &&
       node.type !== 'holiday' &&
       node.type !== 'aiAgent' &&
-      node.type !== 'conditional'
+      node.type !== 'conditional' &&
+      node.type !== 'officialReplyButtons' &&
+      node.type !== 'officialList' &&
+      node.type !== 'officialMediaCarousel'
     ) {
       return;
     }
@@ -1120,6 +1127,292 @@ export class ChatbotFlowSaverUseCase {
     }
   }
 
+  private getOfficialField(
+    data: any,
+    field: string
+  ): string | number | boolean | Record<string, unknown> | unknown[] | null {
+    const directValue = data?.[field];
+    if (
+      directValue !== null &&
+      directValue !== undefined &&
+      !(typeof directValue === 'string' && directValue.trim().length === 0)
+    ) {
+      return directValue;
+    }
+
+    const officialValue = data?.official?.[field];
+    if (
+      officialValue !== null &&
+      officialValue !== undefined &&
+      !(typeof officialValue === 'string' && officialValue.trim().length === 0)
+    ) {
+      return officialValue;
+    }
+
+    return null;
+  }
+
+  private hasOfficialField(data: any, field: string): boolean {
+    return this.getOfficialField(data, field) !== null;
+  }
+
+  private requireOfficialFields(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[],
+    fields: string[]
+  ): void {
+    const nodeLabel = this.getNodeLabel(t, node);
+    for (const field of fields) {
+      if (!this.hasOfficialField(node.data, field)) {
+        errors.push(
+          t('chatbot_flow_validation_official_field_required', {
+            nodeLabel,
+            field,
+          })
+        );
+      }
+    }
+  }
+
+  private getOfficialProductRetailerId(product: any): string {
+    if (typeof product === 'string') return product.trim();
+    if (!product || typeof product !== 'object') return '';
+
+    const value = product.product_retailer_id ?? product.productRetailerId;
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private hasOfficialMultiProductItems(data: any): boolean {
+    const products = [
+      ...(Array.isArray(data?.products) ? data.products : []),
+      ...(Array.isArray(data?.official?.products)
+        ? data.official.products
+        : []),
+    ];
+
+    if (
+      products.some((product) => this.getOfficialProductRetailerId(product))
+    ) {
+      return true;
+    }
+
+    const sections = [
+      ...(Array.isArray(data?.sections) ? data.sections : []),
+      ...(Array.isArray(data?.official?.sections)
+        ? data.official.sections
+        : []),
+    ];
+
+    return sections.some((section) => {
+      if (!section || typeof section !== 'object') return false;
+
+      const productItems = Array.isArray(section.product_items)
+        ? section.product_items
+        : Array.isArray(section.products)
+          ? section.products
+          : [];
+
+      return productItems.some((product: any) =>
+        this.getOfficialProductRetailerId(product)
+      );
+    });
+  }
+
+  private hasOfficialCarouselCards(data: any): boolean {
+    const cards = [
+      ...(Array.isArray(data?.cards) ? data.cards : []),
+      ...(Array.isArray(data?.official?.cards) ? data.official.cards : []),
+    ];
+
+    return cards.some((card) => {
+      if (!card || typeof card !== 'object') return false;
+      if (Array.isArray(card.components) && card.components.length > 0) {
+        return true;
+      }
+
+      const body =
+        typeof card.body === 'string'
+          ? card.body.trim()
+          : typeof card.text === 'string'
+            ? card.text.trim()
+            : '';
+      const mediaUrl =
+        typeof card.mediaUrl === 'string'
+          ? card.mediaUrl.trim()
+          : typeof card.media_url === 'string'
+            ? card.media_url.trim()
+            : '';
+      const mediaId =
+        typeof card.mediaId === 'string'
+          ? card.mediaId.trim()
+          : typeof card.media_id === 'string'
+            ? card.media_id.trim()
+            : '';
+
+      return body.length > 0 && (mediaUrl.length > 0 || mediaId.length > 0);
+    });
+  }
+
+  private hasOfficialContacts(data: any): boolean {
+    const contacts = [
+      ...(Array.isArray(data?.contacts) ? data.contacts : []),
+      ...(Array.isArray(data?.official?.contacts)
+        ? data.official.contacts
+        : []),
+    ];
+
+    return contacts.some((contact) => {
+      if (!contact || typeof contact !== 'object') return false;
+
+      const name = typeof contact.name === 'string' ? contact.name.trim() : '';
+      const phone =
+        typeof contact.phone === 'string' ? contact.phone.trim() : '';
+
+      return name.length > 0 && phone.length > 0;
+    });
+  }
+
+  private validateOfficialOptionsLimit(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[],
+    maxOptions: number
+  ): void {
+    const options = Array.isArray(node.data?.options) ? node.data.options : [];
+    if (options.length === 0 || options.length > maxOptions) {
+      errors.push(
+        t('chatbot_flow_validation_official_options_limit', {
+          nodeLabel: this.getNodeLabel(t, node),
+        })
+      );
+    }
+  }
+
+  private validateOfficialNode(
+    t: TFunction<'translation', undefined>,
+    node: any,
+    errors: string[]
+  ): void {
+    if (!isOfficialChatbotNodeType(node.type)) {
+      return;
+    }
+
+    if (node.type === 'officialReplyButtons') {
+      this.requireOfficialFields(t, node, errors, ['message']);
+      this.validateOfficialOptionsLimit(t, node, errors, 3);
+      return;
+    }
+
+    if (node.type === 'officialList') {
+      this.requireOfficialFields(t, node, errors, ['message', 'buttonText']);
+      this.validateOfficialOptionsLimit(t, node, errors, 10);
+      return;
+    }
+
+    if (node.type === 'officialCtaUrl') {
+      this.requireOfficialFields(t, node, errors, [
+        'message',
+        'buttonText',
+        'url',
+      ]);
+      return;
+    }
+
+    if (node.type === 'officialLocationRequest') {
+      this.requireOfficialFields(t, node, errors, ['message']);
+      return;
+    }
+
+    if (node.type === 'officialFlow') {
+      this.requireOfficialFields(t, node, errors, ['message', 'buttonText']);
+      if (
+        !this.hasOfficialField(node.data, 'flowId') &&
+        !this.hasOfficialField(node.data, 'flowName')
+      ) {
+        this.requireOfficialFields(t, node, errors, ['flowId']);
+      }
+      return;
+    }
+
+    if (node.type === 'officialSingleProduct') {
+      this.requireOfficialFields(t, node, errors, [
+        'catalogId',
+        'productRetailerId',
+      ]);
+      return;
+    }
+
+    if (node.type === 'officialMultiProduct') {
+      this.requireOfficialFields(t, node, errors, ['catalogId']);
+      if (!this.hasOfficialMultiProductItems(node.data)) {
+        errors.push(
+          t('chatbot_flow_validation_official_field_required', {
+            nodeLabel: this.getNodeLabel(t, node),
+            field: 'products',
+          })
+        );
+      }
+      return;
+    }
+
+    if (node.type === 'officialCatalog') {
+      this.requireOfficialFields(t, node, errors, ['message']);
+      return;
+    }
+
+    if (node.type === 'officialMediaCarousel') {
+      if (!this.hasOfficialCarouselCards(node.data)) {
+        errors.push(
+          t('chatbot_flow_validation_official_field_required', {
+            nodeLabel: this.getNodeLabel(t, node),
+            field: 'cards',
+          })
+        );
+      }
+      return;
+    }
+
+    if (node.type === 'officialAddress') {
+      this.requireOfficialFields(t, node, errors, ['message']);
+      return;
+    }
+
+    if (node.type === 'officialTemplate') {
+      this.requireOfficialFields(t, node, errors, [
+        'templateName',
+        'templateLanguage',
+      ]);
+      return;
+    }
+
+    if (node.type === 'officialLocation') {
+      this.requireOfficialFields(t, node, errors, ['latitude', 'longitude']);
+      return;
+    }
+
+    if (node.type === 'officialContacts') {
+      if (!this.hasOfficialContacts(node.data)) {
+        errors.push(
+          t('chatbot_flow_validation_official_field_required', {
+            nodeLabel: this.getNodeLabel(t, node),
+            field: 'contacts',
+          })
+        );
+      }
+      return;
+    }
+
+    if (node.type === 'officialSticker') {
+      this.requireOfficialFields(t, node, errors, ['attachmentUrl']);
+      return;
+    }
+
+    if (node.type === 'officialReaction') {
+      this.requireOfficialFields(t, node, errors, ['emoji']);
+    }
+  }
+
   private hasMediaFileForNode(
     input: SaveChatbotFlowRequest & Record<string, unknown>,
     nodeId: string,
@@ -1272,6 +1565,7 @@ export class ChatbotFlowSaverUseCase {
       this.validateHolidayNode(t, node, errors);
       this.validateDistributionNode(t, node, errors);
       this.validateConditionalNode(t, node, errors);
+      this.validateOfficialNode(t, node, errors);
     }
 
     if (errors.length > 0) {
@@ -1744,6 +2038,28 @@ export class ChatbotFlowSaverUseCase {
     }
 
     this.validateFlow(t, requestData, input);
+
+    const officialNodes = getOfficialChatbotNodes(requestData.nodes);
+    if (officialNodes.length > 0) {
+      const [hasOfficialOnlineChannel, hasNonOfficialLinkedChannel] =
+        await Promise.all([
+          this.chatbotService.hasOfficialOnlineChannel(accountId),
+          this.chatbotService.hasNonOfficialLinkedChannel(
+            accountId,
+            requestData.chatbot_id
+          ),
+        ]);
+
+      if (!hasOfficialOnlineChannel) {
+        throw new Error(t('chatbot_official_nodes_require_online_channel'));
+      }
+
+      if (hasNonOfficialLinkedChannel) {
+        throw new Error(
+          t('chatbot_official_nodes_not_allowed_on_non_official_channel')
+        );
+      }
+    }
   }
 
   async execute(

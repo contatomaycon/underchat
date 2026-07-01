@@ -178,6 +178,67 @@ describe('MetaWhatsappEmbeddedService', () => {
     );
   });
 
+  it('sends official interactive messages through the Message API', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () =>
+        JSON.stringify({
+          contacts: [{ wa_id: '5511999999999' }],
+          messages: [{ id: 'wamid.interactive', message_status: 'accepted' }],
+        })
+      ),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await service.sendInteractiveMessage({
+      apiVersion: 'v25.0',
+      accessToken: 'token-1',
+      phoneNumberId: 'phone-1',
+      to: '5511999999999',
+      interactive: {
+        type: 'button',
+        body: { text: 'Escolha' },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: { id: '1', title: 'Sim' },
+            },
+          ],
+        },
+      },
+      contextMessageId: 'wamid.quoted',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v25.0/phone-1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: '5511999999999',
+          type: 'interactive',
+          interactive: {
+            type: 'button',
+            body: { text: 'Escolha' },
+            action: {
+              buttons: [
+                {
+                  type: 'reply',
+                  reply: { id: '1', title: 'Sim' },
+                },
+              ],
+            },
+          },
+          context: {
+            message_id: 'wamid.quoted',
+          },
+        }),
+      })
+    );
+  });
+
   it('marks incoming messages as read through the Message API', async () => {
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

@@ -289,6 +289,22 @@ export class OfficialWhatsappMessageSendConsume {
     const contextMessageId = this.resolveContextMessageId(data);
     const messageType = content.type;
 
+    if (messageType === EMessageType.official_interactive) {
+      const interactive = this.resolveOfficialInteractivePayload(data);
+      if (!interactive) {
+        throw new Error('official_whatsapp_interactive_required');
+      }
+
+      return this.metaWhatsappEmbeddedService.sendInteractiveMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        interactive,
+        contextMessageId,
+      });
+    }
+
     if (messageType === EMessageType.official_template) {
       const template = content.official_template;
       if (!template?.name || !template.language) {
@@ -494,6 +510,19 @@ export class OfficialWhatsappMessageSendConsume {
     }
 
     throw new Error(this.unsupportedOfficialTypeError(messageType));
+  }
+
+  private resolveOfficialInteractivePayload(
+    data: IChatMessage
+  ): Record<string, unknown> | null {
+    const raw = data.content?.official?.raw;
+    const interactive = raw?.interactive;
+
+    if (!interactive || typeof interactive !== 'object') {
+      return null;
+    }
+
+    return interactive as Record<string, unknown>;
   }
 
   private unsupportedOfficialTypeError(type?: EMessageType | null): string {

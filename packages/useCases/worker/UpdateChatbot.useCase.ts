@@ -10,6 +10,8 @@ import {
   isChatbotWorkingHoursRuleWindowValid,
 } from '@core/common/functions/chatbotWorkingHours';
 import { IChatbotWorkingHoursRule } from '@core/common/interfaces/IChatbotWorkingHours';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { hasOfficialChatbotNodes } from '@core/common/functions/chatbotOfficialNodes';
 
 @injectable()
 export class UpdateChatbotUseCase {
@@ -41,6 +43,14 @@ export class UpdateChatbotUseCase {
     );
 
     if (!existsWorkerById) {
+      throw new Error(t('worker_not_found'));
+    }
+
+    const workerType = await this.workerService.viewWorkerType(
+      accountId,
+      workerId
+    );
+    if (!workerType) {
       throw new Error(t('worker_not_found'));
     }
 
@@ -122,6 +132,31 @@ export class UpdateChatbotUseCase {
           day: t(conflict.first.weekday),
         })
       );
+    }
+
+    if (workerType.worker_type_id !== EWorkerType.whatsapp) {
+      const selectedChatbotIds = Array.from(
+        new Set(
+          [
+            chatbotIdToSave,
+            outputChatbotIdToSave,
+            ...chatbotWorkingHoursRulesToSave.map((rule) => rule.chatbot_id),
+          ].filter((id): id is string => !!id)
+        )
+      );
+
+      for (const selectedChatbotId of selectedChatbotIds) {
+        const flow = await this.chatbotService.findChatbotFlowByChatbotId(
+          accountId,
+          selectedChatbotId
+        );
+
+        if (hasOfficialChatbotNodes(flow)) {
+          throw new Error(
+            t('chatbot_official_nodes_not_allowed_on_non_official_channel')
+          );
+        }
+      }
     }
 
     const result = await this.workerConfigService.updateChatbots(

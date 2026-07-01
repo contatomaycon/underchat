@@ -1,5 +1,6 @@
 import { injectable, inject } from 'tsyringe';
 import { createHash } from 'crypto';
+import { v7 as uuidv7 } from 'uuid';
 import Redis from 'ioredis';
 import { ChatbotService } from './chatbot.service';
 import { ChatService } from './chat.service';
@@ -15,6 +16,10 @@ import { OpenAIAssistantService } from './openaiAssistant.service';
 import { ElasticDatabaseService } from './elasticDatabase.service';
 import { EAiAgentType } from '@core/common/enums/EAiAgentType';
 import { IChat } from '@core/common/interfaces/IChat';
+import {
+  IChatMessage,
+  IContactMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { TFunction } from 'i18next';
 import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/response.schema';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -61,6 +66,8 @@ import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { WorkerConfigViewerRepository } from '@core/repositories/worker/WorkerConfigViewer.repository';
 import { WorkerService } from './worker.service';
 import { SendMessageOptions } from '@core/common/interfaces/ISendMessageOptions';
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import { IOfficialWhatsappOutboundInteractiveMessage } from '@core/common/interfaces/IOfficialWhatsappOutboundMessage';
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import {
   classifyChatbotTriggerEvent,
@@ -82,6 +89,7 @@ import {
   toChatbotWorkingHoursMinutes,
 } from '@core/common/functions/chatbotWorkingHours';
 import { HolidayService } from './holiday.service';
+import { isOfficialChatbotNodeType } from '@core/common/functions/chatbotOfficialNodes';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -1878,6 +1886,922 @@ export class ChatbotFlowRunnerService {
     return true;
   }
 
+  private getNodeDataValue<T = unknown>(
+    node: ListChatbotFlowResponse['nodes'][number],
+    key: string
+  ): T | null {
+    const data = node.data as Record<string, unknown>;
+    const directValue = data?.[key];
+    if (
+      directValue !== null &&
+      directValue !== undefined &&
+      !(typeof directValue === 'string' && directValue.trim().length === 0)
+    ) {
+      return directValue as T;
+    }
+
+    const official = data?.official as Record<string, unknown> | undefined;
+    const officialValue = official?.[key];
+    if (
+      officialValue !== null &&
+      officialValue !== undefined &&
+      !(typeof officialValue === 'string' && officialValue.trim().length === 0)
+    ) {
+      return officialValue as T;
+    }
+
+    return null;
+  }
+
+  private getNodeTextValue(
+    node: ListChatbotFlowResponse['nodes'][number],
+    key: string,
+    fallback = ''
+  ): string {
+    const value = this.getNodeDataValue(node, key);
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    return fallback;
+  }
+
+  private getProductRetailerId(product: unknown): string {
+    if (typeof product === 'string') return product.trim();
+    if (!product || typeof product !== 'object') return '';
+
+    const productRecord = product as Record<string, unknown>;
+    const value =
+      productRecord.product_retailer_id ?? productRecord.productRetailerId;
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private normalizeProductItems(
+    products: unknown[]
+  ): Array<{ product_retailer_id: string }> {
+    return products
+      .map((product) => this.getProductRetailerId(product))
+      .filter((productRetailerId) => productRetailerId.length > 0)
+      .map((productRetailerId) => ({
+        product_retailer_id: productRetailerId,
+      }));
+  }
+
+  private normalizeProductSections(
+    sections: unknown[],
+    fallbackProducts: unknown[],
+    fallbackTitle: string
+  ): Array<{
+    title: string;
+    product_items: Array<{ product_retailer_id: string }>;
+  }> {
+    const normalizedSections = sections
+      .map((section, index) => {
+        if (!section || typeof section !== 'object') return null;
+
+        const sectionRecord = section as Record<string, unknown>;
+        const title =
+          typeof sectionRecord.title === 'string' &&
+          sectionRecord.title.trim().length > 0
+            ? sectionRecord.title.trim()
+            : `${fallbackTitle} ${index + 1}`.trim();
+        const rawItems = Array.isArray(sectionRecord.product_items)
+          ? sectionRecord.product_items
+          : Array.isArray(sectionRecord.products)
+            ? sectionRecord.products
+            : [];
+        const productItems = this.normalizeProductItems(rawItems);
+
+        if (productItems.length === 0) return null;
+        return {
+          title,
+          product_items: productItems,
+        };
+      })
+      .filter(
+        (
+          section
+        ): section is {
+          title: string;
+          product_items: Array<{ product_retailer_id: string }>;
+        } => section !== null
+      );
+
+    if (normalizedSections.length > 0) {
+      return normalizedSections;
+    }
+
+    const productItems = this.normalizeProductItems(fallbackProducts);
+    return productItems.length > 0
+      ? [
+          {
+            title: fallbackTitle,
+            product_items: productItems,
+          },
+        ]
+      : [];
+  }
+
+  private normalizeCarouselCards(cards: unknown[]): unknown[] {
+    return cards
+      .map((card, index) => {
+        if (!card || typeof card !== 'object') return null;
+
+        const cardRecord = card as Record<string, unknown>;
+        if (Array.isArray(cardRecord.components)) {
+          return cardRecord;
+        }
+
+        const body =
+          typeof cardRecord.body === 'string'
+            ? cardRecord.body.trim()
+            : typeof cardRecord.text === 'string'
+              ? cardRecord.text.trim()
+              : '';
+        const mediaType = cardRecord.mediaType === 'video' ? 'video' : 'image';
+        const mediaUrl =
+          typeof cardRecord.mediaUrl === 'string'
+            ? cardRecord.mediaUrl.trim()
+            : typeof cardRecord.media_url === 'string'
+              ? cardRecord.media_url.trim()
+              : '';
+        const mediaId =
+          typeof cardRecord.mediaId === 'string'
+            ? cardRecord.mediaId.trim()
+            : typeof cardRecord.media_id === 'string'
+              ? cardRecord.media_id.trim()
+              : '';
+        const buttonUrl =
+          typeof cardRecord.buttonUrl === 'string'
+            ? cardRecord.buttonUrl.trim()
+            : typeof cardRecord.url === 'string'
+              ? cardRecord.url.trim()
+              : '';
+
+        const components: Array<Record<string, unknown>> = [];
+        if (mediaId || mediaUrl) {
+          components.push({
+            type: 'header',
+            parameters: [
+              {
+                type: mediaType,
+                [mediaType]: mediaId ? { id: mediaId } : { link: mediaUrl },
+              },
+            ],
+          });
+        }
+
+        if (body) {
+          components.push({
+            type: 'body',
+            parameters: [{ type: 'text', text: body }],
+          });
+        }
+
+        if (buttonUrl) {
+          components.push({
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: buttonUrl }],
+          });
+        }
+
+        if (components.length === 0) return null;
+        return {
+          card_index: index,
+          components,
+        };
+      })
+      .filter((card): card is Record<string, unknown> => card !== null);
+  }
+
+  private buildAddressAction(
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): Record<string, unknown> {
+    const action =
+      this.getNodeDataValue<Record<string, unknown>>(node, 'action') ?? {};
+    const parameters =
+      action.parameters &&
+      typeof action.parameters === 'object' &&
+      !Array.isArray(action.parameters)
+        ? (action.parameters as Record<string, unknown>)
+        : {};
+    const country =
+      this.getNodeTextValue(node, 'addressCountry') ||
+      (typeof parameters.country === 'string' ? parameters.country : '') ||
+      'BR';
+
+    return {
+      name: 'address_message',
+      ...action,
+      parameters: {
+        ...parameters,
+        country,
+      },
+    };
+  }
+
+  private withOfficialHeaderFooter(
+    node: ListChatbotFlowResponse['nodes'][number],
+    interactive: Record<string, unknown>
+  ): Record<string, unknown> {
+    const headerText = this.getNodeTextValue(node, 'header', '').trim();
+    const footerText = this.getNodeTextValue(node, 'footer', '').trim();
+
+    if (headerText) {
+      interactive.header = {
+        type: 'text',
+        text: headerText,
+      };
+    }
+
+    if (footerText) {
+      interactive.footer = {
+        text: footerText,
+      };
+    }
+
+    return interactive;
+  }
+
+  private resolveOfficialOptions(
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): Array<{ id: string; text: string; description?: string | null }> {
+    const options = Array.isArray(node.data?.options) ? node.data.options : [];
+    return options
+      .map((option, index) => ({
+        id: String(option?.id ?? `option-${index + 1}`).trim(),
+        text: String(option?.text ?? `Opção ${index + 1}`).trim(),
+        description:
+          typeof (option as { description?: unknown })?.description === 'string'
+            ? String((option as { description?: unknown }).description)
+            : null,
+      }))
+      .filter((option) => option.id && option.text);
+  }
+
+  private async buildOfficialInteractivePayload(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): Promise<Record<string, unknown> | null> {
+    const rawMessage =
+      this.getNodeTextValue(node, 'message') ||
+      this.getNodeTextValue(node, 'text');
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
+
+    if (node.type === 'officialReplyButtons') {
+      const buttons = this.resolveOfficialOptions(node)
+        .slice(0, 3)
+        .map((option) => ({
+          type: 'reply',
+          reply: {
+            id: option.id,
+            title: option.text,
+          },
+        }));
+
+      return this.withOfficialHeaderFooter(node, {
+        type: 'button',
+        body: { text: message },
+        action: { buttons },
+      });
+    }
+
+    if (node.type === 'officialList') {
+      const explicitSections =
+        this.getNodeDataValue<unknown[]>(node, 'sections') ??
+        this.getNodeDataValue<unknown[]>(node, 'listSections');
+      const rows = this.resolveOfficialOptions(node)
+        .slice(0, 10)
+        .map((option) => ({
+          id: option.id,
+          title: option.text,
+          ...(option.description ? { description: option.description } : {}),
+        }));
+
+      return this.withOfficialHeaderFooter(node, {
+        type: 'list',
+        body: { text: message },
+        action: {
+          button: this.getNodeTextValue(node, 'buttonText', 'Selecionar'),
+          sections: Array.isArray(explicitSections)
+            ? explicitSections
+            : [
+                {
+                  title: this.getNodeTextValue(node, 'sectionTitle', 'Opções'),
+                  rows,
+                },
+              ],
+        },
+      });
+    }
+
+    if (node.type === 'officialCtaUrl') {
+      return this.withOfficialHeaderFooter(node, {
+        type: 'cta_url',
+        body: { text: message },
+        action: {
+          name: 'cta_url',
+          parameters: {
+            display_text: this.getNodeTextValue(node, 'buttonText', 'Abrir'),
+            url: this.getNodeTextValue(node, 'url'),
+          },
+        },
+      });
+    }
+
+    if (node.type === 'officialLocationRequest') {
+      return {
+        type: 'location_request_message',
+        body: { text: message },
+        action: {
+          name: 'send_location',
+        },
+      };
+    }
+
+    if (node.type === 'officialFlow') {
+      const parameters: Record<string, unknown> = {
+        flow_message_version: '3',
+        flow_token: this.getNodeTextValue(node, 'flowToken', uuidv7()),
+        flow_cta: this.getNodeTextValue(node, 'buttonText', 'Abrir'),
+        flow_action: this.getNodeTextValue(node, 'flowAction', 'navigate'),
+      };
+      const flowId = this.getNodeTextValue(node, 'flowId');
+      const flowName = this.getNodeTextValue(node, 'flowName');
+      if (flowId) parameters.flow_id = flowId;
+      if (!flowId && flowName) parameters.flow_name = flowName;
+
+      const actionPayload =
+        this.getNodeDataValue<Record<string, unknown>>(
+          node,
+          'flowActionPayload'
+        ) ?? this.getNodeDataValue<Record<string, unknown>>(node, 'payload');
+      if (actionPayload) {
+        parameters.flow_action_payload = actionPayload;
+      }
+
+      return this.withOfficialHeaderFooter(node, {
+        type: 'flow',
+        body: { text: message },
+        action: {
+          name: 'flow',
+          parameters,
+        },
+      });
+    }
+
+    if (node.type === 'officialSingleProduct') {
+      return this.withOfficialHeaderFooter(node, {
+        type: 'product',
+        body: message ? { text: message } : undefined,
+        action: {
+          catalog_id: this.getNodeTextValue(node, 'catalogId'),
+          product_retailer_id: this.getNodeTextValue(node, 'productRetailerId'),
+        },
+      });
+    }
+
+    if (node.type === 'officialMultiProduct') {
+      const explicitSections =
+        this.getNodeDataValue<unknown[]>(node, 'sections') ?? [];
+      const products = this.getNodeDataValue<unknown[]>(node, 'products') ?? [];
+      const sections = this.normalizeProductSections(
+        explicitSections,
+        products,
+        this.getNodeTextValue(node, 'sectionTitle', 'Produtos')
+      );
+
+      return this.withOfficialHeaderFooter(node, {
+        type: 'product_list',
+        body: { text: message },
+        action: {
+          catalog_id: this.getNodeTextValue(node, 'catalogId'),
+          sections,
+        },
+      });
+    }
+
+    if (node.type === 'officialCatalog') {
+      const parameters =
+        this.getNodeDataValue<Record<string, unknown>>(node, 'parameters') ??
+        {};
+      return this.withOfficialHeaderFooter(node, {
+        type: 'catalog_message',
+        body: { text: message },
+        action: {
+          name: 'catalog_message',
+          parameters,
+        },
+      });
+    }
+
+    if (node.type === 'officialMediaCarousel') {
+      const cards = this.normalizeCarouselCards(
+        this.getNodeDataValue<unknown[]>(node, 'cards') ?? []
+      );
+
+      return this.withOfficialHeaderFooter(node, {
+        type: 'carousel',
+        body: message ? { text: message } : undefined,
+        action: {
+          cards,
+        },
+      });
+    }
+
+    if (node.type === 'officialAddress') {
+      return this.withOfficialHeaderFooter(node, {
+        type: 'address_message',
+        body: { text: message },
+        action: this.buildAddressAction(node),
+      });
+    }
+
+    return null;
+  }
+
+  private async sendOfficialInteractiveNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): Promise<boolean> {
+    const interactive = await this.buildOfficialInteractivePayload(
+      t,
+      createChat,
+      node
+    );
+
+    if (!interactive) {
+      return false;
+    }
+
+    const summary =
+      this.getNodeTextValue(node, 'message') ||
+      this.getNodeTextValue(node, 'text') ||
+      node.data?.title ||
+      node.label ||
+      node.id;
+
+    return this.sendMessageWithStatusGuard(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.official_interactive,
+      message: summary,
+      typeUser: ETypeUserChat.bot,
+      officialInteractive: {
+        type: String(interactive.type),
+        interactive,
+        summary,
+      } as IOfficialWhatsappOutboundInteractiveMessage,
+    });
+  }
+
+  private buildPreparedOfficialMessage(
+    createChat: IChat,
+    type: EMessageType,
+    message: string | null,
+    content: Partial<NonNullable<IChatMessage['content']>>
+  ): IChatMessage {
+    const reactionTargetMessageId =
+      type === EMessageType.react
+        ? this.resolveLastMetaMessageId(createChat)
+        : null;
+
+    return {
+      message_id: uuidv7(),
+      chat_id: createChat.chat_id,
+      message_key: {
+        remote_jid: createChat.message_key?.remote_jid ?? null,
+        remote_jid_alt: createChat.message_key?.remote_jid_alt ?? null,
+        id: reactionTargetMessageId,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.bot,
+      account: createChat.account,
+      worker: createChat.worker,
+      user: createChat.user ?? null,
+      phone: createChat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      deleted: false,
+      has_quoted: false,
+      content: {
+        type,
+        message,
+        ...content,
+      },
+      date: new Date().toISOString(),
+      hash: uuidv7(),
+    };
+  }
+
+  private resolveLastMetaMessageId(createChat: IChat): string | null {
+    const candidates = [
+      createChat.summary?.last_processed_message_id,
+      createChat.summary?.last_message_id,
+    ];
+
+    return (
+      candidates.find(
+        (candidate): candidate is string =>
+          typeof candidate === 'string' && candidate.startsWith('wamid.')
+      ) ?? null
+    );
+  }
+
+  private async sendOfficialPreparedNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): Promise<boolean> {
+    if (node.type === 'officialTemplate') {
+      const template: IOfficialWhatsappTemplateMessage = {
+        name: this.getNodeTextValue(node, 'templateName'),
+        language: this.getNodeTextValue(node, 'templateLanguage', 'pt_BR'),
+        variables:
+          this.getNodeDataValue<IOfficialWhatsappTemplateMessage['variables']>(
+            node,
+            'templateVariables'
+          ) ?? [],
+      };
+
+      return this.chatMessageService.publishPreparedMessage(
+        this.buildPreparedOfficialMessage(
+          createChat,
+          EMessageType.official_template,
+          template.name,
+          { official_template: template }
+        )
+      );
+    }
+
+    if (node.type === 'officialContacts') {
+      const contacts =
+        this.getNodeDataValue<IContactMessage[]>(node, 'contacts') ?? [];
+
+      return this.chatMessageService.publishPreparedMessage(
+        this.buildPreparedOfficialMessage(
+          createChat,
+          contacts.length > 1
+            ? EMessageType.contacts
+            : EMessageType.contact_card,
+          '[Contato]',
+          {
+            contact: contacts.length === 1 ? contacts[0] : null,
+            contacts: contacts.length > 1 ? contacts : null,
+          }
+        )
+      );
+    }
+
+    if (node.type === 'officialSticker') {
+      const attachmentUrl = this.getNodeTextValue(node, 'attachmentUrl');
+      const mimetype = this.getNodeTextValue(
+        node,
+        'attachmentMimetype',
+        'image/webp'
+      );
+
+      return this.chatMessageService.publishPreparedMessage(
+        this.buildPreparedOfficialMessage(
+          createChat,
+          EMessageType.sticker,
+          '[Figurinha]',
+          {
+            sticker: {
+              url: attachmentUrl,
+              mimetype,
+              extension: mimetype.split('/')[1] || 'webp',
+              size: 0,
+            },
+          }
+        )
+      );
+    }
+
+    if (node.type === 'officialReaction') {
+      const emoji = this.getNodeTextValue(node, 'emoji', '👍');
+
+      return this.chatMessageService.publishPreparedMessage(
+        this.buildPreparedOfficialMessage(
+          createChat,
+          EMessageType.react,
+          emoji,
+          {}
+        )
+      );
+    }
+
+    return false;
+  }
+
+  private async sendOfficialNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): Promise<boolean> {
+    if (
+      node.type === 'officialReplyButtons' ||
+      node.type === 'officialList' ||
+      node.type === 'officialCtaUrl' ||
+      node.type === 'officialLocationRequest' ||
+      node.type === 'officialFlow' ||
+      node.type === 'officialSingleProduct' ||
+      node.type === 'officialMultiProduct' ||
+      node.type === 'officialCatalog' ||
+      node.type === 'officialMediaCarousel' ||
+      node.type === 'officialAddress'
+    ) {
+      return this.sendOfficialInteractiveNode(t, createChat, node);
+    }
+
+    if (node.type === 'officialLocation') {
+      const latitude = Number(this.getNodeDataValue(node, 'latitude'));
+      const longitude = Number(this.getNodeDataValue(node, 'longitude'));
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return false;
+      }
+
+      return this.sendMessageWithStatusGuard(t, {
+        chat: createChat,
+        accountId: createChat.account.id,
+        type: EMessageType.location,
+        message: this.getNodeTextValue(node, 'message') || undefined,
+        typeUser: ETypeUserChat.bot,
+        latitude,
+        longitude,
+        name: this.getNodeTextValue(node, 'name') || null,
+        address: this.getNodeTextValue(node, 'address') || null,
+      });
+    }
+
+    return this.sendOfficialPreparedNode(t, createChat, node);
+  }
+
+  private isOfficialOptionNode(nodeType: string): boolean {
+    return nodeType === 'officialReplyButtons' || nodeType === 'officialList';
+  }
+
+  private isOfficialContinuationNode(nodeType: string): boolean {
+    return (
+      nodeType === 'officialCtaUrl' ||
+      nodeType === 'officialSingleProduct' ||
+      nodeType === 'officialMultiProduct' ||
+      nodeType === 'officialCatalog' ||
+      nodeType === 'officialMediaCarousel' ||
+      nodeType === 'officialTemplate' ||
+      nodeType === 'officialLocation' ||
+      nodeType === 'officialContacts' ||
+      nodeType === 'officialSticker' ||
+      nodeType === 'officialReaction'
+    );
+  }
+
+  private isOfficialAfterResponseNode(nodeType: string): boolean {
+    return (
+      nodeType === 'officialLocationRequest' ||
+      nodeType === 'officialFlow' ||
+      nodeType === 'officialAddress'
+    );
+  }
+
+  private getOfficialInteractiveReplyId(data: IUpsertMessage): string | null {
+    const official = data.content?.official;
+    const interactive = official?.interactive;
+    const id = interactive?.id?.trim();
+
+    if (id) {
+      return id;
+    }
+
+    const buttonPayload = official?.button?.payload?.trim();
+    if (buttonPayload) {
+      return buttonPayload;
+    }
+
+    return null;
+  }
+
+  private getOfficialInteractiveReplyTitle(
+    data: IUpsertMessage
+  ): string | null {
+    const official = data.content?.official;
+    const title =
+      official?.interactive?.title?.trim() || official?.button?.text?.trim();
+
+    if (title) {
+      return title;
+    }
+
+    return this.getTextFromUpsertMessage(data)?.trim() || null;
+  }
+
+  private matchOfficialOption(
+    data: IUpsertMessage,
+    options: Array<{ id: string; text: string; description?: string | null }>
+  ): { id: string; text: string; description?: string | null } | null {
+    const replyId = this.getOfficialInteractiveReplyId(data);
+    if (replyId) {
+      const optionById = options.find((option) => option.id === replyId);
+      if (optionById) {
+        return optionById;
+      }
+    }
+
+    const title = this.getOfficialInteractiveReplyTitle(data);
+    if (!title) {
+      return null;
+    }
+
+    const normalizedTitle = normalizeTextForConditionalComparison(title);
+    return (
+      options.find(
+        (option) =>
+          normalizeTextForConditionalComparison(option.text) ===
+            normalizedTitle ||
+          normalizeTextForConditionalComparison(option.id) === normalizedTitle
+      ) ?? null
+    );
+  }
+
+  private async processOfficialOptionNodeResponse(
+    t: TFunction<'translation', undefined>,
+    data: IUpsertMessage,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentFlowId: string,
+    options?: {
+      customMessage?: string;
+      redirectFailedAttempts?: {
+        status?: string;
+        quantity?: number;
+        redirect_type?: string;
+        selected_user?: string;
+        selected_sector?: string;
+        selected_sector_user?: string;
+      };
+      customMessages?: IChatbotCustomMessages;
+    }
+  ): Promise<boolean> {
+    const currentNode = this.getFlowNodeById(chatbotFlow, currentFlowId);
+    if (!currentNode) {
+      throw new Error(t('chatbot_flow_node_not_found'));
+    }
+
+    const officialOptions = this.resolveOfficialOptions(currentNode);
+    const selectedOption = this.matchOfficialOption(data, officialOptions);
+
+    if (!selectedOption) {
+      await this.sendTextOptionInvalidMessage(
+        t,
+        createChat,
+        options?.customMessage,
+        'menu',
+        options?.customMessages?.invalid_menu_option_message_enabled
+      );
+
+      await this.sendOfficialNode(t, createChat, currentNode);
+
+      if (
+        !this.shouldRedirectOnFailedAttempt(
+          options?.redirectFailedAttempts,
+          createChat
+        )
+      ) {
+        return false;
+      }
+
+      if (!options?.redirectFailedAttempts) {
+        return false;
+      }
+
+      const quantity = options.redirectFailedAttempts.quantity ?? 1;
+      const failedAttemptsCount =
+        await this.incrementFailedAttempts(createChat);
+
+      if (failedAttemptsCount < quantity) {
+        return false;
+      }
+
+      await this.resetFailedAttempts(createChat);
+
+      const { user, sector } = await this.getRedirectTargets(
+        options.redirectFailedAttempts,
+        createChat
+      );
+
+      await this.sendTransferMessageIfNeeded(
+        t,
+        createChat,
+        options.redirectFailedAttempts.redirect_type,
+        user,
+        sector,
+        options.customMessages,
+        {
+          transfer_message_user_enabled:
+            options.customMessages?.transfer_message_user_enabled,
+          transfer_message_sector_enabled:
+            options.customMessages?.transfer_message_sector_enabled,
+          transfer_message_sector_user_enabled:
+            options.customMessages?.transfer_message_sector_user_enabled,
+        }
+      );
+
+      await this.updateAndPublishChat(t, createChat, user, sector);
+      return true;
+    }
+
+    const nextFlowId = this.getNextFlowIdByOption(
+      chatbotFlow,
+      currentFlowId,
+      selectedOption.id
+    );
+
+    if (!nextFlowId) {
+      throw new Error(t('chatbot_flow_not_found'));
+    }
+
+    await this.resetFailedAttempts(createChat);
+
+    return this.processNextNode(
+      t,
+      createChat,
+      chatbotFlow,
+      nextFlowId,
+      options?.customMessages,
+      data
+    );
+  }
+
+  private async processOfficialNodeType(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    chatbotFlow: ListChatbotFlowResponse,
+    currentNode: ListChatbotFlowResponse['nodes'][number],
+    currentFlowId: string,
+    customMessages?: IChatbotCustomMessages,
+    data?: IUpsertMessage
+  ): Promise<boolean> {
+    await this.sendOfficialNode(t, createChat, currentNode);
+
+    if (this.isOfficialOptionNode(currentNode.type)) {
+      return true;
+    }
+
+    const continueType = currentNode.data?.continueType;
+    const shouldContinueAutomatically =
+      continueType === 'automatic' ||
+      (!continueType && this.isOfficialContinuationNode(currentNode.type));
+    const shouldContinueAfterResponse =
+      continueType === 'after_response' ||
+      (!continueType && this.isOfficialAfterResponseNode(currentNode.type));
+
+    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
+
+    if (shouldContinueAutomatically) {
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+        return this.processNextNode(
+          t,
+          createChat,
+          chatbotFlow,
+          nextFlowId,
+          customMessages,
+          data
+        );
+      }
+
+      return true;
+    }
+
+    if (shouldContinueAfterResponse) {
+      if (nextFlowId) {
+        await this.updateCache(createChat, nextFlowId);
+      }
+
+      return true;
+    }
+
+    return true;
+  }
+
   private async sendMessage(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -1974,9 +2898,7 @@ export class ChatbotFlowRunnerService {
     height: number | null;
   } | null> {
     const randomMessageId = currentNode.data?.selectedRandomMessage as
-      | string
-      | null
-      | undefined;
+      string | null | undefined;
 
     if (!randomMessageId || randomMessageId.trim().length === 0) {
       return null;
@@ -2067,10 +2989,7 @@ export class ChatbotFlowRunnerService {
     data?: IUpsertMessage
   ): Promise<boolean> {
     const continueType = currentNode.data?.continueType as
-      | 'automatic'
-      | 'after_response'
-      | null
-      | undefined;
+      'automatic' | 'after_response' | null | undefined;
 
     const randomMessageItem = await this.resolveRandomMessageItemForNode(
       currentNode,
@@ -2449,6 +3368,18 @@ export class ChatbotFlowRunnerService {
 
     if (nextFlowNode.type === 'menu' || nextFlowNode.type === 'satisfaction') {
       return this.sendBuildMenuMessage(t, createChat, nextFlowNode, true);
+    }
+
+    if (isOfficialChatbotNodeType(nextFlowNode.type)) {
+      return this.processOfficialNodeType(
+        t,
+        createChat,
+        chatbotFlow,
+        nextFlowNode,
+        nextFlowId,
+        customMessages,
+        data
+      );
     }
 
     if (nextFlowNode.type === 'weekday') {
@@ -5500,11 +6431,7 @@ Regras de saída:
 
   private parseConversationalIntentResponse(response: string): {
     intent:
-      | 'greeting'
-      | 'gratitude'
-      | 'farewell'
-      | 'acknowledgement'
-      | 'smalltalk';
+      'greeting' | 'gratitude' | 'farewell' | 'acknowledgement' | 'smalltalk';
     response: string;
   } | null {
     if (!response) {
@@ -9429,6 +10356,33 @@ Retorne APENAS JSON válido (sem markdown):
       );
     }
 
+    if (isOfficialChatbotNodeType(currentNode.type)) {
+      if (this.isOfficialOptionNode(currentNode.type)) {
+        return this.processOfficialOptionNodeResponse(
+          t,
+          data,
+          createChat,
+          chatbotFlow,
+          currentFlowId,
+          {
+            customMessage: customMessages?.invalid_menu_option_message,
+            redirectFailedAttempts,
+            customMessages,
+          }
+        );
+      }
+
+      return this.processOfficialNodeType(
+        t,
+        createChat,
+        chatbotFlow,
+        currentNode,
+        currentFlowId,
+        customMessages,
+        data
+      );
+    }
+
     if (currentNode.type === 'weekday') {
       return this.processWeekdayNode(
         t,
@@ -10035,11 +10989,7 @@ Retorne APENAS JSON válido (sem markdown):
     }
 
     const distributionType = currentNode.data?.distributionType as
-      | 'sequential'
-      | 'random'
-      | 'load'
-      | null
-      | undefined;
+      'sequential' | 'random' | 'load' | null | undefined;
 
     if (!distributionType) {
       const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
@@ -10061,9 +11011,7 @@ Retorne APENAS JSON válido (sem markdown):
     let selectedSector: IChat['sector'] | undefined = undefined;
 
     const distributionHasSector = currentNode.data?.distributionHasSector as
-      | boolean
-      | null
-      | undefined;
+      boolean | null | undefined;
     const distributionSelectedSector = currentNode.data
       ?.distributionSelectedSector as string | null | undefined;
 

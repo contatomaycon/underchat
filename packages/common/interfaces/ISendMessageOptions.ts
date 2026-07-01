@@ -3,6 +3,7 @@ import { EMessageType } from '../enums/EMessageType';
 import { ETypeUserChat } from '../enums/ETypeUserChat';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
 import { TSecurityKeyScope } from './ISecurityKeyConfig';
+import { IOfficialWhatsappOutboundInteractiveMessage } from './IOfficialWhatsappOutboundMessage';
 
 export interface ISendMessageOptions {
   chat: IChat;
@@ -72,6 +73,11 @@ export interface ISendContactMessageOptions extends ISendMessageOptions {
   contactIds: string[];
 }
 
+export interface ISendOfficialInteractiveMessageOptions extends ISendMessageOptions {
+  type: EMessageType.official_interactive;
+  officialInteractive: IOfficialWhatsappOutboundInteractiveMessage;
+}
+
 export type SendMessageOptions =
   | ISendTextMessageOptions
   | ISendImageMessageOptions
@@ -79,4 +85,5 @@ export type SendMessageOptions =
   | ISendAudioMessageOptions
   | ISendDocumentMessageOptions
   | ISendLocationMessageOptions
-  | ISendContactMessageOptions;
+  | ISendContactMessageOptions
+  | ISendOfficialInteractiveMessageOptions;

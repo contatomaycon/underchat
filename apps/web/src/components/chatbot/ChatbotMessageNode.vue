@@ -440,7 +440,7 @@ watch(
         class="d-flex align-center justify-space-between pa-2 node-drag-handle"
       >
         <div class="d-flex align-center ga-2">
-          <VIcon icon="tabler-message" color="success" size="20" />
+          <VIcon icon="tabler-message" color="primary" size="20" />
           <span class="text-sm font-weight-medium">{{
             t('chatbot_message')
           }}</span>

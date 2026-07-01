@@ -8,10 +8,14 @@ export const chatbotChannelResponseSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
   number: Type.Union([Type.String(), Type.Null()]),
+  type_id: Type.Optional(Type.String()),
+  is_official: Type.Optional(Type.Boolean()),
   status: Type.Union([workerStatusSchema, Type.Null()]),
 });
 
-export type ChatbotChannelResponse = Static<typeof chatbotChannelResponseSchema>;
+export type ChatbotChannelResponse = Static<
+  typeof chatbotChannelResponseSchema
+>;
 
 export const listChatbotChannelsResponseSchema = Type.Array(
   chatbotChannelResponseSchema

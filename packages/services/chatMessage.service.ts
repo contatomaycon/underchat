@@ -42,6 +42,7 @@ import {
   ISendDocumentMessageOptions,
   ISendLocationMessageOptions,
   ISendContactMessageOptions,
+  ISendOfficialInteractiveMessageOptions,
 } from '@core/common/interfaces/ISendMessageOptions';
 import { createChatCacheKeyChatId } from '@core/common/functions/createCacheKey';
 import {
@@ -1678,6 +1679,73 @@ export class ChatMessageService {
     return options.type === EMessageType.contact_card;
   }
 
+  private isOfficialInteractiveMessageOptions(
+    options: SendMessageOptions
+  ): options is ISendOfficialInteractiveMessageOptions {
+    return options.type === EMessageType.official_interactive;
+  }
+
+  private async sendOfficialInteractiveMessage(
+    chatData: IChat,
+    chatId: string,
+    message: string | null,
+    officialOptions: ISendOfficialInteractiveMessageOptions,
+    messageContext: {
+      quotedId: string | null;
+      quotedMessage: IQuotedMessage | null;
+      normalizedHash: string | null;
+      typeUser: ETypeUserChat;
+      senderName?: string | null;
+      authorUser: IChat['user'] | null;
+    }
+  ): Promise<boolean> {
+    const summary =
+      officialOptions.officialInteractive.summary?.trim() ||
+      message?.trim() ||
+      '[Interativo oficial]';
+
+    const officialMessage: IChatMessage = {
+      message_id: uuidv7(),
+      chat_id: chatId,
+      message_key: {
+        remote_jid: chatData.message_key?.remote_jid ?? null,
+        remote_jid_alt: chatData.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: messageContext.typeUser,
+      account: chatData.account,
+      worker: chatData.worker,
+      user: messageContext.authorUser,
+      phone: chatData.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      deleted: false,
+      has_quoted: !!messageContext.quotedMessage,
+      content: {
+        type: EMessageType.official_interactive,
+        message: summary,
+        message_quoted_id: messageContext.quotedId,
+        quoted: messageContext.quotedMessage,
+        official: {
+          provider: 'meta_whatsapp',
+          type: 'interactive',
+          raw: {
+            type: officialOptions.officialInteractive.type,
+            interactive: officialOptions.officialInteractive.interactive,
+          },
+        },
+      },
+      date: new Date().toISOString(),
+      hash: messageContext.normalizedHash,
+    };
+
+    return this.publishMessage(officialMessage);
+  }
+
   private async sendContactMessage(
     chatData: IChat,
     chatId: string,
@@ -1961,6 +2029,23 @@ export class ChatMessageService {
         message ?? null,
         options,
         accountId,
+        {
+          quotedId,
+          quotedMessage,
+          normalizedHash,
+          typeUser,
+          senderName,
+          authorUser,
+        }
+      );
+    }
+
+    if (this.isOfficialInteractiveMessageOptions(options)) {
+      return this.sendOfficialInteractiveMessage(
+        chatData,
+        chat.chat_id,
+        message ?? null,
+        options,
         {
           quotedId,
           quotedMessage,

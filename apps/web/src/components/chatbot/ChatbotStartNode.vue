@@ -9,14 +9,19 @@ const { t } = useI18n();
 
 <template>
   <div class="chatbot-start-node">
-    <Handle id="source" type="source" :position="Position.Bottom" class="handle-source" />
+    <Handle
+      id="source"
+      type="source"
+      :position="Position.Bottom"
+      class="handle-source"
+    />
     <VCard class="start-card" elevation="2">
       <VCardText class="d-flex flex-column align-center justify-center pa-3">
         <VAvatar
           size="40"
           variant="flat"
           rounded
-          color="success"
+          color="primary"
           class="mb-2 start-avatar"
         >
           <VIcon icon="tabler-flag" size="24" />
@@ -39,7 +44,7 @@ const { t } = useI18n();
 }
 
 .start-avatar {
-  background-color: rgb(var(--v-theme-success)) !important;
-  color: rgb(var(--v-theme-on-success)) !important;
+  background-color: rgb(var(--v-theme-primary)) !important;
+  color: rgb(var(--v-theme-on-primary)) !important;
 }
 </style>

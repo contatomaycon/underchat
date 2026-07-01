@@ -25,6 +25,7 @@ import { listLocalHolidaysSchema } from '@core/schema/chatbot/listLocalHolidays'
 import { createLocalHolidaySchema } from '@core/schema/chatbot/createLocalHoliday';
 import { updateLocalHolidaySchema } from '@core/schema/chatbot/updateLocalHoliday';
 import { deleteLocalHolidaySchema } from '@core/schema/chatbot/deleteLocalHoliday';
+import { officialCapabilitiesSchema } from '@core/schema/chatbot/officialCapabilities';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -177,6 +178,17 @@ export default function chatbotRoutes(server: FastifyInstance) {
   server.get('/chatbot/flow', {
     schema: listChatbotFlowSchema,
     handler: chatbotController.listChatbotFlow,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatbotPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chatbot/official-capabilities', {
+    schema: officialCapabilitiesSchema,
+    handler: chatbotController.officialCapabilities,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatbotPermissions),

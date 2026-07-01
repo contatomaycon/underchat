@@ -21,6 +21,7 @@ import { listLocalHolidays } from './methods/listLocalHolidays';
 import { createLocalHoliday } from './methods/createLocalHoliday';
 import { updateLocalHoliday } from './methods/updateLocalHoliday';
 import { deleteLocalHoliday } from './methods/deleteLocalHoliday';
+import { officialCapabilities } from './methods/officialCapabilities';
 
 @injectable()
 class ChatbotController {
@@ -46,6 +47,7 @@ class ChatbotController {
   public createLocalHoliday = createLocalHoliday;
   public updateLocalHoliday = updateLocalHoliday;
   public deleteLocalHoliday = deleteLocalHoliday;
+  public officialCapabilities = officialCapabilities;
 }
 
 export default ChatbotController;

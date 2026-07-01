@@ -1285,5 +1285,10 @@
   "whatsapp_official_profile_info_not_supported": "La información del perfil no está disponible para WhatsApp Oficial en modo coexistencia.",
   "whatsapp_official_profile_permission_error": "Meta denegó el permiso para actualizar el perfil de este número. El token tiene whatsapp_business_management, pero la WABA no concedió acceso de administración del número al usuario del sistema. En Business Manager, abre Cuentas de WhatsApp > Socios > Administrar y habilita Números de teléfono (ver y administrar) o Acceso total para el socio. Luego reconecta el canal oficial.",
   "whatsapp_profile_category_invalid": "Categoría de perfil de WhatsApp Oficial inválida.",
-  "chatbot_flow_validation_holiday_options_required": "Las salidas \"Es feriado\" y \"No es feriado\" son obligatorias en el nodo \"{{nodeLabel}}\""
+  "chatbot_flow_validation_holiday_options_required": "Las salidas \"Es feriado\" y \"No es feriado\" son obligatorias en el nodo \"{{nodeLabel}}\"",
+  "chatbot_official_capabilities_success": "Capacidad oficial del chatbot cargada con éxito.",
+  "chatbot_official_nodes_require_online_channel": "Para guardar nodos oficiales, la cuenta debe tener un canal WhatsApp Oficial en línea.",
+  "chatbot_official_nodes_not_allowed_on_non_official_channel": "Los nodos oficiales solo pueden usarse en chatbots vinculados a canales WhatsApp Oficial.",
+  "chatbot_flow_validation_official_options_limit": "El nodo oficial \"{{nodeLabel}}\" excede el límite de opciones permitido.",
+  "chatbot_flow_validation_official_field_required": "El campo \"{{field}}\" es obligatorio en el nodo oficial \"{{nodeLabel}}\""
 }

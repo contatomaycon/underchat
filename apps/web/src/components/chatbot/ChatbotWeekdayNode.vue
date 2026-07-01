@@ -50,7 +50,9 @@ const dayLabels = computed<Record<WeekdayOptionId, string>>(() => ({
   saturday: t('saturday'),
 }));
 
-const buildWeekdayOptions = (existingOptions?: WeekdayOption[]): WeekdayOption[] => {
+const buildWeekdayOptions = (
+  existingOptions?: WeekdayOption[]
+): WeekdayOption[] => {
   const optionsById = new Map<WeekdayOptionId, WeekdayOption>();
 
   for (const option of existingOptions || []) {
@@ -153,7 +155,9 @@ watch(
       >
         <div class="d-flex align-center ga-2">
           <VIcon icon="tabler-calendar" color="primary" size="20" />
-          <span class="text-sm font-weight-medium">{{ t('chatbot_weekday') }}</span>
+          <span class="text-sm font-weight-medium">{{
+            t('chatbot_weekday')
+          }}</span>
         </div>
         <VIcon
           v-if="(props.data as WeekdayData)?.onRemove"
@@ -190,7 +194,7 @@ watch(
                 <VIcon
                   v-if="currentWeekdayId === option.id"
                   icon="tabler-circle-check"
-                  color="success"
+                  color="primary"
                   size="18"
                 />
               </template>

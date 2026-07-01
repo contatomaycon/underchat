@@ -32,6 +32,12 @@ import ChatbotRandomMessageNode from '@/components/chatbot/ChatbotRandomMessageN
 import ChatbotWeekdayNode from '@/components/chatbot/ChatbotWeekdayNode.vue';
 import ChatbotHoursNode from '@/components/chatbot/ChatbotHoursNode.vue';
 import ChatbotHolidayNode from '@/components/chatbot/ChatbotHolidayNode.vue';
+import ChatbotOfficialNode from '@/components/chatbot/ChatbotOfficialNode.vue';
+import {
+  OFFICIAL_CHATBOT_NODE_TYPES,
+  isOfficialChatbotNodeType,
+} from '@core/common/functions/chatbotOfficialNodes';
+import { OfficialCapabilitiesResponse } from '@core/schema/chatbot/officialCapabilities/response.schema';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -68,6 +74,21 @@ const nodeTypes = {
   weekday: markRaw(ChatbotWeekdayNode),
   hours: markRaw(ChatbotHoursNode),
   holiday: markRaw(ChatbotHolidayNode),
+  officialReplyButtons: markRaw(ChatbotOfficialNode),
+  officialList: markRaw(ChatbotOfficialNode),
+  officialCtaUrl: markRaw(ChatbotOfficialNode),
+  officialLocationRequest: markRaw(ChatbotOfficialNode),
+  officialFlow: markRaw(ChatbotOfficialNode),
+  officialSingleProduct: markRaw(ChatbotOfficialNode),
+  officialMultiProduct: markRaw(ChatbotOfficialNode),
+  officialCatalog: markRaw(ChatbotOfficialNode),
+  officialMediaCarousel: markRaw(ChatbotOfficialNode),
+  officialAddress: markRaw(ChatbotOfficialNode),
+  officialTemplate: markRaw(ChatbotOfficialNode),
+  officialLocation: markRaw(ChatbotOfficialNode),
+  officialContacts: markRaw(ChatbotOfficialNode),
+  officialSticker: markRaw(ChatbotOfficialNode),
+  officialReaction: markRaw(ChatbotOfficialNode),
 };
 
 const { t } = useI18n();
@@ -108,6 +129,67 @@ const chatbotId = computed(() => {
   const id = (params['id'] || params['chatbot_id']) as string | undefined;
   return id || null;
 });
+
+type OfficialNodeType = (typeof OFFICIAL_CHATBOT_NODE_TYPES)[number];
+
+const officialCapabilities = ref<OfficialCapabilitiesResponse | null>(null);
+const canUseOfficialNodes = computed(
+  () => officialCapabilities.value?.can_use_official_nodes === true
+);
+
+const hasOfficialNodesInCanvas = computed(() =>
+  nodes.value.some((node) => isOfficialChatbotNodeType(node.type || ''))
+);
+
+const officialNodeItems: Array<{
+  type: OfficialNodeType;
+  label: string;
+  icon: string;
+}> = [
+  {
+    type: 'officialReplyButtons',
+    label: 'Botões oficiais',
+    icon: 'tabler-square-rounded-plus',
+  },
+  {
+    type: 'officialList',
+    label: 'Lista oficial',
+    icon: 'tabler-list',
+  },
+  { type: 'officialCtaUrl', label: 'CTA URL', icon: 'tabler-external-link' },
+  {
+    type: 'officialLocationRequest',
+    label: 'Solicitar localização',
+    icon: 'tabler-current-location',
+  },
+  { type: 'officialFlow', label: 'Fluxo WhatsApp', icon: 'tabler-sitemap' },
+  {
+    type: 'officialSingleProduct',
+    label: 'Produto único',
+    icon: 'tabler-package',
+  },
+  {
+    type: 'officialMultiProduct',
+    label: 'Lista de produtos',
+    icon: 'tabler-shopping-cart-plus',
+  },
+  { type: 'officialCatalog', label: 'Catálogo', icon: 'tabler-shopping-cart' },
+  {
+    type: 'officialMediaCarousel',
+    label: 'Carrossel',
+    icon: 'tabler-stack-2',
+  },
+  { type: 'officialAddress', label: 'Endereço', icon: 'tabler-map' },
+  {
+    type: 'officialTemplate',
+    label: 'Template oficial',
+    icon: 'tabler-file-description',
+  },
+  { type: 'officialLocation', label: 'Localização', icon: 'tabler-map-pin' },
+  { type: 'officialContacts', label: 'Contatos', icon: 'tabler-address-book' },
+  { type: 'officialSticker', label: 'Sticker', icon: 'tabler-note' },
+  { type: 'officialReaction', label: 'Reação', icon: 'tabler-mood-smile' },
+];
 
 const isConfigModalOpen = ref(false);
 const inactivityAlertStatus = ref<'active' | 'inactive'>('inactive');
@@ -771,8 +853,7 @@ const buildNormalizedOptionHandle = (
 
 const normalizeEdgeSourceHandle = (edge: Edge): string | undefined => {
   const sourceNode = nodes.value.find((n) => n.id === edge.source) as
-    | Node
-    | undefined;
+    Node | undefined;
   const nodeType = sourceNode?.type as string | undefined;
   const shouldNormalize = nodeType && optionNodeTypes.has(nodeType);
 
@@ -803,8 +884,7 @@ const normalizeConnectionSourceHandle = (
   connection: Connection
 ): string | undefined => {
   const sourceNode = nodes.value.find((n) => n.id === connection.source) as
-    | Node
-    | undefined;
+    Node | undefined;
   const nodeType = sourceNode?.type as string | undefined;
   const shouldNormalize = nodeType && optionNodeTypes.has(nodeType);
 
@@ -1256,6 +1336,234 @@ const addHolidayNode = (position?: { x: number; y: number }) => {
   nodes.value.push(newNode);
 };
 
+const getOfficialDefaultData = (nodeType: OfficialNodeType) => {
+  const baseData: Record<string, any> = {
+    title:
+      officialNodeItems.find((item) => item.type === nodeType)?.label ||
+      'Oficial',
+    message: '',
+    text: '',
+    header: '',
+    footer: '',
+    officialType: nodeType,
+    official: {
+      type: nodeType,
+    },
+    onRemove: undefined,
+  };
+
+  if (nodeType === 'officialReplyButtons') {
+    return {
+      ...baseData,
+      message: 'Escolha uma opção',
+      text: 'Escolha uma opção',
+      options: [
+        { id: '1', text: 'Opção 1' },
+        { id: '2', text: 'Opção 2' },
+      ],
+    };
+  }
+
+  if (nodeType === 'officialList') {
+    return {
+      ...baseData,
+      message: 'Escolha uma opção',
+      text: 'Escolha uma opção',
+      buttonText: 'Selecionar',
+      options: [
+        { id: '1', text: 'Opção 1', description: '' },
+        { id: '2', text: 'Opção 2', description: '' },
+      ],
+    };
+  }
+
+  if (nodeType === 'officialCtaUrl') {
+    return {
+      ...baseData,
+      message: 'Abrir link',
+      text: 'Abrir link',
+      buttonText: 'Abrir link',
+      url: '',
+    };
+  }
+
+  if (nodeType === 'officialLocationRequest') {
+    return {
+      ...baseData,
+      message: 'Envie sua localização',
+      text: 'Envie sua localização',
+      continueType: 'after_response',
+    };
+  }
+
+  if (nodeType === 'officialFlow') {
+    return {
+      ...baseData,
+      message: 'Preencha as informações',
+      text: 'Preencha as informações',
+      buttonText: 'Abrir',
+      flowId: '',
+      flowName: '',
+      flowAction: 'navigate',
+      continueType: 'after_response',
+    };
+  }
+
+  if (nodeType === 'officialSingleProduct') {
+    return {
+      ...baseData,
+      catalogId: '',
+      productRetailerId: '',
+      continueType: 'automatic',
+    };
+  }
+
+  if (nodeType === 'officialMultiProduct') {
+    return {
+      ...baseData,
+      message: 'Veja os produtos',
+      text: 'Veja os produtos',
+      catalogId: '',
+      products: [{ product_retailer_id: '' }],
+      sections: [
+        {
+          title: 'Produtos',
+          product_items: [{ product_retailer_id: '' }],
+        },
+      ],
+      continueType: 'automatic',
+    };
+  }
+
+  if (nodeType === 'officialMediaCarousel') {
+    return {
+      ...baseData,
+      message: 'Confira as opções',
+      text: 'Confira as opções',
+      cards: [
+        {
+          body: '',
+          mediaType: 'image',
+          mediaUrl: '',
+          mediaId: '',
+          buttonText: 'Abrir',
+          buttonUrl: '',
+        },
+      ],
+      continueType: 'automatic',
+    };
+  }
+
+  if (nodeType === 'officialAddress') {
+    return {
+      ...baseData,
+      message: 'Informe seu endereço',
+      text: 'Informe seu endereço',
+      addressCountry: 'BR',
+      action: {
+        name: 'address_message',
+        parameters: {
+          country: 'BR',
+        },
+      },
+      continueType: 'after_response',
+    };
+  }
+
+  if (nodeType === 'officialTemplate') {
+    return {
+      ...baseData,
+      templateName: '',
+      templateLanguage: 'pt_BR',
+      templateVariables: [],
+      continueType: 'automatic',
+    };
+  }
+
+  if (nodeType === 'officialLocation') {
+    return {
+      ...baseData,
+      latitude: null,
+      longitude: null,
+      name: '',
+      address: '',
+      continueType: 'automatic',
+    };
+  }
+
+  if (nodeType === 'officialContacts') {
+    return {
+      ...baseData,
+      contacts: [
+        {
+          contact_id: null,
+          name: '',
+          last_name: '',
+          phone: '',
+          phone_ddi: '55',
+          email: '',
+        },
+      ],
+      continueType: 'automatic',
+    };
+  }
+
+  if (nodeType === 'officialSticker') {
+    return {
+      ...baseData,
+      attachmentUrl: '',
+      attachmentMimetype: 'image/webp',
+      continueType: 'automatic',
+    };
+  }
+
+  if (nodeType === 'officialReaction') {
+    return {
+      ...baseData,
+      emoji: '👍',
+      continueType: 'automatic',
+    };
+  }
+
+  return {
+    ...baseData,
+    message: 'Abrir catálogo',
+    text: 'Abrir catálogo',
+    continueType: 'automatic',
+  };
+};
+
+const addOfficialNode = (
+  nodeType: OfficialNodeType,
+  position?: { x: number; y: number }
+) => {
+  if (!canUseOfficialNodes.value) {
+    chatbotStore.showSnackbar(
+      'Nodes oficiais estão disponíveis apenas para chatbots com canal oficial WhatsApp online e sem vínculo não oficial.',
+      EColor.error
+    );
+    return;
+  }
+
+  const nodeId = `${nodeType}-${nodeIdCounter++}`;
+  const data = getOfficialDefaultData(nodeType);
+  const newNode: Node = {
+    id: nodeId,
+    type: nodeType,
+    position: position || {
+      x: getSecureRandom(400) + 100,
+      y: getSecureRandom(300) + 100,
+    },
+    data: {
+      ...data,
+      onRemove: () => removeNode(nodeId),
+      onRemoveOption: (optionId: string) => removeOptionEdge(nodeId, optionId),
+    },
+  };
+
+  nodes.value.push(newNode);
+};
+
 const addAiAgentNode = (position?: { x: number; y: number }) => {
   const nodeId = `aiAgent-${nodeIdCounter++}`;
   const newNode: Node = {
@@ -1531,6 +1839,12 @@ const onDrop = (event: DragEvent) => {
     y: (y - viewport.y) / viewport.zoom,
   };
 
+  if (isOfficialChatbotNodeType(draggedNodeType.value)) {
+    addOfficialNode(draggedNodeType.value as OfficialNodeType, position);
+    draggedNodeType.value = null;
+    return;
+  }
+
   switch (draggedNodeType.value) {
     case 'menu':
       addMenuNode(position);
@@ -1771,8 +2085,7 @@ const validateHoursNodesBeforeSave = (): string | null => {
       const expectedSourceHandle = `option-${option.id}-source`;
       const hasConnection = edges.value.some(
         (edge) =>
-          edge.source === node.id &&
-          edge.sourceHandle === expectedSourceHandle
+          edge.source === node.id && edge.sourceHandle === expectedSourceHandle
       );
 
       if (!hasConnection) {
@@ -1831,6 +2144,165 @@ const validateHoursNodesBeforeSave = (): string | null => {
             nodeLabel,
           });
         }
+      }
+    }
+  }
+
+  return null;
+};
+
+const getOfficialProductId = (product: any): string => {
+  if (typeof product === 'string') return product.trim();
+  if (!product || typeof product !== 'object') return '';
+
+  const value = product.product_retailer_id ?? product.productRetailerId;
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+const hasOfficialMultiProductItems = (node: Node): boolean => {
+  const data = node.data as any;
+  const directProducts = [
+    ...(Array.isArray(data?.products) ? data.products : []),
+    ...(Array.isArray(data?.official?.products) ? data.official.products : []),
+  ];
+
+  if (directProducts.some((product) => getOfficialProductId(product))) {
+    return true;
+  }
+
+  const sections = [
+    ...(Array.isArray(data?.sections) ? data.sections : []),
+    ...(Array.isArray(data?.official?.sections) ? data.official.sections : []),
+  ];
+
+  return sections.some((section) => {
+    if (!section || typeof section !== 'object') return false;
+    const sectionRecord = section as any;
+    const productItems = Array.isArray(sectionRecord.product_items)
+      ? sectionRecord.product_items
+      : Array.isArray(sectionRecord.products)
+        ? sectionRecord.products
+        : [];
+
+    return productItems.some((product: any) => getOfficialProductId(product));
+  });
+};
+
+const hasOfficialCarouselCards = (node: Node): boolean => {
+  const data = node.data as any;
+  const cards = [
+    ...(Array.isArray(data?.cards) ? data.cards : []),
+    ...(Array.isArray(data?.official?.cards) ? data.official.cards : []),
+  ];
+
+  return cards.some((card) => {
+    if (!card || typeof card !== 'object') return false;
+    if (Array.isArray(card.components) && card.components.length > 0) {
+      return true;
+    }
+
+    const body =
+      typeof card.body === 'string'
+        ? card.body.trim()
+        : typeof card.text === 'string'
+          ? card.text.trim()
+          : '';
+    const mediaUrl =
+      typeof card.mediaUrl === 'string'
+        ? card.mediaUrl.trim()
+        : typeof card.media_url === 'string'
+          ? card.media_url.trim()
+          : '';
+    const mediaId =
+      typeof card.mediaId === 'string'
+        ? card.mediaId.trim()
+        : typeof card.media_id === 'string'
+          ? card.media_id.trim()
+          : '';
+
+    return body.length > 0 && (mediaUrl.length > 0 || mediaId.length > 0);
+  });
+};
+
+const hasOfficialContacts = (node: Node): boolean => {
+  const data = node.data as any;
+  const contacts = [
+    ...(Array.isArray(data?.contacts) ? data.contacts : []),
+    ...(Array.isArray(data?.official?.contacts) ? data.official.contacts : []),
+  ];
+
+  return contacts.some((contact) => {
+    if (!contact || typeof contact !== 'object') return false;
+
+    const name = typeof contact.name === 'string' ? contact.name.trim() : '';
+    const phone = typeof contact.phone === 'string' ? contact.phone.trim() : '';
+
+    return name.length > 0 && phone.length > 0;
+  });
+};
+
+const validateOfficialNodesBeforeSave = (): string | null => {
+  if (!hasOfficialNodesInCanvas.value) {
+    return null;
+  }
+
+  if (!canUseOfficialNodes.value) {
+    return 'Nodes oficiais só podem ser salvos em chatbot com canal oficial WhatsApp online e sem vínculo com canal não oficial.';
+  }
+
+  for (const node of nodes.value) {
+    if (node.type === 'officialMultiProduct') {
+      const nodeLabel = node.data?.title || node.label || node.id;
+      const catalogId =
+        typeof node.data?.catalogId === 'string'
+          ? node.data.catalogId.trim()
+          : '';
+
+      if (!catalogId || !hasOfficialMultiProductItems(node)) {
+        return `Informe o ID do catálogo e pelo menos um produto no node "${nodeLabel}".`;
+      }
+    }
+
+    if (node.type === 'officialMediaCarousel') {
+      const nodeLabel = node.data?.title || node.label || node.id;
+      if (!hasOfficialCarouselCards(node)) {
+        return `Informe texto e mídia em pelo menos um card no node "${nodeLabel}".`;
+      }
+    }
+
+    if (node.type === 'officialContacts') {
+      const nodeLabel = node.data?.title || node.label || node.id;
+      if (!hasOfficialContacts(node)) {
+        return `Informe nome e telefone em pelo menos um contato no node "${nodeLabel}".`;
+      }
+    }
+
+    if (node.type !== 'officialReplyButtons' && node.type !== 'officialList') {
+      continue;
+    }
+
+    const nodeLabel = node.data?.title || node.label || node.id;
+    const options = Array.isArray(node.data?.options) ? node.data.options : [];
+    const maxOptions = node.type === 'officialReplyButtons' ? 3 : 10;
+
+    if (options.length === 0 || options.length > maxOptions) {
+      return `Revise as opções do node "${nodeLabel}".`;
+    }
+
+    for (const option of options) {
+      const expectedSourceHandle = `option-${option.id}-source`;
+      const hasConnection = edges.value.some(
+        (edge) =>
+          edge.source === node.id &&
+          (edge.sourceHandle === expectedSourceHandle ||
+            edge.sourceHandle === option.id)
+      );
+
+      if (!hasConnection) {
+        return t('chatbot_flow_validation_option_not_connected', {
+          nodeLabel,
+          optionText: option.text || `Opção ${option.id}`,
+        });
       }
     }
   }
@@ -1931,6 +2403,16 @@ const handleSave = async () => {
   const hoursValidationError = validateHoursNodesBeforeSave();
   if (hoursValidationError) {
     chatbotStore.showSnackbar(hoursValidationError, EColor.error);
+    return;
+  }
+
+  if (hasOfficialNodesInCanvas.value) {
+    await loadOfficialCapabilities();
+  }
+
+  const officialValidationError = validateOfficialNodesBeforeSave();
+  if (officialValidationError) {
+    chatbotStore.showSnackbar(officialValidationError, EColor.error);
     return;
   }
 
@@ -2157,14 +2639,76 @@ const processHolidayNodeData = (nodeData: any): void => {
     },
   ];
 
-  if (nodeData.holidayMessage === undefined || nodeData.holidayMessage === null) {
+  if (
+    nodeData.holidayMessage === undefined ||
+    nodeData.holidayMessage === null
+  ) {
     nodeData.holidayMessage = '';
+  }
+};
+
+const processOfficialNodeData = (node: Node): void => {
+  if (!node.data) {
+    node.data = {};
+  }
+
+  const nodeType = node.type as OfficialNodeType;
+  const defaults = getOfficialDefaultData(nodeType);
+  node.data = {
+    ...defaults,
+    ...node.data,
+    officialType: node.type,
+    official: {
+      ...(node.data.official || {}),
+      type: node.type,
+    },
+  };
+
+  if (node.type === 'officialReplyButtons' || node.type === 'officialList') {
+    processMenuNodeData(node.data);
+  }
+
+  if (node.data.message === undefined && node.data.text !== undefined) {
+    node.data.message = node.data.text;
+  }
+  if (node.data.text === undefined && node.data.message !== undefined) {
+    node.data.text = node.data.message;
+  }
+
+  if (node.type === 'officialTemplate') {
+    if (!Array.isArray(node.data.templateVariables)) {
+      node.data.templateVariables = [];
+    }
+    if (!node.data.templateLanguage) {
+      node.data.templateLanguage = 'pt_BR';
+    }
+  }
+
+  for (const arrayField of ['products', 'sections', 'cards', 'contacts']) {
+    if (!Array.isArray(node.data[arrayField])) {
+      node.data[arrayField] = [];
+    }
+  }
+
+  for (const objectField of ['parameters', 'action']) {
+    if (
+      !node.data[objectField] ||
+      typeof node.data[objectField] !== 'object' ||
+      Array.isArray(node.data[objectField])
+    ) {
+      node.data[objectField] = {};
+    }
   }
 };
 
 const processNodeDataByType = (node: Node): void => {
   if (!node.data) {
     node.data = {};
+  }
+
+  if (isOfficialChatbotNodeType(node.type || '')) {
+    processOfficialNodeData(node);
+    return;
   }
 
   switch (node.type) {
@@ -2235,7 +2779,9 @@ const processLoadedNode = (node: Node): Node => {
       node.type === 'contact' ||
       node.type === 'aiAgent' ||
       node.type === 'hours' ||
-      node.type === 'holiday'
+      node.type === 'holiday' ||
+      node.type === 'officialReplyButtons' ||
+      node.type === 'officialList'
     ) {
       node.data.onRemoveOption = (optionId: string) =>
         removeOptionEdge(node.id, optionId);
@@ -2338,6 +2884,17 @@ const loadChatbotFlow = async () => {
   }
 };
 
+const loadOfficialCapabilities = async () => {
+  if (!chatbotId.value) {
+    officialCapabilities.value = null;
+    return;
+  }
+
+  officialCapabilities.value = await chatbotStore.listOfficialCapabilities(
+    chatbotId.value
+  );
+};
+
 const processInactivityAlertConfig = async (config: any): Promise<void> => {
   inactivityAlertStatus.value =
     (config.status as 'active' | 'inactive') || 'inactive';
@@ -2353,8 +2910,7 @@ const processInactivityAlertConfig = async (config: any): Promise<void> => {
   }
   if (config.redirect_type) {
     inactivityAlertRedirectType.value = config.redirect_type as
-      | 'user'
-      | 'sector';
+      'user' | 'sector';
   }
   if (config.selected_user) {
     inactivityAlertSelectedUser.value = config.selected_user;
@@ -2379,8 +2935,7 @@ const processRedirectFailedAttemptsConfig = async (
   }
   if (config.redirect_type) {
     redirectFailedAttemptsRedirectType.value = config.redirect_type as
-      | 'user'
-      | 'sector';
+      'user' | 'sector';
   }
   if (config.selected_user) {
     redirectFailedAttemptsSelectedUser.value = config.selected_user;
@@ -2651,6 +3206,7 @@ const handleDocumentClick = (event: MouseEvent) => {
 };
 
 onMounted(() => {
+  loadOfficialCapabilities();
   loadChatbotFlow();
   window.addEventListener('keydown', handleDeleteKey);
   document.addEventListener('click', handleDocumentClick, true);
@@ -2819,7 +3375,7 @@ onUnmounted(() => {
                   {{ t('chatbot_tag_node_title') }}
                 </VBtn>
                 <VBtn
-                  color="success"
+                  color="primary"
                   draggable="true"
                   @dragstart.stop="
                     (e: DragEvent) => {
@@ -3023,7 +3579,7 @@ onUnmounted(() => {
                   {{ t('chatbot_annotation_node_title') }}
                 </VBtn>
                 <VBtn
-                  color="success"
+                  color="warning"
                   draggable="true"
                   @dragstart.stop="
                     (e: DragEvent) => {
@@ -3042,6 +3598,33 @@ onUnmounted(() => {
                   <VIcon icon="tabler-code" class="me-2" />
                   {{ t('chatbot_conditional') }}
                 </VBtn>
+                <template v-if="canUseOfficialNodes">
+                  <VDivider class="my-1" />
+                  <div class="official-palette-title">Oficial</div>
+                  <VBtn
+                    v-for="item in officialNodeItems"
+                    :key="item.type"
+                    color="success"
+                    draggable="true"
+                    class="official-palette-btn"
+                    @dragstart.stop="
+                      (e: DragEvent) => {
+                        draggedNodeType = item.type;
+                        e.dataTransfer!.effectAllowed = 'move';
+                        e.dataTransfer!.dropEffect = 'move';
+                      }
+                    "
+                    @dragend="
+                      () => {
+                        draggedNodeType = null;
+                      }
+                    "
+                    style="cursor: grab"
+                  >
+                    <VIcon :icon="item.icon" class="me-2" />
+                    <span class="official-palette-label">{{ item.label }}</span>
+                  </VBtn>
+                </template>
               </div>
             </div>
           </div>
@@ -4289,6 +4872,35 @@ onUnmounted(() => {
   line-height: 1.3;
   flex: 1;
   min-width: 0;
+}
+
+.official-palette-title {
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 2px 4px;
+}
+
+.official-palette-btn {
+  height: auto;
+  min-height: 38px;
+  white-space: normal;
+}
+
+.official-palette-btn :deep(.v-btn__content) {
+  justify-content: flex-start;
+  min-width: 0;
+  padding-block: 6px;
+  text-align: left;
+}
+
+.official-palette-label {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .vertical-divider {

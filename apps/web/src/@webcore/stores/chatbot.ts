@@ -24,6 +24,7 @@ import { ListChatbotFlowResponse } from '@core/schema/chatbot/listChatbotFlow/re
 import { SaveChatbotFlowConfigurationsRequest } from '@core/schema/chatbot/saveChatbotFlowConfigurations/request.schema';
 import { SaveChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/saveChatbotFlowConfigurations/response.schema';
 import { ListChatbotFlowConfigurationsResponse } from '@core/schema/chatbot/listChatbotFlowConfigurations/response.schema';
+import { OfficialCapabilitiesResponse } from '@core/schema/chatbot/officialCapabilities/response.schema';
 
 export const useChatbotStore = defineStore('chatbot', {
   state: () => ({
@@ -450,6 +451,15 @@ export const useChatbotStore = defineStore('chatbot', {
     ): Promise<ListChatbotFlowResponse | null> {
       return this._handleGetRequestSilent<ListChatbotFlowResponse>(
         '/chatbot/flow',
+        { chatbot_id: chatbotId }
+      );
+    },
+
+    async listOfficialCapabilities(
+      chatbotId: string
+    ): Promise<OfficialCapabilitiesResponse | null> {
+      return this._handleGetRequestSilent<OfficialCapabilitiesResponse>(
+        '/chatbot/official-capabilities',
         { chatbot_id: chatbotId }
       );
     },

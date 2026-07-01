@@ -11,6 +11,7 @@ export enum EMessageType {
   sticker = 'sticker',
   document = 'document',
   official_template = 'official_template',
+  official_interactive = 'official_interactive',
   view_once = 'view_once',
   delete_message = 'delete_message',
   edit_text = 'edit_text',

@@ -1285,5 +1285,10 @@
   "whatsapp_official_profile_info_not_supported": "Profile information is not available for Official WhatsApp in coexistence mode.",
   "whatsapp_official_profile_permission_error": "Meta denied permission to update this phone number profile. The token has whatsapp_business_management, but the WABA did not grant phone number management access to the system user. In Business Manager, open WhatsApp Accounts > Partners > Manage and enable Phone numbers (view and manage) or Full access for the partner. Then reconnect the official channel.",
   "whatsapp_profile_category_invalid": "Invalid Official WhatsApp profile category.",
-  "chatbot_flow_validation_holiday_options_required": "The \"It is a holiday\" and \"It is not a holiday\" outputs are required in node \"{{nodeLabel}}\""
+  "chatbot_flow_validation_holiday_options_required": "The \"It is a holiday\" and \"It is not a holiday\" outputs are required in node \"{{nodeLabel}}\"",
+  "chatbot_official_capabilities_success": "Chatbot official capability loaded successfully.",
+  "chatbot_official_nodes_require_online_channel": "To save official nodes, the account must have an online Official WhatsApp channel.",
+  "chatbot_official_nodes_not_allowed_on_non_official_channel": "Official nodes can only be used in chatbots linked to Official WhatsApp channels.",
+  "chatbot_flow_validation_official_options_limit": "Official node \"{{nodeLabel}}\" exceeds the allowed options limit.",
+  "chatbot_flow_validation_official_field_required": "Field \"{{field}}\" is required in official node \"{{nodeLabel}}\""
 }

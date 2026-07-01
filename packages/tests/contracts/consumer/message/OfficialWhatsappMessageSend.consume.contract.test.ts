@@ -63,6 +63,7 @@ function makeEnvelope(payload: unknown = message) {
 
 function makeConsumer(overrides?: {
   sendTemplateMessage?: jest.Mock;
+  sendInteractiveMessage?: jest.Mock;
   sendTextMessage?: jest.Mock;
   sendImageMessage?: jest.Mock;
   sendLocationMessage?: jest.Mock;
@@ -87,6 +88,14 @@ function makeConsumer(overrides?: {
       overrides?.sendTemplateMessage ??
       jest.fn(async () => ({
         message_id: 'wamid.123',
+        contact_wa_id: '5511999999999',
+        message_status: 'accepted',
+        raw: { messaging_product: 'whatsapp' },
+      })),
+    sendInteractiveMessage:
+      overrides?.sendInteractiveMessage ??
+      jest.fn(async () => ({
+        message_id: 'wamid.interactive',
         contact_wa_id: '5511999999999',
         message_status: 'accepted',
         raw: { messaging_product: 'whatsapp' },
@@ -254,6 +263,64 @@ describe('OfficialWhatsappMessageSendConsume', () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+
+  it('routes official interactive messages to Meta interactive send', async () => {
+    const interactiveMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.official_interactive,
+        message: 'Escolha',
+        official: {
+          provider: 'meta_whatsapp',
+          type: 'interactive',
+          raw: {
+            type: 'button',
+            interactive: {
+              type: 'button',
+              body: { text: 'Escolha' },
+              action: {
+                buttons: [
+                  {
+                    type: 'reply',
+                    reply: { id: '1', title: 'Sim' },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService } = makeConsumer();
+
+    await (consumer as any).processPayload(
+      interactiveMessage,
+      makeEnvelope(interactiveMessage)
+    );
+
+    expect(
+      metaWhatsappEmbeddedService.sendInteractiveMessage
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiVersion: 'v24.0',
+        accessToken: 'plain-token',
+        phoneNumberId: 'phone-number-1',
+        to: '5511999999999',
+        interactive: {
+          type: 'button',
+          body: { text: 'Escolha' },
+          action: {
+            buttons: [
+              {
+                type: 'reply',
+                reply: { id: '1', title: 'Sim' },
+              },
+            ],
+          },
+        },
+      })
+    );
   });
 
   it('sends text messages with quote context when quoted message has a Meta id', async () => {
