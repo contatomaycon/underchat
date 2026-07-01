@@ -1182,7 +1182,10 @@ const retryMessage = (message: ListMessageResult) => {
 
 const isTextMessage = (message: ListMessageResult): boolean => {
   if (!message.content) return false;
-  return message.content.type === EMessageType.text;
+  return (
+    message.content.type === EMessageType.text ||
+    message.content.type === EMessageType.official_template
+  );
 };
 
 const isDownloadableDocument = (message: ListMessageResult): boolean => {
@@ -1393,10 +1396,66 @@ const getLatestMessageText = (message: ListMessageResult): string => {
   return message.content.message || '';
 };
 
+type OfficialMessageMetadata = NonNullable<ContentMessageChat['official']>;
+
+const getOfficialMetadata = (
+  message: ListMessageResult
+): OfficialMessageMetadata | null => message.content?.official ?? null;
+
+const officialReferralText = (
+  official: OfficialMessageMetadata
+): string | null => {
+  const referral = official.referral as
+    Record<string, unknown> | null | undefined;
+  const headline = referral?.headline;
+  const source = referral?.source_type ?? referral?.source_url;
+  if (typeof headline === 'string' && headline.trim()) return headline.trim();
+  if (typeof source === 'string' && source.trim()) return source.trim();
+  return null;
+};
+
+const getOfficialMetadataTitle = (
+  message: ListMessageResult
+): string | null => {
+  const official = getOfficialMetadata(message);
+  if (!official) return null;
+
+  if (official.echo) return t('official_whatsapp_echo');
+  if (official.interactive) return t('official_whatsapp_interactive');
+  if (official.button) return t('official_whatsapp_button');
+  if (official.order) return t('official_whatsapp_order');
+  if (official.unsupported) return t('official_whatsapp_unsupported');
+  if (official.referral) return t('official_whatsapp_referral');
+
+  return null;
+};
+
+const getOfficialMetadataDescription = (
+  message: ListMessageResult
+): string | null => {
+  const official = getOfficialMetadata(message);
+  if (!official) return null;
+
+  return (
+    official.interactive?.title ||
+    official.interactive?.description ||
+    official.button?.text ||
+    official.button?.payload ||
+    official.order?.text ||
+    official.unsupported?.type ||
+    officialReferralText(official) ||
+    null
+  );
+};
+
+const shouldShowOfficialMetadata = (message: ListMessageResult): boolean =>
+  Boolean(getOfficialMetadataTitle(message));
+
 const shouldFormatMessage = (message: ListMessageResult): boolean => {
   const messageType = message.content?.type;
   return (
     messageType === EMessageType.text ||
+    messageType === EMessageType.official_template ||
     messageType === EMessageType.system ||
     messageType === EMessageType.annotation
   );
@@ -4154,6 +4213,31 @@ onUnmounted(() => {
                         )
                       }}
                     </a>
+                  </div>
+
+                  <div
+                    v-if="shouldShowOfficialMetadata(item.message)"
+                    class="official-message-meta"
+                    :class="
+                      !isTypeUser(item.message)
+                        ? 'official-message-meta--right'
+                        : 'official-message-meta--left'
+                    "
+                  >
+                    <VIcon size="17" class="official-message-meta__icon">
+                      tabler-brand-whatsapp
+                    </VIcon>
+                    <div class="official-message-meta__body">
+                      <span class="official-message-meta__title">
+                        {{ getOfficialMetadataTitle(item.message) }}
+                      </span>
+                      <span
+                        v-if="getOfficialMetadataDescription(item.message)"
+                        class="official-message-meta__description"
+                      >
+                        {{ getOfficialMetadataDescription(item.message) }}
+                      </span>
+                    </div>
                   </div>
 
                   <div
@@ -7954,6 +8038,50 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.official-message-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 320px;
+  margin-block: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-surface), 0.72);
+}
+
+.official-message-meta--right {
+  margin-left: auto;
+}
+
+.official-message-meta--left {
+  margin-right: auto;
+}
+
+.official-message-meta__icon {
+  margin-top: 1px;
+  color: rgb(var(--v-theme-success));
+}
+
+.official-message-meta__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.official-message-meta__title {
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.official-message-meta__description {
+  overflow-wrap: anywhere;
+  font-size: 0.73rem;
+  line-height: 1.25;
+  opacity: 0.78;
 }
 
 .fade-enter-active,

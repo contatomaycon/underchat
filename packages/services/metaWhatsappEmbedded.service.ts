@@ -83,6 +83,106 @@ interface MetaUploadHandleResponse extends MetaGraphErrorResponse {
   h?: string;
 }
 
+interface MetaPagingResponse {
+  paging?: {
+    next?: string;
+  };
+}
+
+export interface MetaTemplateButton {
+  type?: string;
+  text?: string;
+  url?: string;
+  phone_number?: string;
+  example?: string[];
+}
+
+export interface MetaTemplateComponent {
+  type?: string;
+  format?: string;
+  text?: string;
+  example?: Record<string, unknown>;
+  buttons?: MetaTemplateButton[];
+}
+
+interface MetaMessageTemplate {
+  id?: string;
+  name?: string;
+  language?: string;
+  status?: string;
+  category?: string;
+  components?: MetaTemplateComponent[];
+}
+
+interface MetaMessageTemplatesResponse
+  extends MetaGraphErrorResponse, MetaPagingResponse {
+  data?: MetaMessageTemplate[];
+}
+
+interface MetaWhatsappMessageSendResponse extends MetaGraphErrorResponse {
+  messaging_product?: string;
+  contacts?: Array<{
+    input?: string;
+    wa_id?: string;
+  }>;
+  messages?: Array<{
+    id?: string;
+    message_status?: string;
+  }>;
+}
+
+interface MetaWhatsappMediaResponse extends MetaGraphErrorResponse {
+  url?: string;
+  mime_type?: string;
+  sha256?: string;
+  file_size?: number;
+  id?: string;
+  messaging_product?: string;
+}
+
+export type MetaWhatsappTemplateComponentParameter = {
+  type: 'text';
+  text: string;
+};
+
+export type MetaWhatsappTemplateMessageComponent = {
+  type: 'header' | 'body' | 'button';
+  parameters?: MetaWhatsappTemplateComponentParameter[];
+  sub_type?: 'url';
+  index?: string;
+};
+
+export interface MetaWhatsappApprovedTemplate {
+  id: string | null;
+  name: string;
+  language: string;
+  status: 'APPROVED';
+  category: string | null;
+  components: MetaTemplateComponent[];
+}
+
+export interface MetaWhatsappMessageSendResult {
+  message_id: string | null;
+  contact_wa_id: string | null;
+  message_status: string | null;
+  raw: MetaWhatsappMessageSendResponse;
+}
+
+export interface MetaWhatsappMediaInfo {
+  id: string;
+  url: string;
+  mime_type: string | null;
+  sha256: string | null;
+  file_size: number | null;
+}
+
+export interface MetaWhatsappDownloadedMedia {
+  buffer: Buffer;
+  mimetype: string;
+  filename: string;
+  size: number;
+}
+
 export interface MetaWhatsappToken {
   access_token: string;
   token_type: string | null;
@@ -217,6 +317,224 @@ export class MetaWhatsappEmbeddedService {
     );
   }
 
+  async listApprovedMessageTemplates(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+  }): Promise<MetaWhatsappApprovedTemplate[]> {
+    const templates: MetaWhatsappApprovedTemplate[] = [];
+    let nextUrl: string | null = null;
+    let page = 0;
+
+    do {
+      const url: URL = nextUrl
+        ? new URL(nextUrl)
+        : new URL(
+            this.graphUrl(input.apiVersion, `${input.wabaId}/message_templates`)
+          );
+
+      if (!nextUrl) {
+        url.searchParams.set(
+          'fields',
+          'id,name,language,status,category,components'
+        );
+        url.searchParams.set('limit', '100');
+        url.searchParams.set('access_token', input.accessToken);
+      }
+
+      const response: Response = await fetch(url);
+      const payload: MetaMessageTemplatesResponse =
+        await this.parseGraphResponse<MetaMessageTemplatesResponse>(response);
+
+      for (const template of payload.data ?? []) {
+        if (
+          template.status !== 'APPROVED' ||
+          !template.name ||
+          !template.language
+        ) {
+          continue;
+        }
+
+        templates.push({
+          id: template.id ?? null,
+          name: template.name,
+          language: template.language,
+          status: 'APPROVED',
+          category: template.category ?? null,
+          components: template.components ?? [],
+        });
+      }
+
+      nextUrl = payload.paging?.next ?? null;
+      page += 1;
+    } while (nextUrl && page < 50);
+
+    return templates;
+  }
+
+  async sendTemplateMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    templateName: string;
+    language: string;
+    components?: MetaWhatsappTemplateMessageComponent[];
+  }): Promise<MetaWhatsappMessageSendResult> {
+    const template: Record<string, unknown> = {
+      name: input.templateName,
+      language: {
+        code: input.language,
+      },
+    };
+
+    if (input.components?.length) {
+      template.components = input.components;
+    }
+
+    return this.sendWhatsappMessage({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.to,
+        type: 'template',
+        template,
+      },
+    });
+  }
+
+  async sendTextMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    message: string;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendWhatsappMessage({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.to,
+        type: 'text',
+        text: {
+          preview_url: false,
+          body: input.message,
+        },
+      },
+    });
+  }
+
+  private async sendWhatsappMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    body: Record<string, unknown>;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    const response = await fetch(
+      this.graphUrl(input.apiVersion, `${input.phoneNumberId}/messages`),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(input.body),
+      }
+    );
+    const payload =
+      await this.parseGraphResponse<MetaWhatsappMessageSendResponse>(response);
+    const message = payload.messages?.[0] ?? null;
+    const contact = payload.contacts?.[0] ?? null;
+
+    return {
+      message_id: message?.id ?? null,
+      contact_wa_id: contact?.wa_id ?? null,
+      message_status: message?.message_status ?? null,
+      raw: payload,
+    };
+  }
+
+  async getMediaUrl(input: {
+    apiVersion: string;
+    accessToken: string;
+    mediaId: string;
+  }): Promise<MetaWhatsappMediaInfo> {
+    const url = new URL(this.graphUrl(input.apiVersion, input.mediaId));
+    url.searchParams.set('access_token', input.accessToken);
+
+    const response = await fetch(url);
+    const payload =
+      await this.parseGraphResponse<MetaWhatsappMediaResponse>(response);
+
+    if (!payload.url) {
+      throw new Error('Meta Graph API did not return a media URL');
+    }
+
+    return {
+      id: payload.id ?? input.mediaId,
+      url: payload.url,
+      mime_type: payload.mime_type ?? null,
+      sha256: payload.sha256 ?? null,
+      file_size: payload.file_size ?? null,
+    };
+  }
+
+  async downloadMedia(input: {
+    accessToken: string;
+    url: string;
+    filename?: string | null;
+    mimetype?: string | null;
+  }): Promise<MetaWhatsappDownloadedMedia> {
+    const response = await fetch(input.url, {
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Meta media download failed: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const mimetype =
+      input.mimetype ??
+      response.headers.get('content-type') ??
+      'application/octet-stream';
+    const filename =
+      input.filename?.trim() ||
+      `meta-whatsapp-media-${Date.now()}.${this.extensionFromMime(mimetype)}`;
+
+    return {
+      buffer,
+      mimetype,
+      filename,
+      size: buffer.byteLength,
+    };
+  }
+
+  private extensionFromMime(mimetype: string): string {
+    const normalized = mimetype.split(';')[0].trim().toLowerCase();
+    const extension = normalized.split('/')[1]?.replace(/[^a-z0-9.+-]/gu, '');
+    if (!extension) {
+      return 'bin';
+    }
+
+    if (extension === 'jpeg') {
+      return 'jpg';
+    }
+
+    return extension;
+  }
+
   async viewBusinessProfile(input: {
     apiVersion: string;
     accessToken: string;
@@ -317,6 +635,26 @@ export class MetaWhatsappEmbeddedService {
     return payload.success !== false;
   }
 
+  async subscribeWabaApp(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+  }): Promise<boolean> {
+    const response = await fetch(
+      this.graphUrl(input.apiVersion, `${input.wabaId}/subscribed_apps`),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.accessToken}`,
+        },
+      }
+    );
+    const payload =
+      await this.parseGraphResponse<MetaSuccessResponse>(response);
+
+    return payload.success !== false;
+  }
+
   async deregisterPhoneNumber(input: {
     apiVersion: string;
     accessToken: string;
@@ -384,5 +722,4 @@ export class MetaWhatsappEmbeddedService {
 
     return uploadPayload.h;
   }
-
 }

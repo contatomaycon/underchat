@@ -27,6 +27,18 @@ interface ICreateWorkerWhatsappOfficialConnectionForExistingWorker {
   connected_at: string;
 }
 
+export interface IActiveWorkerWhatsappOfficialConnectionWithWorker {
+  worker_whatsapp_official_connection_id: string;
+  worker_id: string;
+  account_id: string;
+  worker_name: string;
+  business_id: string | null;
+  waba_id: string;
+  phone_number_id: string;
+  access_token_encrypted: string;
+  api_version: string;
+}
+
 @injectable()
 export class WorkerWhatsappOfficialConnectionRepository {
   constructor(
@@ -50,6 +62,73 @@ export class WorkerWhatsappOfficialConnectionRepository {
       });
 
     return record ?? null;
+  };
+
+  findActiveByPhoneNumberIdWithWorker = async (
+    phoneNumberId: string
+  ): Promise<IActiveWorkerWhatsappOfficialConnectionWithWorker | null> => {
+    const [record] = await this.dbRo
+      .select({
+        worker_whatsapp_official_connection_id:
+          workerWhatsappOfficialConnection.worker_whatsapp_official_connection_id,
+        worker_id: workerWhatsappOfficialConnection.worker_id,
+        account_id: worker.account_id,
+        worker_name: worker.name,
+        business_id: workerWhatsappOfficialConnection.business_id,
+        waba_id: workerWhatsappOfficialConnection.waba_id,
+        phone_number_id: workerWhatsappOfficialConnection.phone_number_id,
+        access_token_encrypted:
+          workerWhatsappOfficialConnection.access_token_encrypted,
+        api_version: workerWhatsappOfficialConnection.api_version,
+      })
+      .from(workerWhatsappOfficialConnection)
+      .innerJoin(
+        worker,
+        eq(worker.worker_id, workerWhatsappOfficialConnection.worker_id)
+      )
+      .where(
+        and(
+          eq(workerWhatsappOfficialConnection.phone_number_id, phoneNumberId),
+          isNull(workerWhatsappOfficialConnection.deleted_at),
+          isNull(worker.deleted_at)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    return record ?? null;
+  };
+
+  findActiveByWabaIdWithWorker = async (
+    wabaId: string
+  ): Promise<IActiveWorkerWhatsappOfficialConnectionWithWorker[]> => {
+    return this.dbRo
+      .select({
+        worker_whatsapp_official_connection_id:
+          workerWhatsappOfficialConnection.worker_whatsapp_official_connection_id,
+        worker_id: workerWhatsappOfficialConnection.worker_id,
+        account_id: worker.account_id,
+        worker_name: worker.name,
+        business_id: workerWhatsappOfficialConnection.business_id,
+        waba_id: workerWhatsappOfficialConnection.waba_id,
+        phone_number_id: workerWhatsappOfficialConnection.phone_number_id,
+        access_token_encrypted:
+          workerWhatsappOfficialConnection.access_token_encrypted,
+        api_version: workerWhatsappOfficialConnection.api_version,
+      })
+      .from(workerWhatsappOfficialConnection)
+      .innerJoin(
+        worker,
+        eq(worker.worker_id, workerWhatsappOfficialConnection.worker_id)
+      )
+      .where(
+        and(
+          eq(workerWhatsappOfficialConnection.waba_id, wabaId),
+          isNull(workerWhatsappOfficialConnection.deleted_at),
+          isNull(worker.deleted_at)
+        )
+      )
+      .execute();
   };
 
   findActiveByWorkerId = async (

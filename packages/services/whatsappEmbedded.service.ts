@@ -10,8 +10,14 @@ import { WorkerWhatsappEmbeddedConfigResponse } from '@core/schema/worker/whatsa
 export interface WhatsappEmbeddedInternalConfig {
   app_id: string;
   app_secret: string;
+  webhook_verify_token: string | null;
   configuration_id: string;
   api_version: string;
+}
+
+export interface WhatsappEmbeddedWebhookSecurityConfig {
+  app_secret: string;
+  webhook_verify_token: string;
 }
 
 @injectable()
@@ -52,6 +58,20 @@ export class WhatsappEmbeddedService {
     return this.passwordEncryptorService.decrypt(encrypted);
   }
 
+  private decryptOptionalSecret(encrypted?: string | null): string | null {
+    if (!encrypted?.trim()) {
+      return null;
+    }
+
+    return this.passwordEncryptorService.decrypt(encrypted);
+  }
+
+  private isWebhookConfigured(
+    config: IWhatsappEmbeddedConfigInternal | null
+  ): boolean {
+    return Boolean(config?.webhook_verify_token_encrypted?.trim());
+  }
+
   async viewConfig(): Promise<ViewWhatsappEmbeddedConfigResponse> {
     const config = await this.whatsappEmbeddedConfigRepository.view();
 
@@ -59,8 +79,13 @@ export class WhatsappEmbeddedService {
       app_id: config?.app_id ?? null,
       configuration_id: config?.configuration_id ?? null,
       api_version: config?.api_version ?? null,
+      webhook_verify_token: this.decryptOptionalSecret(
+        config?.webhook_verify_token_encrypted
+      ),
       has_app_secret: Boolean(config?.app_secret_encrypted?.trim()),
+      has_webhook_verify_token: this.isWebhookConfigured(config),
       is_configured: this.isConfigured(config),
+      is_webhook_configured: this.isWebhookConfigured(config),
       updated_at: config?.updated_at ?? null,
     };
   }
@@ -89,8 +114,26 @@ export class WhatsappEmbeddedService {
     return {
       app_id: config.app_id,
       app_secret: this.decryptSecret(config.app_secret_encrypted),
+      webhook_verify_token: this.decryptOptionalSecret(
+        config.webhook_verify_token_encrypted
+      ),
       configuration_id: config.configuration_id,
       api_version: config.api_version,
+    };
+  }
+
+  async viewWebhookSecurityConfig(
+    t: TFunction<'translation', undefined>
+  ): Promise<WhatsappEmbeddedWebhookSecurityConfig> {
+    const config = await this.viewInternalConfig(t);
+
+    if (!config.webhook_verify_token?.trim()) {
+      throw new Error(t('whatsapp_embedded_webhook_verify_token_required'));
+    }
+
+    return {
+      app_secret: config.app_secret,
+      webhook_verify_token: config.webhook_verify_token,
     };
   }
 
@@ -102,6 +145,7 @@ export class WhatsappEmbeddedService {
     const configurationId = input.configuration_id.trim();
     const rawApiVersion = input.api_version.trim();
     const appSecret = input.app_secret?.trim() ?? '';
+    const webhookVerifyToken = input.webhook_verify_token?.trim() ?? '';
 
     if (!appId) {
       throw new Error(t('whatsapp_embedded_app_id_required'));
@@ -126,10 +170,17 @@ export class WhatsappEmbeddedService {
     const appSecretEncrypted = appSecret
       ? this.passwordEncryptorService.encrypt(appSecret)
       : undefined;
+    const webhookVerifyTokenEncrypted =
+      input.webhook_verify_token === undefined
+        ? undefined
+        : webhookVerifyToken
+          ? this.passwordEncryptorService.encrypt(webhookVerifyToken)
+          : null;
 
     await this.whatsappEmbeddedConfigRepository.upsert({
       app_id: appId,
       app_secret_encrypted: appSecretEncrypted,
+      webhook_verify_token_encrypted: webhookVerifyTokenEncrypted,
       configuration_id: configurationId,
       api_version: apiVersion,
     });

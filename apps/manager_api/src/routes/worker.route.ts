@@ -68,6 +68,7 @@ import { workerWhatsappEmbeddedConfigSchema } from '@core/schema/worker/whatsapp
 import { connectWhatsappEmbeddedSchema } from '@core/schema/worker/connectWhatsappEmbedded';
 import { disconnectWhatsappOfficialSchema } from '@core/schema/worker/disconnectWhatsappOfficial';
 import { connectWhatsappOfficialSchema } from '@core/schema/worker/connectWhatsappOfficial';
+import { ensureWhatsappOfficialWebhookSubscriptionSchema } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -172,6 +173,20 @@ export default function workerRoutes(server: FastifyInstance) {
       planStatus,
     ],
   });
+
+  server.post(
+    '/worker/:worker_id/whatsapp-official/webhook-subscription/ensure',
+    {
+      schema: ensureWhatsappOfficialWebhookSubscriptionSchema,
+      handler: workerController.ensureWhatsappOfficialWebhookSubscription,
+      preHandler: [
+        (request, reply) =>
+          server.authenticateJwt(request, reply, workerCreatePermissions),
+        planGuard,
+        planStatus,
+      ],
+    }
+  );
 
   server.get('/worker', {
     schema: listWorkerSchema,

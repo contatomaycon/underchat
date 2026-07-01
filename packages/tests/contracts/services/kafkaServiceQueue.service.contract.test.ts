@@ -28,6 +28,12 @@ describe('KafkaServiceQueueService', () => {
     expect(service.asaasInvoiceWebhook()).toBe('asaas.invoice.webhook');
     expect(service.asaasNfseWebhook()).toBe('asaas.nfse.webhook');
     expect(service.notificationMessage()).toBe('notification.message');
+    expect(service.officialWhatsappSendMessage()).toBe(
+      'official.whatsapp.send.message'
+    );
+    expect(service.officialWhatsappWebhookEvent()).toBe(
+      'official.whatsapp.webhook.event'
+    );
     expect(service.reportConversationHistoryPdfGenerate()).toBe(
       'report.conversation.history.pdf.generate'
     );
@@ -74,6 +80,8 @@ describe('KafkaServiceQueueService', () => {
       'asaas.invoice.webhook',
       'asaas.nfse.webhook',
       'notification.message',
+      'official.whatsapp.send.message',
+      'official.whatsapp.webhook.event',
       'report.conversation.history.pdf.generate',
       'schedule.status.update',
       'worker.config.update',

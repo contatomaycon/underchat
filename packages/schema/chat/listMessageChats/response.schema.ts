@@ -219,6 +219,134 @@ export const templateMessageSchema = Type.Object({
   verifiedBizName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const officialTemplateVariableSchema = Type.Object({
+  key: Type.String(),
+  component_type: Type.Union([
+    Type.Literal('HEADER'),
+    Type.Literal('BODY'),
+    Type.Literal('FOOTER'),
+    Type.Literal('BUTTON'),
+  ]),
+  index: Type.Number(),
+  button_index: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  value: Type.Optional(Type.String()),
+  sample: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+});
+
+export const officialTemplateButtonSchema = Type.Object(
+  {
+    type: Type.String(),
+    text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    phone_number: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    variables: Type.Optional(Type.Array(officialTemplateVariableSchema)),
+  },
+  { additionalProperties: true }
+);
+
+export const officialTemplateComponentSchema = Type.Object(
+  {
+    type: Type.String(),
+    format: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    buttons: Type.Optional(
+      Type.Union([Type.Array(officialTemplateButtonSchema), Type.Null()])
+    ),
+    variables: Type.Optional(Type.Array(officialTemplateVariableSchema)),
+  },
+  { additionalProperties: true }
+);
+
+export const officialTemplatePreviewSchema = Type.Object({
+  header: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  body: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  footer: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  buttons: Type.Optional(Type.Array(Type.String())),
+});
+
+export const officialTemplateMessageSchema = Type.Object(
+  {
+    name: Type.String(),
+    language: Type.String(),
+    category: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    components: Type.Optional(Type.Array(officialTemplateComponentSchema)),
+    variables: Type.Optional(Type.Array(officialTemplateVariableSchema)),
+    preview: Type.Optional(officialTemplatePreviewSchema),
+  },
+  { additionalProperties: true }
+);
+
+export const officialWhatsappContentMetadataSchema = Type.Object(
+  {
+    provider: Type.Literal('meta_whatsapp'),
+    type: Type.String(),
+    webhook_field: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    echo: Type.Optional(Type.Boolean()),
+    interactive: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            description: Type.Optional(
+              Type.Union([Type.String(), Type.Null()])
+            ),
+          },
+          { additionalProperties: true }
+        ),
+        Type.Null(),
+      ])
+    ),
+    order: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            catalog_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            product_items: Type.Optional(Type.Array(Type.Any())),
+          },
+          { additionalProperties: true }
+        ),
+        Type.Null(),
+      ])
+    ),
+    button: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            payload: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          },
+          { additionalProperties: true }
+        ),
+        Type.Null(),
+      ])
+    ),
+    unsupported: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+            reason: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+          },
+          { additionalProperties: true }
+        ),
+        Type.Null(),
+      ])
+    ),
+    referral: Type.Optional(
+      Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()])
+    ),
+    errors: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Any()))),
+    raw: Type.Optional(Type.Record(Type.String(), Type.Any())),
+  },
+  { additionalProperties: true }
+);
+
 export const pinMessageSchema = Type.Object({
   pin_action: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   pin_user_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -287,6 +415,12 @@ export const contentSchema = Type.Object(
     ),
     context_info: Type.Optional(Type.Union([contextInfoSchema, Type.Null()])),
     template: Type.Optional(Type.Union([templateMessageSchema, Type.Null()])),
+    official_template: Type.Optional(
+      Type.Union([officialTemplateMessageSchema, Type.Null()])
+    ),
+    official: Type.Optional(
+      Type.Union([officialWhatsappContentMetadataSchema, Type.Null()])
+    ),
     pin: Type.Optional(Type.Union([pinMessageSchema, Type.Null()])),
     ephemeral: Type.Optional(Type.Union([ephemeralMessageSchema, Type.Null()])),
     album: Type.Optional(Type.Union([albumMessageSchema, Type.Null()])),

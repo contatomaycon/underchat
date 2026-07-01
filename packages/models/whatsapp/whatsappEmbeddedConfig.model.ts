@@ -16,6 +16,7 @@ export const whatsappEmbeddedConfig = pgTable(
     singleton_key: boolean().default(true).notNull(),
     app_id: varchar({ length: 255 }).notNull(),
     app_secret_encrypted: varchar({ length: 4000 }).notNull(),
+    webhook_verify_token_encrypted: varchar({ length: 4000 }),
     configuration_id: varchar({ length: 255 }).notNull(),
     api_version: varchar({ length: 20 }).notNull(),
     created_at: timestamp({

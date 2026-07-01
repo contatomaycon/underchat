@@ -2,6 +2,18 @@ import { IContent } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
 
 function getTextByMessageType(content: IContent): string | null {
+  if (content.official?.interactive?.title) {
+    return content.official.interactive.title;
+  }
+
+  if (content.official?.button?.text) {
+    return content.official.button.text;
+  }
+
+  if (content.official?.order?.text) {
+    return content.official.order.text;
+  }
+
   switch (content.type) {
     case EMessageType.image:
       return content.image?.caption ?? '[Imagem]';

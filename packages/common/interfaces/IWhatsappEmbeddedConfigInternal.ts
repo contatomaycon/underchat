@@ -2,6 +2,7 @@ export interface IWhatsappEmbeddedConfigInternal {
   whatsapp_embedded_config_id: string;
   app_id: string;
   app_secret_encrypted: string;
+  webhook_verify_token_encrypted: string | null;
   configuration_id: string;
   api_version: string;
   created_at: string | null;

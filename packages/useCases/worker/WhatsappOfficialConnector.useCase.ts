@@ -135,6 +135,21 @@ export class WhatsappOfficialConnectorUseCase {
       throw new Error(t('whatsapp_official_phone_already_connected'));
     }
 
+    let subscribed;
+    try {
+      subscribed = await this.metaWhatsappEmbeddedService.subscribeWabaApp({
+        apiVersion: config.api_version,
+        accessToken: token.access_token,
+        wabaId: input.waba_id,
+      });
+    } catch {
+      throw new Error(t('whatsapp_official_webhook_subscription_failed'));
+    }
+
+    if (!subscribed) {
+      throw new Error(t('whatsapp_official_webhook_subscription_failed'));
+    }
+
     const connectedAt = currentTime();
     const number = this.normalizeNumber(phone.display_phone_number);
     const accessTokenEncrypted = this.passwordEncryptorService.encrypt(

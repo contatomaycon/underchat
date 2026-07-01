@@ -55,6 +55,7 @@ import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhat
 import { DisconnectWhatsappOfficialResponse } from '@core/schema/worker/disconnectWhatsappOfficial/response.schema';
 import { ConnectWhatsappOfficialRequest } from '@core/schema/worker/connectWhatsappOfficial/request.schema';
 import { ConnectWhatsappOfficialResponse } from '@core/schema/worker/connectWhatsappOfficial/response.schema';
+import { EnsureWhatsappOfficialWebhookSubscriptionResponse } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription/response.schema';
 import { WhatsappBusinessProfileVertical } from '@core/common/enums/EWhatsappBusinessProfileVertical';
 import {
   connectionLifecycleDebugHeaders,
@@ -653,6 +654,55 @@ export const useChannelsStore = defineStore('channels', {
       } catch (error) {
         let errorMessage = this.i18n.global.t(
           'whatsapp_official_reconnect_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async ensureWhatsappOfficialWebhookSubscription(
+      workerId: string
+    ): Promise<EnsureWhatsappOfficialWebhookSubscriptionResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.post<
+          IApiResponse<EnsureWhatsappOfficialWebhookSubscriptionResponse>
+        >(`/worker/${workerId}/whatsapp-official/webhook-subscription/ensure`);
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('whatsapp_official_webhook_subscription_failed');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        this.showSnackbar(
+          data.message ??
+            this.i18n.global.t(
+              'whatsapp_official_webhook_subscription_success'
+            ),
+          EColor.success
+        );
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'whatsapp_official_webhook_subscription_failed'
         );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;

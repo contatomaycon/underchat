@@ -143,6 +143,7 @@ const openConversationsCount = ref<number | null>(null);
 const isDialogDisconnectOfficialShow = ref(false);
 const channelToDisconnectOfficial = ref<string | null>(null);
 const reconnectingWhatsappOfficialId = ref<string | null>(null);
+const ensuringWhatsappOfficialWebhookSubscriptionId = ref<string | null>(null);
 type DisconnectOfficialProgressResult = 'success' | 'warning' | null;
 type DisconnectOfficialProgressStepStatus =
   'pending' | 'running' | 'done' | 'warning';
@@ -388,6 +389,10 @@ const isWhatsappOfficialReconnectable = (channel: ListWorkerResponse) =>
   isWhatsappOfficialChannel(channel) &&
   channel.status?.id !== EWorkerStatus.online;
 
+const isWhatsappOfficialWebhookRepairable = (channel: ListWorkerResponse) =>
+  isWhatsappOfficialChannel(channel) &&
+  (channel.status?.id === EWorkerStatus.online || Boolean(channel.number));
+
 const disconnectOfficialProgressSteps = computed<
   DisconnectOfficialProgressStep[]
 >(() => {
@@ -481,6 +486,27 @@ const connectWhatsappOfficial = async (channel: ListWorkerResponse) => {
     channelsStore.showSnackbar(message, EColor.error);
   } finally {
     reconnectingWhatsappOfficialId.value = null;
+  }
+};
+
+const ensureWhatsappOfficialWebhookSubscription = async (
+  channel: ListWorkerResponse
+) => {
+  if (ensuringWhatsappOfficialWebhookSubscriptionId.value) {
+    return;
+  }
+
+  ensuringWhatsappOfficialWebhookSubscriptionId.value = channel.id;
+
+  try {
+    const result =
+      await channelsStore.ensureWhatsappOfficialWebhookSubscription(channel.id);
+
+    if (result) {
+      await channelsStore.listChannels(query.value);
+    }
+  } finally {
+    ensuringWhatsappOfficialWebhookSubscriptionId.value = null;
   }
 };
 
@@ -1012,6 +1038,38 @@ onUnmounted(async () => {
                   <VIcon
                     icon="tabler-plug-connected"
                     :data-testid="`channel-reconnect-official-${item.id}`"
+                  />
+                </IconBtn>
+
+                <IconBtn
+                  v-if="
+                    isWhatsappOfficialWebhookRepairable(item) &&
+                    $canPermission(permissionsCreate)
+                  "
+                  :disabled="!!ensuringWhatsappOfficialWebhookSubscriptionId"
+                  @click="ensureWhatsappOfficialWebhookSubscription(item)"
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{
+                      $t('repair_whatsapp_official_webhook_subscription')
+                    }}</span>
+                  </VTooltip>
+                  <VProgressCircular
+                    v-if="
+                      ensuringWhatsappOfficialWebhookSubscriptionId === item.id
+                    "
+                    indeterminate
+                    size="18"
+                    width="2"
+                  />
+                  <VIcon
+                    v-else
+                    icon="tabler-webhook"
+                    :data-testid="`channel-repair-official-webhook-${item.id}`"
                   />
                 </IconBtn>
 

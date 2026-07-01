@@ -10,6 +10,7 @@ import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EElasticIndex } from '@core/common/enums/EElasticIndex';
 import { StreamProducerService } from './streamProducer.service';
 import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
+import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { CentrifugoService } from './centrifugo.service';
 import { StorageService } from './storage.service';
 import { ConverterService } from './converter';
@@ -54,6 +55,7 @@ import {
 } from '@core/common/functions/securityKeyConfig';
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 @injectable()
 export class ChatMessageService {
@@ -65,6 +67,8 @@ export class ChatMessageService {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(KafkaServiceQueueService)
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(CentrifugoService)
@@ -435,6 +439,22 @@ export class ChatMessageService {
     return quoted;
   }
 
+  private async isOfficialWorker(message: IChatMessage): Promise<boolean> {
+    const accountId = message.account?.id;
+    const workerId = message.worker?.id;
+
+    if (!accountId || !workerId) {
+      return false;
+    }
+
+    const workerType = await this.workerService.viewWorkerType(
+      accountId,
+      workerId
+    );
+
+    return workerType?.worker_type_id === EWorkerType.whatsapp;
+  }
+
   private async publishMessage(message: IChatMessage): Promise<boolean> {
     message.sent_from_platform = true;
     ensureMessageSendHash(message);
@@ -454,9 +474,10 @@ export class ChatMessageService {
       if (!message.worker.id) {
         throw new Error('Worker ID is required to send message');
       }
-      const kafkaTopic = this.kafkaBaileysQueueService.workerSendMessage(
-        message.worker.id
-      );
+      const isOfficialWorker = await this.isOfficialWorker(message);
+      const kafkaTopic = isOfficialWorker
+        ? this.kafkaServiceQueueService.officialWhatsappSendMessage()
+        : this.kafkaBaileysQueueService.workerSendMessage(message.worker.id);
       postPersistPromises.push(
         this.streamProducerService.send(
           kafkaTopic,

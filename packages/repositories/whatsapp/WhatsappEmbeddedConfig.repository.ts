@@ -25,6 +25,7 @@ export class WhatsappEmbeddedConfigRepository {
   upsert = async (input: {
     app_id: string;
     app_secret_encrypted?: string;
+    webhook_verify_token_encrypted?: string | null;
     configuration_id: string;
     api_version: string;
   }): Promise<IWhatsappEmbeddedConfigInternal> => {
@@ -41,6 +42,8 @@ export class WhatsappEmbeddedConfigRepository {
             whatsapp_embedded_config_id: id,
             app_id: input.app_id,
             app_secret_encrypted: input.app_secret_encrypted ?? '',
+            webhook_verify_token_encrypted:
+              input.webhook_verify_token_encrypted ?? null,
             configuration_id: input.configuration_id,
             api_version: input.api_version,
           })
@@ -59,6 +62,11 @@ export class WhatsappEmbeddedConfigRepository {
 
       if (input.app_secret_encrypted !== undefined) {
         updatePayload.app_secret_encrypted = input.app_secret_encrypted;
+      }
+
+      if (input.webhook_verify_token_encrypted !== undefined) {
+        updatePayload.webhook_verify_token_encrypted =
+          input.webhook_verify_token_encrypted;
       }
 
       const [updated] = await tx

@@ -818,6 +818,107 @@ export const mensageMappings = () => {
                 },
               },
             },
+            official: {
+              type: 'nested',
+              properties: {
+                provider: {
+                  type: 'keyword',
+                },
+                type: {
+                  type: 'keyword',
+                },
+                webhook_field: {
+                  type: 'keyword',
+                },
+                message_id: {
+                  type: 'keyword',
+                },
+                status: {
+                  type: 'keyword',
+                },
+                echo: {
+                  type: 'boolean',
+                },
+                interactive: {
+                  type: 'nested',
+                  properties: {
+                    type: {
+                      type: 'keyword',
+                    },
+                    id: {
+                      type: 'keyword',
+                    },
+                    title: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    description: {
+                      type: 'text',
+                    },
+                  },
+                },
+                order: {
+                  type: 'nested',
+                  properties: {
+                    catalog_id: {
+                      type: 'keyword',
+                    },
+                    text: {
+                      type: 'text',
+                    },
+                    product_items: {
+                      type: 'object',
+                      enabled: false,
+                    },
+                  },
+                },
+                button: {
+                  type: 'nested',
+                  properties: {
+                    text: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    payload: {
+                      type: 'keyword',
+                    },
+                  },
+                },
+                unsupported: {
+                  type: 'nested',
+                  properties: {
+                    type: {
+                      type: 'keyword',
+                    },
+                    reason: {
+                      type: 'text',
+                    },
+                  },
+                },
+                referral: {
+                  type: 'object',
+                  enabled: false,
+                },
+                errors: {
+                  type: 'object',
+                  enabled: false,
+                },
+                raw: {
+                  type: 'object',
+                  enabled: false,
+                },
+              },
+            },
             pin: {
               type: 'nested',
               properties: {

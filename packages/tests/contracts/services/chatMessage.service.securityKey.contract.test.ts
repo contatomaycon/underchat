@@ -63,6 +63,11 @@ function buildService(securityKeyConfig: Record<string, boolean>) {
   const kafkaBaileysQueueService = {
     workerSendMessage: jest.fn((workerId: string) => `worker.send.${workerId}`),
   };
+  const kafkaServiceQueueService = {
+    officialWhatsappSendMessage: jest.fn(
+      () => 'official.whatsapp.send.message'
+    ),
+  };
   const streamProducerService = {
     send: jest.fn(async () => undefined),
   };
@@ -71,6 +76,9 @@ function buildService(securityKeyConfig: Record<string, boolean>) {
   };
   const workerService = {
     viewWorkerConfigFieldsByWorkerId: jest.fn(async () => ({})),
+    viewWorkerType: jest.fn(async () => ({
+      worker_type_id: 'non-official-worker-type',
+    })),
   };
   const workerConfigService = {
     viewSecurityKey: jest.fn(async () => securityKeyConfig),
@@ -81,6 +89,7 @@ function buildService(securityKeyConfig: Record<string, boolean>) {
     chatService as never,
     {} as never,
     kafkaBaileysQueueService as never,
+    kafkaServiceQueueService as never,
     streamProducerService as never,
     centrifugoService as never,
     {} as never,

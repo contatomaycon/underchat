@@ -25,7 +25,8 @@ export interface IUpsertMessageEnvelope {
 export interface IUpsertMessage {
   worker_id: string;
   account_id: string;
-  source_provider?: 'baileys' | 'wwebjs' | 'whatsmeow' | 'webhook';
+  source_provider?:
+    'baileys' | 'wwebjs' | 'whatsmeow' | 'webhook' | 'official_whatsapp';
   type: EMessageType;
   message: IUpsertMessageEnvelope;
   content?: IContent | null;

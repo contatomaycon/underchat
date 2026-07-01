@@ -12,6 +12,8 @@ import {
   MessageVersion,
 } from '@core/schema/chat/listMessageChats/response.schema';
 import { IMessageContextInfo } from '../functions/buildContextInfoFromMessage';
+import { IOfficialWhatsappTemplateMessage } from './IOfficialWhatsappTemplate';
+import { IOfficialWhatsappContentMetadata } from './IOfficialWhatsappContentMetadata';
 
 interface IAccount {
   id: string;
@@ -137,6 +139,8 @@ export interface IContent {
   media_download_failed?: boolean;
   context_info?: IMessageContextInfo | null;
   template?: ITemplateMessage | null;
+  official_template?: IOfficialWhatsappTemplateMessage | null;
+  official?: IOfficialWhatsappContentMetadata | null;
   pin?: IPinMessage | null;
   ephemeral?: IEphemeralMessage | null;
   album?: IAlbumMessage | null;

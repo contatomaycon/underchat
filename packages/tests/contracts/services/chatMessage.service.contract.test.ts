@@ -71,6 +71,11 @@ describe('ChatMessageService', () => {
     const kafkaBaileysQueueService = {
       workerSendMessage: jest.fn().mockReturnValue('worker.send.worker-1'),
     };
+    const kafkaServiceQueueService = {
+      officialWhatsappSendMessage: jest
+        .fn()
+        .mockReturnValue('official.whatsapp.send.message'),
+    };
     const streamProducerService = {
       send: jest.fn().mockResolvedValue(undefined),
     };
@@ -89,11 +94,16 @@ describe('ChatMessageService', () => {
       chatService as never,
       {} as never,
       kafkaBaileysQueueService as never,
+      kafkaServiceQueueService as never,
       streamProducerService as never,
       centrifugoService as never,
       storageService as never,
       converterService as never,
-      {} as never,
+      {
+        viewWorkerType: jest.fn(async () => ({
+          worker_type_id: 'non-official-worker-type',
+        })),
+      } as never,
       {} as never,
       {} as never,
       {} as never

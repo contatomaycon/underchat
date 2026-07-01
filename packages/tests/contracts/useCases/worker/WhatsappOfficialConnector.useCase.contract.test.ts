@@ -56,6 +56,7 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
         verified_name: 'Underchat',
       },
     ]),
+    subscribeWabaApp: jest.fn(async () => true),
   };
   const passwordEncryptorService = {
     encrypt: jest.fn((value: string) => `enc:${value}`),
@@ -117,6 +118,20 @@ describe('WhatsappOfficialConnectorUseCase', () => {
         access_token_encrypted: 'enc:token-1',
       })
     );
+    expect(
+      deps.metaWhatsappEmbeddedService.subscribeWabaApp
+    ).toHaveBeenCalledWith({
+      apiVersion: 'v24.0',
+      accessToken: 'token-1',
+      wabaId: 'waba-1',
+    });
+    expect(
+      deps.metaWhatsappEmbeddedService.subscribeWabaApp.mock
+        .invocationCallOrder[0]
+    ).toBeLessThan(
+      deps.officialConnectionRepository.createForExistingWorker.mock
+        .invocationCallOrder[0]
+    );
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
       expect.objectContaining({
@@ -130,6 +145,35 @@ describe('WhatsappOfficialConnectorUseCase', () => {
         session_ready: true,
       })
     );
+  });
+
+  it('fails before reconnecting worker when WABA webhook subscription fails', async () => {
+    const { useCase, deps } = buildUseCase({
+      metaWhatsappEmbeddedService: {
+        exchangeCode: jest.fn(async () => ({
+          access_token: 'token-1',
+          token_type: 'bearer',
+          expires_at: null,
+          scope: null,
+        })),
+        viewPhoneNumber: jest.fn(async () => ({
+          id: 'phone-1',
+          display_phone_number: '+55 61 99999-0000',
+          verified_name: 'Underchat',
+        })),
+        listPhoneNumbers: jest.fn(),
+        subscribeWabaApp: jest.fn(async () => false),
+      },
+    });
+
+    await expect(
+      useCase.execute(t, 'account-1', 'worker-1', request)
+    ).rejects.toThrow('whatsapp_official_webhook_subscription_failed');
+
+    expect(
+      deps.officialConnectionRepository.createForExistingWorker
+    ).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalled();
   });
 
   it('rejects non-official workers', async () => {

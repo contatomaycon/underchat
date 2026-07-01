@@ -74,6 +74,8 @@ import { TransferUserResponse } from '@core/schema/chat/listTransferUsers/respon
 import { TransferSectorResponse } from '@core/schema/chat/listTransferSectors/response.schema';
 import { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 import { ListTransferOptionsResponse } from '@core/schema/chat/listTransferOptions/response.schema';
+import type { OfficialOpeningContextResponse } from '@core/schema/chat/officialOpeningContext/response.schema';
+import type { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import { ListChatContactChannelsResponse } from '@core/schema/chat/listContactChannels/response.schema';
 import { ListKanbanResponse } from '@core/schema/chat/listKanban/response.schema';
 import { ListKanbanQuery } from '@core/schema/chat/listKanban/request.schema';
@@ -6546,10 +6548,51 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    async viewOfficialOpeningContext(
+      workerId: string,
+      contactId: string
+    ): Promise<OfficialOpeningContextResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<OfficialOpeningContextResponse>
+        >('/chat/official-opening/context', {
+          params: {
+            worker_id: workerId,
+            contact_id: contactId,
+          },
+        });
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const errorMessage =
+            data?.message ||
+            this.i18n.global.t('official_templates_loading_error');
+          this.showSnackbar(errorMessage, EColor.error);
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'official_templates_loading_error'
+        );
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        this.showSnackbar(errorMessage, EColor.error);
+        return null;
+      }
+    },
+
     async startChatWithContact(
       contactId: string,
       workerId: string,
-      sectorId?: string | null
+      sectorId?: string | null,
+      officialTemplate?: Pick<
+        IOfficialWhatsappTemplateMessage,
+        'name' | 'language' | 'variables'
+      > | null
     ): Promise<IChat | null> {
       try {
         this.loading = true;
@@ -6558,6 +6601,10 @@ export const useChatStore = defineStore('chat', {
           contact_id: string;
           worker_id: string;
           sector_id?: string;
+          official_template?: Pick<
+            IOfficialWhatsappTemplateMessage,
+            'name' | 'language' | 'variables'
+          >;
         } = {
           contact_id: contactId,
           worker_id: workerId,
@@ -6565,6 +6612,10 @@ export const useChatStore = defineStore('chat', {
 
         if (sectorId) {
           requestBody.sector_id = sectorId;
+        }
+
+        if (officialTemplate) {
+          requestBody.official_template = officialTemplate;
         }
 
         const response = await axios.post<IApiResponse<IChat>>(

@@ -10,6 +10,8 @@ import { startProfileStatusExternalIdUpdateConsume } from './profileStatusExtern
 import { startAsaasInvoiceWebhookConsume } from './asaasInvoiceWebhook.consume';
 import { startAsaasNfseWebhookConsume } from './asaasNfseWebhook.consume';
 import { startNotificationMessageConsume } from './notificationMessage.consume';
+import { startOfficialWhatsappMessageSendConsume } from './officialWhatsappMessageSend.consume';
+import { startOfficialWhatsappWebhookConsume } from './officialWhatsappWebhook.consume';
 import { startUserPhoneJidUpdateConsume } from './userPhoneJidUpdate.consume';
 import { startReportConversationHistoryPdfGenerateConsume } from './reportConversationHistoryPdfGenerate.consume';
 import { startScheduleStatusUpdateConsume } from './scheduleStatusUpdate.consume';
@@ -54,6 +56,8 @@ export async function startConsumers(server: FastifyInstance): Promise<void> {
     () => startAsaasInvoiceWebhookConsume(server),
     () => startAsaasNfseWebhookConsume(server),
     () => startNotificationMessageConsume(server),
+    () => startOfficialWhatsappMessageSendConsume(server),
+    () => startOfficialWhatsappWebhookConsume(server),
     () => startUserPhoneJidUpdateConsume(server),
     () => startReportConversationHistoryPdfGenerateConsume(server),
     () => startScheduleStatusUpdateConsume(server),

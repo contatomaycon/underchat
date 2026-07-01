@@ -41,6 +41,7 @@ import { transferChatSchema } from '@core/schema/chat/transferChat';
 import { searchChatsSchema } from '@core/schema/chat/searchChats';
 import { viewWorkerConfigForChatSchema } from '@core/schema/chat/viewWorkerConfigForChat';
 import { listTransferOptionsSchema } from '@core/schema/chat/listTransferOptions';
+import { officialOpeningContextSchema } from '@core/schema/chat/officialOpeningContext';
 import { listTransferUsersSchema } from '@core/schema/chat/listTransferUsers';
 import { listTransferSectorsSchema } from '@core/schema/chat/listTransferSectors';
 import { listTransferSectorUsersSchema } from '@core/schema/chat/listTransferSectorUsers';
@@ -366,6 +367,17 @@ export default function chatRoutes(server: FastifyInstance) {
   server.get('/chat/transfer-options', {
     schema: listTransferOptionsSchema,
     handler: chatController.listTransferOptions,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, chatPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/chat/official-opening/context', {
+    schema: officialOpeningContextSchema,
+    handler: chatController.viewOfficialOpeningContext,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, chatPermissions),

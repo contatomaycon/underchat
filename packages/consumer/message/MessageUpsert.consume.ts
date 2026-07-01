@@ -2340,6 +2340,11 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
+    if (content.type === EMessageType.location && data.content?.location) {
+      content.location = data.content.location;
+      return;
+    }
+
     if (
       content.type !== EMessageType.location ||
       !this.getInnerMessage(data)?.locationMessage
@@ -2571,6 +2576,11 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
+    if (content.type === EMessageType.contact_card && data.content?.contact) {
+      content.contact = data.content.contact;
+      return;
+    }
+
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const contactMsg = msg?.contactMessage as
       { vcard?: string; displayName?: string } | undefined;
@@ -2639,6 +2649,11 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
+    if (content.type === EMessageType.contacts && data.content?.contacts) {
+      content.contacts = data.content.contacts;
+      return;
+    }
+
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const contactsArrayMessage = msg?.contactsArrayMessage as
       | { contacts?: Array<{ vcard?: string; displayName?: string }> }
@@ -3840,6 +3855,14 @@ export class MessageUpsertConsume {
 
     if (data.content?.media_download_failed) {
       content.media_download_failed = true;
+    }
+
+    if (data.content?.official_template) {
+      content.official_template = data.content.official_template;
+    }
+
+    if (data.content?.official) {
+      content.official = data.content.official;
     }
 
     if (data.type === EMessageType.set_disappearing_messages) {

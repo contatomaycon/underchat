@@ -10,6 +10,7 @@ export enum EMessageType {
   audio = 'audio',
   sticker = 'sticker',
   document = 'document',
+  official_template = 'official_template',
   view_once = 'view_once',
   delete_message = 'delete_message',
   edit_text = 'edit_text',

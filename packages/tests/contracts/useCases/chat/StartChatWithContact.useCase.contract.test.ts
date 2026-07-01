@@ -143,6 +143,10 @@ describe('StartChatWithContactUseCase push notifications', () => {
       {
         viewWorkerNameAndId: jest.fn(async () => worker),
         viewWorkerConfigFieldsByWorkerId: jest.fn(async () => null),
+        viewWorkerType: jest.fn(async () => ({
+          worker_id: 'worker-1',
+          worker_type_id: 'non-official-worker-type',
+        })),
       } as never,
       {
         viewSimultaneousAttendance: jest.fn(async () => 0),
@@ -158,6 +162,16 @@ describe('StartChatWithContactUseCase push notifications', () => {
         startTrackingOnInChatEntry: jest.fn(async () => undefined),
       } as never,
       pushNotificationService as never,
+      { publishPreparedMessage: jest.fn(async () => true) } as never,
+      { decrypt: jest.fn((value: string) => value) } as never,
+      { listApprovedMessageTemplates: jest.fn(async () => []) } as never,
+      {
+        normalizeTemplates: jest.fn((value) => value),
+        findTemplate: jest.fn(),
+        validateVariableValues: jest.fn(),
+        buildPreviewText: jest.fn(),
+      } as never,
+      { findActiveByWorkerId: jest.fn(async () => null) } as never,
       {
         del: jest.fn(async () => 1),
         zrem: jest.fn(async () => 1),

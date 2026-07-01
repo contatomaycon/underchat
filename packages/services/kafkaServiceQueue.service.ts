@@ -34,6 +34,8 @@ export class KafkaServiceQueueService {
     const asaasInvoiceWebhook = this.asaasInvoiceWebhook();
     const asaasNfseWebhook = this.asaasNfseWebhook();
     const notificationMessage = this.notificationMessage();
+    const officialWhatsappSendMessage = this.officialWhatsappSendMessage();
+    const officialWhatsappWebhookEvent = this.officialWhatsappWebhookEvent();
     const reportConversationHistoryPdfGenerate =
       this.reportConversationHistoryPdfGenerate();
     const scheduleStatusUpdate = this.scheduleStatusUpdate();
@@ -63,6 +65,8 @@ export class KafkaServiceQueueService {
       asaasInvoiceWebhook,
       asaasNfseWebhook,
       notificationMessage,
+      officialWhatsappSendMessage,
+      officialWhatsappWebhookEvent,
       reportConversationHistoryPdfGenerate,
       scheduleStatusUpdate,
       workerConfigUpdate,
@@ -136,6 +140,14 @@ export class KafkaServiceQueueService {
 
   notificationMessage = () => {
     return `notification.message`;
+  };
+
+  officialWhatsappSendMessage = () => {
+    return 'official.whatsapp.send.message';
+  };
+
+  officialWhatsappWebhookEvent = () => {
+    return 'official.whatsapp.webhook.event';
   };
 
   reportConversationHistoryPdfGenerate = () => {

@@ -205,6 +205,46 @@ export class MessageStatusService {
     return publishedMessage;
   }
 
+  async markMessageAsNotSentByWhatsAppId(
+    accountId: string,
+    whatsappMessageId: string,
+    key?: MessageKeyLike
+  ): Promise<IChatMessage | null> {
+    if (!accountId || !whatsappMessageId) {
+      return null;
+    }
+
+    const aliasedMessageId =
+      await this.messageStatusPendingService.getInternalMessageIdAlias(
+        accountId,
+        whatsappMessageId
+      );
+
+    let existingMessage = aliasedMessageId
+      ? await this.findMessageByMessageIdWithRetry(aliasedMessageId, 2)
+      : null;
+
+    if (!existingMessage?.message_id) {
+      existingMessage = await this.findMessageByWhatsAppIdCached(
+        accountId,
+        whatsappMessageId,
+        key
+      );
+    }
+
+    if (!existingMessage?.message_id) {
+      return null;
+    }
+
+    await this.messageStatusPendingService.setInternalMessageIdAlias(
+      accountId,
+      whatsappMessageId,
+      existingMessage.message_id
+    );
+
+    return this.markMessageAsNotSent(accountId, existingMessage.message_id);
+  }
+
   async isMessageAlreadySentByMessageId(messageId: string): Promise<boolean> {
     const normalizedMessageId = messageId?.trim();
     if (!normalizedMessageId) {
@@ -527,8 +567,7 @@ export class MessageStatusService {
       );
 
       const hit = result?.hits?.hits?.[0] as
-        | ElasticHit<IChatMessage>
-        | undefined;
+        ElasticHit<IChatMessage> | undefined;
       const message = hit?._source ?? null;
       this.recordCircuitSuccess();
       return {

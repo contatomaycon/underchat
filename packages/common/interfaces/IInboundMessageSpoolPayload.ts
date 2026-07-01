@@ -1,6 +1,7 @@
 import { IUpsertMessage } from './IUpsertMessage';
 
-export type InboundMessageSpoolProvider = 'baileys' | 'wwebjs' | 'whatsmeow';
+export type InboundMessageSpoolProvider =
+  'baileys' | 'wwebjs' | 'whatsmeow' | 'official_whatsapp';
 
 export interface IInboundMessageSpoolPayload {
   provider: InboundMessageSpoolProvider;

@@ -39,6 +39,18 @@ import { withLock } from '@core/common/functions/withLock';
 import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
 import type { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EMessageType } from '@core/common/enums/EMessageType';
+import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { ChatMessageService } from '@core/services/chatMessage.service';
+import { PasswordEncryptorService } from '@core/services/passwordEncryptor.service';
+import { MetaWhatsappEmbeddedService } from '@core/services/metaWhatsappEmbedded.service';
+import { OfficialWhatsappTemplateService } from '@core/services/officialWhatsappTemplate.service';
+import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
+import {
+  IOfficialWhatsappTemplate,
+  IOfficialWhatsappTemplateMessage,
+} from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 type StartChatWithContactExistingInChatBehavior =
   'error' | 'reuse_and_takeover';
@@ -76,6 +88,16 @@ export class StartChatWithContactUseCase {
     private readonly attendanceInactivityService: AttendanceInactivityService,
     @inject(PushNotificationService)
     _pushNotificationService: PushNotificationService,
+    @inject(ChatMessageService)
+    private readonly chatMessageService: ChatMessageService,
+    @inject(PasswordEncryptorService)
+    private readonly passwordEncryptorService: PasswordEncryptorService,
+    @inject(MetaWhatsappEmbeddedService)
+    private readonly metaWhatsappEmbeddedService: MetaWhatsappEmbeddedService,
+    @inject(OfficialWhatsappTemplateService)
+    private readonly officialWhatsappTemplateService: OfficialWhatsappTemplateService,
+    @inject(WorkerWhatsappOfficialConnectionRepository)
+    private readonly workerWhatsappOfficialConnectionRepository: WorkerWhatsappOfficialConnectionRepository,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -107,6 +129,12 @@ export class StartChatWithContactUseCase {
       body.worker_id,
       body.sector_id
     );
+    const workerType = await this.workerService.viewWorkerType(
+      accountId,
+      body.worker_id
+    );
+    const isOfficialWorker =
+      workerType?.worker_type_id === EWorkerType.whatsapp;
 
     const workerConfigFields =
       await this.workerService.viewWorkerConfigFieldsByWorkerId(body.worker_id);
@@ -120,6 +148,10 @@ export class StartChatWithContactUseCase {
       }
     }
 
+    const officialTemplate = isOfficialWorker
+      ? await this.resolveOfficialTemplate(t, body.worker_id, body)
+      : null;
+
     const remoteJid = this.resolveContactRemoteJid(contactData);
     const lockKey = buildChatIdentityLockKey(
       accountId,
@@ -130,7 +162,7 @@ export class StartChatWithContactUseCase {
       }
     );
 
-    return withLock(
+    const chat = await withLock(
       this.redis,
       lockKey,
       async () => {
@@ -186,6 +218,141 @@ export class StartChatWithContactUseCase {
       },
       { ttlMs: 30_000, retryMs: 100, maxWaitMs: 30_000 }
     );
+
+    if (isOfficialWorker && officialTemplate) {
+      await this.publishOfficialOpeningTemplate(chat, officialTemplate);
+    }
+
+    return chat;
+  }
+
+  private async resolveOfficialTemplate(
+    t: TFunction<'translation', undefined>,
+    workerId: string,
+    body: StartChatWithContactRequest
+  ): Promise<IOfficialWhatsappTemplateMessage> {
+    if (!body.official_template) {
+      throw new Error(t('official_template_required_for_opening'));
+    }
+
+    const connection =
+      await this.workerWhatsappOfficialConnectionRepository.findActiveByWorkerId(
+        workerId
+      );
+
+    if (!connection) {
+      throw new Error(t('official_opening_connection_not_found'));
+    }
+
+    const accessToken = this.passwordEncryptorService.decrypt(
+      connection.access_token_encrypted
+    );
+    const approvedTemplates =
+      await this.metaWhatsappEmbeddedService.listApprovedMessageTemplates({
+        apiVersion: connection.api_version,
+        accessToken,
+        wabaId: connection.waba_id,
+      });
+    const templates =
+      this.officialWhatsappTemplateService.normalizeTemplates(
+        approvedTemplates
+      );
+    const template = this.officialWhatsappTemplateService.findTemplate(
+      templates,
+      body.official_template
+    );
+
+    if (!template) {
+      throw new Error(t('official_template_not_approved_or_not_found'));
+    }
+
+    let variables: IOfficialWhatsappTemplateMessage['variables'];
+    try {
+      variables = this.officialWhatsappTemplateService.validateVariableValues({
+        template,
+        values: body.official_template.variables,
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === 'official_template_variables_required'
+      ) {
+        throw new Error(t('official_template_variables_required'));
+      }
+
+      throw error;
+    }
+
+    return this.buildOfficialTemplateMessage(template, variables);
+  }
+
+  private buildOfficialTemplateMessage(
+    template: IOfficialWhatsappTemplate,
+    variables: IOfficialWhatsappTemplateMessage['variables']
+  ): IOfficialWhatsappTemplateMessage {
+    return {
+      name: template.name,
+      language: template.language,
+      status: template.status,
+      category: template.category,
+      components: template.components,
+      variables,
+      preview: template.preview,
+    };
+  }
+
+  private async publishOfficialOpeningTemplate(
+    chat: IChat,
+    template: IOfficialWhatsappTemplateMessage
+  ): Promise<void> {
+    const messageText = this.officialWhatsappTemplateService.buildPreviewText(
+      {
+        id: null,
+        name: template.name,
+        language: template.language,
+        status: 'APPROVED',
+        category: template.category ?? null,
+        components: template.components ?? [],
+        variables:
+          template.components?.flatMap((component) => [
+            ...(component.variables ?? []),
+            ...(component.buttons?.flatMap(
+              (button) => button.variables ?? []
+            ) ?? []),
+          ]) ?? [],
+        preview: template.preview ?? {},
+      },
+      template.variables
+    );
+
+    await this.chatMessageService.publishPreparedMessage({
+      message_id: uuidv7(),
+      chat_id: chat.chat_id,
+      message_key: {
+        remote_jid: chat.message_key?.remote_jid ?? null,
+        remote_jid_alt: chat.message_key?.remote_jid_alt ?? null,
+        is_view_once: false,
+      },
+      type_user: ETypeUserChat.operator,
+      account: chat.account,
+      worker: chat.worker,
+      user: chat.user ?? null,
+      phone: chat.phone,
+      summary: {
+        is_sent: false,
+        is_delivered: false,
+        is_seen: false,
+        is_sent_to_internal: true,
+      },
+      deleted: false,
+      has_quoted: false,
+      content: {
+        type: EMessageType.official_template,
+        message: messageText,
+        official_template: template,
+      },
+      date: new Date().toISOString(),
+    });
   }
 
   private resolveValidationRemoteJid(

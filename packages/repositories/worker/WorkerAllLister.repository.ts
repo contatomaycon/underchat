@@ -5,6 +5,7 @@ import { inject, injectable } from 'tsyringe';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 @injectable()
 export class WorkerAllListerRepository {
@@ -18,6 +19,8 @@ export class WorkerAllListerRepository {
         id: worker.worker_id,
         name: worker.name,
         number: worker.number,
+        type_id: worker.worker_type_id,
+        is_official: eq(worker.worker_type_id, EWorkerType.whatsapp),
         status: {
           id: workerStatus.worker_status_id,
         },

@@ -12,6 +12,8 @@ const transferWorkerSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
   number: Type.Union([Type.String(), Type.Null()]),
+  type_id: Type.Optional(Type.String()),
+  is_official: Type.Optional(Type.Boolean()),
   status: Type.Union([workerStatusSchema, Type.Null()]),
 });
 
