@@ -388,6 +388,7 @@ export class OfficialWhatsappMessageSendConsume {
         phoneNumberId: connection.phone_number_id,
         to,
         mediaId,
+        voice: audio?.ptt === true,
         contextMessageId,
       });
     }

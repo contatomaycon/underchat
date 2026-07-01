@@ -68,6 +68,7 @@ function makeConsumer(overrides?: {
   sendLocationMessage?: jest.Mock;
   sendContactsMessage?: jest.Mock;
   sendReactionMessage?: jest.Mock;
+  sendAudioMessage?: jest.Mock;
   uploadMediaFromUrl?: jest.Mock;
   claimSend?: jest.Mock;
 }) {
@@ -126,6 +127,14 @@ function makeConsumer(overrides?: {
       overrides?.sendReactionMessage ??
       jest.fn(async () => ({
         message_id: 'wamid.reaction',
+        contact_wa_id: '5511999999999',
+        message_status: 'accepted',
+        raw: { messaging_product: 'whatsapp' },
+      })),
+    sendAudioMessage:
+      overrides?.sendAudioMessage ??
+      jest.fn(async () => ({
+        message_id: 'wamid.audio',
         contact_wa_id: '5511999999999',
         message_status: 'accepted',
         raw: { messaging_product: 'whatsapp' },
@@ -416,6 +425,39 @@ describe('OfficialWhatsappMessageSendConsume', () => {
       expect.objectContaining({
         messageId: 'wamid.target',
         emoji: '👍',
+      })
+    );
+  });
+
+  it('sends official ptt audio as a Meta voice message', async () => {
+    const audioMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.audio,
+        audio: {
+          url: 'http://minio.local/audio.ogg',
+          mimetype: 'audio/ogg; codecs=opus',
+          ptt: true,
+        },
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService } = makeConsumer();
+
+    await (consumer as any).processPayload(
+      audioMessage,
+      makeEnvelope(audioMessage)
+    );
+
+    expect(metaWhatsappEmbeddedService.uploadMediaFromUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'http://minio.local/audio.ogg',
+        mimetype: 'audio/ogg; codecs=opus',
+      })
+    );
+    expect(metaWhatsappEmbeddedService.sendAudioMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaId: 'meta-media-1',
+        voice: true,
       })
     );
   });

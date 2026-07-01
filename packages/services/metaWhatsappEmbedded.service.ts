@@ -566,12 +566,18 @@ export class MetaWhatsappEmbeddedService {
     phoneNumberId: string;
     to: string;
     mediaId: string;
+    voice?: boolean | null;
     contextMessageId?: string | null;
   }): Promise<MetaWhatsappMessageSendResult> {
+    const media = this.mediaPayload(input.mediaId);
+    if (input.voice === true) {
+      media.voice = true;
+    }
+
     return this.sendMediaMessage({
       ...input,
       type: 'audio',
-      media: this.mediaPayload(input.mediaId),
+      media,
     });
   }
 

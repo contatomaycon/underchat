@@ -570,12 +570,28 @@ export class BaileysIncomingMessageService {
   }
 
   private buildMessageCacheKey(key?: WAMessageKey | null): string | null {
-    if (!key?.id) return null;
+    return this.buildMessageCacheKeys(key)[0] ?? null;
+  }
 
-    const jid = normalizeJid(remoteJid(key)) || normalizeJid(remoteJidAlt(key));
-    if (!jid) return null;
+  private buildMessageCacheKeys(key?: WAMessageKey | null): string[] {
+    if (!key?.id) return [];
 
-    return `${this.MESSAGE_CACHE_PREFIX}${baileysEnvironment.baileysAccountId}:${jid}:${key.id}`;
+    const jids = [remoteJid(key), remoteJidAlt(key)]
+      .map((candidate) => normalizeJid(candidate))
+      .filter((candidate): candidate is string => Boolean(candidate));
+    if (!jids.length) return [];
+
+    const aliases = new Set<string>();
+    for (const jid of jids) {
+      for (const alias of this.resolveContactJidAliases(jid)) {
+        aliases.add(alias);
+      }
+    }
+
+    return Array.from(aliases).map(
+      (jid) =>
+        `${this.MESSAGE_CACHE_PREFIX}${baileysEnvironment.baileysAccountId}:${jid}:${key.id}`
+    );
   }
 
   private hasPollCreationMessage(
@@ -612,8 +628,8 @@ export class BaileysIncomingMessageService {
   ): Promise<void> {
     if (!this.shouldCacheMessage(m, opts?.isRetry ?? false)) return;
 
-    const cacheKey = this.buildMessageCacheKey(m.key);
-    if (!cacheKey || !m.message) return;
+    const cacheKeys = this.buildMessageCacheKeys(m.key);
+    if (!cacheKeys.length || !m.message) return;
 
     try {
       const ttlSeconds = this.hasPollCreationMessage(m.message)
@@ -621,7 +637,11 @@ export class BaileysIncomingMessageService {
         : this.MESSAGE_CACHE_TTL_SECONDS_DEFAULT;
       const encoded = proto.Message.encode(m.message).finish();
       const payload = Buffer.from(encoded).toString('base64');
-      await this.redis.set(cacheKey, payload, 'EX', ttlSeconds);
+      await Promise.all(
+        cacheKeys.map((cacheKey) =>
+          this.redis.set(cacheKey, payload, 'EX', ttlSeconds)
+        )
+      );
     } catch {}
   }
 
@@ -638,15 +658,19 @@ export class BaileysIncomingMessageService {
   async getCachedMessage(
     key: WAMessageKey
   ): Promise<proto.IMessage | undefined> {
-    const cacheKey = this.buildMessageCacheKey(key);
-    if (!cacheKey) return undefined;
+    const cacheKeys = this.buildMessageCacheKeys(key);
+    if (!cacheKeys.length) return undefined;
 
     try {
-      const payload = await this.redis.get(cacheKey);
-      if (!payload) return undefined;
+      for (const cacheKey of cacheKeys) {
+        const payload = await this.redis.get(cacheKey);
+        if (!payload) continue;
 
-      const decoded = proto.Message.decode(Buffer.from(payload, 'base64'));
-      return decoded as proto.IMessage;
+        const decoded = proto.Message.decode(Buffer.from(payload, 'base64'));
+        return decoded as proto.IMessage;
+      }
+
+      return undefined;
     } catch {
       return undefined;
     }

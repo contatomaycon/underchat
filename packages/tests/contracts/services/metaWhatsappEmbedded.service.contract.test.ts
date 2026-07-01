@@ -178,6 +178,74 @@ describe('MetaWhatsappEmbeddedService', () => {
     );
   });
 
+  it('sends audio messages as voice messages when requested', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () =>
+        JSON.stringify({
+          contacts: [{ wa_id: '5511999999999' }],
+          messages: [{ id: 'wamid.audio', message_status: 'accepted' }],
+        })
+      ),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await service.sendAudioMessage({
+      apiVersion: 'v25.0',
+      accessToken: 'token-1',
+      phoneNumberId: 'phone-1',
+      to: '5511999999999',
+      mediaId: 'media-audio-1',
+      voice: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://graph.facebook.com/v25.0/phone-1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          recipient_type: 'individual',
+          to: '5511999999999',
+          type: 'audio',
+          audio: {
+            id: 'media-audio-1',
+            voice: true,
+          },
+        }),
+      })
+    );
+  });
+
+  it('omits voice for basic audio messages', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () =>
+        JSON.stringify({
+          contacts: [{ wa_id: '5511999999999' }],
+          messages: [{ id: 'wamid.audio', message_status: 'accepted' }],
+        })
+      ),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await service.sendAudioMessage({
+      apiVersion: 'v25.0',
+      accessToken: 'token-1',
+      phoneNumberId: 'phone-1',
+      to: '5511999999999',
+      mediaId: 'media-audio-1',
+    });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = JSON.parse(String(request?.body)) as {
+      audio: Record<string, unknown>;
+    };
+
+    expect(body.audio).toEqual({ id: 'media-audio-1' });
+    expect(body.audio).not.toHaveProperty('voice');
+  });
+
   it('uploads media from a backend-readable URL before media send', async () => {
     (downloadMediaBuffer as jest.Mock).mockResolvedValue({
       buffer: Buffer.from('image-bytes'),
