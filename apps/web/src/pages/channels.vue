@@ -370,18 +370,11 @@ const openConfigDialog = (id: string) => {
 };
 
 const openMetaWhatsappMessageModelManager = () => {
-  const openedWindow = window.open(
+  window.open(
     META_WHATSAPP_MESSAGE_MODEL_MANAGER_URL,
     '_blank',
     'noopener,noreferrer'
   );
-
-  if (openedWindow) {
-    openedWindow.opener = null;
-    return;
-  }
-
-  window.location.assign(META_WHATSAPP_MESSAGE_MODEL_MANAGER_URL);
 };
 
 const isWhatsappOfficialChannel = (channel: ListWorkerResponse) =>
