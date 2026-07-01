@@ -19,6 +19,8 @@ export const summarySchema = Type.Object({
 export const workerSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
+  type_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  is_official: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
 });
 
 export const sectorSchema = Type.Object({

@@ -61,6 +61,12 @@ function makeUseCase() {
   const streamProducerService = {
     send: jest.fn(async () => undefined),
   };
+  const chatMessageService = {
+    sendMessage: jest.fn(async () => true),
+  };
+  const userService = {
+    viewUserNamePhoto: jest.fn(async () => chat.user),
+  };
   const workerService = {
     viewWorkerType: jest.fn(async () => ({
       worker_type_id: EWorkerType.whatsapp,
@@ -76,8 +82,8 @@ function makeUseCase() {
     streamProducerService as never,
     {} as never,
     {} as never,
-    {} as never,
-    {} as never,
+    chatMessageService as never,
+    userService as never,
     { resetOnOperatorMessage: jest.fn() } as never,
     workerService as never
   );
@@ -99,6 +105,7 @@ function makeUseCase() {
     kafkaBaileysQueueService,
     kafkaServiceQueueService,
     streamProducerService,
+    chatMessageService,
   };
 }
 
@@ -161,6 +168,32 @@ describe('ChatMessageCreatorUseCase official actions', () => {
     ).rejects.toThrow('whatsapp_official_delete_message_not_supported');
 
     expect(markMessageAsDeleted).not.toHaveBeenCalled();
+    expect(streamProducerService.send).not.toHaveBeenCalled();
+  });
+
+  it('blocks official audio view-once before sending or saving the message', async () => {
+    const { useCase, streamProducerService, chatMessageService } =
+      makeUseCase();
+    (useCase as any).getChat = jest.fn(async () => chat);
+
+    await expect(
+      useCase.execute(
+        ((key: string) => key) as never,
+        chat.account.id,
+        { chat_id: chat.chat_id },
+        {
+          type: EMessageType.audio,
+          audio_view_once: 'true',
+          hash: 'hash-1',
+        },
+        ETypeUserChat.operator,
+        'user-1',
+        [],
+        []
+      )
+    ).rejects.toThrow('whatsapp_official_view_once_not_supported');
+
+    expect(chatMessageService.sendMessage).not.toHaveBeenCalled();
     expect(streamProducerService.send).not.toHaveBeenCalled();
   });
 });

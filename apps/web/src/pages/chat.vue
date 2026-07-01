@@ -51,7 +51,9 @@ import { EColor } from '@core/common/enums/EColor';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { EChatUserStatus } from '@core/common/enums/EChatUserStatus';
 import { EChatbotType } from '@core/common/enums/EChatbotType';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import type { TransferWorker } from '@core/schema/chat/listTransferOptions/response.schema';
+import type { ListChatWorkersResponse } from '@core/schema/chat/listChatWorkers/response.schema';
 import {
   IChatMessage,
   IQuotedMessage,
@@ -254,7 +256,8 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 
       reject(new Error('Invalid image preview'));
     };
-    reader.onerror = () => reject(reader.error ?? new Error('Image read error'));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('Image read error'));
     reader.readAsDataURL(file);
   });
 
@@ -379,8 +382,43 @@ const attendanceInactivityDisabledForActiveChat = ref(false);
 const isLoadingAttendanceInactivityState = ref(false);
 const isUpdatingAttendanceInactivityState = ref(false);
 const operatorReplyPendingNow = ref(Date.now());
+const chatWorkers = ref<ListChatWorkersResponse>([]);
 let operatorReplyPendingTicker: ReturnType<typeof setInterval> | null = null;
 const OPERATOR_REPLY_PENDING_ALERT_DEFAULT_TIME_MINUTES = 15;
+
+const isOfficialWorker = (
+  worker?: {
+    id?: string | null;
+    type_id?: string | null;
+    is_official?: boolean | null;
+  } | null
+): boolean => {
+  return (
+    worker?.is_official === true || worker?.type_id === EWorkerType.whatsapp
+  );
+};
+
+const isOfficialActiveChat = computed(() => {
+  const activeWorker = chatStore.activeChat?.worker;
+  if (!activeWorker?.id) {
+    return false;
+  }
+
+  if (isOfficialWorker(activeWorker)) {
+    return true;
+  }
+
+  const workerFromList = chatWorkers.value.find(
+    (worker) => worker.id === activeWorker.id
+  );
+  return isOfficialWorker(workerFromList);
+});
+
+const canUseAudioViewOnce = computed(() => !isOfficialActiveChat.value);
+
+const normalizeAudioViewOnceForActiveChat = (viewOnce: boolean): boolean => {
+  return canUseAudioViewOnce.value && viewOnce;
+};
 
 const operatorReplyPendingSince = computed(() => {
   return chatStore.activeChat?.summary?.operator_reply_pending_since ?? null;
@@ -1165,6 +1203,11 @@ watch(
   { immediate: true }
 );
 
+const loadChatWorkersForOfficialFallback = async () => {
+  const workers = await chatStore.listChatWorkers();
+  chatWorkers.value = workers ?? [];
+};
+
 watch(
   () => chatStore.activeChat?.chat_id,
   () => {
@@ -1175,6 +1218,19 @@ watch(
     isLoadingAttendanceInactivityState.value = false;
     isUpdatingAttendanceInactivityState.value = false;
   }
+);
+
+watch(
+  canUseAudioViewOnce,
+  (canUseViewOnce) => {
+    if (canUseViewOnce) {
+      return;
+    }
+
+    audioViewOnce.value = false;
+    audioPendingViewOnce.value = false;
+  },
+  { immediate: true }
 );
 
 const loadTransferChannels = async () => {
@@ -2590,6 +2646,7 @@ const sendAudioMessage = async (
     return false;
   }
 
+  const shouldSendViewOnce = normalizeAudioViewOnceForActiveChat(viewOnce);
   const hash = createMessageHash();
   const replyId =
     replyMessage?.message_id ?? chatStore.messageReply?.message_id ?? null;
@@ -2626,7 +2683,7 @@ const sendAudioMessage = async (
       size: blob.size,
       duration: duration ?? null,
       extension: extensionFromMime,
-      view_once: viewOnce ? true : undefined,
+      view_once: shouldSendViewOnce ? true : undefined,
     },
   };
 
@@ -2634,7 +2691,7 @@ const sendAudioMessage = async (
 
   const formData = createAudioFormData(
     { blob, fileName, mimeType },
-    viewOnce,
+    shouldSendViewOnce,
     duration,
     hash,
     true,
@@ -3790,7 +3847,9 @@ const handleRecorderStop = async (
   const recorder = capturedRecorder ?? mediaRecorderRef.value;
   const chunks = capturedChunks ?? audioChunksRef.value;
   const saveRecording = capturedShouldPersist ?? shouldPersistRecording.value;
-  const viewOnce = capturedViewOnce ?? audioPendingViewOnce.value;
+  const viewOnce = normalizeAudioViewOnceForActiveChat(
+    capturedViewOnce ?? audioPendingViewOnce.value
+  );
   const elapsedMs = capturedElapsedMs ?? audioRecordingElapsedMs.value;
 
   if (isCurrentSession()) {
@@ -3982,7 +4041,9 @@ const finalizeAudioRecording = () => {
   audioRecordingElapsedMs.value = 0;
 
   shouldPersistRecording.value = true;
-  audioPendingViewOnce.value = audioViewOnce.value;
+  audioPendingViewOnce.value = normalizeAudioViewOnceForActiveChat(
+    audioViewOnce.value
+  );
   stopAudioRecordingInternal(savedMsg, savedReply);
 };
 
@@ -4022,6 +4083,12 @@ const togglePauseAudioRecording = async () => {
 };
 
 const toggleViewOnceAudio = () => {
+  if (!canUseAudioViewOnce.value) {
+    audioViewOnce.value = false;
+    audioPendingViewOnce.value = false;
+    return;
+  }
+
   audioViewOnce.value = !audioViewOnce.value;
 };
 
@@ -5714,10 +5781,13 @@ const retryAudioMessage = async (
         content.audio!.name || `audio.${content.audio!.extension || 'ogg'}`,
       mimeType: content.audio!.mimetype || 'audio/ogg',
     };
+    const shouldSendViewOnce = normalizeAudioViewOnceForActiveChat(
+      content.audio!.view_once ?? false
+    );
 
     const formData = createAudioFormData(
       audioData,
-      content.audio!.view_once ?? false,
+      shouldSendViewOnce,
       content.audio!.duration ?? null,
       hash,
       content.audio!.ptt ?? false
@@ -6198,6 +6268,8 @@ onMounted(async () => {
   operatorReplyPendingTicker = setInterval(() => {
     operatorReplyPendingNow.value = Date.now();
   }, 30000);
+
+  await loadChatWorkersForOfficialFallback();
 
   const routeChatId = resolveRouteChatId();
   if (routeChatId) {
@@ -7270,6 +7342,7 @@ onBeforeUnmount(() => {
               </IconBtn>
 
               <IconBtn
+                v-if="canUseAudioViewOnce"
                 class="record-action view-once-toggle flex-shrink-0"
                 :class="{ 'is-active': audioViewOnce }"
                 aria-label="Visualização única"

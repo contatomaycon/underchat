@@ -36,6 +36,8 @@ interface ISummary {
 interface IWorker {
   id: string;
   name: string;
+  type_id?: string | null;
+  is_official?: boolean | null;
 }
 
 export interface IQuotedMessage {

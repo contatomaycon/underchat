@@ -135,6 +135,11 @@ export class StartChatWithContactUseCase {
     );
     const isOfficialWorker =
       workerType?.worker_type_id === EWorkerType.whatsapp;
+    requiredData.worker = {
+      ...requiredData.worker,
+      type_id: workerType?.worker_type_id ?? null,
+      is_official: isOfficialWorker,
+    };
 
     const workerConfigFields =
       await this.workerService.viewWorkerConfigFieldsByWorkerId(body.worker_id);
@@ -750,6 +755,8 @@ export class StartChatWithContactUseCase {
       worker: {
         id: requiredData.worker.id,
         name: requiredData.worker.name,
+        type_id: requiredData.worker.type_id ?? null,
+        is_official: requiredData.worker.is_official ?? null,
       },
       sector: requiredData.sector || existingChat.sector,
       user: userData
@@ -815,6 +822,8 @@ export class StartChatWithContactUseCase {
       worker: {
         id: requiredData.worker.id,
         name: requiredData.worker.name,
+        type_id: requiredData.worker.type_id ?? null,
+        is_official: requiredData.worker.is_official ?? null,
       },
       sector: requiredData.sector,
       user: requiredData.user

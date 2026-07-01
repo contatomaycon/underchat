@@ -1505,6 +1505,9 @@ const isUnsupportedProviderMessage = (message: ListMessageResult): boolean =>
   isOfficialUnsupportedMessage(message) ||
   isNonOfficialUnsupportedMessage(message);
 
+const canShowMessageControls = (message: ListMessageResult): boolean =>
+  canInteractWithMessage(message) && !isUnsupportedProviderMessage(message);
+
 const shouldRenderAsClientBubble = (message: ListMessageResult): boolean =>
   isTypeUser(message) || isNonOfficialUnsupportedMessage(message);
 
@@ -3717,7 +3720,7 @@ onUnmounted(() => {
                 v-if="
                   hoveredMessageId === item.message.message_id &&
                   !item.readonly &&
-                  canInteractWithMessage(item.message) &&
+                  canShowMessageControls(item.message) &&
                   showReactionPicker !== item.message.message_id &&
                   !isQueueStatus &&
                   item.message.content?.type !== EMessageType.annotation &&
@@ -3767,7 +3770,10 @@ onUnmounted(() => {
                   getChatContentPositionClass(item.message),
                   {
                     'is-deleted': item.message.deleted,
-                    'has-actions': !item.message.deleted && !item.readonly,
+                    'has-actions':
+                      !item.message.deleted &&
+                      !item.readonly &&
+                      !isUnsupportedProviderMessage(item.message),
                     'has-contact-card':
                       item.message.content?.type ===
                         EMessageType.contact_card ||
@@ -3798,6 +3804,7 @@ onUnmounted(() => {
                     (canInteractWithMessage(item.message) ||
                       (item.message.deleted &&
                         hasMessageVersions(item.message))) &&
+                    !isUnsupportedProviderMessage(item.message) &&
                     !item.readonly &&
                     !isQueueStatus &&
                     item.message.content?.type !== EMessageType.annotation &&
@@ -5487,7 +5494,7 @@ onUnmounted(() => {
                   <div
                     v-if="
                       showReactionPicker === item.message.message_id &&
-                      canInteractWithMessage(item.message) &&
+                      canShowMessageControls(item.message) &&
                       !isQueueStatus &&
                       item.message.content?.type !== EMessageType.system
                     "

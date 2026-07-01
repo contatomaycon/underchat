@@ -24,6 +24,8 @@ export class ChatWorkersListerUseCase {
       id: worker.id,
       name: worker.name,
       number: worker.number,
+      type_id: worker.type_id ?? null,
+      is_official: worker.is_official ?? null,
     }));
   }
 }

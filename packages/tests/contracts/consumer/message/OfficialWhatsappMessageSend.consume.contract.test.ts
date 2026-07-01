@@ -420,6 +420,47 @@ describe('OfficialWhatsappMessageSendConsume', () => {
     );
   });
 
+  it('marks official audio view-once messages as not sent without uploading media', async () => {
+    const consoleSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const audioMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.audio,
+        audio: {
+          url: 'http://minio.local/audio.ogg',
+          mimetype: 'audio/ogg',
+          view_once: true,
+        },
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService, messageStatusService } =
+      makeConsumer();
+
+    try {
+      await (consumer as any).processRunnerPayload(
+        'official.whatsapp.send.message',
+        audioMessage,
+        {
+          partition: 0,
+          offset: 11,
+          kafkaKey: 'account-1:chat-1',
+        }
+      );
+
+      expect(messageStatusService.markMessageAsNotSent).toHaveBeenCalledWith(
+        'account-1',
+        'internal-message-1'
+      );
+      expect(
+        metaWhatsappEmbeddedService.uploadMediaFromUrl
+      ).not.toHaveBeenCalled();
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
   it('marks unsupported official message types as not sent', async () => {
     const consoleSpy = jest
       .spyOn(console, 'error')

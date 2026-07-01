@@ -20,6 +20,8 @@ export interface ChatSummary {
 export interface ChatWorker {
   id: string;
   name: string;
+  type_id?: string | null;
+  is_official?: boolean | null;
 }
 
 export interface ChatUser {

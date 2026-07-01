@@ -53,6 +53,8 @@ export interface ChatWorker {
   id: string;
   name: string;
   number: string | null;
+  type_id?: string | null;
+  is_official?: boolean | null;
 }
 
 export interface ChatUser {
