@@ -723,20 +723,26 @@ export class OfficialWhatsappWebhookConsume {
       };
     }
 
+    const unsupported = this.toRecord(message.unsupported);
+    const unsupportedType =
+      this.toNonEmptyString(unsupported?.type) ?? metaType;
+    const unsupportedMessage =
+      'Mensagem não suportada. Para visualizar este conteúdo, abra a conversa diretamente no dispositivo do WhatsApp.';
+
     official.unsupported = {
-      type: metaType,
+      type: unsupportedType,
       reason: 'unsupported_meta_message_type',
     };
 
     return {
-      type: EMessageType.system,
+      type: EMessageType.text,
       content: {
-        type: EMessageType.system,
-        message: `[Mensagem nao suportada: ${metaType}]`,
+        type: EMessageType.text,
+        message: unsupportedMessage,
         ...baseContent,
         official,
       },
-      rawMessage: { conversation: `[Mensagem nao suportada: ${metaType}]` },
+      rawMessage: { conversation: unsupportedMessage },
     };
   }
 

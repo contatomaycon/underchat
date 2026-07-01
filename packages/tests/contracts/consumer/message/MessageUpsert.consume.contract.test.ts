@@ -1253,6 +1253,59 @@ describe('MessageUpsertConsume edit fallback', () => {
     expect(createdMessage.sent_from_platform).toBe(false);
   });
 
+  it('hydrates official quoted messages from the local message history', async () => {
+    const existingMessage = makeExistingMessage();
+    const officialMessageId =
+      'wamid.HBgMNTU2MTk1OTk5MDQwFQIAEhgUM0FFQjlDMDAwNTdBM0NDRDdFRDYA';
+    const { consumer, chat, chatService, elasticDatabaseService } =
+      makeConsumer();
+    elasticDatabaseService.select.mockImplementation(async (_index, query) =>
+      queryHasExactMessageKeyId(query, targetMessageId)
+        ? elasticHit(existingMessage)
+        : emptyElasticResult
+    );
+
+    const upsert: IUpsertMessage = {
+      ...makeTextUpsert('Teste'),
+      source_provider: 'official_whatsapp',
+      has_quoted: true,
+      message: {
+        ...makeTextUpsert('Teste').message,
+        key: {
+          ...makeTextUpsert('Teste').message.key,
+          id: officialMessageId,
+        },
+      },
+      content: {
+        type: EMessageType.text,
+        message: 'Teste',
+        message_quoted_id: targetMessageId,
+      },
+    };
+
+    const result = await (consumer as any).createChatMessage(chat, upsert);
+
+    expect(result.handled).toBe(true);
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+
+    const createdMessage = chatService.createMessageIdempotent.mock
+      .calls[0][0] as IChatMessage;
+    expect(createdMessage.has_quoted).toBe(true);
+    expect(createdMessage.content?.message_quoted_id).toBe(targetMessageId);
+    expect(createdMessage.content?.quoted).toEqual(
+      expect.objectContaining({
+        message: 'texto anterior',
+        type: EMessageType.text,
+        key: expect.objectContaining({
+          id: targetMessageId,
+          remote_jid: phoneJid,
+          remote_jid_alt: lidJid,
+          from_me: false,
+        }),
+      })
+    );
+  });
+
   it('keeps normal edit behavior when the target message exists', async () => {
     const existingMessage = makeExistingMessage();
     const { consumer, chat, chatService, elasticDatabaseService } =

@@ -3404,9 +3404,25 @@ export class MessageUpsertConsume {
           getChat.chat_id,
           messageQuotedId
         );
+      } else if (content.message_quoted_id) {
+        const quoted = this.buildQuotedMessageFromQuotedId(
+          data,
+          content.message_quoted_id
+        );
+        const enriched = await this.enrichQuotedMessageContent(
+          quoted,
+          data.account_id,
+          getChat.chat_id,
+          content.message_quoted_id
+        );
+
+        if (enriched) {
+          content.quoted = quoted;
+        }
       }
 
-      const hasQuotedFlag = data.has_quoted || !!content.quoted;
+      const hasQuotedFlag =
+        data.has_quoted || !!content.quoted || !!content.message_quoted_id;
 
       await this.updateChatNameIfNeeded(getChat, data);
 
@@ -3781,13 +3797,97 @@ export class MessageUpsertConsume {
     }
   }
 
+  private buildQuotedMessageFromQuotedId(
+    data: IUpsertMessage,
+    messageQuotedId: string
+  ): IQuotedMessage {
+    return {
+      key: {
+        id: messageQuotedId,
+        remote_jid: remoteJid(data.message?.key),
+        remote_jid_alt: remoteJidAlt(data.message?.key),
+        from_me: null,
+        participant: data.message?.key?.participant ?? null,
+        participant_alt: data.message?.key?.participantAlt ?? null,
+        addressing_mode: data.message?.key?.addressingMode ?? null,
+        is_view_once: false,
+      },
+      message: null,
+      type: null,
+    };
+  }
+
+  private hydrateQuotedFromOriginalMessage(
+    quoted: IQuotedMessage,
+    originalMessage: IChatMessage
+  ): void {
+    const originalContent = originalMessage.content;
+    if (!originalContent) return;
+
+    quoted.key = {
+      ...quoted.key,
+      remote_jid:
+        quoted.key.remote_jid ?? originalMessage.message_key?.remote_jid,
+      remote_jid_alt:
+        quoted.key.remote_jid_alt ??
+        originalMessage.message_key?.remote_jid_alt,
+      from_me: quoted.key.from_me ?? originalMessage.message_key?.from_me,
+      participant:
+        quoted.key.participant ?? originalMessage.message_key?.participant,
+      participant_alt:
+        quoted.key.participant_alt ??
+        originalMessage.message_key?.participant_alt,
+      addressing_mode:
+        quoted.key.addressing_mode ??
+        originalMessage.message_key?.addressing_mode,
+      is_view_once:
+        quoted.key.is_view_once ?? originalMessage.message_key?.is_view_once,
+    };
+
+    if (!quoted.type && originalContent.type) {
+      quoted.type = originalContent.type;
+    }
+
+    if (!quoted.message && originalContent.message) {
+      quoted.message = originalContent.message;
+    }
+
+    if (!quoted.image && originalContent.image) {
+      quoted.image = { ...originalContent.image };
+    }
+
+    if (!quoted.video && originalContent.video) {
+      quoted.video = { ...originalContent.video };
+    }
+
+    if (!quoted.document && originalContent.document) {
+      quoted.document = { ...originalContent.document };
+    }
+
+    if (!quoted.audio && originalContent.audio) {
+      quoted.audio = { ...originalContent.audio };
+    }
+
+    if (!quoted.sticker && originalContent.sticker) {
+      quoted.sticker = { ...originalContent.sticker };
+    }
+
+    if (!quoted.location && originalContent.location) {
+      quoted.location = { ...originalContent.location };
+    }
+
+    if (!quoted.contact && originalContent.contact) {
+      quoted.contact = { ...originalContent.contact };
+    }
+  }
+
   private async enrichQuotedMessageContent(
     quoted: IQuotedMessage,
     accountId: string,
     chatId: string,
     messageQuotedId: string
-  ): Promise<void> {
-    if (!quoted || !messageQuotedId) return;
+  ): Promise<boolean> {
+    if (!quoted || !messageQuotedId) return false;
 
     try {
       const originalMessage = await this.findMessageByKeyId(
@@ -3797,18 +3897,21 @@ export class MessageUpsertConsume {
         quoted.key
       );
 
-      if (!originalMessage?.content) return;
+      if (!originalMessage?.content) return false;
 
+      this.hydrateQuotedFromOriginalMessage(quoted, originalMessage);
       this.enrichSticker(quoted, originalMessage.content);
       this.enrichImage(quoted, originalMessage.content);
       this.enrichVideo(quoted, originalMessage.content);
       this.enrichDocument(quoted, originalMessage.content);
       this.enrichAudio(quoted, originalMessage.content);
+      return true;
     } catch (error) {
       console.error(
         `[MessageUpsert] Failed to enrich quoted message content for ${messageQuotedId}:`,
         error instanceof Error ? error.message : error
       );
+      return false;
     }
   }
 

@@ -180,6 +180,61 @@ function makeContactMessageEvent(): IMetaWhatsappWebhookEvent {
   };
 }
 
+function makeUnsupportedMessageEvent(): IMetaWhatsappWebhookEvent {
+  return {
+    received_at: '2026-07-01T15:30:38.755Z',
+    raw_body_sha256: 'hash',
+    signature_header: 'sha256=signature',
+    payload: {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'waba-1',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: {
+                  display_phone_number: '556192037138',
+                  phone_number_id: 'phone-number-1',
+                },
+                contacts: [
+                  {
+                    profile: { name: 'Maycon Douglas' },
+                    wa_id: '556195999040',
+                    user_id: 'BR.1020703283800263',
+                  },
+                ],
+                messages: [
+                  {
+                    from: '556195999040',
+                    from_user_id: 'BR.1020703283800263',
+                    id: 'wamid.unsupported-1',
+                    timestamp: '1782919838',
+                    errors: [
+                      {
+                        code: 131051,
+                        title: 'Message type unknown',
+                        message: 'Message type unknown',
+                        error_data: {
+                          details: 'Message type is currently not supported.',
+                        },
+                      },
+                    ],
+                    type: 'unsupported',
+                    unsupported: { type: 'video_note' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
 describe('OfficialWhatsappWebhookConsume', () => {
   it('publishes official Meta messages and statuses into the existing chat pipeline', async () => {
     const { consumer, streamProducerService, repository, redis } =
@@ -280,6 +335,52 @@ describe('OfficialWhatsappWebhookConsume', () => {
             photo: null,
           }),
           contacts: null,
+        }),
+      }),
+      expect.any(String)
+    );
+  });
+
+  it('maps unsupported official Meta messages as inbound text messages', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const event = makeUnsupportedMessageEvent();
+    const unsupportedMessage =
+      'Mensagem não suportada. Para visualizar este conteúdo, abra a conversa diretamente no dispositivo do WhatsApp.';
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert.message',
+      expect.objectContaining({
+        account_id: 'account-1',
+        worker_id: 'worker-1',
+        source_provider: 'official_whatsapp',
+        type: EMessageType.text,
+        message: expect.objectContaining({
+          key: expect.objectContaining({
+            id: 'wamid.unsupported-1',
+            remoteJid: '556195999040@s.whatsapp.net',
+            fromMe: false,
+          }),
+          message: { conversation: unsupportedMessage },
+        }),
+        content: expect.objectContaining({
+          type: EMessageType.text,
+          message: unsupportedMessage,
+          official: expect.objectContaining({
+            type: 'unsupported',
+            unsupported: expect.objectContaining({
+              type: 'video_note',
+              reason: 'unsupported_meta_message_type',
+            }),
+          }),
         }),
       }),
       expect.any(String)

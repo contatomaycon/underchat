@@ -564,6 +564,8 @@ onBeforeUnmount(() => {
 
 .chat {
   --chat-attendant-label-size: 28px;
+  --chat-pin-action-size: 68px;
+  --chat-pin-button-size: 32px;
   border-radius: vuetify.$border-radius-root;
   padding-block: 16px;
   padding-inline: 12px;
@@ -661,7 +663,7 @@ onBeforeUnmount(() => {
   z-index: 8;
   display: grid;
   place-items: center;
-  inline-size: 40px;
+  inline-size: var(--chat-pin-action-size);
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
@@ -700,11 +702,11 @@ onBeforeUnmount(() => {
 .chat-pin-btn {
   position: relative;
   z-index: 1;
-  inline-size: 24px !important;
-  block-size: 24px !important;
-  min-inline-size: 24px !important;
+  inline-size: var(--chat-pin-button-size) !important;
+  block-size: var(--chat-pin-button-size) !important;
+  min-inline-size: var(--chat-pin-button-size) !important;
   border: 1px solid rgba(var(--v-theme-primary), 0.18);
-  border-radius: 8px !important;
+  border-radius: 10px !important;
   color: rgb(var(--v-theme-primary));
   background-color: rgba(var(--v-theme-surface), 0.96) !important;
   pointer-events: auto;

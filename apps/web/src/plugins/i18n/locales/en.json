@@ -480,6 +480,7 @@
   "official_whatsapp_button": "Button",
   "official_whatsapp_order": "Order",
   "official_whatsapp_unsupported": "Unsupported message",
+  "official_whatsapp_unsupported_hint": "Open the WhatsApp conversation to view this content.",
   "official_whatsapp_echo": "Sent from WhatsApp Business",
   "official_whatsapp_referral": "Conversation source",
   "type": "Type",

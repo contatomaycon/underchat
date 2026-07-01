@@ -1483,6 +1483,12 @@ const getOfficialMetadataTitle = (
   return null;
 };
 
+const isOfficialUnsupportedMessage = (message: ListMessageResult): boolean =>
+  Boolean(getOfficialMetadata(message)?.unsupported);
+
+const getOfficialUnsupportedDescription = (): string =>
+  t('official_whatsapp_unsupported_hint');
+
 const getOfficialMetadataDescription = (
   message: ListMessageResult
 ): string | null => {
@@ -1495,7 +1501,6 @@ const getOfficialMetadataDescription = (
     official.button?.text ||
     official.button?.payload ||
     official.order?.text ||
-    official.unsupported?.type ||
     officialReferralText(official) ||
     null
   );
@@ -3614,11 +3619,15 @@ onUnmounted(() => {
                       item.message.content?.type ===
                         EMessageType.contact_card ||
                       item.message.content?.type === EMessageType.contacts,
+                    'has-official-unsupported': isOfficialUnsupportedMessage(
+                      item.message
+                    ),
                   },
                 ]"
                 :style="{
-                  backgroundColor:
-                    item.message.content?.type === EMessageType.annotation
+                  backgroundColor: isOfficialUnsupportedMessage(item.message)
+                    ? undefined
+                    : item.message.content?.type === EMessageType.annotation
                       ? 'rgb(255, 243, 205)'
                       : item.message.content?.type === EMessageType.system
                         ? systemMessageBackground
@@ -4269,7 +4278,24 @@ onUnmounted(() => {
                   </div>
 
                   <div
-                    v-if="shouldShowOfficialMetadata(item.message)"
+                    v-if="isOfficialUnsupportedMessage(item.message)"
+                    class="official-unsupported-card"
+                  >
+                    <div class="official-unsupported-card__icon">
+                      <VIcon size="19">tabler-alert-circle</VIcon>
+                    </div>
+                    <div class="official-unsupported-card__body">
+                      <span class="official-unsupported-card__title">
+                        {{ t('official_whatsapp_unsupported') }}
+                      </span>
+                      <span class="official-unsupported-card__description">
+                        {{ getOfficialUnsupportedDescription() }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    v-else-if="shouldShowOfficialMetadata(item.message)"
                     class="official-message-meta"
                     :class="
                       !isTypeUser(item.message)
@@ -5117,7 +5143,8 @@ onUnmounted(() => {
                       item.message.content?.type !== EMessageType.contacts &&
                       item.message.content?.type !== EMessageType.system &&
                       !item.message.message_key?.is_view_once &&
-                      !item.message.content?.template
+                      !item.message.content?.template &&
+                      !isOfficialUnsupportedMessage(item.message)
                     "
                     class="d-flex align-center"
                   >
@@ -6144,6 +6171,24 @@ onUnmounted(() => {
         padding-bottom: 8px !important;
         box-shadow: none !important;
         background: transparent !important;
+      }
+
+      &.has-official-unsupported {
+        min-width: 232px;
+        max-width: 318px;
+        padding: 10px 12px 28px !important;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        background: linear-gradient(135deg, #fff 0%, #f8fafc 100%) !important;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08) !important;
+
+        &.chat-right {
+          border-color: rgba(18, 140, 74, 0.22);
+          background: linear-gradient(
+            135deg,
+            #e8ffe7 0%,
+            #d7f8d0 100%
+          ) !important;
+        }
       }
 
       p {
@@ -8099,6 +8144,45 @@ onUnmounted(() => {
   font-size: 0.73rem;
   line-height: 1.25;
   opacity: 0.78;
+}
+
+.official-unsupported-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.official-unsupported-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 8px;
+  color: rgb(var(--v-theme-warning));
+  background: rgba(var(--v-theme-warning), 0.12);
+}
+
+.official-unsupported-card__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: 1px;
+}
+
+.official-unsupported-card__title {
+  color: rgba(var(--v-theme-on-surface), 0.92);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.official-unsupported-card__description {
+  margin-top: 2px;
+  color: rgba(var(--v-theme-on-surface), 0.66);
+  font-size: 0.75rem;
+  line-height: 1.32;
 }
 
 .fade-enter-active,
