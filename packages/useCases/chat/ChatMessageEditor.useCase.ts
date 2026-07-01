@@ -13,6 +13,8 @@ import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { isChatParticipant } from '@core/common/functions/chatParticipants';
 import { buildMessageSendQueueKey } from '@core/common/functions/messageIdentity';
 import { v7 as uuidv7 } from 'uuid';
+import { WorkerService } from '@core/services/worker.service';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 @injectable()
 export class ChatMessageEditorUseCase {
@@ -22,7 +24,9 @@ export class ChatMessageEditorUseCase {
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(KafkaBaileysQueueService)
-    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService
+    private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(WorkerService)
+    private readonly workerService: WorkerService
   ) {}
 
   async execute(
@@ -64,6 +68,10 @@ export class ChatMessageEditorUseCase {
 
     if (!isChatParticipant(chat, userId)) {
       throw new Error(t('chat_access_denied'));
+    }
+
+    if (await this.isOfficialWorker(accountId, message.worker?.id)) {
+      throw new Error(t('whatsapp_official_edit_message_not_supported'));
     }
 
     if (message.content?.type !== EMessageType.text) {
@@ -119,5 +127,21 @@ export class ChatMessageEditorUseCase {
     );
 
     return true;
+  }
+
+  private async isOfficialWorker(
+    accountId: string,
+    workerId?: string | null
+  ): Promise<boolean> {
+    if (!workerId) {
+      return false;
+    }
+
+    const workerType = await this.workerService.viewWorkerType(
+      accountId,
+      workerId
+    );
+
+    return workerType?.worker_type_id === EWorkerType.whatsapp;
   }
 }

@@ -6,6 +6,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import {
+  MetaWhatsappContactMessage,
   MetaGraphApiError,
   MetaWhatsappEmbeddedService,
   MetaWhatsappMessageSendResult,
@@ -18,7 +19,10 @@ import { ChatMessageService } from '@core/services/chatMessage.service';
 import { OfficialWhatsappTemplateService } from '@core/services/officialWhatsappTemplate.service';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
-import { IChatMessage } from '@core/common/interfaces/IChatMessage';
+import type {
+  IChatMessage,
+  IContactMessage,
+} from '@core/common/interfaces/IChatMessage';
 import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import {
@@ -48,6 +52,7 @@ export class OfficialWhatsappMessageSendConsume {
   private runner: KafkaConsumerRunner<unknown> | null = null;
   private isRunning = false;
   private readonly SYSTEM_QUEUE_KEY = 'system';
+  private readonly META_MESSAGE_ID_PREFIX = 'wamid.';
 
   constructor(
     @inject('Kafka') private readonly kafka: KafkaClient,
@@ -276,8 +281,16 @@ export class OfficialWhatsappMessageSendConsume {
       throw new Error('official_whatsapp_recipient_required');
     }
 
-    if (data.content?.type === EMessageType.official_template) {
-      const template = data.content.official_template;
+    const content = data.content;
+    if (!content) {
+      throw new Error('official_whatsapp_content_required');
+    }
+
+    const contextMessageId = this.resolveContextMessageId(data);
+    const messageType = content.type;
+
+    if (messageType === EMessageType.official_template) {
+      const template = content.official_template;
       if (!template?.name || !template.language) {
         throw new Error('official_whatsapp_template_required');
       }
@@ -295,8 +308,11 @@ export class OfficialWhatsappMessageSendConsume {
       });
     }
 
-    if (data.content?.type === EMessageType.text) {
-      const message = data.content.message?.trim();
+    if (
+      messageType === EMessageType.text ||
+      messageType === EMessageType.system
+    ) {
+      const message = content.message?.trim();
       if (!message) {
         throw new Error('official_whatsapp_text_required');
       }
@@ -307,10 +323,389 @@ export class OfficialWhatsappMessageSendConsume {
         phoneNumberId: connection.phone_number_id,
         to,
         message,
+        contextMessageId,
       });
     }
 
-    throw new Error(`official_whatsapp_unsupported_type:${data.content?.type}`);
+    if (messageType === EMessageType.image) {
+      const image = data.content?.image;
+      const mediaId = await this.uploadOutboundMedia({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        media: image,
+        fallbackPrefix: 'image',
+      });
+
+      return this.metaWhatsappEmbeddedService.sendImageMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        mediaId,
+        caption: image?.caption ?? data.content?.message ?? null,
+        contextMessageId,
+      });
+    }
+
+    if (messageType === EMessageType.video) {
+      const video = data.content?.video;
+      const mediaId = await this.uploadOutboundMedia({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        media: video,
+        fallbackPrefix: 'video',
+      });
+
+      return this.metaWhatsappEmbeddedService.sendVideoMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        mediaId,
+        caption: video?.caption ?? data.content?.message ?? null,
+        contextMessageId,
+      });
+    }
+
+    if (messageType === EMessageType.audio) {
+      const audio = data.content?.audio;
+      if (audio?.view_once) {
+        throw new Error('whatsapp_official_view_once_not_supported');
+      }
+      const mediaId = await this.uploadOutboundMedia({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        media: audio,
+        fallbackPrefix: 'audio',
+      });
+
+      return this.metaWhatsappEmbeddedService.sendAudioMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        mediaId,
+        contextMessageId,
+      });
+    }
+
+    if (messageType === EMessageType.document) {
+      const document = data.content?.document;
+      const mediaId = await this.uploadOutboundMedia({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        media: document,
+        fallbackPrefix: 'document',
+      });
+
+      return this.metaWhatsappEmbeddedService.sendDocumentMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        mediaId,
+        caption: data.content?.message ?? null,
+        filename: this.resolveMediaFilename(document, 'document'),
+        contextMessageId,
+      });
+    }
+
+    if (messageType === EMessageType.sticker) {
+      const sticker = data.content?.sticker;
+      const mediaId = await this.uploadOutboundMedia({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        media: sticker,
+        fallbackPrefix: 'sticker',
+      });
+
+      return this.metaWhatsappEmbeddedService.sendStickerMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        mediaId,
+        contextMessageId,
+      });
+    }
+
+    if (messageType === EMessageType.location) {
+      const location = data.content?.location;
+      if (
+        typeof location?.latitude !== 'number' ||
+        typeof location?.longitude !== 'number'
+      ) {
+        throw new Error('official_whatsapp_location_required');
+      }
+
+      return this.metaWhatsappEmbeddedService.sendLocationMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        name: location.name ?? null,
+        address: location.address ?? null,
+        contextMessageId,
+      });
+    }
+
+    if (
+      messageType === EMessageType.contact_card ||
+      messageType === EMessageType.contacts
+    ) {
+      const contacts = this.resolveMetaContacts(data);
+      if (contacts.length === 0) {
+        throw new Error('official_whatsapp_contacts_required');
+      }
+
+      return this.metaWhatsappEmbeddedService.sendContactsMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        contacts,
+        contextMessageId,
+      });
+    }
+
+    if (messageType === EMessageType.react) {
+      const messageId = this.resolveReactionTargetMessageId(data);
+      const emoji = data.content?.message ?? '';
+      if (!messageId) {
+        throw new Error('official_whatsapp_reaction_target_required');
+      }
+
+      return this.metaWhatsappEmbeddedService.sendReactionMessage({
+        apiVersion: connection.api_version,
+        accessToken,
+        phoneNumberId: connection.phone_number_id,
+        to,
+        messageId,
+        emoji,
+      });
+    }
+
+    throw new Error(this.unsupportedOfficialTypeError(messageType));
+  }
+
+  private unsupportedOfficialTypeError(type?: EMessageType | null): string {
+    if (type === EMessageType.edit_text) {
+      return 'whatsapp_official_edit_message_not_supported';
+    }
+    if (type === EMessageType.delete_message) {
+      return 'whatsapp_official_delete_message_not_supported';
+    }
+    if (type === EMessageType.view_once) {
+      return 'whatsapp_official_view_once_not_supported';
+    }
+    if (type === EMessageType.video_note) {
+      return 'whatsapp_official_video_note_not_supported';
+    }
+    if (type === EMessageType.set_disappearing_messages) {
+      return 'whatsapp_official_disappearing_messages_not_supported';
+    }
+
+    return `official_whatsapp_unsupported_type:${type}`;
+  }
+
+  private resolveContextMessageId(data: IChatMessage): string | null {
+    const messageId = data.content?.quoted?.key?.id?.trim();
+    if (!messageId?.startsWith(this.META_MESSAGE_ID_PREFIX)) {
+      return null;
+    }
+
+    return messageId;
+  }
+
+  private resolveReactionTargetMessageId(data: IChatMessage): string | null {
+    const messageId = data.message_key?.id?.trim();
+    if (!messageId?.startsWith(this.META_MESSAGE_ID_PREFIX)) {
+      return null;
+    }
+
+    return messageId;
+  }
+
+  private async uploadOutboundMedia(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    media?: {
+      url?: string | null;
+      mimetype?: string | null;
+      name?: string | null;
+      extension?: string | null;
+    } | null;
+    fallbackPrefix: string;
+  }): Promise<string> {
+    const url = input.media?.url?.trim();
+    if (!url) {
+      throw new Error('official_whatsapp_media_url_required');
+    }
+
+    return this.metaWhatsappEmbeddedService.uploadMediaFromUrl({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      url,
+      filename: this.resolveMediaFilename(input.media, input.fallbackPrefix),
+      mimetype: input.media?.mimetype ?? null,
+    });
+  }
+
+  private resolveMediaFilename(
+    media:
+      | {
+          url?: string | null;
+          mimetype?: string | null;
+          name?: string | null;
+          extension?: string | null;
+        }
+      | null
+      | undefined,
+    fallbackPrefix: string
+  ): string {
+    const name = media?.name?.trim();
+    if (name) {
+      return name;
+    }
+
+    const url = media?.url?.trim();
+    if (url) {
+      try {
+        const filename = new URL(url).pathname.split('/').filter(Boolean).pop();
+        if (filename) {
+          return decodeURIComponent(filename);
+        }
+      } catch {
+        // Ignore malformed URLs and use the fallback below.
+      }
+    }
+
+    const extension =
+      media?.extension?.replace(/^\./u, '').trim() ||
+      this.extensionFromMime(media?.mimetype ?? null);
+
+    return `${fallbackPrefix}.${extension}`;
+  }
+
+  private extensionFromMime(mimetype?: string | null): string {
+    const normalized = mimetype?.split(';')[0]?.trim().toLowerCase();
+    const extension = normalized?.split('/')[1]?.replace(/[^a-z0-9.+-]/gu, '');
+    if (!extension) {
+      return 'bin';
+    }
+
+    return extension === 'jpeg' ? 'jpg' : extension;
+  }
+
+  private resolveMetaContacts(
+    data: IChatMessage
+  ): MetaWhatsappContactMessage[] {
+    const contacts = Array.isArray(data.content?.contacts)
+      ? data.content.contacts
+      : [];
+    const allContacts =
+      contacts.length > 0
+        ? contacts
+        : data.content?.contact
+          ? [data.content.contact]
+          : [];
+
+    return allContacts
+      .map((contact) => this.toMetaContact(contact))
+      .filter((contact): contact is MetaWhatsappContactMessage =>
+        Boolean(contact)
+      );
+  }
+
+  private toMetaContact(
+    contact: IContactMessage | null | undefined
+  ): MetaWhatsappContactMessage | null {
+    if (!contact) {
+      return null;
+    }
+
+    const firstName = contact.name?.trim();
+    const lastName = contact.last_name?.trim();
+    const formattedName = [firstName, lastName].filter(Boolean).join(' ');
+    if (!formattedName) {
+      return null;
+    }
+
+    const metaContact: MetaWhatsappContactMessage = {
+      name: {
+        formatted_name: formattedName,
+      },
+    };
+
+    if (firstName) {
+      metaContact.name.first_name = firstName;
+    }
+    if (lastName) {
+      metaContact.name.last_name = lastName;
+    }
+
+    const phone = this.resolveContactPhone(contact);
+    if (phone) {
+      metaContact.phones = [
+        {
+          phone: phone.display,
+          type: 'CELL',
+          wa_id: phone.waId,
+        },
+      ];
+    }
+
+    const email = contact.email?.trim() || contact.email_partial?.trim();
+    if (email) {
+      metaContact.emails = [
+        {
+          email,
+          type: 'WORK',
+        },
+      ];
+    }
+
+    return metaContact;
+  }
+
+  private resolveContactPhone(
+    contact: IContactMessage
+  ): { display: string; waId: string } | null {
+    const phoneDigits = (contact.phone ?? contact.phone_partial ?? '').replace(
+      /\D/gu,
+      ''
+    );
+    const ddiDigits = (contact.phone_ddi ?? '').replace(/\D/gu, '');
+
+    if (!phoneDigits && !ddiDigits) {
+      return null;
+    }
+
+    const waId =
+      ddiDigits &&
+      phoneDigits.startsWith(ddiDigits) &&
+      phoneDigits.length > ddiDigits.length + 8
+        ? phoneDigits
+        : `${ddiDigits}${phoneDigits}`;
+    const localDigits =
+      ddiDigits && phoneDigits.startsWith(ddiDigits)
+        ? phoneDigits.slice(ddiDigits.length)
+        : phoneDigits;
+    const display = ddiDigits ? `+${ddiDigits} ${localDigits}` : localDigits;
+
+    return {
+      display,
+      waId,
+    };
   }
 
   private resolveRecipientPhone(data: IChatMessage): string | null {

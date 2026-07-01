@@ -16,6 +16,7 @@ import { EMessageType } from '@core/common/enums/EMessageType';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { KafkaBaileysQueueService } from '@core/services/kafkaBaileysQueue.service';
+import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { IUploadFileInput } from '@core/common/interfaces/IUploadFileInput';
 import { UploadFileRequest } from '@core/schema/upload/request.schema';
@@ -36,6 +37,8 @@ import {
 } from '@core/common/functions/messageIdentity';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { shouldResetAttendanceInactivityFromOperatorMessageType } from '@core/common/functions/attendanceInactivityInteraction';
+import { WorkerService } from '@core/services/worker.service';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 interface IActionMessageResult {
   sent: boolean;
@@ -52,6 +55,8 @@ export class ChatMessageCreatorUseCase {
     private readonly elasticDatabaseService: ElasticDatabaseService,
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
+    @inject(KafkaServiceQueueService)
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(StreamProducerService)
     private readonly streamProducerService: StreamProducerService,
     @inject(CentrifugoService)
@@ -63,7 +68,9 @@ export class ChatMessageCreatorUseCase {
     @inject(UserService)
     private readonly userService: UserService,
     @inject(AttendanceInactivityService)
-    private readonly attendanceInactivityService: AttendanceInactivityService
+    private readonly attendanceInactivityService: AttendanceInactivityService,
+    @inject(WorkerService)
+    private readonly workerService: WorkerService
   ) {}
 
   private normalizeChatUser(
@@ -664,6 +671,71 @@ export class ChatMessageCreatorUseCase {
     await this.attendanceInactivityService.resetOnOperatorMessage(chat);
   }
 
+  private async isOfficialWorker(chat: IChat): Promise<boolean> {
+    if (!chat.account?.id || !chat.worker?.id) {
+      return false;
+    }
+
+    const workerType = await this.workerService.viewWorkerType(
+      chat.account.id,
+      chat.worker.id
+    );
+
+    return workerType?.worker_type_id === EWorkerType.whatsapp;
+  }
+
+  private async resolveProviderSendTopic(chat: IChat): Promise<string> {
+    const isOfficialWorker = await this.isOfficialWorker(chat);
+
+    return isOfficialWorker
+      ? this.kafkaServiceQueueService.officialWhatsappSendMessage()
+      : this.kafkaBaileysQueueService.workerSendMessage(chat.worker.id);
+  }
+
+  private async publishProviderActionMessage(
+    chat: IChat,
+    message: IChatMessage
+  ): Promise<void> {
+    await this.streamProducerService.send(
+      await this.resolveProviderSendTopic(chat),
+      message,
+      buildMessageSendQueueKey(message.account.id, message.chat_id)
+    );
+  }
+
+  private async assertOfficialMessageTypeSupported(
+    t: TFunction<'translation', undefined>,
+    chat: IChat,
+    type: EMessageType,
+    input: { audioViewOnce: boolean }
+  ): Promise<void> {
+    if (!(await this.isOfficialWorker(chat))) {
+      return;
+    }
+
+    if (type === EMessageType.edit_text) {
+      throw new Error(t('whatsapp_official_edit_message_not_supported'));
+    }
+
+    if (type === EMessageType.delete_message) {
+      throw new Error(t('whatsapp_official_delete_message_not_supported'));
+    }
+
+    if (type === EMessageType.view_once || input.audioViewOnce) {
+      throw new Error(t('whatsapp_official_view_once_not_supported'));
+    }
+
+    if (type === EMessageType.video_note) {
+      throw new Error(t('whatsapp_official_video_note_not_supported'));
+    }
+
+    if (type === EMessageType.set_disappearing_messages) {
+      throw new Error(
+        t('whatsapp_official_disappearing_messages_not_supported')
+      );
+    }
+  }
+
   private normalizeMessageFields(
     body: CreateMessageChatsBody,
     templateMessage: string | null
@@ -1062,6 +1134,10 @@ export class ChatMessageCreatorUseCase {
       return actionResult.sent;
     }
 
+    await this.assertOfficialMessageTypeSupported(t, chat, type, {
+      audioViewOnce: normalizedFields.audioViewOnce,
+    });
+
     let result = false;
 
     if (normalizedFields.contacts.length > 0) {
@@ -1339,16 +1415,7 @@ export class ChatMessageCreatorUseCase {
     ensureMessageSendHash(reactionMessage);
 
     await Promise.all([
-      this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerSendMessage(
-          chatContext.chat.worker.id
-        ),
-        reactionMessage,
-        buildMessageSendQueueKey(
-          reactionMessage.account.id,
-          reactionMessage.chat_id
-        )
-      ),
+      this.publishProviderActionMessage(chatContext.chat, reactionMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
 
@@ -1422,6 +1489,12 @@ export class ChatMessageCreatorUseCase {
       throw new Error(context.t('message_key_not_found'));
     }
 
+    if (await this.isOfficialWorker(chat)) {
+      throw new Error(
+        context.t('whatsapp_official_delete_message_not_supported')
+      );
+    }
+
     const updatedMessage = await this.markMessageAsDeleted(targetMessage);
 
     const deleteMessage = this.createDeleteMessage(
@@ -1435,14 +1508,7 @@ export class ChatMessageCreatorUseCase {
     ensureMessageSendHash(deleteMessage);
 
     await Promise.all([
-      this.streamProducerService.send(
-        this.kafkaBaileysQueueService.workerSendMessage(chat.worker.id),
-        deleteMessage,
-        buildMessageSendQueueKey(
-          deleteMessage.account.id,
-          deleteMessage.chat_id
-        )
-      ),
+      this.publishProviderActionMessage(chat, deleteMessage),
       this.centrifugoChatPublish(updatedMessage),
     ]);
 

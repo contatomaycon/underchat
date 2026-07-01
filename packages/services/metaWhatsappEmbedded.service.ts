@@ -1,4 +1,5 @@
 import { injectable } from 'tsyringe';
+import { downloadMediaBuffer } from '@core/common/functions/downloadMediaBuffer';
 
 interface MetaGraphErrorResponse {
   error?: {
@@ -138,6 +139,39 @@ interface MetaWhatsappMediaResponse extends MetaGraphErrorResponse {
   file_size?: number;
   id?: string;
   messaging_product?: string;
+}
+
+interface MetaWhatsappMediaUploadResponse extends MetaGraphErrorResponse {
+  id?: string;
+}
+
+type MetaWhatsappMessageType =
+  | 'text'
+  | 'template'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'document'
+  | 'sticker'
+  | 'location'
+  | 'contacts'
+  | 'reaction';
+
+export interface MetaWhatsappContactMessage {
+  name: {
+    formatted_name: string;
+    first_name?: string;
+    last_name?: string;
+  };
+  phones?: Array<{
+    phone: string;
+    type?: string;
+    wa_id?: string;
+  }>;
+  emails?: Array<{
+    email: string;
+    type?: string;
+  }>;
 }
 
 export type MetaWhatsappTemplateComponentParameter = {
@@ -412,6 +446,7 @@ export class MetaWhatsappEmbeddedService {
     phoneNumberId: string;
     to: string;
     message: string;
+    contextMessageId?: string | null;
   }): Promise<MetaWhatsappMessageSendResult> {
     return this.sendWhatsappMessage({
       apiVersion: input.apiVersion,
@@ -426,8 +461,314 @@ export class MetaWhatsappEmbeddedService {
           preview_url: false,
           body: input.message,
         },
+        ...this.messageContext(input.contextMessageId),
       },
     });
+  }
+
+  async uploadMediaFromUrl(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    url: string;
+    filename?: string | null;
+    mimetype?: string | null;
+  }): Promise<string> {
+    const downloaded = await downloadMediaBuffer(input.url);
+    const mimetype =
+      input.mimetype ?? downloaded.contentType ?? 'application/octet-stream';
+    const filename =
+      input.filename?.trim() ||
+      downloaded.filename ||
+      this.filenameFromUrl(input.url, mimetype);
+
+    return this.uploadWhatsappMedia({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      buffer: downloaded.buffer,
+      filename,
+      mimetype,
+    });
+  }
+
+  async uploadWhatsappMedia(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    buffer: Buffer;
+    filename: string;
+    mimetype: string;
+  }): Promise<string> {
+    const formData = new FormData();
+    const file = new Blob([new Uint8Array(input.buffer)], {
+      type: input.mimetype,
+    });
+    formData.set('messaging_product', 'whatsapp');
+    formData.set('type', input.mimetype);
+    formData.set('file', file, input.filename);
+
+    const response = await fetch(
+      this.graphUrl(input.apiVersion, `${input.phoneNumberId}/media`),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${input.accessToken}`,
+        },
+        body: formData,
+      }
+    );
+    const payload =
+      await this.parseGraphResponse<MetaWhatsappMediaUploadResponse>(response);
+
+    if (!payload.id) {
+      throw new Error('Meta Graph API did not return a media id');
+    }
+
+    return payload.id;
+  }
+
+  async sendImageMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    mediaId: string;
+    caption?: string | null;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendMediaMessage({
+      ...input,
+      type: 'image',
+      media: this.mediaPayload(input.mediaId, input.caption),
+    });
+  }
+
+  async sendVideoMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    mediaId: string;
+    caption?: string | null;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendMediaMessage({
+      ...input,
+      type: 'video',
+      media: this.mediaPayload(input.mediaId, input.caption),
+    });
+  }
+
+  async sendAudioMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    mediaId: string;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendMediaMessage({
+      ...input,
+      type: 'audio',
+      media: this.mediaPayload(input.mediaId),
+    });
+  }
+
+  async sendDocumentMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    mediaId: string;
+    caption?: string | null;
+    filename?: string | null;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    const media = this.mediaPayload(input.mediaId, input.caption);
+    const filename = input.filename?.trim();
+    if (filename) {
+      media.filename = filename;
+    }
+
+    return this.sendMediaMessage({
+      ...input,
+      type: 'document',
+      media,
+    });
+  }
+
+  async sendStickerMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    mediaId: string;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendMediaMessage({
+      ...input,
+      type: 'sticker',
+      media: this.mediaPayload(input.mediaId),
+    });
+  }
+
+  async sendLocationMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    latitude: number;
+    longitude: number;
+    name?: string | null;
+    address?: string | null;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    const location: Record<string, unknown> = {
+      latitude: input.latitude,
+      longitude: input.longitude,
+    };
+    const name = input.name?.trim();
+    const address = input.address?.trim();
+    if (name) {
+      location.name = name;
+    }
+    if (address) {
+      location.address = address;
+    }
+
+    return this.sendWhatsappMessage({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.to,
+        type: 'location',
+        location,
+        ...this.messageContext(input.contextMessageId),
+      },
+    });
+  }
+
+  async sendContactsMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    contacts: MetaWhatsappContactMessage[];
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendWhatsappMessage({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.to,
+        type: 'contacts',
+        contacts: input.contacts,
+        ...this.messageContext(input.contextMessageId),
+      },
+    });
+  }
+
+  async sendReactionMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    messageId: string;
+    emoji: string;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendWhatsappMessage({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.to,
+        type: 'reaction',
+        reaction: {
+          message_id: input.messageId,
+          emoji: input.emoji,
+        },
+      },
+    });
+  }
+
+  private async sendMediaMessage(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+    to: string;
+    type: Exclude<
+      MetaWhatsappMessageType,
+      'text' | 'template' | 'location' | 'contacts' | 'reaction'
+    >;
+    media: Record<string, unknown>;
+    contextMessageId?: string | null;
+  }): Promise<MetaWhatsappMessageSendResult> {
+    return this.sendWhatsappMessage({
+      apiVersion: input.apiVersion,
+      accessToken: input.accessToken,
+      phoneNumberId: input.phoneNumberId,
+      body: {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: input.to,
+        type: input.type,
+        [input.type]: input.media,
+        ...this.messageContext(input.contextMessageId),
+      },
+    });
+  }
+
+  private mediaPayload(
+    mediaId: string,
+    caption?: string | null
+  ): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      id: mediaId,
+    };
+    const normalizedCaption = caption?.trim();
+    if (normalizedCaption) {
+      payload.caption = normalizedCaption;
+    }
+
+    return payload;
+  }
+
+  private messageContext(
+    messageId?: string | null
+  ): { context: { message_id: string } } | Record<string, never> {
+    const normalized = messageId?.trim();
+    if (!normalized) {
+      return {};
+    }
+
+    return {
+      context: {
+        message_id: normalized,
+      },
+    };
+  }
+
+  private filenameFromUrl(url: string, mimetype: string): string {
+    try {
+      const pathname = new URL(url).pathname;
+      const filename = pathname.split('/').filter(Boolean).pop();
+      if (filename) {
+        return decodeURIComponent(filename);
+      }
+    } catch {
+      // Ignore malformed URLs and use a deterministic fallback below.
+    }
+
+    return `underchat-whatsapp-media-${Date.now()}.${this.extensionFromMime(mimetype)}`;
   }
 
   private async sendWhatsappMessage(input: {

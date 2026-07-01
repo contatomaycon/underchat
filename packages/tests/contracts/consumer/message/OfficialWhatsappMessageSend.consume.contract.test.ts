@@ -63,6 +63,12 @@ function makeEnvelope(payload: unknown = message) {
 
 function makeConsumer(overrides?: {
   sendTemplateMessage?: jest.Mock;
+  sendTextMessage?: jest.Mock;
+  sendImageMessage?: jest.Mock;
+  sendLocationMessage?: jest.Mock;
+  sendContactsMessage?: jest.Mock;
+  sendReactionMessage?: jest.Mock;
+  uploadMediaFromUrl?: jest.Mock;
   claimSend?: jest.Mock;
 }) {
   const kafkaServiceQueueService = {
@@ -84,7 +90,48 @@ function makeConsumer(overrides?: {
         message_status: 'accepted',
         raw: { messaging_product: 'whatsapp' },
       })),
-    sendTextMessage: jest.fn(),
+    sendTextMessage:
+      overrides?.sendTextMessage ??
+      jest.fn(async () => ({
+        message_id: 'wamid.text',
+        contact_wa_id: '5511999999999',
+        message_status: 'accepted',
+        raw: { messaging_product: 'whatsapp' },
+      })),
+    sendImageMessage:
+      overrides?.sendImageMessage ??
+      jest.fn(async () => ({
+        message_id: 'wamid.image',
+        contact_wa_id: '5511999999999',
+        message_status: 'accepted',
+        raw: { messaging_product: 'whatsapp' },
+      })),
+    sendLocationMessage:
+      overrides?.sendLocationMessage ??
+      jest.fn(async () => ({
+        message_id: 'wamid.location',
+        contact_wa_id: '5511999999999',
+        message_status: 'accepted',
+        raw: { messaging_product: 'whatsapp' },
+      })),
+    sendContactsMessage:
+      overrides?.sendContactsMessage ??
+      jest.fn(async () => ({
+        message_id: 'wamid.contacts',
+        contact_wa_id: '5511999999999',
+        message_status: 'accepted',
+        raw: { messaging_product: 'whatsapp' },
+      })),
+    sendReactionMessage:
+      overrides?.sendReactionMessage ??
+      jest.fn(async () => ({
+        message_id: 'wamid.reaction',
+        contact_wa_id: '5511999999999',
+        message_status: 'accepted',
+        raw: { messaging_product: 'whatsapp' },
+      })),
+    uploadMediaFromUrl:
+      overrides?.uploadMediaFromUrl ?? jest.fn(async () => 'meta-media-1'),
   };
   const messageStatusService = {
     markMessageAsNotSent: jest.fn(async () => undefined),
@@ -187,6 +234,212 @@ describe('OfficialWhatsappMessageSendConsume', () => {
         {
           partition: 0,
           offset: 10,
+          kafkaKey: 'account-1:chat-1',
+        }
+      );
+
+      expect(messageStatusService.markMessageAsNotSent).toHaveBeenCalledWith(
+        'account-1',
+        'internal-message-1'
+      );
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('sends text messages with quote context when quoted message has a Meta id', async () => {
+    const textMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.text,
+        message: 'Resposta',
+        quoted: {
+          key: {
+            id: 'wamid.quoted',
+            remote_jid: '5511999999999@s.whatsapp.net',
+            is_view_once: false,
+          },
+          message: 'Original',
+          type: EMessageType.text,
+        },
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService } = makeConsumer();
+
+    await (consumer as any).processPayload(
+      textMessage,
+      makeEnvelope(textMessage)
+    );
+
+    expect(metaWhatsappEmbeddedService.sendTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Resposta',
+        contextMessageId: 'wamid.quoted',
+      })
+    );
+  });
+
+  it('uploads image media before sending it to Meta', async () => {
+    const imageMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.image,
+        message: 'Legenda',
+        image: {
+          url: 'http://minio.local/file.jpg',
+          mimetype: 'image/jpeg',
+          caption: 'Legenda da imagem',
+        },
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService } = makeConsumer();
+
+    await (consumer as any).processPayload(
+      imageMessage,
+      makeEnvelope(imageMessage)
+    );
+
+    expect(metaWhatsappEmbeddedService.uploadMediaFromUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'http://minio.local/file.jpg',
+        mimetype: 'image/jpeg',
+      })
+    );
+    expect(metaWhatsappEmbeddedService.sendImageMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaId: 'meta-media-1',
+        caption: 'Legenda da imagem',
+      })
+    );
+  });
+
+  it('sends locations through the official Meta payload', async () => {
+    const locationMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.location,
+        location: {
+          latitude: -15.8,
+          longitude: -47.9,
+          name: 'Brasilia',
+          address: 'DF',
+        },
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService } = makeConsumer();
+
+    await (consumer as any).processPayload(
+      locationMessage,
+      makeEnvelope(locationMessage)
+    );
+
+    expect(
+      metaWhatsappEmbeddedService.sendLocationMessage
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        latitude: -15.8,
+        longitude: -47.9,
+        name: 'Brasilia',
+        address: 'DF',
+      })
+    );
+  });
+
+  it('maps contact cards to Meta contacts with normalized DDI and phone', async () => {
+    const contactMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.contact_card,
+        contact: {
+          contact_id: 'contact-1',
+          name: 'Braian',
+          last_name: 'Silva',
+          phone_ddi: '55',
+          phone: '(61) 99121-1783',
+          email: 'braian@example.test',
+        },
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService } = makeConsumer();
+
+    await (consumer as any).processPayload(
+      contactMessage,
+      makeEnvelope(contactMessage)
+    );
+
+    expect(
+      metaWhatsappEmbeddedService.sendContactsMessage
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contacts: [
+          expect.objectContaining({
+            name: expect.objectContaining({
+              formatted_name: 'Braian Silva',
+              first_name: 'Braian',
+              last_name: 'Silva',
+            }),
+            phones: [
+              expect.objectContaining({
+                phone: '+55 61991211783',
+                wa_id: '5561991211783',
+              }),
+            ],
+          }),
+        ],
+      })
+    );
+  });
+
+  it('sends reactions to the target Meta message id', async () => {
+    const reactionMessage: IChatMessage = {
+      ...message,
+      message_key: {
+        remote_jid: '5511999999999@s.whatsapp.net',
+        id: 'wamid.target',
+        is_view_once: false,
+      },
+      content: {
+        type: EMessageType.react,
+        message: '👍',
+      },
+    };
+    const { consumer, metaWhatsappEmbeddedService } = makeConsumer();
+
+    await (consumer as any).processPayload(
+      reactionMessage,
+      makeEnvelope(reactionMessage)
+    );
+
+    expect(
+      metaWhatsappEmbeddedService.sendReactionMessage
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageId: 'wamid.target',
+        emoji: '👍',
+      })
+    );
+  });
+
+  it('marks unsupported official message types as not sent', async () => {
+    const consoleSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const unsupportedMessage: IChatMessage = {
+      ...message,
+      content: {
+        type: EMessageType.video_note,
+        message: 'video note',
+      },
+    };
+    const { consumer, messageStatusService } = makeConsumer();
+
+    try {
+      await (consumer as any).processRunnerPayload(
+        'official.whatsapp.send.message',
+        unsupportedMessage,
+        {
+          partition: 0,
+          offset: 11,
           kafkaKey: 'account-1:chat-1',
         }
       );
