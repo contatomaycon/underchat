@@ -345,6 +345,14 @@ export class BaileysIncomingMessageService {
     return findProtocolEdit(message);
   }
 
+  private isRawSecretEncryptedMessageEdit(m: WAMessage): boolean {
+    const secretEncryptedMessage = m.message?.secretEncryptedMessage;
+    return (
+      secretEncryptedMessage?.secretEncType ===
+      proto.Message.SecretEncryptedMessage.SecretEncType.MESSAGE_EDIT
+    );
+  }
+
   private logIncomingProviderPayloadDebug(
     stage: string,
     payload: unknown,
@@ -1210,6 +1218,17 @@ export class BaileysIncomingMessageService {
           decision: 'message_key',
           outcome: 'skipped',
           reason: 'missing_message_key',
+        });
+        return;
+      }
+
+      if (this.isRawSecretEncryptedMessageEdit(m)) {
+        this.logLifecycle(m, {
+          stage: 'baileys.incoming.skip',
+          decision: 'message_type_mapping',
+          outcome: 'skipped',
+          reason: 'raw_secret_encrypted_message_edit',
+          kafka_key: messageKey,
         });
         return;
       }

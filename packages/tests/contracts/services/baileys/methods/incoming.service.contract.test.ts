@@ -15,6 +15,13 @@ jest.mock('@whiskeysockets/baileys', () => ({
           EPHEMERAL_SYNC_RESPONSE: 3,
         },
       },
+      SecretEncryptedMessage: {
+        SecretEncType: {
+          UNKNOWN: 0,
+          EVENT_EDIT: 1,
+          MESSAGE_EDIT: 2,
+        },
+      },
     },
     WebMessageInfo: {
       Status: {},
@@ -175,6 +182,52 @@ describe('BaileysIncomingMessageService', () => {
       }),
       'account-1:worker-1:5511999999999@s.whatsapp.net'
     );
+  });
+
+  it('ignores raw secret encrypted edit upserts because Baileys also emits the decrypted messages.update', async () => {
+    const { service, streamProducerService } = makeService();
+    const sut = service as unknown as {
+      currentSocket?: unknown;
+      processIncomingMessage: (
+        socket: unknown,
+        message: unknown,
+        upsertType: string,
+        topic: string
+      ) => Promise<void>;
+    };
+    const socket = {
+      user: { id: '5500000000000@s.whatsapp.net' },
+      profilePictureUrl: jest.fn(async () => undefined),
+    };
+    sut.currentSocket = socket;
+
+    await sut.processIncomingMessage(
+      socket,
+      {
+        key: {
+          id: 'secret-edit-event-id',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: false,
+        },
+        message: {
+          secretEncryptedMessage: {
+            targetMessageKey: {
+              id: 'original-message-id',
+              remoteJid: '5511999999999@s.whatsapp.net',
+              fromMe: false,
+            },
+            secretEncType: 2,
+            encPayload: Buffer.from('encrypted-payload'),
+            encIv: Buffer.from('iv'),
+          },
+        },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      },
+      'notify',
+      'upsert-message'
+    );
+
+    expect(streamProducerService.send).not.toHaveBeenCalled();
   });
 
   it('does not drop new messages when the legacy retry queue is full', async () => {
