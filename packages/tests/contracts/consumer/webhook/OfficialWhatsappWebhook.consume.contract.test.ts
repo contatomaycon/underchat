@@ -385,6 +385,225 @@ describe('OfficialWhatsappWebhookConsume', () => {
     );
   });
 
+  it('enriches official interactive button replies with display metadata', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const event = makeEvent();
+    const firstChange = event.payload.entry?.[0]?.changes?.[0];
+    if (!firstChange) {
+      throw new Error('missing webhook change fixture');
+    }
+    const message = (firstChange.value as any).messages[0];
+    message.id = 'wamid.button-reply-1';
+    message.type = 'interactive';
+    delete message.text;
+    message.interactive = {
+      type: 'button_reply',
+      button_reply: {
+        id: 'yes',
+        title: 'Sim',
+      },
+    };
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert.message',
+      expect.objectContaining({
+        type: EMessageType.text,
+        content: expect.objectContaining({
+          message: 'Sim',
+          official: expect.objectContaining({
+            type: 'interactive',
+            display: expect.objectContaining({
+              kind: 'reply',
+              raw_type: 'button_reply',
+              title: 'Sim',
+              actions: [
+                expect.objectContaining({
+                  id: 'yes',
+                  title: 'Sim',
+                }),
+              ],
+            }),
+          }),
+        }),
+      }),
+      expect.any(String)
+    );
+  });
+
+  it('enriches official interactive list replies with display metadata', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const event = makeEvent();
+    const firstChange = event.payload.entry?.[0]?.changes?.[0];
+    if (!firstChange) {
+      throw new Error('missing webhook change fixture');
+    }
+    const message = (firstChange.value as any).messages[0];
+    message.id = 'wamid.list-reply-1';
+    message.type = 'interactive';
+    delete message.text;
+    message.interactive = {
+      type: 'list_reply',
+      list_reply: {
+        id: 'support',
+        title: 'Suporte',
+        description: 'Falar com atendimento',
+      },
+    };
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert.message',
+      expect.objectContaining({
+        type: EMessageType.text,
+        content: expect.objectContaining({
+          message: 'Suporte',
+          official: expect.objectContaining({
+            display: expect.objectContaining({
+              kind: 'reply',
+              raw_type: 'list_reply',
+              title: 'Suporte',
+              body: 'Falar com atendimento',
+            }),
+          }),
+        }),
+      }),
+      expect.any(String)
+    );
+  });
+
+  it('enriches official WhatsApp Flow replies with submitted data', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const event = makeEvent();
+    const firstChange = event.payload.entry?.[0]?.changes?.[0];
+    if (!firstChange) {
+      throw new Error('missing webhook change fixture');
+    }
+    const message = (firstChange.value as any).messages[0];
+    message.id = 'wamid.nfm-reply-1';
+    message.type = 'interactive';
+    delete message.text;
+    message.interactive = {
+      type: 'nfm_reply',
+      nfm_reply: {
+        name: 'flow',
+        body: 'Fluxo concluído',
+        response_json: JSON.stringify({
+          cpf: '00000000000',
+          accepted_terms: true,
+        }),
+      },
+    };
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert.message',
+      expect.objectContaining({
+        type: EMessageType.text,
+        content: expect.objectContaining({
+          official: expect.objectContaining({
+            display: expect.objectContaining({
+              kind: 'reply',
+              raw_type: 'nfm_reply',
+              title: 'flow',
+              body: 'Fluxo concluído',
+              submitted_data: {
+                cpf: '00000000000',
+                accepted_terms: true,
+              },
+            }),
+          }),
+        }),
+      }),
+      expect.any(String)
+    );
+  });
+
+  it('enriches official order messages with product display metadata', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const event = makeEvent();
+    const firstChange = event.payload.entry?.[0]?.changes?.[0];
+    if (!firstChange) {
+      throw new Error('missing webhook change fixture');
+    }
+    const message = (firstChange.value as any).messages[0];
+    message.id = 'wamid.order-1';
+    message.type = 'order';
+    delete message.text;
+    message.order = {
+      catalog_id: 'catalog-1',
+      text: 'Pedido recebido',
+      product_items: [
+        {
+          product_retailer_id: 'sku-1',
+          quantity: 2,
+          item_price: 199,
+          currency: 'BRL',
+        },
+      ],
+    };
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert.message',
+      expect.objectContaining({
+        type: EMessageType.text,
+        content: expect.objectContaining({
+          message: 'Pedido recebido',
+          official: expect.objectContaining({
+            order: expect.objectContaining({
+              catalog_id: 'catalog-1',
+            }),
+            display: expect.objectContaining({
+              kind: 'order',
+              title: 'Pedido',
+              body: 'Pedido recebido',
+              items: [
+                expect.objectContaining({
+                  id: 'sku-1',
+                  title: 'sku-1',
+                }),
+              ],
+            }),
+          }),
+        }),
+      }),
+      expect.any(String)
+    );
+  });
+
   it('maps official Meta contact cards with normalized phone fields', async () => {
     const { consumer, streamProducerService } = makeConsumer();
     const event = makeContactMessageEvent();
@@ -467,6 +686,12 @@ describe('OfficialWhatsappWebhookConsume', () => {
           message: unsupportedMessage,
           official: expect.objectContaining({
             type: 'unsupported',
+            display: expect.objectContaining({
+              kind: 'unsupported',
+              raw_type: 'video_note',
+              title: 'Mensagem não suportada',
+              body: unsupportedMessage,
+            }),
             unsupported: expect.objectContaining({
               type: 'video_note',
               reason: 'unsupported_meta_message_type',

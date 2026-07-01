@@ -38,6 +38,7 @@ import { PushNotificationService } from '@core/services/pushNotification.service
 import { withLock } from '@core/common/functions/withLock';
 import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
 import { normalizeJid } from '@core/common/functions/normalizeJid';
+import { buildOfficialWhatsappDisplayFromTemplate } from '@core/common/functions/officialWhatsappDisplay';
 import type { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -355,6 +356,14 @@ export class StartChatWithContactUseCase {
         type: EMessageType.official_template,
         message: messageText,
         official_template: template,
+        official: {
+          provider: 'meta_whatsapp',
+          type: 'template',
+          display: buildOfficialWhatsappDisplayFromTemplate(
+            template,
+            messageText
+          ),
+        },
       },
       date: new Date().toISOString(),
     });

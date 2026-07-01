@@ -1,7 +1,42 @@
 import { IContent } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
+import { IOfficialWhatsappDisplayMetadata } from '@core/common/interfaces/IOfficialWhatsappContentMetadata';
+
+function getTextByOfficialDisplay(
+  display?: IOfficialWhatsappDisplayMetadata | null
+): string | null {
+  if (!display) {
+    return null;
+  }
+
+  if (display.body) return display.body;
+  if (display.title) return display.title;
+
+  if (display.kind === 'order' && display.items?.length) {
+    return `[Pedido] ${display.items.length} item(ns)`;
+  }
+
+  if (display.kind === 'product_list' && display.sections?.length) {
+    return '[Lista de produtos]';
+  }
+
+  if (display.kind === 'carousel' && display.cards?.length) {
+    return '[Carrossel]';
+  }
+
+  if (display.kind === 'unsupported') {
+    return '[Mensagem não suportada]';
+  }
+
+  return null;
+}
 
 function getTextByMessageType(content: IContent): string | null {
+  const displayText = getTextByOfficialDisplay(content.official?.display);
+  if (displayText) {
+    return displayText;
+  }
+
   if (content.official?.interactive?.title) {
     return content.official.interactive.title;
   }

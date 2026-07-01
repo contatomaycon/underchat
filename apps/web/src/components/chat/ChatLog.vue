@@ -45,6 +45,7 @@ import LottieSticker from '@/components/chat/LottieSticker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import UploadProgressBadge from '@/components/chat/UploadProgressBadge.vue';
 import ChatInlineAttendanceHistoryMarker from '@/components/chat/ChatInlineAttendanceHistoryMarker.vue';
+import ChatOfficialMessageCard from '@/components/chat/official/ChatOfficialMessageCard.vue';
 import { useChatAttendanceHistory } from '@/composables/useChatAttendanceHistory';
 import {
   buildImageGalleryLookup,
@@ -891,8 +892,7 @@ const loadForwardTargets = async (append = false) => {
     const response = await chatStore.searchForwardTargetChats({
       filter_worker_id: selectedForwardChannel.value,
       status: selectedForwardStatus.value as
-        | EChatStatus.in_chat
-        | EChatStatus.queue,
+        EChatStatus.in_chat | EChatStatus.queue,
       search,
       current_page: nextPage,
       per_page: 20,
@@ -1492,9 +1492,7 @@ const officialReferralText = (
   official: OfficialMessageMetadata
 ): string | null => {
   const referral = official.referral as
-    | Record<string, unknown>
-    | null
-    | undefined;
+    Record<string, unknown> | null | undefined;
   const headline = referral?.headline;
   const source = referral?.source_type ?? referral?.source_url;
   if (typeof headline === 'string' && headline.trim()) return headline.trim();
@@ -1587,6 +1585,22 @@ const getOfficialMetadataDescription = (
 
 const shouldShowOfficialMetadata = (message: ListMessageResult): boolean =>
   Boolean(getOfficialMetadataTitle(message));
+
+const shouldShowOfficialDisplayCard = (message: ListMessageResult): boolean =>
+  Boolean(getOfficialMetadata(message)?.display);
+
+const shouldSuppressOfficialTextMessage = (
+  message: ListMessageResult
+): boolean => {
+  const display = getOfficialMetadata(message)?.display;
+  if (!display || display.kind === 'referral') return false;
+
+  return (
+    display.kind !== 'system' ||
+    message.content?.type === EMessageType.official_interactive ||
+    message.content?.type === EMessageType.official_template
+  );
+};
 
 const shouldFormatMessage = (message: ListMessageResult): boolean => {
   const messageType = message.content?.type;
@@ -4439,8 +4453,14 @@ onUnmounted(() => {
                     </a>
                   </div>
 
+                  <ChatOfficialMessageCard
+                    v-if="shouldShowOfficialDisplayCard(item.message)"
+                    :message="item.message"
+                    :is-outgoing="!isTypeUser(item.message)"
+                  />
+
                   <div
-                    v-if="isUnsupportedProviderMessage(item.message)"
+                    v-else-if="isUnsupportedProviderMessage(item.message)"
                     class="official-unsupported-card"
                   >
                     <div class="official-unsupported-card__icon">
@@ -5307,6 +5327,7 @@ onUnmounted(() => {
                       item.message.content?.type !== EMessageType.system &&
                       !item.message.message_key?.is_view_once &&
                       !item.message.content?.template &&
+                      !shouldSuppressOfficialTextMessage(item.message) &&
                       !isUnsupportedProviderMessage(item.message)
                     "
                     class="d-flex align-center"

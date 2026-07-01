@@ -18,6 +18,73 @@ export interface IOfficialWhatsappOrderMetadata {
   product_items?: IOfficialWhatsappOrderItemMetadata[];
 }
 
+export type OfficialWhatsappDisplayKind =
+  | 'button'
+  | 'list'
+  | 'cta_url'
+  | 'location_request'
+  | 'flow'
+  | 'product'
+  | 'product_list'
+  | 'catalog'
+  | 'carousel'
+  | 'address'
+  | 'template'
+  | 'order'
+  | 'reply'
+  | 'referral'
+  | 'system'
+  | 'unsupported'
+  | 'call_permission_request';
+
+export interface IOfficialWhatsappDisplayAction {
+  id?: string | null;
+  type?: string | null;
+  title?: string | null;
+  description?: string | null;
+  url?: string | null;
+  phone_number?: string | null;
+}
+
+export interface IOfficialWhatsappDisplaySection {
+  id?: string | null;
+  title?: string | null;
+  rows?: IOfficialWhatsappDisplayAction[];
+  items?: IOfficialWhatsappDisplayAction[];
+}
+
+export interface IOfficialWhatsappDisplayMedia {
+  type?: string | null;
+  id?: string | null;
+  url?: string | null;
+  link?: string | null;
+  caption?: string | null;
+}
+
+export interface IOfficialWhatsappDisplayCard {
+  title?: string | null;
+  body?: string | null;
+  footer?: string | null;
+  media?: IOfficialWhatsappDisplayMedia | null;
+  actions?: IOfficialWhatsappDisplayAction[];
+  items?: IOfficialWhatsappDisplayAction[];
+}
+
+export interface IOfficialWhatsappDisplayMetadata {
+  kind: OfficialWhatsappDisplayKind;
+  raw_type?: string | null;
+  title?: string | null;
+  body?: string | null;
+  footer?: string | null;
+  action_label?: string | null;
+  actions?: IOfficialWhatsappDisplayAction[];
+  sections?: IOfficialWhatsappDisplaySection[];
+  items?: IOfficialWhatsappDisplayAction[];
+  cards?: IOfficialWhatsappDisplayCard[];
+  media?: IOfficialWhatsappDisplayMedia | null;
+  submitted_data?: Record<string, unknown> | null;
+}
+
 export interface IOfficialWhatsappContentMetadata {
   provider: 'meta_whatsapp';
   type: string;
@@ -25,6 +92,7 @@ export interface IOfficialWhatsappContentMetadata {
   message_id?: string | null;
   status?: string | null;
   echo?: boolean;
+  display?: IOfficialWhatsappDisplayMetadata | null;
   interactive?: IOfficialWhatsappInteractiveMetadata | null;
   order?: IOfficialWhatsappOrderMetadata | null;
   button?: {

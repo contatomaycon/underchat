@@ -43,11 +43,63 @@ describe('listMessageChats response contract', () => {
 
   it('maps sent_from_platform as a boolean field in Elasticsearch', () => {
     const mapping = mensageMappings();
+    type MappingProperty = {
+      type?: string;
+      enabled?: boolean;
+      properties?: Record<string, MappingProperty>;
+    };
     const properties = mapping.mappings.properties as Record<
       string,
-      { type?: string }
+      MappingProperty
     >;
 
     expect(properties.sent_from_platform).toEqual({ type: 'boolean' });
+    expect(
+      properties.content?.properties?.official?.properties?.display
+    ).toEqual({
+      type: 'object',
+      enabled: false,
+    });
+  });
+
+  it('exposes official display metadata for rich Meta messages', () => {
+    expect(
+      Value.Check(listMessageResultSchema, {
+        message_id: 'message-official-1',
+        chat_id: 'chat-1',
+        type_user: ETypeUserChat.operator,
+        message_key: {
+          from_me: true,
+          is_view_once: false,
+        },
+        content: {
+          type: EMessageType.official_interactive,
+          message: 'Escolha uma opção',
+          official: {
+            provider: 'meta_whatsapp',
+            type: 'interactive',
+            display: {
+              kind: 'button',
+              raw_type: 'button',
+              body: 'Escolha uma opção',
+              actions: [
+                {
+                  id: 'yes',
+                  title: 'Sim',
+                  type: 'reply',
+                },
+              ],
+            },
+          },
+        },
+        summary: {
+          is_sent: true,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
+        date: '2026-07-01T12:00:00.000Z',
+      })
+    ).toBe(true);
   });
 });

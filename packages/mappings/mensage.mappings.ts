@@ -839,6 +839,10 @@ export const mensageMappings = () => {
                 echo: {
                   type: 'boolean',
                 },
+                display: {
+                  type: 'object',
+                  enabled: false,
+                },
                 interactive: {
                   type: 'nested',
                   properties: {

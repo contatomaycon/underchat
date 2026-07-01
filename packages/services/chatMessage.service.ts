@@ -23,6 +23,7 @@ import {
   IQuotedMessage,
 } from '@core/common/interfaces/IChatMessage';
 import { extractMessageTextFromContent } from '@core/common/functions/extractMessageTextFromContent';
+import { buildOfficialWhatsappDisplayFromInteractive } from '@core/common/functions/officialWhatsappDisplay';
 import {
   chatAccountCentrifugo,
   chatQueueAccountCentrifugo,
@@ -1733,6 +1734,11 @@ export class ChatMessageService {
         official: {
           provider: 'meta_whatsapp',
           type: 'interactive',
+          display: buildOfficialWhatsappDisplayFromInteractive(
+            officialOptions.officialInteractive.interactive,
+            officialOptions.officialInteractive.type,
+            summary
+          ),
           raw: {
             type: officialOptions.officialInteractive.type,
             interactive: officialOptions.officialInteractive.interactive,

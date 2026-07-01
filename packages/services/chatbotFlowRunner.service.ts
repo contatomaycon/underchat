@@ -90,6 +90,7 @@ import {
 } from '@core/common/functions/chatbotWorkingHours';
 import { HolidayService } from './holiday.service';
 import { isOfficialChatbotNodeType } from '@core/common/functions/chatbotOfficialNodes';
+import { buildOfficialWhatsappDisplayFromTemplate } from '@core/common/functions/officialWhatsappDisplay';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -2447,7 +2448,17 @@ export class ChatbotFlowRunnerService {
           createChat,
           EMessageType.official_template,
           template.name,
-          { official_template: template }
+          {
+            official_template: template,
+            official: {
+              provider: 'meta_whatsapp',
+              type: 'template',
+              display: buildOfficialWhatsappDisplayFromTemplate(
+                template,
+                template.name
+              ),
+            },
+          }
         )
       );
     }

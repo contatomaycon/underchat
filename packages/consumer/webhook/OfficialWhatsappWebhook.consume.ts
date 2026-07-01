@@ -41,6 +41,7 @@ import { IOfficialWhatsappContentMetadata } from '@core/common/interfaces/IOffic
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { buildUpsertMessageKafkaKey } from '@core/common/functions/buildUpsertMessageKafkaKey';
+import { buildOfficialWhatsappDisplayFromMetaMessage } from '@core/common/functions/officialWhatsappDisplay';
 import { UploadFileResponse } from '@core/schema/upload/response.schema';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
@@ -801,6 +802,12 @@ export class OfficialWhatsappWebhookConsume {
       type: unsupportedType,
       reason: 'unsupported_meta_message_type',
     };
+    official.display = {
+      kind: 'unsupported',
+      raw_type: unsupportedType,
+      title: 'Mensagem não suportada',
+      body: unsupportedMessage,
+    };
 
     return {
       type: EMessageType.text,
@@ -1001,6 +1008,7 @@ export class OfficialWhatsappWebhookConsume {
       webhook_field: context.field,
       message_id: this.toNonEmptyString(message.id) ?? null,
       echo: options?.echo === true,
+      display: buildOfficialWhatsappDisplayFromMetaMessage(message, metaType),
       referral: this.toRecord(contextRecord?.referral) ?? null,
       raw: message,
     };

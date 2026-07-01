@@ -277,6 +277,95 @@ export const officialTemplateMessageSchema = Type.Object(
   { additionalProperties: true }
 );
 
+const officialWhatsappDisplayActionSchema = Type.Object(
+  {
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    phone_number: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  },
+  { additionalProperties: true }
+);
+
+const officialWhatsappDisplayMediaSchema = Type.Object(
+  {
+    type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    url: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    link: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    caption: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  },
+  { additionalProperties: true }
+);
+
+const officialWhatsappDisplaySectionSchema = Type.Object(
+  {
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    rows: Type.Optional(Type.Array(officialWhatsappDisplayActionSchema)),
+    items: Type.Optional(Type.Array(officialWhatsappDisplayActionSchema)),
+  },
+  { additionalProperties: true }
+);
+
+const officialWhatsappDisplayCardSchema = Type.Object(
+  {
+    title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    body: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    footer: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    media: Type.Optional(
+      Type.Union([officialWhatsappDisplayMediaSchema, Type.Null()])
+    ),
+    actions: Type.Optional(Type.Array(officialWhatsappDisplayActionSchema)),
+    items: Type.Optional(Type.Array(officialWhatsappDisplayActionSchema)),
+  },
+  { additionalProperties: true }
+);
+
+const officialWhatsappDisplayMetadataSchema = Type.Object(
+  {
+    kind: Type.String({
+      enum: [
+        'button',
+        'list',
+        'cta_url',
+        'location_request',
+        'flow',
+        'product',
+        'product_list',
+        'catalog',
+        'carousel',
+        'address',
+        'template',
+        'order',
+        'reply',
+        'referral',
+        'system',
+        'unsupported',
+        'call_permission_request',
+      ],
+    }),
+    raw_type: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    body: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    footer: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    action_label: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    actions: Type.Optional(Type.Array(officialWhatsappDisplayActionSchema)),
+    sections: Type.Optional(Type.Array(officialWhatsappDisplaySectionSchema)),
+    items: Type.Optional(Type.Array(officialWhatsappDisplayActionSchema)),
+    cards: Type.Optional(Type.Array(officialWhatsappDisplayCardSchema)),
+    media: Type.Optional(
+      Type.Union([officialWhatsappDisplayMediaSchema, Type.Null()])
+    ),
+    submitted_data: Type.Optional(
+      Type.Union([Type.Record(Type.String(), Type.Any()), Type.Null()])
+    ),
+  },
+  { additionalProperties: true }
+);
+
 export const officialWhatsappContentMetadataSchema = Type.Object(
   {
     provider: Type.Literal('meta_whatsapp'),
@@ -285,6 +374,9 @@ export const officialWhatsappContentMetadataSchema = Type.Object(
     message_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     status: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     echo: Type.Optional(Type.Boolean()),
+    display: Type.Optional(
+      Type.Union([officialWhatsappDisplayMetadataSchema, Type.Null()])
+    ),
     interactive: Type.Optional(
       Type.Union([
         Type.Object(
