@@ -6881,7 +6881,7 @@ onBeforeUnmount(() => {
             :options="{ wheelPropagation: false }"
             class="flex-grow-1"
           >
-            <ChatLog />
+            <ChatLog :is-official-active-chat="isOfficialActiveChat" />
           </PerfectScrollbar>
 
           <ChatLinkPreview

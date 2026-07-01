@@ -89,6 +89,14 @@ type QuotedMessageWithContacts = QuotedMessageChat & {
 };
 type ChatWorker = ListChatsResult['worker'];
 
+interface Props {
+  isOfficialActiveChat?: boolean;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  isOfficialActiveChat: false,
+});
+
 const viewerOpen = ref(false);
 const viewerItems = ref<ViewerMediaItem[]>([]);
 const viewerInitialIndex = ref(0);
@@ -1357,12 +1365,14 @@ const shouldShowDownload = (message: ListMessageResult): boolean => {
 const isOfficialWorker = (worker?: ChatWorker | null): boolean =>
   worker?.is_official === true || worker?.type_id === EWorkerType.whatsapp;
 
-const isOfficialActiveChat = computed(() =>
-  isOfficialWorker(activeChat.value?.worker ?? null)
+const shouldRestrictOfficialMessageActions = computed(
+  () =>
+    props.isOfficialActiveChat ||
+    isOfficialWorker(activeChat.value?.worker ?? null)
 );
 
 const canEditMessage = (message: ListMessageResult): boolean => {
-  if (isOfficialActiveChat.value) return false;
+  if (shouldRestrictOfficialMessageActions.value) return false;
   if (!isTextMessage(message)) return false;
   if (isTypeUser(message)) return false;
   if (isDeleted(message)) return false;
@@ -1375,7 +1385,7 @@ const canEditMessage = (message: ListMessageResult): boolean => {
 };
 
 const canDeleteMessage = (message: ListMessageResult): boolean => {
-  if (isOfficialActiveChat.value) return false;
+  if (shouldRestrictOfficialMessageActions.value) return false;
   if (isDeleted(message)) return false;
   if (isTypeUser(message)) return false;
   return message.content?.type !== EMessageType.system;
