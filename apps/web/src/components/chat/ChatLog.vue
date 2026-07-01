@@ -1517,7 +1517,10 @@ const getOfficialMetadataTitle = (
 };
 
 const isOfficialUnsupportedMessage = (message: ListMessageResult): boolean =>
-  Boolean(getOfficialMetadata(message)?.unsupported);
+  Boolean(
+    getOfficialMetadata(message)?.unsupported ||
+    getOfficialMetadata(message)?.display?.kind === 'unsupported'
+  );
 
 const NON_OFFICIAL_UNSUPPORTED_MESSAGE =
   'Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp.';

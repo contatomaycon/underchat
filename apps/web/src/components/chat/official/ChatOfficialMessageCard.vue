@@ -4,6 +4,7 @@ import type {
   ContentMessageChat,
   ListMessageResult,
 } from '@core/schema/chat/listMessageChats/response.schema';
+import { useI18n } from 'vue-i18n';
 
 type OfficialMetadata = NonNullable<ContentMessageChat['official']>;
 type OfficialDisplay = NonNullable<OfficialMetadata['display']>;
@@ -20,8 +21,18 @@ const props = withDefaults(defineProps<Props>(), {
   isOutgoing: false,
 });
 
+const { t } = useI18n();
+
 const display = computed<OfficialDisplay | null>(
   () => props.message.content?.official?.display ?? null
+);
+
+const isUnsupported = computed(() => display.value?.kind === 'unsupported');
+
+const unsupportedTitle = computed(() => t('official_whatsapp_unsupported'));
+
+const unsupportedDescription = computed(() =>
+  t('official_whatsapp_unsupported_hint')
 );
 
 const kindLabelByKind: Record<string, string> = {
@@ -173,150 +184,166 @@ function sectionRows(section: OfficialSection): OfficialAction[] {
       { 'official-card--outgoing': isOutgoing },
     ]"
   >
-    <div class="official-card__meta">
-      <VIcon size="15" class="official-card__meta-icon">{{ icon }}</VIcon>
-      <span class="official-card__meta-label">{{ label }}</span>
-      <span v-if="rawTypeLabel" class="official-card__raw">
-        {{ rawTypeLabel }}
-      </span>
+    <div v-if="isUnsupported" class="official-unsupported-card">
+      <div class="official-unsupported-card__icon">
+        <VIcon size="19">tabler-alert-circle</VIcon>
+      </div>
+      <div class="official-unsupported-card__body">
+        <span class="official-unsupported-card__title">
+          {{ unsupportedTitle }}
+        </span>
+        <span class="official-unsupported-card__description">
+          {{ unsupportedDescription }}
+        </span>
+      </div>
     </div>
 
-    <div class="official-card__surface">
-      <div
-        v-if="display.media?.url || display.media?.link"
-        class="official-card__media"
-      >
-        <img
-          v-if="display.media?.type !== 'video'"
-          :src="display.media.url || display.media.link || ''"
-          alt=""
-        />
-        <video
-          v-else
-          :src="display.media.url || display.media.link || ''"
-          muted
-          playsinline
-          preload="metadata"
-        >
-          <track kind="captions" />
-        </video>
+    <template v-else>
+      <div class="official-card__meta">
+        <VIcon size="15" class="official-card__meta-icon">{{ icon }}</VIcon>
+        <span class="official-card__meta-label">{{ label }}</span>
+        <span v-if="rawTypeLabel" class="official-card__raw">
+          {{ rawTypeLabel }}
+        </span>
       </div>
 
-      <div class="official-card__message">
-        <div v-if="display.title" class="official-card__title">
-          {{ display.title }}
-        </div>
-        <div v-if="shouldShowBody" class="official-card__body">
-          {{ display.body }}
+      <div class="official-card__surface">
+        <div
+          v-if="display.media?.url || display.media?.link"
+          class="official-card__media"
+        >
+          <img
+            v-if="display.media?.type !== 'video'"
+            :src="display.media.url || display.media.link || ''"
+            alt=""
+          />
+          <video
+            v-else
+            :src="display.media.url || display.media.link || ''"
+            muted
+            playsinline
+            preload="metadata"
+          >
+            <track kind="captions" />
+          </video>
         </div>
 
-        <div v-if="visibleItems.length" class="official-card__items">
-          <div
-            v-for="(item, index) in visibleItems"
-            :key="`${item.id || item.title || 'item'}-${index}`"
-            class="official-card__item"
-          >
-            <span class="official-card__item-title">
-              {{ item.title || item.id }}
-            </span>
-            <span v-if="item.description" class="official-card__item-desc">
-              {{ item.description }}
-            </span>
+        <div class="official-card__message">
+          <div v-if="display.title" class="official-card__title">
+            {{ display.title }}
           </div>
-        </div>
+          <div v-if="shouldShowBody" class="official-card__body">
+            {{ display.body }}
+          </div>
 
-        <div v-if="visibleSections.length" class="official-card__sections">
-          <div
-            v-for="(section, sectionIndex) in visibleSections"
-            :key="`${section.id || section.title || 'section'}-${sectionIndex}`"
-            class="official-card__section"
-          >
-            <div v-if="section.title" class="official-card__section-title">
-              {{ section.title }}
-            </div>
+          <div v-if="visibleItems.length" class="official-card__items">
             <div
-              v-for="(row, rowIndex) in sectionRows(section)"
-              :key="`${row.id || row.title || 'row'}-${rowIndex}`"
-              class="official-card__row"
+              v-for="(item, index) in visibleItems"
+              :key="`${item.id || item.title || 'item'}-${index}`"
+              class="official-card__item"
             >
-              <span class="official-card__row-title">
-                {{ row.title || row.id }}
+              <span class="official-card__item-title">
+                {{ item.title || item.id }}
               </span>
-              <span v-if="row.description" class="official-card__row-desc">
-                {{ row.description }}
+              <span v-if="item.description" class="official-card__item-desc">
+                {{ item.description }}
               </span>
             </div>
           </div>
-        </div>
 
-        <div v-if="visibleCards.length" class="official-card__cards">
-          <div
-            v-for="(card, cardIndex) in visibleCards"
-            :key="`${card.title || card.body || 'card'}-${cardIndex}`"
-            class="official-card__carousel-card"
-          >
+          <div v-if="visibleSections.length" class="official-card__sections">
             <div
-              v-if="card.media?.url || card.media?.link"
-              class="official-card__card-media"
+              v-for="(section, sectionIndex) in visibleSections"
+              :key="`${section.id || section.title || 'section'}-${sectionIndex}`"
+              class="official-card__section"
             >
-              <img
-                :src="card.media.url || card.media.link || ''"
-                :alt="card.title || ''"
-              />
+              <div v-if="section.title" class="official-card__section-title">
+                {{ section.title }}
+              </div>
+              <div
+                v-for="(row, rowIndex) in sectionRows(section)"
+                :key="`${row.id || row.title || 'row'}-${rowIndex}`"
+                class="official-card__row"
+              >
+                <span class="official-card__row-title">
+                  {{ row.title || row.id }}
+                </span>
+                <span v-if="row.description" class="official-card__row-desc">
+                  {{ row.description }}
+                </span>
+              </div>
             </div>
-            <div v-if="card.title" class="official-card__card-title">
-              {{ card.title }}
-            </div>
-            <div v-if="card.body" class="official-card__card-body">
-              {{ card.body }}
-            </div>
-            <div v-if="card.footer" class="official-card__card-footer">
-              {{ card.footer }}
-            </div>
+          </div>
+
+          <div v-if="visibleCards.length" class="official-card__cards">
             <div
-              v-for="(action, actionIndex) in card.actions ?? []"
-              :key="`${action.id || action.title || 'card-action'}-${actionIndex}`"
-              class="official-card__action official-card__action--nested"
+              v-for="(card, cardIndex) in visibleCards"
+              :key="`${card.title || card.body || 'card'}-${cardIndex}`"
+              class="official-card__carousel-card"
             >
-              {{ actionTitle(action) }}
+              <div
+                v-if="card.media?.url || card.media?.link"
+                class="official-card__card-media"
+              >
+                <img
+                  :src="card.media.url || card.media.link || ''"
+                  :alt="card.title || ''"
+                />
+              </div>
+              <div v-if="card.title" class="official-card__card-title">
+                {{ card.title }}
+              </div>
+              <div v-if="card.body" class="official-card__card-body">
+                {{ card.body }}
+              </div>
+              <div v-if="card.footer" class="official-card__card-footer">
+                {{ card.footer }}
+              </div>
+              <div
+                v-for="(action, actionIndex) in card.actions ?? []"
+                :key="`${action.id || action.title || 'card-action'}-${actionIndex}`"
+                class="official-card__action official-card__action--nested"
+              >
+                {{ actionTitle(action) }}
+              </div>
             </div>
+          </div>
+
+          <div v-if="submittedEntries.length" class="official-card__submitted">
+            <div
+              v-for="[key, value] in submittedEntries"
+              :key="key"
+              class="official-card__submitted-row"
+            >
+              <span>{{ key }}</span>
+              <strong>{{ value }}</strong>
+            </div>
+          </div>
+
+          <div v-if="display.footer" class="official-card__footer">
+            {{ display.footer }}
           </div>
         </div>
 
-        <div v-if="submittedEntries.length" class="official-card__submitted">
-          <div
-            v-for="[key, value] in submittedEntries"
-            :key="key"
-            class="official-card__submitted-row"
+        <div v-if="display.action_label" class="official-card__action-label">
+          {{ display.action_label }}
+        </div>
+
+        <div v-if="visibleActions.length" class="official-card__actions">
+          <a
+            v-for="(action, index) in visibleActions"
+            :key="`${action.id || action.title || action.url || 'action'}-${index}`"
+            class="official-card__action"
+            :href="action.url || undefined"
+            :target="action.url ? '_blank' : undefined"
+            :rel="action.url ? 'noopener noreferrer' : undefined"
           >
-            <span>{{ key }}</span>
-            <strong>{{ value }}</strong>
-          </div>
-        </div>
-
-        <div v-if="display.footer" class="official-card__footer">
-          {{ display.footer }}
+            <VIcon v-if="action.url" size="14">tabler-external-link</VIcon>
+            <span>{{ actionTitle(action) }}</span>
+          </a>
         </div>
       </div>
-
-      <div v-if="display.action_label" class="official-card__action-label">
-        {{ display.action_label }}
-      </div>
-
-      <div v-if="visibleActions.length" class="official-card__actions">
-        <a
-          v-for="(action, index) in visibleActions"
-          :key="`${action.id || action.title || action.url || 'action'}-${index}`"
-          class="official-card__action"
-          :href="action.url || undefined"
-          :target="action.url ? '_blank' : undefined"
-          :rel="action.url ? 'noopener noreferrer' : undefined"
-        >
-          <VIcon v-if="action.url" size="14">tabler-external-link</VIcon>
-          <span>{{ actionTitle(action) }}</span>
-        </a>
-      </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -329,6 +356,50 @@ function sectionRows(section: OfficialSection): OfficialAction[] {
 
 .official-card--outgoing {
   margin-left: auto;
+}
+
+.official-card--unsupported {
+  width: 100%;
+  margin-block: 0;
+}
+
+.official-unsupported-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.official-unsupported-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-warning), 0.12);
+  color: rgb(var(--v-theme-warning));
+}
+
+.official-unsupported-card__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: 1px;
+}
+
+.official-unsupported-card__title {
+  color: rgba(var(--v-theme-on-surface), 0.92);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.official-unsupported-card__description {
+  margin-top: 2px;
+  color: rgba(var(--v-theme-on-surface), 0.66);
+  font-size: 0.75rem;
+  line-height: 1.32;
 }
 
 .official-card__meta {
