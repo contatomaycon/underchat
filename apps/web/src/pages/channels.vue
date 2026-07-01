@@ -94,8 +94,10 @@ const permissionsManageOfficialTemplates = [
   EWorkerPermissions.view_worker,
 ];
 
+const META_WHATSAPP_MESSAGE_MODEL_MANAGER_URL =
+  'https://business.facebook.com/latest/whatsapp_manager/message_templates?tab=message-templates&nav_ref=whatsapp_manager';
+
 const { t } = useI18n();
-const router = useRouter();
 const channelsStore = useChannelsStore();
 const dashboardStore = useDashboardStore();
 useSnackbarCleanup(channelsStore);
@@ -367,8 +369,19 @@ const openConfigDialog = (id: string) => {
   isDialogConfigChannelShow.value = true;
 };
 
-const openWhatsappTemplatesPage = (id: string) => {
-  router.push(`/channels/${id}/whatsapp-templates`);
+const openMetaWhatsappMessageModelManager = () => {
+  const openedWindow = window.open(
+    META_WHATSAPP_MESSAGE_MODEL_MANAGER_URL,
+    '_blank',
+    'noopener,noreferrer'
+  );
+
+  if (openedWindow) {
+    openedWindow.opener = null;
+    return;
+  }
+
+  window.location.assign(META_WHATSAPP_MESSAGE_MODEL_MANAGER_URL);
 };
 
 const isWhatsappOfficialChannel = (channel: ListWorkerResponse) =>
@@ -1039,8 +1052,8 @@ onUnmounted(async () => {
                     isWhatsappOfficialChannel(item) &&
                     $canPermission(permissionsManageOfficialTemplates)
                   "
-                  :data-testid="`channel-whatsapp-templates-${item.id}`"
-                  @click.stop="openWhatsappTemplatesPage(item.id)"
+                  :data-testid="`channel-meta-whatsapp-template-manager-${item.id}`"
+                  @click.stop="openMetaWhatsappMessageModelManager"
                   ><VTooltip
                     location="top"
                     transition="scale-transition"

@@ -299,13 +299,6 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    'official-whatsapp-templates-worker_id': RouteRecordInfo<
-      'official-whatsapp-templates-worker_id',
-      '/official-whatsapp-templates/:worker_id',
-      { worker_id: ParamValue<true> },
-      { worker_id: ParamValue<false> },
-      | never
-    >,
     'plan': RouteRecordInfo<
       'plan',
       '/plan',
@@ -711,12 +704,6 @@ declare module 'vue-router/auto-routes' {
     'src/pages/not-authorized.vue': {
       routes:
         | 'not-authorized'
-      views:
-        | never
-    }
-    'src/pages/official-whatsapp-templates/[worker_id].vue': {
-      routes:
-        | 'official-whatsapp-templates-worker_id'
       views:
         | never
     }
