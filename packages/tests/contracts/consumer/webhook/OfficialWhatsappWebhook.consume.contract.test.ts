@@ -118,9 +118,72 @@ function makeEvent(): IMetaWhatsappWebhookEvent {
   };
 }
 
+function makeContactMessageEvent(): IMetaWhatsappWebhookEvent {
+  return {
+    received_at: '2026-07-01T14:50:38.577Z',
+    raw_body_sha256: 'hash',
+    signature_header: 'sha256=signature',
+    payload: {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: 'waba-1',
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: {
+                  display_phone_number: '556192037138',
+                  phone_number_id: 'phone-number-1',
+                },
+                contacts: [
+                  {
+                    profile: { name: 'Maycon Douglas' },
+                    wa_id: '556195999040',
+                    user_id: 'BR.1020703283800263',
+                  },
+                ],
+                messages: [
+                  {
+                    from: '556195999040',
+                    from_user_id: 'BR.1020703283800263',
+                    id: 'wamid.contact-1',
+                    timestamp: '1782917437',
+                    type: 'contacts',
+                    contacts: [
+                      {
+                        name: {
+                          first_name: 'Braian',
+                          formatted_name: 'Braian',
+                        },
+                        phones: [
+                          {
+                            phone: '+55 61 99121-1783',
+                            wa_id: '556191211783',
+                            type: 'CELL',
+                          },
+                        ],
+                        vcard:
+                          'BEGIN:VCARD\nVERSION:3.0\nN:;Braian;;;\nFN:Braian\nTEL;type=CELL;type=VOICE;waid=556191211783:+55 61 99121-1783\nEND:VCARD',
+                        origin: 'other',
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
 describe('OfficialWhatsappWebhookConsume', () => {
   it('publishes official Meta messages and statuses into the existing chat pipeline', async () => {
-    const { consumer, streamProducerService, repository, redis } = makeConsumer();
+    const { consumer, streamProducerService, repository, redis } =
+      makeConsumer();
     const event = makeEvent();
 
     await (consumer as any).processWebhookEvent(event, {
@@ -173,6 +236,53 @@ describe('OfficialWhatsappWebhookConsume', () => {
       '1',
       'EX',
       expect.any(Number)
+    );
+  });
+
+  it('maps official Meta contact cards with normalized phone fields', async () => {
+    const { consumer, streamProducerService } = makeConsumer();
+    const event = makeContactMessageEvent();
+
+    await (consumer as any).processWebhookEvent(event, {
+      sourceTopic: 'official.whatsapp.webhook.event',
+      partition: 0,
+      offset: 1,
+      kafkaKey: 'phone-number-1',
+      payload: event,
+      queueKey: 'phone-number-1',
+    });
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'upsert.message',
+      expect.objectContaining({
+        account_id: 'account-1',
+        worker_id: 'worker-1',
+        source_provider: 'official_whatsapp',
+        type: EMessageType.contact_card,
+        message: expect.objectContaining({
+          message: expect.objectContaining({
+            contactMessage: expect.objectContaining({
+              displayName: 'Braian',
+              vcard: expect.stringContaining('FN:Braian'),
+            }),
+          }),
+        }),
+        content: expect.objectContaining({
+          type: EMessageType.contact_card,
+          message: 'Braian',
+          contact: expect.objectContaining({
+            name: 'Braian',
+            phone: '61991211783',
+            phone_partial: '61991211783',
+            phone_ddi: '55',
+            email: null,
+            email_partial: null,
+            photo: null,
+          }),
+          contacts: null,
+        }),
+      }),
+      expect.any(String)
     );
   });
 });

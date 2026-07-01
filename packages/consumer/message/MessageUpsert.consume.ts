@@ -615,6 +615,10 @@ export class MessageUpsertConsume {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
+  private onlyDigits(value: string | null | undefined): string {
+    return value?.replaceAll(/\D/g, '') ?? '';
+  }
+
   private toRecord(value: unknown): Record<string, unknown> | undefined {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return undefined;
@@ -1935,7 +1939,10 @@ export class MessageUpsertConsume {
     getChat: IChat,
     data: IUpsertMessage
   ): Promise<void> {
-    if (!data.photo) return;
+    if (!data.photo) {
+      await this.syncChatPhotoFromContactIfMissing(getChat, data);
+      return;
+    }
 
     const needsPhotoUpdate = true;
     const needsContactPhotoUpdate = Boolean(getChat.contact);
@@ -1997,6 +2004,171 @@ export class MessageUpsertConsume {
     } catch (error) {
       console.error(
         `[MessageUpsert] Failed to update chat photo for chat ${getChat.chat_id}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
+  private resolveContactPhoto(chat: IChat): string | null {
+    return this.toNonEmptyString(chat.contact?.photo) ?? null;
+  }
+
+  private buildChatContactFromExistingContact(
+    existingContact: ViewContactResponse,
+    phoneAndDdi: { phone: string; phone_ddi: string | null },
+    fallbackPhone: string
+  ): NonNullable<IChat['contact']> {
+    return {
+      id: existingContact.contact_id,
+      name: existingContact.name,
+      phone: existingContact.phone_partial ?? fallbackPhone,
+      phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
+      photo: existingContact.photo ?? null,
+      responsible_attendant: existingContact.user
+        ? {
+            id: existingContact.user.user_id,
+            name: existingContact.user.name ?? '',
+            photo: existingContact.user.photo ?? null,
+          }
+        : null,
+      ignore: existingContact.ignore ?? 'not_ignore',
+    };
+  }
+
+  private resolvePhoneAndDdiForChatPhotoFallback(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): { phone: string; phone_ddi: string } | null {
+    const jid = remoteJid(data.message?.key);
+    const jidAlt = remoteJidAlt(data.message?.key);
+    const phoneFromJid = getPhoneFromJid(jid, jidAlt);
+    const candidates = [
+      typeof getChat.phone === 'string' ? getChat.phone : null,
+      phoneFromJid,
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = this.toNonEmptyString(candidate);
+      if (!normalized) {
+        continue;
+      }
+
+      const withPlus = normalized.startsWith('+')
+        ? normalized
+        : `+${normalized}`;
+      const phoneAndDdi = extractPhoneAndDdi(withPlus);
+      if (phoneAndDdi) {
+        return phoneAndDdi;
+      }
+    }
+
+    return null;
+  }
+
+  private shouldLookupCurrentContactPhoto(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): boolean {
+    if (data.source_provider === 'official_whatsapp') {
+      return true;
+    }
+
+    return !this.resolveContactPhoto(getChat);
+  }
+
+  private async hydrateChatContactFromLocalContactIfNeeded(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<boolean> {
+    if (!this.shouldLookupCurrentContactPhoto(getChat, data)) {
+      return false;
+    }
+
+    const phoneAndDdi = this.resolvePhoneAndDdiForChatPhotoFallback(
+      getChat,
+      data
+    );
+    if (!phoneAndDdi) {
+      return false;
+    }
+
+    const existingContact = await this.contactService.getContactByPhone(
+      data.account_id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+    if (!existingContact?.photo) {
+      return false;
+    }
+
+    if (
+      getChat.contact?.id &&
+      getChat.contact.id !== existingContact.contact_id
+    ) {
+      return false;
+    }
+
+    const fallbackPhone = `${phoneAndDdi.phone_ddi}${phoneAndDdi.phone}`;
+    if (!getChat.contact) {
+      getChat.contact = this.buildChatContactFromExistingContact(
+        existingContact,
+        phoneAndDdi,
+        fallbackPhone
+      );
+      return true;
+    }
+
+    if (getChat.contact.photo === existingContact.photo) {
+      return false;
+    }
+
+    getChat.contact = {
+      ...getChat.contact,
+      photo: existingContact.photo,
+    };
+
+    return true;
+  }
+
+  private async syncChatPhotoFromContactIfMissing(
+    getChat: IChat,
+    data: IUpsertMessage
+  ): Promise<void> {
+    const previousChatPhoto = this.toNonEmptyString(getChat.photo);
+    const previousContactPhoto = this.resolveContactPhoto(getChat);
+
+    const contactChanged =
+      await this.hydrateChatContactFromLocalContactIfNeeded(getChat, data);
+
+    const contactPhoto = this.resolveContactPhoto(getChat);
+    if (!contactPhoto) {
+      return;
+    }
+
+    const shouldCopyContactPhotoToChat =
+      data.source_provider === 'official_whatsapp' ||
+      !previousChatPhoto ||
+      previousChatPhoto === previousContactPhoto;
+
+    const nextChatPhoto = shouldCopyContactPhotoToChat
+      ? contactPhoto
+      : previousChatPhoto;
+    const chatPhotoChanged = (previousChatPhoto ?? null) !== nextChatPhoto;
+
+    if (!contactChanged && !chatPhotoChanged) {
+      return;
+    }
+
+    getChat.photo = nextChatPhoto;
+
+    try {
+      await this.chatService.saveChat({
+        ...getChat,
+        photo: nextChatPhoto,
+      });
+    } catch (error) {
+      console.error(
+        `[MessageUpsert] Failed to sync contact photo for chat ${getChat.chat_id}:`,
         error instanceof Error ? error.message : error
       );
     }
@@ -2576,14 +2748,19 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (content.type === EMessageType.contact_card && data.content?.contact) {
-      content.contact = data.content.contact;
-      return;
-    }
-
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const contactMsg = msg?.contactMessage as
       { vcard?: string; displayName?: string } | undefined;
+
+    if (content.type === EMessageType.contact_card && data.content?.contact) {
+      content.contact = await this.hydrateProvidedContactMessage(
+        data.content.contact,
+        data,
+        contactMsg
+      );
+      return;
+    }
+
     if (content.type !== EMessageType.contact_card || !contactMsg?.vcard) {
       return;
     }
@@ -2649,16 +2826,25 @@ export class MessageUpsertConsume {
     content: IContent,
     data: IUpsertMessage
   ): Promise<void> {
-    if (content.type === EMessageType.contacts && data.content?.contacts) {
-      content.contacts = data.content.contacts;
-      return;
-    }
-
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const contactsArrayMessage = msg?.contactsArrayMessage as
       | { contacts?: Array<{ vcard?: string; displayName?: string }> }
       | undefined;
     const contactsArray = contactsArrayMessage?.contacts;
+
+    if (content.type === EMessageType.contacts && data.content?.contacts) {
+      content.contacts = await Promise.all(
+        data.content.contacts.map((contact, index) =>
+          this.hydrateProvidedContactMessage(
+            contact,
+            data,
+            contactsArray?.[index]
+          )
+        )
+      );
+      return;
+    }
+
     if (content.type !== EMessageType.contacts || !contactsArray?.length) {
       return;
     }
@@ -2730,6 +2916,94 @@ export class MessageUpsertConsume {
         error instanceof Error ? error.message : error
       );
     }
+  }
+
+  private resolveProvidedContactPhoneAndDdi(
+    contact: IContactMessage,
+    contactMsg?: { vcard?: string; displayName?: string }
+  ): { phone: string; phone_ddi: string } | null {
+    if (contactMsg?.vcard) {
+      const phoneAndDdi = extractPhoneAndDdiFromContactMessage(
+        contactMsg as Parameters<typeof extractPhoneAndDdiFromContactMessage>[0]
+      );
+
+      if (phoneAndDdi) {
+        return phoneAndDdi;
+      }
+    }
+
+    const rawPhone =
+      this.toNonEmptyString(contact.phone) ??
+      this.toNonEmptyString(contact.phone_partial);
+    const phoneDdi = this.onlyDigits(
+      this.toNonEmptyString(contact.phone_ddi) ?? '55'
+    );
+    const phoneDigits = this.onlyDigits(rawPhone);
+
+    if (!phoneDigits || !phoneDdi) {
+      return null;
+    }
+
+    if (
+      phoneDigits.startsWith(phoneDdi) &&
+      phoneDigits.length > phoneDdi.length + 8
+    ) {
+      return {
+        phone: phoneDigits.slice(phoneDdi.length),
+        phone_ddi: phoneDdi,
+      };
+    }
+
+    return {
+      phone: phoneDigits,
+      phone_ddi: phoneDdi,
+    };
+  }
+
+  private async hydrateProvidedContactMessage(
+    contact: IContactMessage,
+    data: IUpsertMessage,
+    contactMsg?: { vcard?: string; displayName?: string }
+  ): Promise<IContactMessage> {
+    const phoneAndDdi = this.resolveProvidedContactPhoneAndDdi(
+      contact,
+      contactMsg
+    );
+    if (!phoneAndDdi) {
+      return contact;
+    }
+
+    const normalizedContact: IContactMessage = {
+      ...contact,
+      phone: phoneAndDdi.phone,
+      phone_partial: contact.phone_partial ?? phoneAndDdi.phone,
+      phone_ddi: phoneAndDdi.phone_ddi,
+    };
+
+    const existingContact = await this.contactService.getContactByPhone(
+      data.account_id,
+      phoneAndDdi.phone,
+      phoneAndDdi.phone_ddi
+    );
+
+    if (!existingContact) {
+      return normalizedContact;
+    }
+
+    return {
+      ...normalizedContact,
+      contact_id: existingContact.contact_id,
+      name: existingContact.name || normalizedContact.name,
+      last_name: existingContact.last_name ?? normalizedContact.last_name,
+      phone_partial:
+        existingContact.phone_partial ??
+        normalizedContact.phone_partial ??
+        phoneAndDdi.phone,
+      phone_ddi: existingContact.phone_ddi ?? phoneAndDdi.phone_ddi,
+      email_partial:
+        existingContact.email_partial ?? normalizedContact.email_partial,
+      photo: existingContact.photo ?? normalizedContact.photo ?? null,
+    };
   }
 
   private async ensureContactForChat(
@@ -4074,6 +4348,8 @@ export class MessageUpsertConsume {
         );
         inputChatMessage.photo = inputChatMessage.contact?.photo ?? null;
       }
+    } else {
+      inputChatMessage.photo = this.resolveContactPhoto(inputChatMessage);
     }
 
     if (

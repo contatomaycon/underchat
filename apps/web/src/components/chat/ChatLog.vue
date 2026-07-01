@@ -443,6 +443,66 @@ const resolvePreviewUrl = (lp?: LinkPreview): string =>
 
 const isDeleted = (m: ListMessageResult): boolean => m.deleted === true;
 
+const onlyDigits = (value?: string | null): string =>
+  typeof value === 'string' ? value.replaceAll(/\D/g, '') : '';
+
+type ContactCardPhone = {
+  phone?: string | null;
+  phone_partial?: string | null;
+  phone_ddi?: string | null;
+  email?: string | null;
+  email_partial?: string | null;
+};
+
+const resolveContactPhoneParts = (
+  contact?: ContactCardPhone | null
+): { phone: string | null; phoneDdi: string } => {
+  const rawPhone = contact?.phone || contact?.phone_partial || '';
+  const phoneDdi = onlyDigits(contact?.phone_ddi) || '55';
+  const phoneDigits = onlyDigits(rawPhone);
+
+  if (!phoneDigits) {
+    return { phone: null, phoneDdi };
+  }
+
+  if (
+    phoneDdi &&
+    phoneDigits.startsWith(phoneDdi) &&
+    phoneDigits.length > phoneDdi.length + 8
+  ) {
+    return {
+      phone: phoneDigits.slice(phoneDdi.length),
+      phoneDdi,
+    };
+  }
+
+  return { phone: phoneDigits, phoneDdi };
+};
+
+const formatContactCardSubtitle = (
+  contact?: {
+    phone?: string | null;
+    phone_partial?: string | null;
+    phone_ddi?: string | null;
+    email?: string | null;
+    email_partial?: string | null;
+  } | null
+): string | null => {
+  if (!contact) return null;
+
+  const rawPhone = contact.phone || contact.phone_partial || '';
+  if (rawPhone.includes('*')) return rawPhone;
+
+  const { phone, phoneDdi } = resolveContactPhoneParts(contact);
+  const fullPhoneDigits = phone ? `${phoneDdi}${phone}` : '';
+
+  if (fullPhoneDigits) {
+    return formatPhoneBR(fullPhoneDigits);
+  }
+
+  return contact.email_partial || contact.email || null;
+};
+
 const handleContactsGroupClick = (message: ListMessageResult) => {
   if (!message.content?.contacts || message.content.contacts.length === 0) {
     return;
@@ -475,19 +535,14 @@ const saveContactFromGroup = async (contact: {
     return;
   }
 
-  const phone = contact.phone ?? contact.phone_partial;
-  const phoneDdi = contact.phone_ddi ?? '55';
+  const { phone, phoneDdi } = resolveContactPhoneParts(contact);
 
   if (!phone) return;
 
   savingContacts.value.add(contactKey);
 
   try {
-    const phoneSearch = phone.replaceAll(/\D/g, '');
-    const foundContact = await chatStore.getChatContactByPhone(
-      phoneSearch,
-      phoneDdi
-    );
+    const foundContact = await chatStore.getChatContactByPhone(phone, phoneDdi);
 
     if (foundContact) {
       savingContacts.value.delete(contactKey);
@@ -508,7 +563,7 @@ const saveContactFromGroup = async (contact: {
     name: contact.name ?? undefined,
     last_name: contact.last_name ?? undefined,
     email: contact.email ?? undefined,
-    phone: phone ?? undefined,
+    phone,
     phone_ddi: phoneDdi,
     nickname: undefined,
     birthday: undefined,
@@ -536,16 +591,14 @@ const handleContactClick = async (message: ListMessageResult) => {
     return;
   }
 
-  const phone = contact.phone ?? contact.phone_partial;
-  const phoneDdi = contact.phone_ddi ?? '55';
+  const { phone, phoneDdi } = resolveContactPhoneParts(contact);
 
   if (phone) {
     loadingContactCards.value.add(message.message_id);
 
     try {
-      const phoneSearch = phone.replaceAll(/\D/g, '');
       const foundContact = await chatStore.getChatContactByPhone(
-        phoneSearch,
+        phone,
         phoneDdi
       );
 
@@ -4847,6 +4900,9 @@ onUnmounted(() => {
                   >
                     <GroupContactMessageCard
                       :title="item.message.content.contact.name || ''"
+                      :subtitle="
+                        formatContactCardSubtitle(item.message.content.contact)
+                      "
                       :time="
                         formatDate(item.message.date, {
                           hour: '2-digit',
@@ -4864,42 +4920,10 @@ onUnmounted(() => {
                     />
 
                     <div
-                      v-if="
-                        item.message.content?.message ||
-                        item.message.content?.pin
-                      "
+                      v-if="item.message.content?.pin"
                       class="d-flex align-center mt-2"
                     >
-                      <p
-                        v-if="item.message.content?.message"
-                        class="contact-caption mb-0"
-                        :class="{
-                          'mr-2': item.message.content?.pin,
-                        }"
-                        :style="{
-                          color: isTypeUser(item.message)
-                            ? 'rgb(var(--v-theme-on-surface))'
-                            : 'rgb(var(--v-theme-title))',
-                        }"
-                      >
-                        <span
-                          v-if="shouldFormatMessage(item.message)"
-                          v-html="
-                            formatWhatsAppText(
-                              getLatestMessageText(item.message)
-                            )
-                          "
-                        ></span>
-                        <span v-else>{{
-                          getLatestMessageText(item.message)
-                        }}</span>
-                      </p>
-                      <VIcon
-                        v-if="item.message.content?.pin"
-                        size="16"
-                        color="grey-600"
-                        class="pin-icon"
-                      >
+                      <VIcon size="16" color="grey-600" class="pin-icon">
                         tabler-pin
                       </VIcon>
                     </div>
@@ -5731,10 +5755,10 @@ onUnmounted(() => {
                 {{ contact.last_name || '' }}
               </div>
               <div
-                v-if="contact.phone_partial"
+                v-if="formatContactCardSubtitle(contact)"
                 class="text-caption text-disabled"
               >
-                {{ contact.phone_partial }}
+                {{ formatContactCardSubtitle(contact) }}
               </div>
               <div
                 v-if="contact.email_partial"
@@ -7948,13 +7972,6 @@ onUnmounted(() => {
   .group-contact-card__title-row {
     padding-right: 44px;
   }
-}
-
-.contact-caption {
-  margin-top: 8px;
-  padding: 0 4px;
-  font-size: 0.875rem;
-  line-height: 1.4;
 }
 
 .contact-item-modal {

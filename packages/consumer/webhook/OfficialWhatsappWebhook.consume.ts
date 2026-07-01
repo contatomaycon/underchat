@@ -47,6 +47,7 @@ import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 
 type MetaRecord = Record<string, unknown>;
 
@@ -568,7 +569,8 @@ export class OfficialWhatsappWebhookConsume {
     }
 
     if (metaType === 'contacts') {
-      const contacts = this.mapContacts(this.toRecordArray(message.contacts));
+      const rawContacts = this.toRecordArray(message.contacts);
+      const contacts = this.mapContacts(rawContacts);
       const type =
         contacts.length <= 1
           ? EMessageType.contact_card
@@ -587,11 +589,20 @@ export class OfficialWhatsappWebhookConsume {
         content,
         rawMessage:
           type === EMessageType.contact_card
-            ? { contactMessage: { displayName: contacts[0]?.name } }
+            ? {
+                contactMessage: {
+                  displayName: contacts[0]?.name,
+                  vcard:
+                    this.toNonEmptyString(rawContacts[0]?.vcard) ?? undefined,
+                },
+              }
             : {
                 contactsArrayMessage: {
-                  contacts: contacts.map((contact) => ({
+                  contacts: contacts.map((contact, index) => ({
                     displayName: contact.name,
+                    vcard:
+                      this.toNonEmptyString(rawContacts[index]?.vcard) ??
+                      undefined,
                   })),
                 },
               },
@@ -981,6 +992,8 @@ export class OfficialWhatsappWebhookConsume {
       const phones = this.toRecordArray(contact.phones);
       const emails = this.toRecordArray(contact.emails);
       const firstPhone = phones[0];
+      const firstEmail = this.toNonEmptyString(emails[0]?.email) ?? null;
+      const resolvedPhone = this.resolveMetaContactPhone(firstPhone);
       const composedName = [name?.first_name, name?.last_name]
         .map((value) => this.toNonEmptyString(value))
         .filter(Boolean)
@@ -995,15 +1008,44 @@ export class OfficialWhatsappWebhookConsume {
         contact_id: null,
         name: fullName,
         last_name: this.toNonEmptyString(name?.last_name) ?? null,
-        phone:
-          this.toNonEmptyString(firstPhone?.wa_id) ??
-          this.toNonEmptyString(firstPhone?.phone) ??
-          null,
-        phone_ddi: null,
-        email: this.toNonEmptyString(emails[0]?.email) ?? null,
+        phone: resolvedPhone.phone,
+        phone_partial: resolvedPhone.phone_partial,
+        phone_ddi: resolvedPhone.phone_ddi,
+        email: firstEmail,
+        email_partial: firstEmail,
         photo: null,
       };
     });
+  }
+
+  private resolveMetaContactPhone(
+    phone: MetaRecord | undefined
+  ): Pick<IContactMessage, 'phone' | 'phone_partial' | 'phone_ddi'> {
+    const rawPhone = this.toNonEmptyString(phone?.phone);
+    const waId = this.toNonEmptyString(phone?.wa_id);
+    const candidates = [rawPhone, waId].filter(Boolean) as string[];
+
+    for (const candidate of candidates) {
+      const normalizedCandidate = candidate.trim().startsWith('+')
+        ? candidate
+        : `+${candidate}`;
+      const result = extractPhoneAndDdi(normalizedCandidate);
+
+      if (result) {
+        return {
+          phone: result.phone,
+          phone_partial: result.phone,
+          phone_ddi: result.phone_ddi,
+        };
+      }
+    }
+
+    const fallback = this.onlyDigits(rawPhone ?? waId ?? '');
+    return {
+      phone: fallback || null,
+      phone_partial: fallback || null,
+      phone_ddi: null,
+    };
   }
 
   private resolveMessageRemotePhone(

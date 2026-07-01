@@ -19,6 +19,7 @@ import { MglMap, MglMarker } from 'vue-maplibre-gl';
 import { useChatStore } from '@/@webcore/stores/chat';
 import { EColor } from '@core/common/enums/EColor';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 import { resolveClosureAnnotationKind } from '@core/common/functions/closureAnnotation';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
@@ -603,19 +604,14 @@ const saveContactFromGroup = async (contact: {
     return;
   }
 
-  const phone = contact.phone ?? contact.phone_partial;
-  const phoneDdi = contact.phone_ddi ?? '55';
+  const { phone, phoneDdi } = resolveContactPhoneParts(contact);
 
   if (!phone) return;
 
   savingContacts.value.add(contactKey);
 
   try {
-    const phoneSearch = phone.replaceAll(/\D/g, '');
-    const foundContact = await chatStore.getChatContactByPhone(
-      phoneSearch,
-      phoneDdi
-    );
+    const foundContact = await chatStore.getChatContactByPhone(phone, phoneDdi);
 
     if (foundContact) {
       savingContacts.value.delete(contactKey);
@@ -626,7 +622,7 @@ const saveContactFromGroup = async (contact: {
     const createContactData: CreateContactRequest = {
       name: contact.name,
       last_name: contact.last_name ?? null,
-      phone: phoneSearch,
+      phone,
       phone_ddi: phoneDdi,
       email: contact.email ?? null,
     };
@@ -1418,6 +1414,66 @@ const resolvePreviewUrl = (linkPreview?: {
   'matched-text'?: string | null;
 }): string => {
   return linkPreview?.['canonical-url'] || linkPreview?.['matched-text'] || '';
+};
+
+const onlyDigits = (value?: string | null): string =>
+  typeof value === 'string' ? value.replaceAll(/\D/g, '') : '';
+
+type ContactCardPhone = {
+  phone?: string | null;
+  phone_partial?: string | null;
+  phone_ddi?: string | null;
+  email?: string | null;
+  email_partial?: string | null;
+};
+
+const resolveContactPhoneParts = (
+  contact?: ContactCardPhone | null
+): { phone: string | null; phoneDdi: string } => {
+  const rawPhone = contact?.phone || contact?.phone_partial || '';
+  const phoneDdi = onlyDigits(contact?.phone_ddi) || '55';
+  const phoneDigits = onlyDigits(rawPhone);
+
+  if (!phoneDigits) {
+    return { phone: null, phoneDdi };
+  }
+
+  if (
+    phoneDdi &&
+    phoneDigits.startsWith(phoneDdi) &&
+    phoneDigits.length > phoneDdi.length + 8
+  ) {
+    return {
+      phone: phoneDigits.slice(phoneDdi.length),
+      phoneDdi,
+    };
+  }
+
+  return { phone: phoneDigits, phoneDdi };
+};
+
+const formatContactCardSubtitle = (
+  contact?: {
+    phone?: string | null;
+    phone_partial?: string | null;
+    phone_ddi?: string | null;
+    email?: string | null;
+    email_partial?: string | null;
+  } | null
+): string | null => {
+  if (!contact) return null;
+
+  const rawPhone = contact.phone || contact.phone_partial || '';
+  if (rawPhone.includes('*')) return rawPhone;
+
+  const { phone, phoneDdi } = resolveContactPhoneParts(contact);
+  const fullPhoneDigits = phone ? `${phoneDdi}${phone}` : '';
+
+  if (fullPhoneDigits) {
+    return formatPhoneBR(fullPhoneDigits);
+  }
+
+  return contact.email_partial || contact.email || null;
 };
 
 const domainFromUrl = (url: string): string => {
@@ -2686,6 +2742,9 @@ const handleContactClick = (message: ListMessageResult) => {
                   >
                     <GroupContactMessageCard
                       :title="item.message.content.contact.name || ''"
+                      :subtitle="
+                        formatContactCardSubtitle(item.message.content.contact)
+                      "
                       :time="
                         formatDate(item.message.date, {
                           hour: '2-digit',
@@ -2701,26 +2760,6 @@ const handleContactClick = (message: ListMessageResult) => {
                       @toggle="handleContactClick(item.message)"
                       @view-all="handleContactClick(item.message)"
                     />
-
-                    <p
-                      v-if="item.message.content?.message"
-                      class="contact-caption mt-2"
-                      :style="{
-                        color: isTypeUser(item.message)
-                          ? 'rgb(var(--v-theme-on-surface))'
-                          : 'rgb(var(--v-theme-title))',
-                      }"
-                    >
-                      <span
-                        v-if="shouldFormatMessage(item.message)"
-                        v-html="
-                          formatWhatsAppText(getLatestMessageText(item.message))
-                        "
-                      ></span>
-                      <span v-else>{{
-                        getLatestMessageText(item.message)
-                      }}</span>
-                    </p>
                   </div>
 
                   <div
@@ -3282,10 +3321,10 @@ const handleContactClick = (message: ListMessageResult) => {
                 {{ contact.last_name || '' }}
               </div>
               <div
-                v-if="contact.phone_partial"
+                v-if="formatContactCardSubtitle(contact)"
                 class="text-caption text-disabled"
               >
-                {{ contact.phone_partial }}
+                {{ formatContactCardSubtitle(contact) }}
               </div>
               <div
                 v-if="contact.email_partial"
@@ -4368,15 +4407,6 @@ const handleContactClick = (message: ListMessageResult) => {
     .group-contact-card__title-row {
       padding-right: 44px;
     }
-  }
-
-  .contact-caption {
-    margin-top: 8px;
-    padding: 0 4px;
-    font-size: 0.875rem;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-break: break-word;
   }
 
   .contact-item-modal {

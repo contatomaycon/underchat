@@ -540,6 +540,16 @@ describe('MessageUpsertConsume edit fallback', () => {
       ),
       extractPhoneJidFromChat: jest.fn(extractPhoneJidFromChat),
     };
+    const storageService = {
+      uploadFromUrl: jest.fn<Promise<any>, any[]>(async () => null),
+      deleteImage: jest.fn(async () => undefined),
+    };
+    const contactService = {
+      createContact: jest.fn<Promise<any>, any[]>(async () => null),
+      getContactByPhone: jest.fn<Promise<any>, any[]>(async () => null),
+      updateContactById: jest.fn(async () => undefined),
+      updateContactIsValided: jest.fn(async () => undefined),
+    };
     const consumer = new MessageUpsertConsume(
       redis as never,
       {} as never,
@@ -557,17 +567,10 @@ describe('MessageUpsertConsume edit fallback', () => {
       {
         publishSub: jest.fn(async () => ({})),
       } as never,
-      {
-        uploadFromUrl: jest.fn(async () => null),
-        deleteImage: jest.fn(async () => undefined),
-      } as never,
+      storageService as never,
       streamProducerService as never,
       {} as never,
-      {
-        createContact: jest.fn(async () => null),
-        getContactByPhone: jest.fn(async () => null),
-        updateContactById: jest.fn(async () => undefined),
-      } as never,
+      contactService as never,
       workerConfigService as never,
       chatbotFlowRunnerService as never,
       {
@@ -602,6 +605,8 @@ describe('MessageUpsertConsume edit fallback', () => {
       workerConfigService,
       chatbotFlowRunnerService,
       streamProducerService,
+      storageService,
+      contactService,
       inboundMessageSpoolService,
       lidJidCacheService,
     };
@@ -820,6 +825,345 @@ describe('MessageUpsertConsume edit fallback', () => {
         remote_jid_alt: phoneJid,
       })
     );
+  });
+
+  it('uses an existing contact photo when creating an official chat without provider photo', async () => {
+    const { consumer, chatService, contactService, storageService } =
+      makeConsumer();
+    const contactPhoto = 'https://cdn.test/contact-photo.jpg';
+    contactService.getContactByPhone.mockResolvedValueOnce({
+      contact_id: 'contact-1',
+      name: 'Cliente Local',
+      phone_partial: '999715039',
+      phone_ddi: '55',
+      photo: contactPhoto,
+      is_valided: true,
+      ignore: 'not_ignore',
+      user: null,
+      label_templates: [],
+    });
+    const data = {
+      ...makeTextUpsert('Oi'),
+      source_provider: 'official_whatsapp',
+      photo: undefined,
+    } as IUpsertMessage;
+
+    const createdChat = (await (consumer as any).createChat(
+      data,
+      EChatStatus.queue
+    )) as IChat;
+
+    expect(storageService.uploadFromUrl).not.toHaveBeenCalled();
+    expect(createdChat.photo).toBe(contactPhoto);
+    expect(createdChat.contact?.photo).toBe(contactPhoto);
+    expect(chatService.saveChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        photo: contactPhoto,
+        contact: expect.objectContaining({
+          photo: contactPhoto,
+        }),
+      })
+    );
+  });
+
+  it('keeps an official chat without photo when there is no local contact photo', async () => {
+    const { consumer, storageService } = makeConsumer();
+    const data = {
+      ...makeTextUpsert('Oi'),
+      source_provider: 'official_whatsapp',
+      photo: undefined,
+    } as IUpsertMessage;
+
+    const createdChat = (await (consumer as any).createChat(
+      data,
+      EChatStatus.queue
+    )) as IChat;
+
+    expect(storageService.uploadFromUrl).not.toHaveBeenCalled();
+    expect(createdChat.photo).toBeNull();
+  });
+
+  it('hydrates official contact card content from an existing local contact', async () => {
+    const { consumer, chat, chatService, contactService } = makeConsumer();
+    const contactPhoto = 'https://cdn.test/braian-photo.jpg';
+    contactService.getContactByPhone.mockImplementation(
+      async (_accountId: string, phone: string, phoneDdi: string | null) => {
+        if (phone === '61991211783' && phoneDdi === '55') {
+          return {
+            contact_id: 'contact-braian',
+            name: 'Braian',
+            last_name: null,
+            phone_partial: '****-1783',
+            phone_ddi: '55',
+            email_partial: null,
+            photo: contactPhoto,
+            is_valided: true,
+            ignore: 'not_ignore',
+            user: null,
+            label_templates: [],
+          };
+        }
+
+        return null;
+      }
+    );
+    const data = {
+      ...makeTextUpsert(''),
+      source_provider: 'official_whatsapp',
+      type: EMessageType.contact_card,
+      message: {
+        ...makeTextUpsert('').message,
+        key: {
+          id: 'wamid.contact-card',
+          remoteJid: phoneJid,
+          fromMe: false,
+        },
+        message: {
+          contactMessage: {
+            displayName: 'Braian',
+            vcard:
+              'BEGIN:VCARD\nVERSION:3.0\nN:;Braian;;;\nFN:Braian\nTEL;type=CELL;type=VOICE;waid=556191211783:+55 61 99121-1783\nEND:VCARD',
+          },
+        },
+      },
+      content: {
+        type: EMessageType.contact_card,
+        message: 'Braian',
+        contact: {
+          contact_id: null,
+          name: 'Braian',
+          last_name: null,
+          phone: '556191211783',
+          phone_partial: '556191211783',
+          phone_ddi: '55',
+          email: null,
+          email_partial: null,
+          photo: null,
+        },
+        contacts: null,
+      },
+    } as IUpsertMessage;
+
+    await (consumer as any).createChatMessage(chat, data);
+
+    expect(contactService.getContactByPhone).toHaveBeenCalledWith(
+      'account-1',
+      '61991211783',
+      '55'
+    );
+    const createdMessage = chatService.createMessageIdempotent.mock
+      .calls[0][0] as IChatMessage;
+    expect(createdMessage.content).toEqual(
+      expect.objectContaining({
+        contact: expect.objectContaining({
+          contact_id: 'contact-braian',
+          name: 'Braian',
+          phone: '61991211783',
+          phone_ddi: '55',
+          phone_partial: '****-1783',
+          photo: contactPhoto,
+        }),
+      })
+    );
+  });
+
+  it('syncs an existing chat photo from its contact when the chat has no photo', async () => {
+    const { consumer, chat, chatService, storageService } = makeConsumer();
+    const contactPhoto = 'https://cdn.test/existing-contact-photo.jpg';
+    const existingChat = {
+      ...chat,
+      photo: null,
+      contact: {
+        id: 'contact-1',
+        name: 'Cliente Local',
+        phone: '999715039',
+        phone_ddi: '55',
+        photo: contactPhoto,
+      },
+    } as IChat;
+
+    await (consumer as any).createChatMessage(
+      existingChat,
+      makeTextUpsert('Oi')
+    );
+
+    expect(storageService.uploadFromUrl).not.toHaveBeenCalled();
+    expect(existingChat.photo).toBe(contactPhoto);
+    expect(chatService.saveChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat_id: existingChat.chat_id,
+        photo: contactPhoto,
+      })
+    );
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+  });
+
+  it('hydrates an existing official chat photo from a local contact when the chat has no linked contact', async () => {
+    const { consumer, chat, chatService, contactService, storageService } =
+      makeConsumer();
+    const contactPhoto = 'https://cdn.test/local-contact-photo.jpg';
+    const existingChat = {
+      ...chat,
+      photo: null,
+      contact: null,
+      phone: '556999715039',
+    } as IChat;
+    contactService.getContactByPhone.mockResolvedValueOnce({
+      contact_id: 'contact-1',
+      name: 'Cliente Local',
+      phone_partial: '999715039',
+      phone_ddi: '55',
+      photo: contactPhoto,
+      is_valided: true,
+      ignore: 'not_ignore',
+      user: null,
+      label_templates: [],
+    });
+    const data = {
+      ...makeTextUpsert('Oi'),
+      source_provider: 'official_whatsapp',
+      photo: undefined,
+    } as IUpsertMessage;
+
+    await (consumer as any).createChatMessage(existingChat, data);
+
+    expect(contactService.getContactByPhone).toHaveBeenCalledWith(
+      'account-1',
+      '6999715039',
+      '55'
+    );
+    expect(storageService.uploadFromUrl).not.toHaveBeenCalled();
+    expect(existingChat.photo).toBe(contactPhoto);
+    expect(existingChat.contact).toEqual(
+      expect.objectContaining({
+        id: 'contact-1',
+        name: 'Cliente Local',
+        photo: contactPhoto,
+      })
+    );
+    expect(chatService.saveChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat_id: existingChat.chat_id,
+        photo: contactPhoto,
+        contact: expect.objectContaining({
+          id: 'contact-1',
+          photo: contactPhoto,
+        }),
+      })
+    );
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes stale official chat and embedded contact photos from the current local contact', async () => {
+    const { consumer, chat, chatService, contactService, storageService } =
+      makeConsumer();
+    const oldPhoto = 'https://storage.test/old-contact-photo.jpg';
+    const currentPhoto = 'https://storage.test/current-contact-photo.jpg';
+    const existingChat = {
+      ...chat,
+      photo: oldPhoto,
+      contact: {
+        id: 'contact-1',
+        name: 'Cliente Local',
+        phone: '999715039',
+        phone_ddi: '55',
+        photo: oldPhoto,
+      },
+      phone: '556999715039',
+    } as IChat;
+    contactService.getContactByPhone.mockResolvedValueOnce({
+      contact_id: 'contact-1',
+      name: 'Cliente Local',
+      phone_partial: '999715039',
+      phone_ddi: '55',
+      photo: currentPhoto,
+      is_valided: true,
+      ignore: 'not_ignore',
+      user: null,
+      label_templates: [],
+    });
+    const data = {
+      ...makeTextUpsert('Oi'),
+      source_provider: 'official_whatsapp',
+      photo: undefined,
+    } as IUpsertMessage;
+
+    await (consumer as any).createChatMessage(existingChat, data);
+
+    expect(storageService.uploadFromUrl).not.toHaveBeenCalled();
+    expect(existingChat.photo).toBe(currentPhoto);
+    expect(existingChat.contact?.photo).toBe(currentPhoto);
+    expect(chatService.saveChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat_id: existingChat.chat_id,
+        photo: currentPhoto,
+        contact: expect.objectContaining({
+          id: 'contact-1',
+          photo: currentPhoto,
+        }),
+      })
+    );
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not replace an existing chat photo with the contact photo fallback', async () => {
+    const { consumer, chat, chatService, storageService } = makeConsumer();
+    const chatPhoto = 'https://storage.test/current-chat-photo.jpg';
+    const contactPhoto = 'https://cdn.test/contact-photo.jpg';
+    const existingChat = {
+      ...chat,
+      photo: chatPhoto,
+      contact: {
+        id: 'contact-1',
+        name: 'Cliente Local',
+        phone: '999715039',
+        phone_ddi: '55',
+        photo: contactPhoto,
+      },
+    } as IChat;
+
+    await (consumer as any).createChatMessage(
+      existingChat,
+      makeTextUpsert('Oi')
+    );
+
+    expect(storageService.uploadFromUrl).not.toHaveBeenCalled();
+    expect(existingChat.photo).toBe(chatPhoto);
+    expect(chatService.saveChat).not.toHaveBeenCalled();
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps provider photo upload behavior for non-official upserts', async () => {
+    const { consumer, chat, chatService, storageService } = makeConsumer();
+    const providerPhoto = 'https://pps.whatsapp.net/provider-photo.jpg';
+    const storedPhoto = 'https://storage.test/provider-photo.jpg';
+    storageService.uploadFromUrl.mockResolvedValueOnce({
+      url: storedPhoto,
+      name: 'provider-photo.jpg',
+      mimetype: 'image/jpeg',
+      size: 1,
+    });
+    const data = {
+      ...makeTextUpsert('Oi'),
+      source_provider: 'wwebjs',
+      photo: providerPhoto,
+    } as IUpsertMessage;
+
+    await (consumer as any).createChatMessage(chat, data);
+
+    expect(storageService.uploadFromUrl).toHaveBeenCalledWith(
+      providerPhoto,
+      'account-1',
+      chat.chat_id
+    );
+    expect(chat.photo).toBe(storedPhoto);
+    expect(chatService.saveChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat_id: chat.chat_id,
+        photo: storedPhoto,
+      })
+    );
+    expect(chatService.createMessageIdempotent).toHaveBeenCalledTimes(1);
   });
 
   it('discards lock acquisition timeouts after local retries so the partition can commit', async () => {
