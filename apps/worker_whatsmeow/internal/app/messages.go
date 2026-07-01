@@ -671,6 +671,9 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	if msg == nil {
 		return "", nil
 	}
+	if incomingHasEditSignal(evt, msg) {
+		m.logIncomingProviderDebug("incoming.edit_signal", evt)
+	}
 	viewOnce := evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension || wrappedViewOnce
 	if viewOnce {
 		return m.withIncomingQuoted(evt, msg, MessageTypeViewOnce, map[string]any{"type": MessageTypeViewOnce})
@@ -687,7 +690,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	}
 	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil {
 		if protocolMsg.Type == nil {
-			return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+			return m.unsupportedIncomingFallback(evt, msg, "incoming.protocol_unknown_type")
 		}
 		switch protocolMsg.GetType() {
 		case waE2E.ProtocolMessage_REVOKE:
@@ -695,7 +698,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		case waE2E.ProtocolMessage_MESSAGE_EDIT:
 			edited := protocolMsg.GetEditedMessage()
 			if edited == nil {
-				return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+				return m.unsupportedIncomingFallback(evt, msg, "incoming.protocol_edit_without_payload")
 			}
 			message := edited.GetConversation()
 			if message == "" && edited.GetExtendedTextMessage() != nil {
@@ -707,7 +710,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		case waE2E.ProtocolMessage_HISTORY_SYNC_NOTIFICATION:
 			return "", nil
 		default:
-			return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+			return m.unsupportedIncomingFallback(evt, msg, "incoming.protocol_unsupported")
 		}
 	}
 	if reaction := msg.GetReactionMessage(); reaction != nil {
@@ -784,7 +787,7 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		}
 		return m.withIncomingQuoted(evt, msg, MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items})
 	}
-	return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+	return m.unsupportedIncomingFallback(evt, msg, "incoming.unknown_message_type")
 }
 
 func (m *WhatsAppManager) incomingEditedContent(evt *events.Message, msg *waE2E.Message) (string, map[string]any) {
@@ -803,10 +806,68 @@ func (m *WhatsAppManager) incomingEditedContent(evt *events.Message, msg *waE2E.
 
 	message := incomingEditedMessageText(edited)
 	if message == "" {
-		return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+		return m.unsupportedIncomingFallback(evt, msg, "incoming.edited_message_without_text")
 	}
 
 	return m.withIncomingQuoted(evt, msg, MessageTypeEditText, map[string]any{"type": MessageTypeEditText, "message": message})
+}
+
+func (m *WhatsAppManager) unsupportedIncomingFallback(evt *events.Message, msg *waE2E.Message, stage string) (string, map[string]any) {
+	m.logIncomingProviderDebug(stage, evt)
+	return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": unsupportedIncomingMessageText})
+}
+
+func (m *WhatsAppManager) logIncomingProviderDebug(stage string, evt *events.Message) {
+	rawJSON, rawTruncated, rawErr := incomingRawMessageJSON(evt, incomingMessageRawLogLimit)
+	log.Printf(
+		"whatsmeow incoming debug stage=%s worker_id=%s account_id=%s chat=%s sender=%s sender_alt=%s recipient_alt=%s id=%s from_me=%t category=%q info_type=%q media_type=%q edit=%q is_edit=%t source_web_msg=%t is_ephemeral=%t is_view_once=%t is_view_once_v2=%t is_view_once_v2_extension=%t is_document_with_caption=%t is_lottie_sticker=%t is_bot_invoke=%t kinds=%q message_text=%q raw_payload=%q raw_truncated=%t raw_error=%q",
+		stage,
+		m.cfg.WorkerID,
+		m.cfg.AccountID,
+		incomingChatString(evt),
+		incomingSenderString(evt),
+		incomingSenderAltString(evt),
+		incomingRecipientAltString(evt),
+		incomingMessageID(evt),
+		incomingFromMe(evt),
+		incomingCategory(evt),
+		incomingInfoType(evt),
+		incomingMediaType(evt),
+		incomingEdit(evt),
+		evt != nil && evt.IsEdit,
+		evt != nil && evt.SourceWebMsg != nil,
+		evt != nil && evt.IsEphemeral,
+		evt != nil && evt.IsViewOnce,
+		evt != nil && evt.IsViewOnceV2,
+		evt != nil && evt.IsViewOnceV2Extension,
+		evt != nil && evt.IsDocumentWithCaption,
+		evt != nil && evt.IsLottieSticker,
+		evt != nil && evt.IsBotInvoke,
+		strings.Join(incomingMessageKinds(evt), ","),
+		truncateLogValue(incomingTextPreview(evt), messageDebugBodyLimit),
+		rawJSON,
+		rawTruncated,
+		rawErr,
+	)
+}
+
+func incomingHasEditSignal(evt *events.Message, msg *waE2E.Message) bool {
+	if evt == nil {
+		return false
+	}
+	if evt.IsEdit || strings.TrimSpace(string(evt.Info.Edit)) != "" {
+		return true
+	}
+	if evt.Message != nil && evt.Message.GetEditedMessage() != nil {
+		return true
+	}
+	if msg != nil && msg.GetEditedMessage() != nil {
+		return true
+	}
+	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil && protocolMsg.GetType() == waE2E.ProtocolMessage_MESSAGE_EDIT {
+		return true
+	}
+	return false
 }
 
 func incomingEditedMessageText(msg *waE2E.Message) string {

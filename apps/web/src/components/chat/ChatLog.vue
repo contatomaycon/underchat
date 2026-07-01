@@ -1505,6 +1505,33 @@ const isUnsupportedProviderMessage = (message: ListMessageResult): boolean =>
   isOfficialUnsupportedMessage(message) ||
   isNonOfficialUnsupportedMessage(message);
 
+const shouldRenderAsClientBubble = (message: ListMessageResult): boolean =>
+  isTypeUser(message) || isNonOfficialUnsupportedMessage(message);
+
+const shouldRenderAsCenteredSystem = (message: ListMessageResult): boolean =>
+  message.content?.type === EMessageType.system &&
+  !isNonOfficialUnsupportedMessage(message);
+
+const shouldRenderAsOperatorBubble = (message: ListMessageResult): boolean =>
+  !shouldRenderAsClientBubble(message) &&
+  !shouldRenderAsCenteredSystem(message);
+
+const getChatContentPositionClass = (message: ListMessageResult): string => {
+  if (shouldRenderAsCenteredSystem(message)) return 'chat-center';
+  return shouldRenderAsClientBubble(message) ? 'chat-left' : 'chat-right';
+};
+
+const getChatWrapperSideClass = (message: ListMessageResult): string =>
+  shouldRenderAsOperatorBubble(message) ? 'wrapper-operator' : 'wrapper-client';
+
+const getChatBodyAlignClass = (message: ListMessageResult): string => {
+  if (shouldRenderAsCenteredSystem(message)) return 'align-center';
+  return shouldRenderAsOperatorBubble(message) ? 'align-end' : 'align-start';
+};
+
+const shouldRenderMessageAvatar = (message: ListMessageResult): boolean =>
+  !shouldRenderAsCenteredSystem(message);
+
 const getUnsupportedProviderDescription = (): string =>
   t('official_whatsapp_unsupported_hint');
 
@@ -3634,11 +3661,8 @@ onUnmounted(() => {
           class="chat-group d-flex align-start position-relative"
           :class="[
             {
-              'flex-row-reverse':
-                !isTypeUser(item.message) &&
-                item.message.content?.type !== EMessageType.system,
-              'justify-center':
-                item.message.content?.type === EMessageType.system,
+              'flex-row-reverse': shouldRenderAsOperatorBubble(item.message),
+              'justify-center': shouldRenderAsCenteredSystem(item.message),
               'mb-6':
                 index < messagesWithSeparators.length - 1 &&
                 messagesWithSeparators[index + 1]?.type === 'message',
@@ -3648,12 +3672,17 @@ onUnmounted(() => {
           @mouseleave="onMouseLeave"
         >
           <div
-            v-if="item.message.content?.type !== EMessageType.system"
+            v-if="shouldRenderMessageAvatar(item.message)"
             class="chat-avatar"
-            :class="!isTypeUser(item.message) ? 'ms-4' : 'me-4'"
+            :class="
+              shouldRenderAsOperatorBubble(item.message) ? 'ms-4' : 'me-4'
+            "
           >
             <VTooltip
-              v-if="!isTypeUser(item.message) && item.message.user?.name"
+              v-if="
+                shouldRenderAsOperatorBubble(item.message) &&
+                item.message.user?.name
+              "
               location="top"
               :text="item.message.user.name"
             >
@@ -3678,21 +3707,11 @@ onUnmounted(() => {
 
           <div
             class="chat-body d-inline-flex flex-column position-relative"
-            :class="
-              item.message.content?.type === EMessageType.system
-                ? 'align-center'
-                : !isTypeUser(item.message)
-                  ? 'align-end'
-                  : 'align-start'
-            "
+            :class="getChatBodyAlignClass(item.message)"
           >
             <div
               class="chat-content-wrapper"
-              :class="
-                !isTypeUser(item.message)
-                  ? 'wrapper-operator'
-                  : 'wrapper-client'
-              "
+              :class="getChatWrapperSideClass(item.message)"
             >
               <div
                 v-if="
@@ -3706,9 +3725,7 @@ onUnmounted(() => {
                 "
                 :class="[
                   'reaction-trigger-container',
-                  !isTypeUser(item.message)
-                    ? 'wrapper-operator'
-                    : 'wrapper-client',
+                  getChatWrapperSideClass(item.message),
                 ]"
                 @click.stop="toggleReactionPicker(item.message)"
               >
@@ -3728,9 +3745,7 @@ onUnmounted(() => {
                 v-if="!item.readonly && isMessageUploadError(item.message)"
                 :class="[
                   'retry-trigger-container',
-                  !isTypeUser(item.message)
-                    ? 'wrapper-operator'
-                    : 'wrapper-client',
+                  getChatWrapperSideClass(item.message),
                 ]"
                 @click.stop="retryMessage(item.message)"
               >
@@ -3749,11 +3764,7 @@ onUnmounted(() => {
               <div
                 class="chat-content py-2 px-2 elevation-2"
                 :class="[
-                  item.message.content?.type === EMessageType.system
-                    ? 'chat-center'
-                    : isTypeUser(item.message)
-                      ? 'chat-left'
-                      : 'chat-right',
+                  getChatContentPositionClass(item.message),
                   {
                     'is-deleted': item.message.deleted,
                     'has-actions': !item.message.deleted && !item.readonly,
@@ -5191,6 +5202,7 @@ onUnmounted(() => {
                   <div
                     v-if="
                       item.message.content?.type === EMessageType.system &&
+                      !isUnsupportedProviderMessage(item.message) &&
                       (item.message.content?.pin ||
                         item.message.content?.message ||
                         item.message.content?.ephemeral)

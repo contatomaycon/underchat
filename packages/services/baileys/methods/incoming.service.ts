@@ -1,6 +1,7 @@
 import { inject, singleton } from 'tsyringe';
 import Redis from 'ioredis';
 import { Buffer } from 'node:buffer';
+import { inspect } from 'node:util';
 import {
   AnyMessageContent,
   Contact,
@@ -286,6 +287,79 @@ export class BaileysIncomingMessageService {
   ): void {
     void m;
     void event;
+  }
+
+  private inspectDebugPayload(value: unknown): string {
+    return inspect(value, {
+      depth: 12,
+      maxArrayLength: 80,
+      maxStringLength: 8000,
+      breakLength: 180,
+      compact: false,
+      sorted: true,
+    });
+  }
+
+  private hasDeepMessageField(
+    value: unknown,
+    field: string,
+    depth = 0,
+    seen = new WeakSet<object>()
+  ): boolean {
+    if (!value || typeof value !== 'object' || depth > 10) return false;
+    if (seen.has(value)) return false;
+    seen.add(value);
+
+    if (Object.prototype.hasOwnProperty.call(value, field)) return true;
+
+    return Object.values(value as Record<string, unknown>).some((entry) =>
+      this.hasDeepMessageField(entry, field, depth + 1, seen)
+    );
+  }
+
+  private hasIncomingEditSignal(message: unknown): boolean {
+    if (!message || typeof message !== 'object') return false;
+
+    if (this.hasDeepMessageField(message, 'editedMessage')) return true;
+
+    const protocolEditType = proto.Message.ProtocolMessage.Type.MESSAGE_EDIT;
+    const findProtocolEdit = (
+      value: unknown,
+      depth = 0,
+      seen = new WeakSet<object>()
+    ): boolean => {
+      if (!value || typeof value !== 'object' || depth > 10) return false;
+      if (seen.has(value)) return false;
+      seen.add(value);
+
+      const record = value as Record<string, unknown>;
+      const protocolMessage = record.protocolMessage as
+        Record<string, unknown> | undefined;
+      if (protocolMessage?.type === protocolEditType) return true;
+
+      return Object.values(record).some((entry) =>
+        findProtocolEdit(entry, depth + 1, seen)
+      );
+    };
+
+    return findProtocolEdit(message);
+  }
+
+  private logIncomingProviderPayloadDebug(
+    stage: string,
+    payload: unknown,
+    meta: Record<string, unknown> = {}
+  ): void {
+    console.log(
+      '[BAILEYS_INCOMING_DEBUG]',
+      this.inspectDebugPayload({
+        stage,
+        worker_id: baileysEnvironment.baileysWorkerId,
+        account_id: baileysEnvironment.baileysAccountId,
+        ...meta,
+        payload,
+      })
+    );
   }
 
   private isPhoneLikeName(value: string): boolean {
@@ -911,6 +985,19 @@ export class BaileysIncomingMessageService {
           provider_upsert_type: e.type,
           raw_payload: e,
         });
+        if (this.hasIncomingEditSignal(m.message)) {
+          this.logIncomingProviderPayloadDebug(
+            'messages.upsert.edit_signal',
+            m,
+            {
+              provider_upsert_type: e.type,
+              mapped_type: mapIncomingToType(m) ?? null,
+              message_id: m.key?.id,
+              remote_jid: m.key?.remoteJid,
+              from_me: m.key?.fromMe,
+            }
+          );
+        }
         void this.cacheMessage(m);
         if (isHistoryUpsert) {
           this.processHistoryMessage(socket, m, e.type);
@@ -1123,6 +1210,19 @@ export class BaileysIncomingMessageService {
         console.warn(
           '[WARN] Unknown message type, publishing system fallback:',
           messageKey
+        );
+        this.logIncomingProviderPayloadDebug(
+          'messages.upsert.unknown_message_type',
+          m,
+          {
+            provider_upsert_type: upsertType ?? null,
+            mapped_type: mappedType ?? null,
+            message_key: messageKey,
+            message_id: m.key?.id,
+            remote_jid: m.key?.remoteJid,
+            from_me: m.key?.fromMe,
+            has_edit_signal: this.hasIncomingEditSignal(m.message),
+          }
         );
         this.logLifecycle(m, {
           stage: 'baileys.incoming.fallback',
@@ -1831,6 +1931,27 @@ export class BaileysIncomingMessageService {
 
   private async handleMessagesUpdate(events: WAMessageUpdate[]) {
     if (!events?.length) return;
+
+    for (const event of events) {
+      if (!event.update?.message) continue;
+
+      const updateMessage = {
+        key: event.key,
+        message: event.update.message,
+      } as WAMessage;
+      this.logIncomingProviderPayloadDebug(
+        'messages.update.with_message_payload',
+        event,
+        {
+          mapped_type: mapIncomingToType(updateMessage) ?? null,
+          message_id: event.key?.id,
+          remote_jid: event.key?.remoteJid,
+          from_me: event.key?.fromMe,
+          status: event.update.status ?? null,
+          has_edit_signal: this.hasIncomingEditSignal(event.update.message),
+        }
+      );
+    }
 
     const statusPromises = events.map((event) => {
       this.trackDeliveryConfirmation(event.key, event.update?.status);
