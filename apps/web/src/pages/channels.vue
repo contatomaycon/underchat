@@ -431,6 +431,9 @@ const isWhatsappOfficialWebhookRepairable = (channel: ListWorkerResponse) =>
   isWhatsappOfficialChannel(channel) &&
   (channel.status?.id === EWorkerStatus.online || Boolean(channel.number));
 
+const canViewConnectionLogs = (channel: ListWorkerResponse) =>
+  !isWhatsappOfficialChannel(channel);
+
 const disconnectOfficialProgressSteps = computed<
   DisconnectOfficialProgressStep[]
 >(() => {
@@ -1206,7 +1209,11 @@ onUnmounted(async () => {
                     :data-testid="`channel-disconnect-official-${item.id}`"
                 /></IconBtn>
 
-                <IconBtn v-if="$canPermission(permissionsViewLogs)"
+                <IconBtn
+                  v-if="
+                    canViewConnectionLogs(item) &&
+                    $canPermission(permissionsViewLogs)
+                  "
                   ><VTooltip
                     location="top"
                     transition="scale-transition"
