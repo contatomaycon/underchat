@@ -315,15 +315,36 @@ function buildButtonContent(
   };
 }
 
+function buildButtonsProtoMessage(
+  payload: WwebjsButtonPayload,
+  fallbackText?: string
+): Record<string, unknown> {
+  return {
+    buttonsMessage: {
+      contentText: payload.text ?? fallbackText,
+      footerText: payload.footer ?? undefined,
+      headerText: payload.header ?? undefined,
+      headerType: payload.headerType ?? undefined,
+      buttons: payload.buttons.map((button) => ({
+        buttonId: button.id ?? undefined,
+        buttonText: { displayText: button.displayText },
+        type: button.type ?? undefined,
+      })),
+    },
+  };
+}
+
 function getButtonsResponseText(
   rawData?: Record<string, unknown>
 ): string | undefined {
   const response = getObjectRecord(rawData?.buttonsResponseMessage) ?? rawData;
   return (
     getNonEmptyString(response?.selectedDisplayText) ??
+    getNonEmptyString(response?.displayText) ??
+    getNonEmptyString(response?.body) ??
+    getNonEmptyString(response?.text) ??
     getNonEmptyString(response?.selectedButtonId) ??
-    getNonEmptyString(response?.selectedButtonID) ??
-    getNonEmptyString(response?.displayText)
+    getNonEmptyString(response?.selectedButtonID)
   );
 }
 
@@ -1257,6 +1278,13 @@ function buildQuotedProtoMessage(
     };
   };
   const rawData = raw._data;
+  const buttonPayload = getButtonPayload(
+    rawData as Record<string, unknown> | undefined
+  );
+
+  if (buttonPayload) {
+    return buildButtonsProtoMessage(buttonPayload, body);
+  }
 
   if (rawType === 'chat') {
     return {
@@ -1386,14 +1414,47 @@ function buildQuotedProtoMessage(
   return undefined;
 }
 
+function buildQuotedProtoMessageFromRaw(
+  raw: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  const rawType =
+    getNonEmptyString(raw.type)?.toLowerCase() ??
+    getNonEmptyString(raw.kind)?.toLowerCase() ??
+    'chat';
+  const body =
+    getNonEmptyString(raw.body) ??
+    getNonEmptyString(raw.caption) ??
+    getNonEmptyString(raw.contentText) ??
+    '';
+  const buttonPayload = getButtonPayload(raw);
+
+  if (buttonPayload) {
+    return buildButtonsProtoMessage(buttonPayload, body);
+  }
+
+  if (rawType === 'chat' && body) {
+    return {
+      conversation: body,
+      extendedTextMessage: { text: body },
+    };
+  }
+
+  return undefined;
+}
+
 async function buildQuotedContextInfo(
   msg: Message
 ): Promise<Record<string, unknown> | undefined> {
-  if (!msg.hasQuotedMsg) return undefined;
-
   const rawData = getRawMessageData(msg);
   const rawQuotedId = getQuotedIdFromRaw(rawData);
   const rawParticipant = getQuotedParticipantFromRaw(rawData);
+  const rawQuotedMessage =
+    getObjectRecord(rawData?.quotedMsg) ??
+    getObjectRecord(rawData?.quotedMessage);
+
+  if (!msg.hasQuotedMsg && !rawQuotedId && !rawQuotedMessage) {
+    return undefined;
+  }
 
   try {
     const quoted = await msg.getQuotedMessage();
@@ -1420,7 +1481,9 @@ async function buildQuotedContextInfo(
 
   const contextInfo: Record<string, unknown> = {
     stanzaId: rawQuotedId,
-    quotedMessage: {},
+    quotedMessage: rawQuotedMessage
+      ? (buildQuotedProtoMessageFromRaw(rawQuotedMessage) ?? {})
+      : {},
   };
 
   if (rawParticipant) {
@@ -1597,17 +1660,23 @@ export async function wwebjsMessageToUpsert(
     Object.assign(innerMessage, disappearingProtocolMessage);
   }
   if (buttonsContent?.buttons) {
-    innerMessage.buttonsMessage = {
-      contentText: buttonsContent.buttons.text ?? body,
-      footerText: buttonsContent.buttons.footer ?? undefined,
-      headerText: buttonsContent.buttons.header ?? undefined,
-      headerType: buttonsContent.buttons.header_type ?? undefined,
-      buttons: buttonsContent.buttons.buttons.map((button) => ({
-        buttonId: button.id ?? undefined,
-        buttonText: { displayText: button.display_text },
-        type: button.type ?? undefined,
-      })),
-    };
+    Object.assign(
+      innerMessage,
+      buildButtonsProtoMessage(
+        {
+          text: buttonsContent.buttons.text ?? undefined,
+          footer: buttonsContent.buttons.footer ?? undefined,
+          header: buttonsContent.buttons.header ?? undefined,
+          headerType: buttonsContent.buttons.header_type ?? undefined,
+          buttons: buttonsContent.buttons.buttons.map((button) => ({
+            id: button.id ?? undefined,
+            displayText: button.display_text,
+            type: button.type ?? undefined,
+          })),
+        },
+        body
+      )
+    );
   }
   if (buttonsResponseText) {
     innerMessage.buttonsResponseMessage = {

@@ -661,9 +661,11 @@ export class MessageUpsertConsume {
 
     return this.firstStringField(response, [
       'selectedDisplayText',
+      'displayText',
+      'body',
+      'text',
       'selectedButtonId',
       'selectedButtonID',
-      'displayText',
     ]);
   }
 
@@ -4035,6 +4037,10 @@ export class MessageUpsertConsume {
 
     if (!quoted.contact && originalContent.contact) {
       quoted.contact = { ...originalContent.contact };
+    }
+
+    if (!quoted.buttons && originalContent.buttons) {
+      quoted.buttons = { ...originalContent.buttons };
     }
   }
 

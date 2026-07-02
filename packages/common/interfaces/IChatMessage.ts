@@ -51,6 +51,7 @@ export interface IQuotedMessage {
   sticker?: StickerMessageChat | null;
   location?: LocationMessageChat | null;
   contact?: IContactMessage | null;
+  buttons?: IButtonMessage | null;
 }
 
 export type QuotedMessageType = Omit<IQuotedMessage, 'key' | 'type'> & {

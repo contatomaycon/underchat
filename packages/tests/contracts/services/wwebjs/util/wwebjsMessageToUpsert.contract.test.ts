@@ -224,6 +224,60 @@ describe('wwebjsMessageToUpsert', () => {
     );
   });
 
+  it('uses WWebJS button response display text instead of the selected button id', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      type: 'buttons_response',
+      body: '1',
+      _data: {
+        body: 'Atendimento',
+        selectedButtonId: '1',
+        quotedMsg: {
+          type: 'chat',
+          body: 'Escolha uma opção',
+          isDynamicReplyButtonsMsg: true,
+          dynamicReplyButtons: [
+            {
+              buttonId: '1',
+              buttonText: { displayText: 'Atendimento' },
+              type: 1,
+            },
+          ],
+        },
+        quotedStanzaID: 'BUTTONS_MESSAGE_ID',
+        quotedParticipant: '5500000000000@c.us',
+      },
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.text);
+    expect(upsert?.content?.message).toBe('Atendimento');
+    expect(innerMessage.conversation).toBe('Atendimento');
+    expect(innerMessage.buttonsResponseMessage).toEqual({
+      selectedDisplayText: 'Atendimento',
+    });
+    expect(innerMessage.extendedTextMessage).toMatchObject({
+      contextInfo: {
+        stanzaId: 'BUTTONS_MESSAGE_ID',
+        quotedMessage: {
+          buttonsMessage: {
+            contentText: 'Escolha uma opção',
+            buttons: [
+              {
+                buttonId: '1',
+                buttonText: { displayText: 'Atendimento' },
+                type: 1,
+              },
+            ],
+          },
+        },
+      },
+    });
+  });
+
   it('converts unknown WWebJS message types with body into system fallback', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 

@@ -964,6 +964,9 @@ const resolveQuotedName = (m: ListMessageResult): string => {
 const isOfficialReplyDisplay = (m: ListMessageResult): boolean =>
   getOfficialMetadata(m)?.display?.kind === 'reply';
 
+const isButtonReplyMessage = (m: ListMessageResult): boolean =>
+  Boolean(m.content?.quoted?.buttons?.buttons?.length);
+
 const showQuoted = (m: ListMessageResult) =>
   !!m.content?.quoted && !isOfficialReplyDisplay(m);
 
@@ -1910,10 +1913,14 @@ const handleContactClick = (message: ListMessageResult) => {
                     class="quoted-block"
                     :class="{
                       'is-right': !isTypeUser(item.message),
+                      'is-button-reply': isButtonReplyMessage(item.message),
                       'is-clickable': !item.message.deleted,
                     }"
                   >
-                    <div class="quoted-name">
+                    <div
+                      v-if="!isButtonReplyMessage(item.message)"
+                      class="quoted-name"
+                    >
                       {{ resolveQuotedName(item.message) }}
                     </div>
 
@@ -2901,6 +2908,9 @@ const handleContactClick = (message: ListMessageResult) => {
                         v-if="shouldFormatMessage(item.message)"
                         class="mr-6 text-base message-text mb-0"
                         :class="{
+                          'button-reply-message-text': isButtonReplyMessage(
+                            item.message
+                          ),
                           'mb-2':
                             !item.message.content?.ephemeral &&
                             !hasMessageVersions(item.message) &&
@@ -2924,6 +2934,9 @@ const handleContactClick = (message: ListMessageResult) => {
                         v-else
                         class="mr-6 text-base message-text mb-0"
                         :class="{
+                          'button-reply-message-text': isButtonReplyMessage(
+                            item.message
+                          ),
                           'mb-2':
                             !item.message.content?.ephemeral &&
                             !hasMessageVersions(item.message) &&
@@ -3720,6 +3733,13 @@ const handleContactClick = (message: ListMessageResult) => {
     max-width: 100%;
   }
 
+  .button-reply-message-text {
+    color: #111b21 !important;
+    font-size: 0.9rem;
+    font-weight: 650;
+    line-height: 1.28;
+  }
+
   .message-text,
   .chat-text,
   .image-caption,
@@ -3846,6 +3866,38 @@ const handleContactClick = (message: ListMessageResult) => {
       border-inline-end: 3px solid rgba(var(--v-theme-primary), 0.5);
       padding-inline-start: 0;
       padding-inline-end: 8px;
+    }
+
+    &.is-button-reply {
+      margin: 0 0 6px;
+      padding: 7px 9px;
+      border-inline-start: 4px solid #53bdeb;
+      border-inline-end: 0;
+      border-radius: 6px;
+      background: #e9f0f6;
+    }
+
+    &.is-button-reply.is-right {
+      padding-inline: 9px;
+      border-inline-start: 4px solid #ff8f2f;
+      border-inline-end: 0;
+      background: rgba(255, 255, 255, 0.48);
+    }
+
+    &.is-button-reply .quoted-content {
+      color: #3b4a54;
+      font-size: 0.84rem;
+      line-height: 1.32;
+    }
+
+    &.is-button-reply .quoted-text {
+      display: -webkit-box;
+      overflow: hidden;
+      color: #3b4a54 !important;
+      white-space: normal;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
     }
 
     .quoted-name {

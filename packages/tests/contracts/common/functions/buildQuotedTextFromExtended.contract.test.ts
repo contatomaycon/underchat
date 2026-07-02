@@ -44,4 +44,61 @@ describe('buildQuotedTextFromExtended', () => {
       },
     });
   });
+
+  it('preserves quoted button metadata for button reply rendering', () => {
+    const quoted = buildQuotedTextFromExtended({
+      key: {
+        remoteJid: '5511999999999@s.whatsapp.net',
+        fromMe: false,
+      },
+      message: {
+        buttonsResponseMessage: {
+          selectedDisplayText: 'Atendimento',
+          contextInfo: {
+            stanzaId: 'quoted-buttons-id',
+            participant: '5500000000000@s.whatsapp.net',
+            quotedMessage: {
+              buttonsMessage: {
+                contentText: 'Escolha uma opção',
+                headerType: 1,
+                buttons: [
+                  {
+                    buttonId: '1',
+                    buttonText: { displayText: 'Atendimento' },
+                    type: 1,
+                  },
+                  {
+                    buttonId: '2',
+                    buttonText: { displayText: 'Financeiro' },
+                    type: 1,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    } as never);
+
+    expect(quoted).toMatchObject({
+      type: EMessageType.text,
+      message: 'Escolha uma opção',
+      buttons: {
+        text: 'Escolha uma opção',
+        header_type: 1,
+        buttons: [
+          {
+            id: '1',
+            display_text: 'Atendimento',
+            type: 1,
+          },
+          {
+            id: '2',
+            display_text: 'Financeiro',
+            type: 1,
+          },
+        ],
+      },
+    });
+  });
 });

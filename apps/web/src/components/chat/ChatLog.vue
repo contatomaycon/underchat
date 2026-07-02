@@ -88,6 +88,7 @@ type ViewerMediaItem = {
 type QuotedMessageChat = NonNullable<ContentMessageChat['quoted']>;
 type QuotedMessageWithContacts = QuotedMessageChat & {
   contacts?: ContentMessageChat['contacts'];
+  buttons?: ContentMessageChat['buttons'];
 };
 type ChatWorker = ListChatsResult['worker'];
 
@@ -2195,6 +2196,7 @@ const buildQuotedPayloadFromLoadedMessage = (
     location: source.content.location ?? null,
     contact: source.content.contact ?? null,
     contacts: source.content.contacts ?? null,
+    buttons: source.content.buttons ?? null,
   };
 };
 
@@ -2239,7 +2241,15 @@ const resolveQuotedPayload = (
   m: ListMessageResult
 ): QuotedMessageWithContacts | null => {
   if (m.content?.quoted) {
-    return m.content.quoted;
+    const quoted = m.content.quoted as QuotedMessageWithContacts;
+    if (quoted.buttons?.buttons?.length) {
+      return quoted;
+    }
+
+    const source = findLoadedQuotedMessage(m);
+    return source?.content?.buttons
+      ? { ...quoted, buttons: source.content.buttons }
+      : quoted;
   }
 
   const source = findLoadedQuotedMessage(m);
@@ -2248,6 +2258,9 @@ const resolveQuotedPayload = (
 
 const isOfficialReplyDisplay = (m: ListMessageResult): boolean =>
   getOfficialMetadata(m)?.display?.kind === 'reply';
+
+const isButtonReplyMessage = (m: ListMessageResult): boolean =>
+  Boolean(resolveQuotedPayload(m)?.buttons?.buttons?.length);
 
 const showQuoted = (m: ListMessageResult) =>
   !!resolveQuotedPayload(m) && !isOfficialReplyDisplay(m);
@@ -4033,11 +4046,15 @@ onUnmounted(() => {
                     class="quoted-block"
                     :class="{
                       'is-right': !isTypeUser(item.message),
+                      'is-button-reply': isButtonReplyMessage(item.message),
                       'is-clickable': !item.message.deleted && !item.readonly,
                     }"
                     @click="!item.readonly && goToQuoted(item.message)"
                   >
-                    <div class="quoted-name">
+                    <div
+                      v-if="!isButtonReplyMessage(item.message)"
+                      class="quoted-name"
+                    >
                       {{ resolveQuotedName(item.message) }}
                     </div>
 
@@ -5357,6 +5374,9 @@ onUnmounted(() => {
                       v-if="shouldFormatMessage(item.message)"
                       class="text-base message-text"
                       :class="{
+                        'button-reply-message-text': isButtonReplyMessage(
+                          item.message
+                        ),
                         'mb-2':
                           !hasMessageVersions(item.message) &&
                           !item.message.deleted,
@@ -5382,6 +5402,9 @@ onUnmounted(() => {
                       v-else
                       class="text-base message-text"
                       :class="{
+                        'button-reply-message-text': isButtonReplyMessage(
+                          item.message
+                        ),
                         'mb-2':
                           !hasMessageVersions(item.message) &&
                           !item.message.deleted,
@@ -6522,6 +6545,39 @@ onUnmounted(() => {
         margin-bottom: 6px;
       }
 
+      .quoted-block.is-button-reply {
+        gap: 0;
+        margin: 0 0 6px;
+        padding: 7px 9px;
+        border-inline-start: 4px solid #53bdeb;
+        border-inline-end: 0;
+        border-radius: 6px;
+        background: #e9f0f6;
+      }
+
+      .quoted-block.is-button-reply.is-right {
+        padding-inline: 9px;
+        border-inline-start-color: #ff8f2f;
+        border-inline-end: 0;
+        background: rgba(255, 255, 255, 0.48);
+      }
+
+      .quoted-block.is-button-reply .quoted-content {
+        gap: 0;
+      }
+
+      .quoted-block.is-button-reply .quoted-text {
+        display: -webkit-box;
+        overflow: hidden;
+        color: #3b4a54 !important;
+        font-size: 0.84rem;
+        line-height: 1.32;
+        white-space: normal;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+      }
+
       .quoted-block.is-clickable {
         cursor: pointer;
       }
@@ -6802,6 +6858,13 @@ onUnmounted(() => {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      .button-reply-message-text {
+        color: #111b21 !important;
+        font-size: 0.9rem;
+        font-weight: 650;
+        line-height: 1.28;
       }
 
       .link-preview {

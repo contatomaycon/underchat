@@ -102,6 +102,30 @@ export const contactSchema = Type.Object({
   photo: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 });
 
+export const buttonMessageOptionSchema = Type.Object(
+  {
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    display_text: Type.String(),
+    type: Type.Optional(
+      Type.Union([Type.String(), Type.Number(), Type.Null()])
+    ),
+  },
+  { additionalProperties: true }
+);
+
+export const buttonMessageSchema = Type.Object(
+  {
+    text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    footer: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    header: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    header_type: Type.Optional(
+      Type.Union([Type.String(), Type.Number(), Type.Null()])
+    ),
+    buttons: Type.Array(buttonMessageOptionSchema),
+  },
+  { additionalProperties: true }
+);
+
 export const quotedMessageSchema = Type.Object({
   key: messageKeySchema,
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -113,6 +137,7 @@ export const quotedMessageSchema = Type.Object({
   sticker: Type.Optional(Type.Union([stickerSchema, Type.Null()])),
   location: Type.Optional(Type.Union([locationSchema, Type.Null()])),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
+  buttons: Type.Optional(Type.Union([buttonMessageSchema, Type.Null()])),
 });
 
 export const reactionSchema = Type.Object({
@@ -273,30 +298,6 @@ export const officialTemplateMessageSchema = Type.Object(
     components: Type.Optional(Type.Array(officialTemplateComponentSchema)),
     variables: Type.Optional(Type.Array(officialTemplateVariableSchema)),
     preview: Type.Optional(officialTemplatePreviewSchema),
-  },
-  { additionalProperties: true }
-);
-
-export const buttonMessageOptionSchema = Type.Object(
-  {
-    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    display_text: Type.String(),
-    type: Type.Optional(
-      Type.Union([Type.String(), Type.Number(), Type.Null()])
-    ),
-  },
-  { additionalProperties: true }
-);
-
-export const buttonMessageSchema = Type.Object(
-  {
-    text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    footer: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    header: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    header_type: Type.Optional(
-      Type.Union([Type.String(), Type.Number(), Type.Null()])
-    ),
-    buttons: Type.Array(buttonMessageOptionSchema),
   },
   { additionalProperties: true }
 );

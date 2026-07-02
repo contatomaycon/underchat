@@ -1,6 +1,9 @@
 import { WAMessage } from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
-import { IQuotedMessage } from '../interfaces/IChatMessage';
+import type {
+  IButtonMessage,
+  IQuotedMessage,
+} from '../interfaces/IChatMessage';
 import { remoteJid } from './remoteJid';
 import { remoteParticipantJid } from './remoteParticipantJid';
 import { EMessageType } from '../enums/EMessageType';
@@ -35,6 +38,96 @@ function extractText(quotedMessage: any): string {
     quotedMessage.imageMessage?.caption ??
     ''
   );
+}
+
+function normalizeButtonType(value: unknown): string | number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeButtonId(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getButtonDisplayText(button: any): string | null {
+  const value =
+    button?.buttonText?.displayText ??
+    button?.buttonText?.text ??
+    button?.displayText ??
+    button?.text ??
+    button?.title;
+
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function buildButtonsContent(quotedMessage: any): IButtonMessage | null {
+  const buttonsMessage = quotedMessage?.buttonsMessage;
+  if (!buttonsMessage || !Array.isArray(buttonsMessage.buttons)) {
+    return null;
+  }
+
+  const buttons = buttonsMessage.buttons
+    .map((button: any) => {
+      const displayText = getButtonDisplayText(button);
+      if (!displayText) return null;
+
+      return {
+        id: normalizeButtonId(
+          button?.buttonId ?? button?.buttonID ?? button?.id
+        ),
+        display_text: displayText,
+        type: normalizeButtonType(button?.type),
+      };
+    })
+    .filter(
+      (
+        button: {
+          id: string | null;
+          display_text: string;
+          type: string | number | null;
+        } | null
+      ): button is {
+        id: string | null;
+        display_text: string;
+        type: string | number | null;
+      } => button !== null
+    );
+
+  if (!buttons.length) {
+    return null;
+  }
+
+  return {
+    text: buttonsMessage.contentText ?? buttonsMessage.text ?? null,
+    footer: buttonsMessage.footerText ?? buttonsMessage.footer ?? null,
+    header: buttonsMessage.headerText ?? buttonsMessage.header ?? null,
+    header_type: normalizeButtonType(buttonsMessage.headerType),
+    buttons,
+  };
+}
+
+function processButtonsMessage(
+  quotedMessage: any,
+  quoted: IQuotedMessage
+): void {
+  const buttons = buildButtonsContent(quotedMessage);
+  if (!buttons) return;
+
+  quoted.buttons = buttons;
+  if (!quoted.message && buttons.text) {
+    quoted.message = buttons.text;
+  }
 }
 
 function processImageMessage(quotedMessage: any, quoted: IQuotedMessage): void {
@@ -260,6 +353,7 @@ export function buildQuotedTextFromExtended(
   processStickerMessage(quotedMessage, quoted);
   processLocationMessage(quotedMessage, quoted);
   processContactMessage(quotedMessage, quoted);
+  processButtonsMessage(quotedMessage, quoted);
 
   return quoted;
 }
