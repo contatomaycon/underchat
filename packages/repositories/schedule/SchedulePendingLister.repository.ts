@@ -49,6 +49,7 @@ export class SchedulePendingListerRepository {
         duration: schedule.duration,
         width: schedule.width,
         height: schedule.height,
+        official_template: schedule.official_template,
         send_date: schedule.send_date,
       })
       .from(schedule)
@@ -77,6 +78,7 @@ export class SchedulePendingListerRepository {
     duration: number | null;
     width: number | null;
     height: number | null;
+    official_template: ISchedulePendingData['official_template'];
     send_date: string;
   }): ISchedulePendingData {
     return {
@@ -97,6 +99,7 @@ export class SchedulePendingListerRepository {
       duration: item.duration,
       width: item.width,
       height: item.height,
+      official_template: item.official_template ?? null,
       send_date: item.send_date,
     };
   }
@@ -147,6 +150,7 @@ export class SchedulePendingListerRepository {
         duration: schedule.duration,
         width: schedule.width,
         height: schedule.height,
+        official_template: schedule.official_template,
         send_date: schedule.send_date,
       })
       .from(schedule)

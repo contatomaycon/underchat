@@ -4,6 +4,7 @@ import { ListScheduleWorkersResponse } from '@core/schema/schedule/listScheduleW
 import { and, eq, isNull, asc } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
+import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class ScheduleWorkersListerRepository {
@@ -19,6 +20,7 @@ export class ScheduleWorkersListerRepository {
         worker_id: worker.worker_id,
         name: worker.name,
         number: worker.number,
+        type_id: worker.worker_type_id,
       })
       .from(worker)
       .where(and(eq(worker.account_id, accountId), isNull(worker.deleted_at)))
@@ -29,6 +31,12 @@ export class ScheduleWorkersListerRepository {
       return [];
     }
 
-    return result as ListScheduleWorkersResponse[];
+    return result.map((item) => ({
+      worker_id: item.worker_id,
+      name: item.name,
+      number: item.number,
+      type_id: item.type_id,
+      is_official: isOfficialWhatsappWorker(item.type_id),
+    })) as ListScheduleWorkersResponse[];
   };
 }

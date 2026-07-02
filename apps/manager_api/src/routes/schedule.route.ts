@@ -20,6 +20,7 @@ import { listScheduleMessagesSchema } from '@core/schema/schedule/listScheduleMe
 import { updateScheduleActionSchema } from '@core/schema/schedule/updateScheduleAction';
 import { reprocessScheduleFailedSchema } from '@core/schema/schedule/reprocessScheduleFailed';
 import { reprocessScheduleMessageSchema } from '@core/schema/schedule/reprocessScheduleMessage';
+import { scheduleOfficialTemplatesSchema } from '@core/schema/schedule/officialTemplates';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -128,6 +129,17 @@ export default function scheduleRoutes(server: FastifyInstance) {
   server.get('/schedule/chatbots', {
     schema: listScheduleChatbotsSchema,
     handler: scheduleController.listScheduleChatbots,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, scheduleViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/schedule/official-templates', {
+    schema: scheduleOfficialTemplatesSchema,
+    handler: scheduleController.listOfficialTemplates,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, scheduleViewPermissions),

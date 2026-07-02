@@ -1,4 +1,5 @@
 import { Static, Type } from '@sinclair/typebox';
+import { scheduleOfficialTemplateMessageSchema } from '@core/schema/schedule/officialTemplate.schema';
 
 const accountSchema = Type.Object({
   account_id: Type.String({ format: 'uuid' }),
@@ -35,6 +36,9 @@ export const viewScheduleResponseSchema = Type.Object({
   duration: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  official_template: Type.Optional(
+    Type.Union([scheduleOfficialTemplateMessageSchema, Type.Null()])
+  ),
   send_date: Type.String(),
   contacts: Type.Optional(Type.Array(contactSchema)),
   contact_groups: Type.Optional(Type.Array(contactGroupSchema)),

@@ -26,6 +26,7 @@ import { ListScheduleContactsRequest } from '@core/schema/schedule/listScheduleC
 import { ListScheduleMessagesResponse } from '@core/schema/schedule/listScheduleMessages/response.schema';
 import { ListScheduleMessagesRequest } from '@core/schema/schedule/listScheduleMessages/request.schema';
 import { EScheduleAction } from '@core/common/enums/EScheduleAction';
+import { OfficialTemplatesResponse } from '@core/schema/chatbot/officialTemplates/response.schema';
 
 export const useScheduleStore = defineStore('schedule', {
   state: () => ({
@@ -493,6 +494,49 @@ export const useScheduleStore = defineStore('schedule', {
         return data.data;
       } catch (error) {
         let errorMessage = this.i18n.global.t('schedule_chatbots_list_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async listScheduleOfficialTemplates(
+      workerId: string
+    ): Promise<OfficialTemplatesResponse | null> {
+      try {
+        this.loading = true;
+
+        const response = await axios.get<
+          IApiResponse<OfficialTemplatesResponse>
+        >(`/schedule/official-templates`, {
+          params: { worker_id: workerId },
+        });
+
+        this.loading = false;
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const mensage =
+            data?.message ??
+            this.i18n.global.t('official_templates_loading_error');
+
+          this.showSnackbar(mensage, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'official_templates_loading_error'
+        );
         if (error instanceof AxiosError) {
           errorMessage = error?.response?.data?.message ?? errorMessage;
         }

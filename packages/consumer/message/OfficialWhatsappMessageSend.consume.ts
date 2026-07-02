@@ -27,6 +27,7 @@ import { IUpdateMessage } from '@core/common/interfaces/IUpdateMessage';
 import { IMessageStatusUpdate } from '@core/common/interfaces/IMessageStatusUpdate';
 import {
   buildMessageSendQueueKey,
+  buildScheduleSendQueueKey,
   resolveMessageSendIdentity,
 } from '@core/common/functions/messageIdentity';
 import { KafkaConsumerRunner } from '@core/common/functions/kafkaConsumerRunner';
@@ -34,6 +35,12 @@ import type {
   KafkaConsumerRunnerContext,
   KafkaRunnerMessage,
 } from '@core/common/interfaces/KafkaConsumerRunnerOptions';
+import { IScheduleMessage } from '@core/common/interfaces/IScheduleMessage';
+import { IScheduleStatusUpdate } from '@core/common/interfaces/IScheduleStatusUpdate';
+import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
+import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
+import { EElasticIndex } from '@core/common/enums/EElasticIndex';
+import { scheduleMappings } from '@core/mappings/schedule.mappings';
 
 interface IQueuedEnvelope {
   sourceTopic: string;
@@ -73,7 +80,9 @@ export class OfficialWhatsappMessageSendConsume {
     @inject(ChatMessageService)
     private readonly chatMessageService: ChatMessageService,
     @inject(OfficialWhatsappTemplateService)
-    private readonly officialWhatsappTemplateService: OfficialWhatsappTemplateService
+    private readonly officialWhatsappTemplateService: OfficialWhatsappTemplateService,
+    @inject(ElasticDatabaseService)
+    private readonly elasticDatabaseService: ElasticDatabaseService
   ) {}
 
   public async execute(): Promise<void> {
@@ -144,6 +153,29 @@ export class OfficialWhatsappMessageSendConsume {
     );
   }
 
+  private isScheduleMessage(payload: unknown): payload is IScheduleMessage {
+    return Boolean(
+      payload &&
+      typeof payload === 'object' &&
+      'schedule_id' in payload &&
+      'contact_id' in payload &&
+      'message' in payload &&
+      this.isSendMessage((payload as { message?: unknown }).message)
+    );
+  }
+
+  private resolvePayloadMessage(payload: unknown): IChatMessage | null {
+    if (this.isScheduleMessage(payload)) {
+      return payload.message;
+    }
+
+    if (this.isSendMessage(payload)) {
+      return payload;
+    }
+
+    return null;
+  }
+
   private resolveChatId(data: IChatMessage): string | null {
     const chatId = data.chat_id ?? data.message_key?.remote_jid ?? data.phone;
     return chatId ? String(chatId) : null;
@@ -156,6 +188,19 @@ export class OfficialWhatsappMessageSendConsume {
     queueKey: string;
     chatId: string | null;
   } {
+    if (this.isScheduleMessage(payload)) {
+      const workerId = payload.message.worker.id;
+      const accountId = payload.account_id ?? payload.message.account.id;
+
+      return {
+        queueKey:
+          accountId && workerId
+            ? buildScheduleSendQueueKey(accountId, workerId)
+            : this.SYSTEM_QUEUE_KEY,
+        chatId: this.resolveChatId(payload.message),
+      };
+    }
+
     if (this.isSendMessage(payload)) {
       const chatId = this.resolveChatId(payload);
       if (chatId) {
@@ -201,6 +246,11 @@ export class OfficialWhatsappMessageSendConsume {
     payload: unknown,
     envelope: IQueuedEnvelope
   ): Promise<void> {
+    if (this.isScheduleMessage(payload)) {
+      await this.processSchedulePayload(payload, envelope);
+      return;
+    }
+
     if (!this.isSendMessage(payload)) {
       console.warn('[OfficialWhatsappMessageSend] Unsupported payload skipped');
       return;
@@ -227,8 +277,37 @@ export class OfficialWhatsappMessageSendConsume {
     envelope.chatId = this.resolveChatId(payload);
   }
 
+  private async processSchedulePayload(
+    payload: IScheduleMessage,
+    envelope: IQueuedEnvelope
+  ): Promise<void> {
+    const message = payload.message;
+    const claimStatus = await this.claimMessageSend(message, payload);
+    if (claimStatus === 'duplicate') {
+      return;
+    }
+
+    if (claimStatus !== 'acquired') {
+      throw new Error(`message_send_idempotency_${claimStatus}`);
+    }
+
+    const result = await this.sendMessage(message);
+    await this.pushMessageUpdate(message, result);
+    await this.pushSentStatus(message, result);
+    await this.sendScheduleStatus(payload, EScheduleStatus.sent);
+    await this.sendScheduleLog(payload, result, null, true);
+
+    const annotation = this.resolveWindowAnnotation(message, result.raw);
+    if (annotation) {
+      await this.publishAnnotation(message, annotation);
+    }
+
+    envelope.chatId = this.resolveChatId(message);
+  }
+
   private async claimMessageSend(
-    payload: IChatMessage
+    payload: IChatMessage,
+    schedule?: IScheduleMessage
   ): Promise<'acquired' | 'duplicate' | 'error' | 'missing_identity'> {
     const identity = resolveMessageSendIdentity(payload);
     if (!identity) {
@@ -246,6 +325,12 @@ export class OfficialWhatsappMessageSendConsume {
         chat_id: identity.chatId,
         message_id: identity.messageId,
         worker_id: payload.worker.id,
+        ...(schedule
+          ? {
+              schedule_id: schedule.schedule_id,
+              contact_id: schedule.contact_id,
+            }
+          : {}),
       }
     );
 
@@ -808,19 +893,30 @@ export class OfficialWhatsappMessageSendConsume {
     error: unknown
   ): Promise<void> {
     const messageId = this.extractMessageId(envelope.payload);
-    if (messageId && this.isSendMessage(envelope.payload)) {
+    const message = this.resolvePayloadMessage(envelope.payload);
+    if (messageId && message) {
       await this.messageStatusService.markMessageAsNotSent(
-        envelope.payload.account.id,
+        message.account.id,
         messageId
       );
     }
 
-    const annotation = this.resolveWindowAnnotation(
-      this.isSendMessage(envelope.payload) ? envelope.payload : null,
-      error
-    );
-    if (annotation && this.isSendMessage(envelope.payload)) {
-      await this.publishAnnotation(envelope.payload, annotation);
+    const annotation = this.resolveWindowAnnotation(message, error);
+    if (annotation && message) {
+      await this.publishAnnotation(message, annotation);
+    }
+
+    if (this.isScheduleMessage(envelope.payload)) {
+      await this.sendScheduleStatusBestEffort(
+        envelope.payload,
+        EScheduleStatus.failed
+      );
+      await this.sendScheduleLogBestEffort(
+        envelope.payload,
+        null,
+        this.errorMessage(error),
+        false
+      );
     }
 
     console.error('[OfficialWhatsappMessageSend] terminal send failure:', {
@@ -842,7 +938,90 @@ export class OfficialWhatsappMessageSendConsume {
     }
 
     const value = (payload as { message_id?: unknown }).message_id;
+    if (this.isScheduleMessage(payload)) {
+      return payload.message.message_id?.trim() || null;
+    }
     return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private async sendScheduleStatus(
+    data: IScheduleMessage,
+    status: EScheduleStatus.sent | EScheduleStatus.failed
+  ): Promise<void> {
+    const statusUpdate: IScheduleStatusUpdate = {
+      schedule_id: data.schedule_id,
+      contact_id: data.contact_id,
+      message_id: data.message.message_id,
+      processed_at: new Date().toISOString(),
+      status,
+    };
+
+    await this.streamProducerService.send(
+      this.kafkaServiceQueueService.scheduleStatusUpdate(),
+      statusUpdate,
+      buildScheduleSendQueueKey(
+        data.account_id ?? data.message.account.id,
+        data.message.worker.id
+      )
+    );
+  }
+
+  private async sendScheduleStatusBestEffort(
+    data: IScheduleMessage,
+    status: EScheduleStatus.sent | EScheduleStatus.failed
+  ): Promise<void> {
+    try {
+      await this.sendScheduleStatus(data, status);
+    } catch (error) {
+      console.error(
+        `Failed to publish official schedule status update for message ${data.message.message_id}:`,
+        error
+      );
+    }
+  }
+
+  private async sendScheduleLog(
+    data: IScheduleMessage,
+    result: MetaWhatsappMessageSendResult | null,
+    error: string | null,
+    success: boolean
+  ): Promise<void> {
+    await this.elasticDatabaseService.indices(
+      EElasticIndex.schedule,
+      scheduleMappings()
+    );
+
+    const sendLog = {
+      result: success ? result : null,
+      error,
+      success,
+      jid: data.message.message_key?.remote_jid ?? data.message.phone,
+      payload: data.message.content,
+    };
+
+    await this.elasticDatabaseService.updateField(
+      EElasticIndex.schedule,
+      data.message.message_id,
+      'send_log',
+      sendLog,
+      3
+    );
+  }
+
+  private async sendScheduleLogBestEffort(
+    data: IScheduleMessage,
+    result: MetaWhatsappMessageSendResult | null,
+    error: string | null,
+    success: boolean
+  ): Promise<void> {
+    try {
+      await this.sendScheduleLog(data, result, error, success);
+    } catch (logError) {
+      console.error(
+        `Failed to save official schedule send log for message ${data.message.message_id}:`,
+        logError
+      );
+    }
   }
 
   private errorMessage(error: unknown): string {

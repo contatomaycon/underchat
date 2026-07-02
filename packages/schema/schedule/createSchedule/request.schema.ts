@@ -1,4 +1,5 @@
 import { uploadFileRequestSchema } from '@core/schema/upload/request.schema';
+import { scheduleOfficialTemplateFieldSchema } from '@core/schema/schedule/officialTemplate.schema';
 import { Static, Type } from '@sinclair/typebox';
 
 export const createScheduleRequestSchema = Type.Object({
@@ -47,6 +48,7 @@ export const createScheduleRequestSchema = Type.Object({
     ])
   ),
   url: Type.Optional(Type.Union([uploadFileRequestSchema, Type.Null()])),
+  official_template: scheduleOfficialTemplateFieldSchema,
   send_date: Type.Union([
     Type.String(),
     Type.Object({

@@ -6,6 +6,7 @@ import { ContactService } from './contact.service';
 import { normalizePhoneToJid } from '@core/common/functions/normalizePhoneToJid';
 import { getPhoneFromJid } from '@core/common/functions/getPhoneFromJid';
 import { KafkaBaileysQueueService } from './kafkaBaileysQueue.service';
+import { KafkaServiceQueueService } from './kafkaServiceQueue.service';
 import { StreamProducerService } from './streamProducer.service';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { EMessageType } from '@core/common/enums/EMessageType';
@@ -63,6 +64,9 @@ import { WorkerConfigService } from './workerConfig.service';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
 import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
 import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
+import { OfficialWhatsappTemplateService } from './officialWhatsappTemplate.service';
+import { IOfficialWhatsappTemplate } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import { buildOfficialWhatsappDisplayFromTemplate } from '@core/common/functions/officialWhatsappDisplay';
 
 @injectable()
 export class ScheduleSendService {
@@ -78,6 +82,8 @@ export class ScheduleSendService {
     private readonly scheduleStatusUpdaterRepository: ScheduleStatusUpdaterRepository,
     @inject(ContactService)
     private readonly contactService: ContactService,
+    @inject(KafkaServiceQueueService)
+    private readonly kafkaServiceQueueService: KafkaServiceQueueService,
     @inject(KafkaBaileysQueueService)
     private readonly kafkaBaileysQueueService: KafkaBaileysQueueService,
     @inject(StreamProducerService)
@@ -98,6 +104,8 @@ export class ScheduleSendService {
     private readonly scheduleControlRepository: ScheduleControlRepository,
     @inject(WorkerConfigService)
     private readonly workerConfigService: WorkerConfigService,
+    @inject(OfficialWhatsappTemplateService)
+    private readonly officialWhatsappTemplateService: OfficialWhatsappTemplateService,
     @inject('Redis') private readonly redis: Redis
   ) {}
 
@@ -529,6 +537,60 @@ export class ScheduleSendService {
     };
   }
 
+  private async createOfficialTemplateMessage(
+    schedule: ISchedulePendingData,
+    baseMessage: IChatMessage,
+    contact: IScheduleContactValidated
+  ): Promise<IChatMessage> {
+    const sourceTemplate = schedule.official_template;
+    if (!sourceTemplate?.name || !sourceTemplate.language) {
+      return baseMessage;
+    }
+
+    const variables = await Promise.all(
+      (sourceTemplate.variables ?? []).map(async (variable) => ({
+        ...variable,
+        value: await this.replaceTags(variable.value, schedule, contact),
+      }))
+    );
+    const officialTemplate = {
+      ...sourceTemplate,
+      variables,
+    };
+    const templateForPreview: IOfficialWhatsappTemplate = {
+      id: null,
+      name: sourceTemplate.name,
+      language: sourceTemplate.language,
+      status: 'APPROVED',
+      category: sourceTemplate.category ?? null,
+      components: sourceTemplate.components ?? [],
+      variables: [],
+      preview: sourceTemplate.preview ?? {},
+    };
+    const message =
+      this.officialWhatsappTemplateService.buildPreviewText(
+        templateForPreview,
+        variables
+      ) || sourceTemplate.name;
+
+    return {
+      ...baseMessage,
+      content: {
+        type: EMessageType.official_template,
+        message,
+        official_template: officialTemplate,
+        official: {
+          provider: 'meta_whatsapp',
+          type: 'template',
+          display: buildOfficialWhatsappDisplayFromTemplate(
+            officialTemplate,
+            message
+          ),
+        },
+      },
+    };
+  }
+
   private createBaseMessage(
     schedule: ISchedulePendingData,
     contact: IScheduleContactValidated,
@@ -589,6 +651,10 @@ export class ScheduleSendService {
 
     if (schedule.type === EScheduleType.chatbot) {
       return baseMessage;
+    }
+
+    if (schedule.type === EScheduleType.official_template) {
+      return this.createOfficialTemplateMessage(schedule, baseMessage, contact);
     }
 
     if (schedule.type === EScheduleType.text) {
@@ -974,8 +1040,9 @@ export class ScheduleSendService {
     if (!workerId) {
       throw new Error('Worker ID is required to send schedule message');
     }
-    const topic =
-      this.kafkaBaileysQueueService.workerScheduleSendMessage(workerId);
+    const topic = isOfficialWhatsappWorker(schedule.worker_type_id)
+      ? this.kafkaServiceQueueService.officialWhatsappSendMessage()
+      : this.kafkaBaileysQueueService.workerScheduleSendMessage(workerId);
 
     await this.streamProducerService.send(
       topic,
@@ -1631,10 +1698,12 @@ export class ScheduleSendService {
         };
       }
 
-      const canDispatch = await this.waitForDispatchWindow(
-        schedule.schedule_id,
-        schedule.send_speed
-      );
+      const canDispatch = isOfficialWhatsappWorker(schedule.worker_type_id)
+        ? await this.canContinueScheduleProcessing(schedule.schedule_id)
+        : await this.waitForDispatchWindow(
+            schedule.schedule_id,
+            schedule.send_speed
+          );
       if (!canDispatch) {
         return {
           results: allResults,

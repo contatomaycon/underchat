@@ -33,6 +33,8 @@ import { ScheduleSendService } from '@core/services/scheduleSend.service';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import { withLock } from '@core/common/functions/withLock';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EScheduleType } from '@core/common/enums/EScheduleType';
+import { EMessageType } from '@core/common/enums/EMessageType';
 
 describe('ScheduleSendService', () => {
   const makeService = () => {
@@ -43,6 +45,11 @@ describe('ScheduleSendService', () => {
       workerScheduleSendMessage: jest.fn((workerId: string) => {
         return `worker.${workerId}.schedule.send.message`;
       }),
+    };
+    const kafkaServiceQueueService = {
+      officialWhatsappSendMessage: jest.fn(
+        () => 'official.whatsapp.send.message'
+      ),
     };
     const streamProducerService = {
       send: jest.fn(async () => undefined),
@@ -80,12 +87,23 @@ describe('ScheduleSendService', () => {
       set: jest.fn(async () => 'OK'),
       del: jest.fn(async () => 1),
     };
+    const officialWhatsappTemplateService = {
+      buildPreviewText: jest.fn((template, values) => {
+        const body = template?.preview?.body ?? template?.name ?? '';
+        return (values ?? []).reduce(
+          (text: string, variable: { index: number; value: string }) =>
+            text.replace(`{{${variable.index}}}`, variable.value),
+          body
+        );
+      }),
+    };
 
     const service = new ScheduleSendService(
       {} as never,
       {} as never,
       {} as never,
       contactService as never,
+      kafkaServiceQueueService as never,
       kafkaBaileysQueueService as never,
       streamProducerService as never,
       elasticDatabaseService as never,
@@ -96,12 +114,14 @@ describe('ScheduleSendService', () => {
       {} as never,
       {} as never,
       workerConfigService as never,
+      officialWhatsappTemplateService as never,
       redis as never
     );
 
     return {
       service,
       contactService,
+      kafkaServiceQueueService,
       kafkaBaileysQueueService,
       streamProducerService,
       elasticDatabaseService,
@@ -110,6 +130,7 @@ describe('ScheduleSendService', () => {
       chatbotFlowRunnerService,
       encryptService,
       workerConfigService,
+      officialWhatsappTemplateService,
       redis,
     };
   };
@@ -214,6 +235,135 @@ describe('ScheduleSendService', () => {
         contact_id: 'contact-1',
       }),
       'account:account-1:channel:worker-1'
+    );
+  });
+
+  it('publishes official schedule messages to the official Meta topic', async () => {
+    const { service, streamProducerService } = makeService();
+
+    await (service as any).sendMessageToKafka(
+      {
+        schedule_id: 'schedule-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.whatsapp,
+      },
+      {
+        contact_id: 'contact-1',
+        is_validated: true,
+      },
+      {
+        message_id: 'message-1',
+        chat_id: 'chat-1',
+        worker: { id: 'worker-1' },
+      }
+    );
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'official.whatsapp.send.message',
+      expect.objectContaining({
+        schedule_id: 'schedule-1',
+        contact_id: 'contact-1',
+      }),
+      'account:account-1:channel:worker-1'
+    );
+  });
+
+  it('replaces tags inside official template variables before sending', async () => {
+    const { service } = makeService();
+    const baseMessage = {
+      message_id: 'message-1',
+      chat_id: 'chat-1',
+      content: null,
+    };
+
+    const message = await (service as any).createOfficialTemplateMessage(
+      {
+        schedule_id: 'schedule-1',
+        account_id: 'account-1',
+        account_name: 'Account',
+        worker_id: 'worker-1',
+        worker_name: 'Official',
+        official_template: {
+          name: 'abertura',
+          language: 'pt_BR',
+          status: 'APPROVED',
+          category: 'MARKETING',
+          components: [],
+          preview: {
+            body: 'Olá {{1}}',
+          },
+          variables: [
+            {
+              key: 'BODY:1',
+              component_type: 'BODY',
+              index: 1,
+              value: '{{ name }}',
+            },
+          ],
+        },
+      },
+      baseMessage,
+      {
+        contact_id: 'contact-1',
+        name: 'Maycon',
+        nickname: null,
+        phone: null,
+        phone_ddi: null,
+        phone_partial: null,
+        is_validated: true,
+      }
+    );
+
+    expect(message.content).toEqual(
+      expect.objectContaining({
+        type: EMessageType.official_template,
+        message: 'Olá Maycon',
+        official_template: expect.objectContaining({
+          variables: [
+            expect.objectContaining({
+              key: 'BODY:1',
+              value: 'Maycon',
+            }),
+          ],
+        }),
+      })
+    );
+  });
+
+  it('does not wait for send speed when processing official schedules', async () => {
+    const { service } = makeService();
+    const waitSpy = jest
+      .spyOn(service as any, 'waitForDispatchWindow')
+      .mockResolvedValue(true);
+    jest.spyOn(service as any, 'checkMessageSent').mockResolvedValue(false);
+    jest
+      .spyOn(service as any, 'canContinueScheduleProcessing')
+      .mockResolvedValue(true);
+    const sendSpy = jest
+      .spyOn(service as any, 'sendScheduleMessage')
+      .mockResolvedValue({ success: true, contactId: 'contact-1' });
+
+    await (service as any).processContactsWithControl(
+      {
+        schedule_id: 'schedule-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.whatsapp,
+        send_speed: 'high',
+        type: EScheduleType.official_template,
+      },
+      [
+        {
+          contact_id: 'contact-1',
+          is_validated: true,
+        },
+      ]
+    );
+
+    expect(waitSpy).not.toHaveBeenCalled();
+    expect(sendSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ schedule_id: 'schedule-1' }),
+      expect.objectContaining({ contact_id: 'contact-1' }),
+      { skipAlreadySentCheck: true }
     );
   });
 

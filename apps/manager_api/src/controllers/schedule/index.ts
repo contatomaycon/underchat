@@ -12,6 +12,7 @@ import { listScheduleChatbots } from './methods/listScheduleChatbots';
 import { updateScheduleAction } from './methods/updateScheduleAction';
 import { reprocessScheduleFailedMessages } from './methods/reprocessScheduleFailedMessages';
 import { reprocessScheduleMessage } from './methods/reprocessScheduleMessage';
+import { listOfficialTemplates } from './methods/listOfficialTemplates';
 
 @injectable()
 class ScheduleController {
@@ -28,6 +29,7 @@ class ScheduleController {
   public updateScheduleAction = updateScheduleAction;
   public reprocessScheduleFailedMessages = reprocessScheduleFailedMessages;
   public reprocessScheduleMessage = reprocessScheduleMessage;
+  public listOfficialTemplates = listOfficialTemplates;
 }
 
 export default ScheduleController;

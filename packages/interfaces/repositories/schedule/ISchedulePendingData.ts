@@ -1,3 +1,5 @@
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+
 export interface ISchedulePendingData {
   schedule_id: string;
   account_id: string;
@@ -16,5 +18,6 @@ export interface ISchedulePendingData {
   duration: number | null;
   width: number | null;
   height: number | null;
+  official_template: IOfficialWhatsappTemplateMessage | null;
   send_date: string;
 }

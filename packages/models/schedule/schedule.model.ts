@@ -6,6 +6,7 @@ import {
   text,
   integer,
   index,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { account } from '../account';
@@ -16,6 +17,7 @@ import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 export const schedule = pgTable(
   'schedule',
@@ -40,6 +42,7 @@ export const schedule = pgTable(
     duration: integer(),
     width: integer(),
     height: integer(),
+    official_template: jsonb().$type<IOfficialWhatsappTemplateMessage | null>(),
     send_date: timestamp({
       mode: 'string',
       withTimezone: true,

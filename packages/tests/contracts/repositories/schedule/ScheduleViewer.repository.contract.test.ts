@@ -48,6 +48,7 @@ describe('ScheduleViewerRepository', () => {
         duration: null,
         width: null,
         height: null,
+        official_template: null,
         send_date: '2026-04-21T22:00:00.000Z',
         created_at: '2026-04-21T10:00:00.000Z',
         updated_at: '2026-04-21T10:10:00.000Z',
@@ -98,6 +99,7 @@ describe('ScheduleViewerRepository', () => {
       duration: null,
       width: null,
       height: null,
+      official_template: null,
       send_date: '2026-04-21T22:00:00.000Z',
       contacts: [
         {

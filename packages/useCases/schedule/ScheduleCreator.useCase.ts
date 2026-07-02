@@ -15,6 +15,8 @@ import moment from 'moment-timezone';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
 import { formatDateToISO } from '@core/common/functions/formatDateToISO';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import { ScheduleOfficialMessageService } from '@core/services/scheduleOfficialMessage.service';
 
 @injectable()
 export class ScheduleCreatorUseCase {
@@ -58,7 +60,9 @@ export class ScheduleCreatorUseCase {
     @inject(StorageService)
     private readonly storageService: StorageService,
     @inject(ConverterService)
-    private readonly converterService: ConverterService
+    private readonly converterService: ConverterService,
+    @inject(ScheduleOfficialMessageService)
+    private readonly scheduleOfficialMessageService: ScheduleOfficialMessageService
   ) {}
 
   private async validateAccountExists(
@@ -348,7 +352,12 @@ export class ScheduleCreatorUseCase {
       })
     | null
   > {
-    if (messageType === EScheduleType.chatbot) return null;
+    if (
+      messageType === EScheduleType.chatbot ||
+      messageType === EScheduleType.official_template
+    ) {
+      return null;
+    }
     if (!url?.filename) return null;
 
     await this.validateAttachment(url, t);
@@ -379,6 +388,7 @@ export class ScheduleCreatorUseCase {
     sendSpeedValue: EScheduleSendSpeed,
     chatbotIdValue: string | null,
     messageValue: string | null,
+    officialTemplate: IOfficialWhatsappTemplateMessage | null,
     attachmentUrl:
       | (UploadFileResponse & {
           mimetype?: string | null;
@@ -397,7 +407,8 @@ export class ScheduleCreatorUseCase {
       'YYYY-MM-DD HH:mm'
     );
 
-    const isChatbot = !!chatbotIdValue;
+    const isChatbot = messageType === EScheduleType.chatbot;
+    const isOfficialTemplate = messageType === EScheduleType.official_template;
 
     return {
       account_id: scheduleBasic.accountId,
@@ -405,13 +416,29 @@ export class ScheduleCreatorUseCase {
       type: messageType,
       send_to: sendToValue,
       send_speed: sendSpeedValue,
-      chatbot_id: chatbotIdValue ?? undefined,
-      message: isChatbot ? null : messageValue,
-      url: isChatbot ? null : attachmentUrl ? attachmentUrl.url : null,
-      mimetype: isChatbot ? null : (attachmentUrl?.mimetype ?? null),
-      duration: isChatbot ? null : (attachmentUrl?.duration ?? null),
-      width: isChatbot ? null : (attachmentUrl?.width ?? null),
-      height: isChatbot ? null : (attachmentUrl?.height ?? null),
+      chatbot_id: isChatbot ? (chatbotIdValue ?? undefined) : null,
+      message: isChatbot || isOfficialTemplate ? null : messageValue,
+      url:
+        isChatbot || isOfficialTemplate
+          ? null
+          : attachmentUrl
+            ? attachmentUrl.url
+            : null,
+      mimetype:
+        isChatbot || isOfficialTemplate
+          ? null
+          : (attachmentUrl?.mimetype ?? null),
+      duration:
+        isChatbot || isOfficialTemplate
+          ? null
+          : (attachmentUrl?.duration ?? null),
+      width:
+        isChatbot || isOfficialTemplate ? null : (attachmentUrl?.width ?? null),
+      height:
+        isChatbot || isOfficialTemplate
+          ? null
+          : (attachmentUrl?.height ?? null),
+      official_template: isOfficialTemplate ? officialTemplate : null,
       send_date: sendDateISO,
       contact_ids:
         recipients.contactIds.length > 0 ? recipients.contactIds : undefined,
@@ -436,8 +463,12 @@ export class ScheduleCreatorUseCase {
     const sendSpeedValue = this.resolveSendSpeed(
       this.extractStringValue(input.send_speed)
     );
-    const chatbotIdValue = this.extractStringValue(input.chatbot_id);
+    let chatbotIdValue = this.extractStringValue(input.chatbot_id);
+    if (chatbotIdValue === '') chatbotIdValue = null;
     const messageValue = this.extractMessageValue(input.message);
+    const officialTemplateInput = this.extractOfficialTemplateValue(
+      input.official_template as unknown
+    );
     const contactIds = this.extractContactIds(input.contact_ids);
     const contactGroupIds = this.extractContactGroupIds(
       input.contact_group_ids
@@ -463,6 +494,35 @@ export class ScheduleCreatorUseCase {
       typeValue ?? undefined,
       input.url?.filename
     );
+    const isOfficialWorker =
+      await this.scheduleOfficialMessageService.isOfficialWorker(
+        t,
+        accountId,
+        workerId
+      );
+    let officialTemplate: IOfficialWhatsappTemplateMessage | null = null;
+
+    if (
+      isOfficialWorker &&
+      messageType !== EScheduleType.official_template &&
+      messageType !== EScheduleType.chatbot
+    ) {
+      throw new Error(t('schedule_official_type_invalid'));
+    }
+
+    if (!isOfficialWorker && messageType === EScheduleType.official_template) {
+      throw new Error(t('schedule_official_template_not_allowed'));
+    }
+
+    if (messageType === EScheduleType.official_template) {
+      officialTemplate =
+        await this.scheduleOfficialMessageService.validateTemplateForSchedule({
+          t,
+          accountId,
+          workerId,
+          officialTemplate: officialTemplateInput,
+        });
+    }
 
     if (messageType === EScheduleType.chatbot) {
       if (!chatbotIdValue) {
@@ -475,8 +535,21 @@ export class ScheduleCreatorUseCase {
       if (!exists) {
         throw new Error(t('schedule_chatbot_not_found'));
       }
+
+      if (isOfficialWorker) {
+        await this.scheduleOfficialMessageService.assertOfficialScheduleChatbotStart(
+          {
+            t,
+            accountId,
+            chatbotId: chatbotIdValue,
+          }
+        );
+      }
     }
 
+    const effectiveSendSpeed = isOfficialWorker
+      ? EScheduleSendSpeed.low
+      : sendSpeedValue;
     const attachmentUrl = await this.processAttachment(
       input.url,
       messageType,
@@ -492,9 +565,10 @@ export class ScheduleCreatorUseCase {
       },
       messageType,
       sendToValue ?? '',
-      sendSpeedValue,
+      effectiveSendSpeed,
       chatbotIdValue,
       messageValue,
+      officialTemplate,
       attachmentUrl,
       {
         contactIds,
@@ -510,5 +584,40 @@ export class ScheduleCreatorUseCase {
     }
 
     return true;
+  }
+
+  private extractOfficialTemplateValue(
+    field: unknown
+  ): IOfficialWhatsappTemplateMessage | null {
+    const raw =
+      field &&
+      typeof field === 'object' &&
+      'value' in field &&
+      !Array.isArray(field)
+        ? (field as { value?: unknown }).value
+        : field;
+
+    if (!raw) {
+      return null;
+    }
+
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(trimmed) as IOfficialWhatsappTemplateMessage;
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw as IOfficialWhatsappTemplateMessage;
+    }
+
+    return null;
   }
 }

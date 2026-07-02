@@ -1,3 +1,5 @@
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+
 export interface IUpdateSchedule {
   schedule_id: string;
   worker_id?: string | null;
@@ -11,6 +13,7 @@ export interface IUpdateSchedule {
   duration?: number | null;
   width?: number | null;
   height?: number | null;
+  official_template?: IOfficialWhatsappTemplateMessage | null;
   send_date?: string | null;
   contact_ids?: string[];
   contact_group_ids?: string[];

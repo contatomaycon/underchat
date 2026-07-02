@@ -15,6 +15,8 @@ import moment from 'moment-timezone';
 import { extractArrayField } from '@core/common/functions/extractArrayField';
 import { formatDateToISO } from '@core/common/functions/formatDateToISO';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import { ScheduleOfficialMessageService } from '@core/services/scheduleOfficialMessage.service';
 
 @injectable()
 export class ScheduleUpdaterUseCase {
@@ -45,7 +47,9 @@ export class ScheduleUpdaterUseCase {
     @inject(StorageService)
     private readonly storageService: StorageService,
     @inject(ConverterService)
-    private readonly converterService: ConverterService
+    private readonly converterService: ConverterService,
+    @inject(ScheduleOfficialMessageService)
+    private readonly scheduleOfficialMessageService: ScheduleOfficialMessageService
   ) {}
 
   private async validateAttachment(
@@ -139,6 +143,7 @@ export class ScheduleUpdaterUseCase {
     sendSpeedValue: EScheduleSendSpeed | undefined,
     chatbotIdValue: string | null | undefined,
     messageValue: string | null | undefined,
+    officialTemplate: IOfficialWhatsappTemplateMessage | null,
     attachment:
       | (UploadFileResponse & {
           mimetype?: string | null;
@@ -156,7 +161,8 @@ export class ScheduleUpdaterUseCase {
       ? formatDateToISO(scheduleBasic.sendDate, 'YYYY-MM-DD HH:mm')
       : undefined;
 
-    const isChatbot = type === 'chatbot';
+    const isChatbot = type === EScheduleType.chatbot;
+    const isOfficialTemplate = type === EScheduleType.official_template;
 
     return {
       schedule_id: scheduleBasic.scheduleId,
@@ -164,13 +170,28 @@ export class ScheduleUpdaterUseCase {
       type: type ?? undefined,
       send_to: sendToValue ?? undefined,
       send_speed: sendSpeedValue ?? undefined,
-      chatbot_id: chatbotIdValue ?? undefined,
-      message: isChatbot ? null : (messageValue ?? undefined),
-      url: isChatbot ? null : (attachment?.url ?? undefined),
-      mimetype: isChatbot ? null : (attachment?.mimetype ?? undefined),
-      duration: isChatbot ? null : (attachment?.duration ?? undefined),
-      width: isChatbot ? null : (attachment?.width ?? undefined),
-      height: isChatbot ? null : (attachment?.height ?? undefined),
+      chatbot_id: isChatbot ? (chatbotIdValue ?? undefined) : null,
+      message:
+        isChatbot || isOfficialTemplate ? null : (messageValue ?? undefined),
+      url:
+        isChatbot || isOfficialTemplate ? null : (attachment?.url ?? undefined),
+      mimetype:
+        isChatbot || isOfficialTemplate
+          ? null
+          : (attachment?.mimetype ?? undefined),
+      duration:
+        isChatbot || isOfficialTemplate
+          ? null
+          : (attachment?.duration ?? undefined),
+      width:
+        isChatbot || isOfficialTemplate
+          ? null
+          : (attachment?.width ?? undefined),
+      height:
+        isChatbot || isOfficialTemplate
+          ? null
+          : (attachment?.height ?? undefined),
+      official_template: isOfficialTemplate ? officialTemplate : null,
       send_date: sendDateISO,
       contact_ids:
         recipients.contactIds.length > 0 ? recipients.contactIds : undefined,
@@ -189,6 +210,11 @@ export class ScheduleUpdaterUseCase {
   ): Promise<boolean> {
     await this.ensureScheduleExists(t, scheduleId);
     await this.ensureWorkerIsValid(t, body, accountId);
+    const currentSchedule =
+      await this.scheduleService.viewScheduleById(scheduleId);
+    if (!currentSchedule) {
+      throw new Error(t('schedule_not_found'));
+    }
 
     const sendDate = this.extractStringValue(body.send_date);
     if (sendDate) {
@@ -207,38 +233,91 @@ export class ScheduleUpdaterUseCase {
     const sendSpeedValue = this.resolveSendSpeed(
       this.extractStringValue(body.send_speed)
     );
-    const typeValue = this.extractStringValue(body.type);
+    const typeValue =
+      this.extractStringValue(body.type) ?? currentSchedule.type ?? null;
     let chatbotIdValue = this.extractStringValue(body.chatbot_id);
     if (chatbotIdValue === '') chatbotIdValue = null;
+    const effectiveChatbotIdValue =
+      chatbotIdValue === undefined
+        ? currentSchedule.chatbot_id
+        : chatbotIdValue;
     const messageValue = this.extractMessageValue(body.message);
+    const workerIdValue =
+      this.extractStringValue(body.worker_id) ??
+      currentSchedule.worker.worker_id;
+    const officialTemplateInput = this.extractOfficialTemplateValue(
+      body.official_template as unknown
+    );
 
     this.validateRequiredFields(sendToValue, contactIds, contactGroupIds, t);
 
-    if (typeValue === 'chatbot' && !chatbotIdValue) {
+    const isOfficialWorker =
+      await this.scheduleOfficialMessageService.isOfficialWorker(
+        t,
+        accountId,
+        workerIdValue
+      );
+    let officialTemplate: IOfficialWhatsappTemplateMessage | null = null;
+
+    if (
+      isOfficialWorker &&
+      typeValue !== EScheduleType.official_template &&
+      typeValue !== EScheduleType.chatbot
+    ) {
+      throw new Error(t('schedule_official_type_invalid'));
+    }
+
+    if (!isOfficialWorker && typeValue === EScheduleType.official_template) {
+      throw new Error(t('schedule_official_template_not_allowed'));
+    }
+
+    if (typeValue === EScheduleType.official_template) {
+      officialTemplate =
+        await this.scheduleOfficialMessageService.validateTemplateForSchedule({
+          t,
+          accountId,
+          workerId: workerIdValue,
+          officialTemplate:
+            officialTemplateInput ?? currentSchedule.official_template ?? null,
+        });
+    }
+
+    if (typeValue === 'chatbot' && !effectiveChatbotIdValue) {
       throw new Error(t('schedule_chatbot_required'));
     }
 
-    if (chatbotIdValue) {
+    if (effectiveChatbotIdValue) {
       const exists = await this.scheduleService.existsChatbotInAccount(
-        chatbotIdValue,
+        effectiveChatbotIdValue,
         accountId
       );
       if (!exists) {
         throw new Error(t('schedule_chatbot_not_found'));
+      }
+
+      if (isOfficialWorker && typeValue === EScheduleType.chatbot) {
+        await this.scheduleOfficialMessageService.assertOfficialScheduleChatbotStart(
+          {
+            t,
+            accountId,
+            chatbotId: effectiveChatbotIdValue,
+          }
+        );
       }
     }
 
     const updateBody = this.buildUpdateScheduleInput(
       {
         scheduleId,
-        workerId: this.extractStringValue(body.worker_id),
+        workerId: workerIdValue,
         sendDate,
       },
       typeValue,
       sendToValue,
-      sendSpeedValue,
-      chatbotIdValue,
+      isOfficialWorker ? EScheduleSendSpeed.low : sendSpeedValue,
+      effectiveChatbotIdValue,
       messageValue,
+      officialTemplate,
       attachment,
       {
         contactIds,
@@ -256,6 +335,41 @@ export class ScheduleUpdaterUseCase {
     }
 
     return scheduleUpdater;
+  }
+
+  private extractOfficialTemplateValue(
+    field: unknown
+  ): IOfficialWhatsappTemplateMessage | null {
+    const raw =
+      field &&
+      typeof field === 'object' &&
+      'value' in field &&
+      !Array.isArray(field)
+        ? (field as { value?: unknown }).value
+        : field;
+
+    if (!raw) {
+      return null;
+    }
+
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        return null;
+      }
+
+      try {
+        return JSON.parse(trimmed) as IOfficialWhatsappTemplateMessage;
+      } catch {
+        return null;
+      }
+    }
+
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw as IOfficialWhatsappTemplateMessage;
+    }
+
+    return null;
   }
 
   private async ensureScheduleExists(
@@ -321,7 +435,12 @@ export class ScheduleUpdaterUseCase {
     | null
   > {
     const typeValue = this.extractStringValue(body.type);
-    if (typeValue === 'chatbot') return null;
+    if (
+      typeValue === EScheduleType.chatbot ||
+      typeValue === EScheduleType.official_template
+    ) {
+      return null;
+    }
 
     const file = body.url;
     if (!file?.filename) return null;

@@ -64,6 +64,7 @@ describe('ScheduleListerRepository', () => {
       duration: null,
       width: null,
       height: null,
+      official_template: null,
       send_date: '2026-04-21T22:00:00.000Z',
       status: 'pending',
       created_at: null,

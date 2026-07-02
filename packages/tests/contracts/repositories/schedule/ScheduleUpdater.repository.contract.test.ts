@@ -51,6 +51,11 @@ describe('ScheduleUpdaterRepository', () => {
       send_speed: EScheduleSendSpeed.medium,
       chatbot_id: null,
       message: 'hello',
+      official_template: {
+        name: 'abertura',
+        language: 'pt_BR',
+        variables: [],
+      },
       send_date: '2026-04-21T22:00:00.000Z',
     });
 
@@ -62,6 +67,11 @@ describe('ScheduleUpdaterRepository', () => {
       send_speed: EScheduleSendSpeed.medium,
       chatbot_id: null,
       message: 'hello',
+      official_template: {
+        name: 'abertura',
+        language: 'pt_BR',
+        variables: [],
+      },
       send_date: '2026-04-21T22:00:00.000Z',
     });
   });

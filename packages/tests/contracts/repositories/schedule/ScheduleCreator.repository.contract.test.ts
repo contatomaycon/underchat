@@ -149,4 +149,55 @@ describe('ScheduleCreatorRepository', () => {
       },
     ]);
   });
+
+  it('persists official template payload on schedule creation', async () => {
+    (uuidv7 as unknown as jest.Mock).mockReturnValueOnce('sch-1');
+    const officialTemplate = {
+      name: 'abertura',
+      language: 'pt_BR',
+      variables: [
+        {
+          key: 'BODY:1',
+          component_type: 'BODY' as const,
+          index: 1,
+          value: '{{ name }}',
+        },
+      ],
+    };
+
+    const { insert, valuesMocks } = createInsertMock([{ rowCount: 1 }]);
+
+    const repository = new ScheduleCreatorRepository({
+      transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
+        cb({ insert })
+      ),
+    } as never);
+
+    await expect(
+      repository.createSchedule({
+        account_id: 'acc-1',
+        worker_id: 'wk-1',
+        type: 'official_template',
+        send_to: EScheduleSendTo.contacts,
+        send_speed: 'low',
+        chatbot_id: null,
+        message: null,
+        url: null,
+        mimetype: null,
+        duration: null,
+        width: null,
+        height: null,
+        official_template: officialTemplate,
+        send_date: '2026-04-21T22:00:00.000Z',
+      })
+    ).resolves.toBe('sch-1');
+
+    expect(valuesMocks[0]).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schedule_id: 'sch-1',
+        type: 'official_template',
+        official_template: officialTemplate,
+      })
+    );
+  });
 });

@@ -4,4 +4,5 @@ export enum EScheduleType {
   audio = 'audio',
   image = 'image',
   chatbot = 'chatbot',
+  official_template = 'official_template',
 }

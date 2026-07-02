@@ -24,11 +24,18 @@ const OFFICIAL_CHATBOT_NODE_TYPE_SET = new Set<string>(
 );
 
 export interface ChatbotFlowNodeLike {
+  id?: string | null;
   type?: string | null;
+}
+
+export interface ChatbotFlowEdgeLike {
+  source?: string | null;
+  target?: string | null;
 }
 
 export interface ChatbotFlowLike {
   nodes?: ChatbotFlowNodeLike[] | null;
+  edges?: ChatbotFlowEdgeLike[] | null;
 }
 
 export const isOfficialChatbotNodeType = (
@@ -55,3 +62,29 @@ export const getOfficialChatbotNodes = <TNode extends ChatbotFlowNodeLike>(
 
   return nodes.filter((node) => isOfficialChatbotNodeType(node.type));
 };
+
+export const getFirstNodeAfterStart = <TNode extends ChatbotFlowNodeLike>(
+  flow?: ChatbotFlowLike | null
+): TNode | null => {
+  if (!Array.isArray(flow?.nodes) || !Array.isArray(flow?.edges)) {
+    return null;
+  }
+
+  const startNode = flow.nodes.find((node) => node.type === 'start');
+  const startNodeId = startNode?.id;
+  if (!startNodeId) {
+    return null;
+  }
+
+  const firstEdge = flow.edges.find((edge) => edge.source === startNodeId);
+  const firstNodeId = firstEdge?.target;
+  if (!firstNodeId) {
+    return null;
+  }
+
+  return (flow.nodes.find((node) => node.id === firstNodeId) as TNode) ?? null;
+};
+
+export const doesChatbotFlowStartWithOfficialTemplate = (
+  flow?: ChatbotFlowLike | null
+): boolean => getFirstNodeAfterStart(flow)?.type === 'officialTemplate';

@@ -94,6 +94,7 @@ export class ScheduleListerRepository {
     duration: number | null;
     width: number | null;
     height: number | null;
+    official_template: ListScheduleResponse['official_template'];
     send_date: string;
     status: string;
     created_at: string | null;
@@ -119,6 +120,7 @@ export class ScheduleListerRepository {
       duration: item.duration ?? null,
       width: item.width ?? null,
       height: item.height ?? null,
+      official_template: item.official_template ?? null,
       send_date: item.send_date,
       status: item.status,
       created_at: item.created_at ? item.created_at : null,
@@ -156,6 +158,7 @@ export class ScheduleListerRepository {
         duration: schedule.duration,
         width: schedule.width,
         height: schedule.height,
+        official_template: schedule.official_template,
         send_date: schedule.send_date,
         status: schedule.status,
         created_at: schedule.created_at,

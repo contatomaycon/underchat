@@ -1,14 +1,22 @@
 <script lang="ts" setup>
 import { VForm } from 'vuetify/components/VForm';
+import { useChatbotStore } from '@/@webcore/stores/chatbot';
 import { useScheduleStore } from '@/@webcore/stores/schedule';
+import ScheduleOfficialTemplatePicker from './ScheduleOfficialTemplatePicker.vue';
 import { EScheduleType } from '@core/common/enums/EScheduleType';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 import { EScheduleSendSpeed } from '@core/common/enums/EScheduleSendSpeed';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { EColor } from '@core/common/enums/EColor';
 import { refDebounced } from '@vueuse/core';
 import { EditScheduleParamsRequest } from '@core/schema/schedule/editSchedule/request.schema';
 import { formatDateToDateTimePicker } from '@core/common/functions/formatDateToDateTimePicker';
+import type { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import type { OfficialTemplatesResponse } from '@core/schema/chatbot/officialTemplates/response.schema';
+import { doesChatbotFlowStartWithOfficialTemplate } from '@core/common/functions/chatbotOfficialNodes';
 
 const scheduleStore = useScheduleStore();
+const chatbotStore = useChatbotStore();
 const { t } = useI18n();
 
 const props = defineProps<{
@@ -62,6 +70,14 @@ type FilePreview = {
   src: string;
 };
 
+type ScheduleWorkerOption = {
+  worker_id: string;
+  name: string;
+  number: string;
+  type_id?: string | null;
+  is_official?: boolean | null;
+};
+
 const messageTypeOptions = computed(() => [
   {
     value: EScheduleType.text,
@@ -106,8 +122,22 @@ const sendSpeedOptions = computed(() => [
   { value: EScheduleSendSpeed.high, title: t('send_speed_high') },
 ]);
 
+const officialSendTypeOptions = computed(() => [
+  {
+    value: EScheduleType.official_template,
+    title: t('official_template_model'),
+  },
+  {
+    value: EScheduleType.chatbot,
+    title: t('message_type_chatbot'),
+  },
+]);
+
 const scheduleId = toRef(props, 'scheduleId');
 const selectedType = ref<EScheduleType>(EScheduleType.text);
+const selectedOfficialType = ref<
+  EScheduleType.official_template | EScheduleType.chatbot
+>(EScheduleType.official_template);
 const message = ref<string | null>(null);
 const attachmentFile = ref<File | null>(null);
 const filePreview = ref<FilePreview | null>(null);
@@ -145,9 +175,7 @@ const contactSearch = ref('');
 const contactGroupSearch = ref('');
 const debouncedContactSearch = refDebounced(contactSearch, 500);
 const debouncedContactGroupSearch = refDebounced(contactGroupSearch, 500);
-const workers = ref<Array<{ worker_id: string; name: string; number: string }>>(
-  []
-);
+const workers = ref<ScheduleWorkerOption[]>([]);
 const contacts = ref<
   Array<{
     contact_id: string;
@@ -163,21 +191,55 @@ const chatbotId = ref<string | null>(null);
 const chatbots = ref<
   Array<{ chatbot_id: string; name: string; type?: string | null }>
 >([]);
+const officialTemplates = ref<OfficialTemplatesResponse>([]);
+const isLoadingOfficialTemplates = ref(false);
+const officialTemplatesError = ref<string | null>(null);
+const officialTemplate = ref<IOfficialWhatsappTemplateMessage | null>(null);
+const isOfficialTemplateValid = ref(false);
+const officialCompatibleChatbotIds = ref<Set<string>>(new Set());
+const isLoadingOfficialChatbots = ref(false);
+const skipNextWorkerWatch = ref(false);
+let officialTemplatesRequestId = 0;
+let officialChatbotsRequestId = 0;
+
+const selectedWorker = computed(
+  () =>
+    workers.value.find((worker) => worker.worker_id === workerId.value) ?? null
+);
+
+const isOfficialWorker = computed(
+  () =>
+    selectedWorker.value?.is_official === true ||
+    selectedWorker.value?.type_id === EWorkerType.whatsapp
+);
+
+const effectiveSelectedType = computed(() =>
+  isOfficialWorker.value ? selectedOfficialType.value : selectedType.value
+);
+
+const availableChatbots = computed(() =>
+  isOfficialWorker.value
+    ? chatbots.value.filter((chatbot) =>
+        officialCompatibleChatbotIds.value.has(chatbot.chatbot_id)
+      )
+    : chatbots.value
+);
 
 const showTextInput = computed(() => {
-  return selectedType.value === EScheduleType.text;
+  return !isOfficialWorker.value && selectedType.value === EScheduleType.text;
 });
 
 const showFileInput = computed(() => {
-  return [
-    EScheduleType.image,
-    EScheduleType.video,
-    EScheduleType.audio,
-  ].includes(selectedType.value);
+  return (
+    !isOfficialWorker.value &&
+    [EScheduleType.image, EScheduleType.video, EScheduleType.audio].includes(
+      selectedType.value
+    )
+  );
 });
 
 const showChatbotSelect = computed(() => {
-  return selectedType.value === EScheduleType.chatbot;
+  return effectiveSelectedType.value === EScheduleType.chatbot;
 });
 
 const showContactsSelect = computed(() => {
@@ -294,7 +356,7 @@ const validateRequiredFields = (): boolean => {
 };
 
 const validateMessage = (): boolean => {
-  if (selectedType.value === EScheduleType.text) {
+  if (effectiveSelectedType.value === EScheduleType.text) {
     return !!message.value?.trim();
   }
   return true;
@@ -330,26 +392,36 @@ const buildFormData = (): FormData => {
   if (workerId.value) {
     form.append('worker_id', workerId.value);
   }
-  if (selectedType.value) {
-    form.append('type', selectedType.value);
+  const scheduleType = effectiveSelectedType.value;
+
+  if (scheduleType) {
+    form.append('type', scheduleType);
   }
   if (sendTo.value) {
     form.append('send_to', sendTo.value);
   }
-  form.append('send_speed', sendSpeed.value ?? EScheduleSendSpeed.low);
+  if (!isOfficialWorker.value) {
+    form.append('send_speed', sendSpeed.value ?? EScheduleSendSpeed.low);
+  }
   if (sendDate.value) {
     form.append('send_date', sendDate.value);
   }
   form.append(
     'chatbot_id',
-    selectedType.value === EScheduleType.chatbot && chatbotId.value
+    scheduleType === EScheduleType.chatbot && chatbotId.value
       ? chatbotId.value
       : ''
   );
-  if (message.value !== null) {
+  if (
+    scheduleType === EScheduleType.official_template &&
+    officialTemplate.value
+  ) {
+    form.append('official_template', JSON.stringify(officialTemplate.value));
+  }
+  if (!isOfficialWorker.value && message.value !== null) {
     form.append('message', message.value);
   }
-  if (attachmentFile.value && hasNewFile.value) {
+  if (!isOfficialWorker.value && attachmentFile.value && hasNewFile.value) {
     form.append('url', attachmentFile.value);
   }
   if (selectedContactIds.value.length > 0) {
@@ -374,9 +446,19 @@ const updateSchedule = async () => {
   if (!validateRecipients()) return;
   if (!scheduleId.value) return;
   if (
-    selectedType.value === EScheduleType.chatbot &&
+    effectiveSelectedType.value === EScheduleType.chatbot &&
     (!chatbotId.value || !chatbotId.value.trim())
   ) {
+    return;
+  }
+  if (
+    effectiveSelectedType.value === EScheduleType.official_template &&
+    (!officialTemplate.value || !isOfficialTemplateValid.value)
+  ) {
+    scheduleStore.showSnackbar(
+      t('schedule_official_template_required'),
+      EColor.warning
+    );
     return;
   }
 
@@ -401,6 +483,7 @@ const updateSchedule = async () => {
 
 const resetForm = () => {
   selectedType.value = EScheduleType.text;
+  selectedOfficialType.value = EScheduleType.official_template;
   message.value = null;
   workerId.value = null;
   sendTo.value = null;
@@ -411,6 +494,11 @@ const resetForm = () => {
   contactSearch.value = '';
   contactGroupSearch.value = '';
   chatbotId.value = null;
+  officialTemplate.value = null;
+  isOfficialTemplateValid.value = false;
+  officialTemplates.value = [];
+  officialTemplatesError.value = null;
+  officialCompatibleChatbotIds.value = new Set();
   attachmentFile.value = null;
   fileSizeError.value = null;
   if (filePreview.value?.src) {
@@ -430,7 +518,95 @@ const loadWorkers = async () => {
       worker_id: w.worker_id,
       name: w.name,
       number: w.number ?? '',
+      type_id: w.type_id ?? null,
+      is_official: w.is_official ?? false,
     }));
+  }
+};
+
+const resetOfficialState = () => {
+  officialTemplatesRequestId += 1;
+  officialChatbotsRequestId += 1;
+  officialTemplates.value = [];
+  officialTemplatesError.value = null;
+  officialTemplate.value = null;
+  isOfficialTemplateValid.value = false;
+  officialCompatibleChatbotIds.value = new Set();
+  isLoadingOfficialTemplates.value = false;
+  isLoadingOfficialChatbots.value = false;
+};
+
+const loadOfficialTemplates = async (options?: {
+  preserveTemplate?: boolean;
+}) => {
+  if (!isOfficialWorker.value || !workerId.value) {
+    return;
+  }
+
+  const requestId = ++officialTemplatesRequestId;
+  officialTemplates.value = [];
+  officialTemplatesError.value = null;
+  if (!options?.preserveTemplate) {
+    officialTemplate.value = null;
+    isOfficialTemplateValid.value = false;
+  }
+  isLoadingOfficialTemplates.value = true;
+
+  try {
+    const result = await scheduleStore.listScheduleOfficialTemplates(
+      workerId.value
+    );
+    if (requestId !== officialTemplatesRequestId) {
+      return;
+    }
+
+    officialTemplates.value = result ?? [];
+    if (!result) {
+      officialTemplatesError.value = t('official_templates_loading_error');
+    }
+  } catch {
+    if (requestId === officialTemplatesRequestId) {
+      officialTemplatesError.value = t('official_templates_loading_error');
+    }
+  } finally {
+    if (requestId === officialTemplatesRequestId) {
+      isLoadingOfficialTemplates.value = false;
+    }
+  }
+};
+
+const loadOfficialCompatibleChatbots = async () => {
+  if (!isOfficialWorker.value) {
+    officialCompatibleChatbotIds.value = new Set();
+    return;
+  }
+
+  const requestId = ++officialChatbotsRequestId;
+  isLoadingOfficialChatbots.value = true;
+  const compatibleIds = new Set<string>();
+
+  try {
+    await Promise.all(
+      chatbots.value.map(async (chatbot) => {
+        const flow = await chatbotStore.listChatbotFlow(chatbot.chatbot_id);
+        if (doesChatbotFlowStartWithOfficialTemplate(flow)) {
+          compatibleIds.add(chatbot.chatbot_id);
+        }
+      })
+    );
+
+    if (requestId !== officialChatbotsRequestId) {
+      return;
+    }
+
+    officialCompatibleChatbotIds.value = compatibleIds;
+    if (chatbotId.value && !compatibleIds.has(chatbotId.value)) {
+      chatbotId.value = null;
+    }
+  } finally {
+    if (requestId === officialChatbotsRequestId) {
+      isLoadingOfficialChatbots.value = false;
+    }
   }
 };
 
@@ -606,6 +782,43 @@ watch(selectedType, () => {
   }
 });
 
+watch(selectedOfficialType, () => {
+  chatbotId.value = null;
+  if (selectedOfficialType.value !== EScheduleType.official_template) {
+    officialTemplate.value = null;
+    isOfficialTemplateValid.value = false;
+  }
+});
+
+watch(workerId, () => {
+  if (skipNextWorkerWatch.value) {
+    skipNextWorkerWatch.value = false;
+    return;
+  }
+
+  attachmentFile.value = null;
+  fileSizeError.value = null;
+  if (filePreview.value?.src) {
+    URL.revokeObjectURL(filePreview.value.src);
+  }
+  filePreview.value = null;
+  existingAttachmentUrl.value = null;
+  hasNewFile.value = false;
+  fileInputKey.value++;
+  message.value = null;
+  chatbotId.value = null;
+
+  if (!isOfficialWorker.value) {
+    resetOfficialState();
+    selectedType.value = EScheduleType.text;
+    return;
+  }
+
+  selectedOfficialType.value = EScheduleType.official_template;
+  loadOfficialTemplates().catch(() => {});
+  loadOfficialCompatibleChatbots().catch(() => {});
+});
+
 watch(debouncedContactSearch, () => {
   loadContacts();
 });
@@ -644,6 +857,7 @@ watch(
       const schedule = await scheduleStore.getScheduleById(id);
       if (schedule) {
         message.value = schedule.message ?? null;
+        skipNextWorkerWatch.value = true;
         workerId.value = schedule.worker.worker_id;
         sendTo.value = schedule.send_to as EScheduleSendTo;
         sendSpeed.value =
@@ -653,6 +867,21 @@ watch(
         selectedType.value =
           (schedule.type as EScheduleType) || EScheduleType.text;
         chatbotId.value = schedule.chatbot_id ?? null;
+        if (
+          selectedWorker.value?.is_official === true ||
+          selectedWorker.value?.type_id === EWorkerType.whatsapp
+        ) {
+          selectedOfficialType.value =
+            schedule.type === EScheduleType.chatbot
+              ? EScheduleType.chatbot
+              : EScheduleType.official_template;
+          officialTemplate.value = schedule.official_template ?? null;
+          isOfficialTemplateValid.value = !!schedule.official_template;
+          await Promise.all([
+            loadOfficialTemplates({ preserveTemplate: true }),
+            loadOfficialCompatibleChatbots(),
+          ]);
+        }
         if (schedule.contacts && schedule.contacts.length > 0) {
           selectedContactIds.value = schedule.contacts.map((c) => c.contact_id);
           await loadContacts();
@@ -727,7 +956,7 @@ onBeforeUnmount(() => {
               />
             </VCol>
 
-            <VCol cols="12">
+            <VCol v-if="!isOfficialWorker" cols="12">
               <div class="d-flex align-center gap-2 mb-1">
                 <VLabel class="text-body-2">{{ $t('message_type') }}:</VLabel>
                 <AppInfoTooltip :text="$t('message_type_info')" />
@@ -741,12 +970,51 @@ onBeforeUnmount(() => {
               />
             </VCol>
 
+            <VCol v-else cols="12">
+              <VLabel class="text-body-2 mb-1">
+                {{ $t('schedule_official_send_type') }}:
+              </VLabel>
+              <AppSelectSearch
+                v-model="selectedOfficialType"
+                :items="officialSendTypeOptions"
+                item-value="value"
+                item-title="title"
+                :clearable="false"
+                :rules="[
+                  requiredValidator(
+                    selectedOfficialType,
+                    $t('message_type_required')
+                  ),
+                ]"
+              />
+
+              <ScheduleOfficialTemplatePicker
+                v-if="selectedOfficialType === EScheduleType.official_template"
+                v-model="officialTemplate"
+                class="mt-3"
+                :templates="officialTemplates"
+                :loading="isLoadingOfficialTemplates"
+                :error="officialTemplatesError"
+                :available-tags="availableTags"
+                @valid-change="isOfficialTemplateValid = $event"
+              />
+            </VCol>
+
             <VCol v-if="showChatbotSelect" cols="12">
               <VLabel class="text-body-2 mb-1">{{ $t('chatbot') }}:</VLabel>
+              <VAlert
+                v-if="isOfficialWorker && isLoadingOfficialChatbots"
+                class="mb-2"
+                color="primary"
+                variant="tonal"
+                density="compact"
+              >
+                {{ $t('schedule_official_chatbots_loading') }}
+              </VAlert>
               <AppSelectSearch
                 v-model="chatbotId"
                 :items="
-                  chatbots.map((c) => ({
+                  availableChatbots.map((c) => ({
                     id: c.chatbot_id,
                     title: c.name,
                   }))
@@ -757,6 +1025,16 @@ onBeforeUnmount(() => {
                 item-title="title"
                 :rules="[requiredValidator(chatbotId, $t('chatbot_required'))]"
               />
+              <small
+                v-if="
+                  isOfficialWorker &&
+                  !isLoadingOfficialChatbots &&
+                  !availableChatbots.length
+                "
+                class="text-caption text-warning mt-1 d-block"
+              >
+                {{ $t('schedule_official_chatbots_empty') }}
+              </small>
             </VCol>
 
             <VCol v-if="showTextInput" cols="12">
@@ -1028,7 +1306,7 @@ onBeforeUnmount(() => {
               />
             </VCol>
 
-            <VCol cols="12">
+            <VCol v-if="!isOfficialWorker" cols="12">
               <div class="d-flex align-center gap-2 mb-1">
                 <VLabel class="text-body-2">{{ $t('send_speed') }}:</VLabel>
                 <AppInfoTooltip :text="$t('send_speed_info')" />

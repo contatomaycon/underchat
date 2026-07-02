@@ -1,4 +1,5 @@
 import { pagingResponseSchema } from '@core/schema/common/pagingResponseSchema';
+import { scheduleOfficialTemplateMessageSchema } from '@core/schema/schedule/officialTemplate.schema';
 import { Static, Type } from '@sinclair/typebox';
 
 const accountSchema = Type.Object({
@@ -26,6 +27,9 @@ export const listScheduleResponseSchema = Type.Object({
   duration: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   width: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   height: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
+  official_template: Type.Optional(
+    Type.Union([scheduleOfficialTemplateMessageSchema, Type.Null()])
+  ),
   send_date: Type.String(),
   status: Type.String(),
   has_failed_messages: Type.Optional(Type.Boolean()),

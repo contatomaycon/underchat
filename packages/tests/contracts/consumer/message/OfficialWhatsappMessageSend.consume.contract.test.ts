@@ -9,6 +9,7 @@ jest.mock('@whiskeysockets/baileys', () => ({
 
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import { IChatMessage } from '@core/common/interfaces/IChatMessage';
 import { OfficialWhatsappMessageSendConsume } from '@core/consumer/message/OfficialWhatsappMessageSend.consume';
 
@@ -79,6 +80,7 @@ function makeConsumer(overrides?: {
     ),
     updateMessage: jest.fn(() => 'update.message'),
     updateMessageStatus: jest.fn(() => 'update.message.status'),
+    scheduleStatusUpdate: jest.fn(() => 'schedule.status.update'),
   };
   const streamProducerService = {
     send: jest.fn(async () => undefined),
@@ -154,6 +156,10 @@ function makeConsumer(overrides?: {
   const messageStatusService = {
     markMessageAsNotSent: jest.fn(async () => undefined),
   };
+  const elasticDatabaseService = {
+    indices: jest.fn(async () => undefined),
+    updateField: jest.fn(async () => undefined),
+  };
   const consumer = new OfficialWhatsappMessageSendConsume(
     {} as never,
     kafkaServiceQueueService as never,
@@ -182,7 +188,8 @@ function makeConsumer(overrides?: {
           parameters: [{ type: 'text', text: 'Maycon' }],
         },
       ]),
-    } as never
+    } as never,
+    elasticDatabaseService as never
   );
 
   return {
@@ -191,6 +198,7 @@ function makeConsumer(overrides?: {
     metaWhatsappEmbeddedService,
     messageStatusService,
     streamProducerService,
+    elasticDatabaseService,
   };
 }
 
@@ -597,6 +605,100 @@ describe('OfficialWhatsappMessageSendConsume', () => {
       expect(messageStatusService.markMessageAsNotSent).toHaveBeenCalledWith(
         'account-1',
         'internal-message-1'
+      );
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('processes official schedule envelopes and publishes sent status/log', async () => {
+    const schedulePayload = {
+      schedule_id: 'schedule-1',
+      account_id: 'account-1',
+      contact_id: 'contact-1',
+      is_validated: true,
+      message,
+    };
+    const { consumer, streamProducerService, elasticDatabaseService } =
+      makeConsumer();
+
+    await (consumer as any).processPayload(
+      schedulePayload,
+      makeEnvelope(schedulePayload)
+    );
+
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'schedule.status.update',
+      expect.objectContaining({
+        schedule_id: 'schedule-1',
+        contact_id: 'contact-1',
+        message_id: 'internal-message-1',
+        status: EScheduleStatus.sent,
+      }),
+      'account:account-1:channel:worker-1'
+    );
+    expect(elasticDatabaseService.updateField).toHaveBeenCalledWith(
+      expect.any(String),
+      'internal-message-1',
+      'send_log',
+      expect.objectContaining({
+        success: true,
+        error: null,
+        payload: message.content,
+      }),
+      3
+    );
+  });
+
+  it('marks official schedule envelopes as failed when Meta send fails', async () => {
+    const consoleSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const schedulePayload = {
+      schedule_id: 'schedule-1',
+      account_id: 'account-1',
+      contact_id: 'contact-1',
+      is_validated: true,
+      message,
+    };
+    const { consumer, streamProducerService, elasticDatabaseService } =
+      makeConsumer({
+        sendTemplateMessage: jest.fn(async () => {
+          throw new Error('meta_terminal_error');
+        }),
+      });
+
+    try {
+      await (consumer as any).processRunnerPayload(
+        'official.whatsapp.send.message',
+        schedulePayload,
+        {
+          partition: 0,
+          offset: 12,
+          kafkaKey: 'account:account-1:channel:worker-1',
+        }
+      );
+
+      expect(streamProducerService.send).toHaveBeenCalledWith(
+        'schedule.status.update',
+        expect.objectContaining({
+          schedule_id: 'schedule-1',
+          contact_id: 'contact-1',
+          message_id: 'internal-message-1',
+          status: EScheduleStatus.failed,
+        }),
+        'account:account-1:channel:worker-1'
+      );
+      expect(elasticDatabaseService.updateField).toHaveBeenCalledWith(
+        expect.any(String),
+        'internal-message-1',
+        'send_log',
+        expect.objectContaining({
+          success: false,
+          error: 'meta_terminal_error',
+          result: null,
+        }),
+        3
       );
     } finally {
       consoleSpy.mockRestore();

@@ -9,6 +9,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { EScheduleSendTo } from '@core/common/enums/EScheduleSendTo';
 import { PgTransaction } from 'drizzle-orm/pg-core';
 import { ExtractTablesWithRelations } from 'drizzle-orm';
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 @injectable()
 export class ScheduleCreatorRepository {
@@ -74,6 +75,7 @@ export class ScheduleCreatorRepository {
       duration: number | null;
       width: number | null;
       height: number | null;
+      official_template?: IOfficialWhatsappTemplateMessage | null;
       send_date: string;
     }
   ): Promise<boolean> => {
@@ -86,6 +88,7 @@ export class ScheduleCreatorRepository {
       send_speed: input.send_speed,
       message: input.message,
       url: input.url,
+      official_template: input.official_template ?? null,
       send_date: input.send_date,
     };
 
@@ -130,6 +133,7 @@ export class ScheduleCreatorRepository {
     duration: number | null;
     width: number | null;
     height: number | null;
+    official_template?: IOfficialWhatsappTemplateMessage | null;
     send_date: string;
     contact_ids?: string[];
     contact_group_ids?: string[];

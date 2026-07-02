@@ -27,6 +27,7 @@ import { EncryptService } from '@core/services/encrypt.service';
 import { buildCandidates } from '@core/common/functions/buildCandidatesBR';
 import { onlyDigits } from '@core/common/functions/onlyDigits';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
+import { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 @injectable()
 export class ScheduleService {
@@ -112,6 +113,7 @@ export class ScheduleService {
     duration: number | null;
     width: number | null;
     height: number | null;
+    official_template?: IOfficialWhatsappTemplateMessage | null;
     send_date: string;
     contact_ids?: string[];
     contact_group_ids?: string[];

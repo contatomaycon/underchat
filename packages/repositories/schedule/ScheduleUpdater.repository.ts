@@ -71,6 +71,10 @@ export class ScheduleUpdaterRepository {
       updateData.height = input.height ?? null;
     }
 
+    if (input.official_template !== undefined) {
+      updateData.official_template = input.official_template ?? null;
+    }
+
     if (input.send_date !== undefined && input.send_date !== null) {
       updateData.send_date = input.send_date;
     }
