@@ -11,6 +11,7 @@ type OfficialDisplay = NonNullable<OfficialMetadata['display']>;
 type OfficialAction = NonNullable<OfficialDisplay['actions']>[number];
 type OfficialSection = NonNullable<OfficialDisplay['sections']>[number];
 type OfficialCard = NonNullable<OfficialDisplay['cards']>[number];
+type VisibleOfficialAction = OfficialAction & { safe_url: string | null };
 
 type OfficialListOptionSection = Omit<OfficialSection, 'rows'> & {
   rows: OfficialAction[];
@@ -52,10 +53,15 @@ const collapsedActionIconByKind: Record<string, string> = {
   call_permission_request: 'tabler-phone-call',
 };
 
-const visibleActions = computed<OfficialAction[]>(() =>
-  (display.value?.actions ?? []).filter(
-    (action) => action.title || action.url || action.id || action.description
-  )
+const visibleActions = computed<VisibleOfficialAction[]>(() =>
+  (display.value?.actions ?? [])
+    .map((action) => ({
+      ...action,
+      safe_url: safeExternalUrl(action.url),
+    }))
+    .filter(
+      (action) => action.title || action.url || action.id || action.description
+    )
 );
 
 const visibleSections = computed<OfficialSection[]>(() =>
@@ -132,6 +138,9 @@ const replyContextText = computed(() => {
 const collapsedActionLabel = computed(() => {
   if (!display.value || isReply.value) return null;
   if (display.value.kind === 'button') return null;
+  if (display.value.kind === 'cta_url' && visibleActions.value.length) {
+    return null;
+  }
 
   return display.value.action_label || null;
 });
@@ -211,6 +220,17 @@ function actionTitle(action: OfficialAction): string {
     action.id ||
     'Continuar'
   );
+}
+
+function safeExternalUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
 }
 
 function actionDescription(action: OfficialAction): string | null {
@@ -439,11 +459,13 @@ function closeOptionsDialog(): void {
             v-for="(action, index) in visibleActions"
             :key="`${action.id || action.title || action.url || 'action'}-${index}`"
             class="official-card__action"
-            :href="action.url || undefined"
-            :target="action.url ? '_blank' : undefined"
-            :rel="action.url ? 'noopener noreferrer' : undefined"
+            :href="action.safe_url || undefined"
+            :target="action.safe_url ? '_blank' : undefined"
+            :rel="action.safe_url ? 'noopener noreferrer' : undefined"
           >
-            <VIcon v-if="action.url" size="14">tabler-external-link</VIcon>
+            <VIcon v-if="action.safe_url" size="14">
+              tabler-external-link
+            </VIcon>
             <span>{{ actionTitle(action) }}</span>
           </a>
         </div>

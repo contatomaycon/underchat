@@ -1287,6 +1287,7 @@
   "whatsapp_profile_category_invalid": "Invalid Official WhatsApp profile category.",
   "chatbot_flow_validation_holiday_options_required": "The \"It is a holiday\" and \"It is not a holiday\" outputs are required in node \"{{nodeLabel}}\"",
   "chatbot_official_capabilities_success": "Chatbot official capability loaded successfully.",
+  "chatbot_official_templates_success": "Chatbot official templates loaded successfully.",
   "chatbot_official_nodes_require_online_channel": "To save official nodes, the account must have an online Official WhatsApp channel.",
   "chatbot_official_nodes_not_allowed_on_non_official_channel": "Official nodes can only be used in chatbots linked to Official WhatsApp channels.",
   "chatbot_flow_validation_official_options_limit": "Official node \"{{nodeLabel}}\" exceeds the allowed options limit.",

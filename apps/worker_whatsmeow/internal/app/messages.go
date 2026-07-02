@@ -731,6 +731,11 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	if msg.GetPinInChatMessage() != nil {
 		return m.withIncomingQuoted(evt, msg, MessageTypeSystem, map[string]any{"type": MessageTypeSystem, "message": ""})
 	}
+	if interactive := msg.GetInteractiveMessage(); interactive != nil {
+		if content := incomingInteractiveCtaURLContent(interactive); content != nil {
+			return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+		}
+	}
 	if template := msg.GetTemplateMessage(); template != nil && template.GetHydratedTemplate() != nil {
 		text := template.GetHydratedTemplate().GetHydratedContentText()
 		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
@@ -916,6 +921,75 @@ func incomingListResponseContent(response *waE2E.ListResponseMessage) map[string
 			},
 		},
 	}
+}
+
+func incomingInteractiveCtaURLContent(interactive *waE2E.InteractiveMessage) map[string]any {
+	nativeFlow := interactive.GetNativeFlowMessage()
+	if nativeFlow == nil {
+		return nil
+	}
+
+	for _, button := range nativeFlow.GetButtons() {
+		if button == nil || strings.ToLower(strings.TrimSpace(button.GetName())) != "cta_url" {
+			continue
+		}
+
+		params := map[string]any{}
+		if err := json.Unmarshal([]byte(button.GetButtonParamsJSON()), &params); err != nil {
+			continue
+		}
+
+		url := stringValue(params["url"])
+		if url == "" {
+			continue
+		}
+
+		displayText := firstNonEmpty(
+			stringValue(params["display_text"]),
+			stringValue(params["displayText"]),
+			stringValue(params["title"]),
+			stringValue(params["text"]),
+			"Abrir link",
+		)
+		body := interactive.GetBody().GetText()
+		message := firstNonEmpty(body, displayText)
+
+		return map[string]any{
+			"type":    MessageTypeText,
+			"message": message,
+			"official": map[string]any{
+				"provider": "meta_whatsapp",
+				"type":     "interactive",
+				"display": map[string]any{
+					"kind":         "cta_url",
+					"raw_type":     "cta_url",
+					"body":         emptyStringAsNil(body),
+					"action_label": displayText,
+					"actions": []map[string]any{{
+						"type":  "cta_url",
+						"title": displayText,
+						"url":   url,
+					}},
+				},
+				"raw": map[string]any{
+					"type": "interactive",
+					"interactive": map[string]any{
+						"body": map[string]any{
+							"text": body,
+						},
+						"nativeFlowMessage": map[string]any{
+							"buttons": []map[string]any{{
+								"name":             button.GetName(),
+								"buttonParamsJSON": button.GetButtonParamsJSON(),
+							}},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	return nil
 }
 
 func emptyStringAsNil(value string) any {
@@ -1442,6 +1516,8 @@ func incomingMessageContextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
 		return msg.GetListMessage().GetContextInfo()
 	case msg.GetListResponseMessage() != nil:
 		return msg.GetListResponseMessage().GetContextInfo()
+	case msg.GetInteractiveMessage() != nil:
+		return msg.GetInteractiveMessage().GetContextInfo()
 	}
 	return nil
 }
@@ -1475,6 +1551,8 @@ func quotedMessageType(msg *waE2E.Message) string {
 	case msg.GetListMessage() != nil:
 		return MessageTypeText
 	case msg.GetListResponseMessage() != nil:
+		return MessageTypeText
+	case msg.GetInteractiveMessage() != nil:
 		return MessageTypeText
 	default:
 		return MessageTypeText
@@ -1519,6 +1597,8 @@ func quotedMessageText(msg *waE2E.Message) string {
 			msg.GetListResponseMessage().GetTitle(),
 			msg.GetListResponseMessage().GetSingleSelectReply().GetSelectedRowID(),
 		)
+	case msg.GetInteractiveMessage() != nil:
+		return msg.GetInteractiveMessage().GetBody().GetText()
 	default:
 		return ""
 	}

@@ -113,6 +113,67 @@ describe('wwebjsMessageToUpsert', () => {
     );
   });
 
+  it('converts native flow CTA URL payloads into official display metadata', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      type: 'chat',
+      body: 'Clique no link para abrir',
+      _data: {
+        interactiveMessage: {
+          body: { text: 'Clique no link para abrir' },
+          nativeFlowMessage: {
+            buttons: [
+              {
+                name: 'cta_url',
+                buttonParamsJson: JSON.stringify({
+                  display_text: 'Underchat',
+                  url: 'https://underchat.com.br/',
+                }),
+              },
+            ],
+          },
+        },
+      },
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.text);
+    expect(upsert?.content).toMatchObject({
+      type: EMessageType.text,
+      message: 'Clique no link para abrir',
+      official: {
+        provider: 'meta_whatsapp',
+        type: 'interactive',
+        display: {
+          kind: 'cta_url',
+          raw_type: 'cta_url',
+          body: 'Clique no link para abrir',
+          action_label: 'Underchat',
+          actions: [
+            {
+              type: 'cta_url',
+              title: 'Underchat',
+              url: 'https://underchat.com.br/',
+            },
+          ],
+        },
+      },
+    });
+    expect(innerMessage.interactiveMessage).toMatchObject({
+      body: { text: 'Clique no link para abrir' },
+      nativeFlowMessage: {
+        buttons: [
+          expect.objectContaining({
+            name: 'cta_url',
+          }),
+        ],
+      },
+    });
+  });
+
   it('converts ciphertext into a visible system fallback message', async () => {
     const fallbackText =
       'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';

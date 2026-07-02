@@ -102,4 +102,46 @@ describe('listMessageChats response contract', () => {
       })
     ).toBe(true);
   });
+
+  it('accepts CTA URL official display metadata with action URL', () => {
+    expect(
+      Value.Check(listMessageResultSchema, {
+        message_id: 'message-official-cta-url-1',
+        chat_id: 'chat-1',
+        type_user: ETypeUserChat.operator,
+        message_key: {
+          from_me: true,
+          is_view_once: false,
+        },
+        content: {
+          type: EMessageType.text,
+          message: 'Clique no link para abrir',
+          official: {
+            provider: 'meta_whatsapp',
+            type: 'interactive',
+            display: {
+              kind: 'cta_url',
+              raw_type: 'cta_url',
+              body: 'Clique no link para abrir',
+              action_label: 'Underchat',
+              actions: [
+                {
+                  type: 'cta_url',
+                  title: 'Underchat',
+                  url: 'https://underchat.com.br/',
+                },
+              ],
+            },
+          },
+        },
+        summary: {
+          is_sent: true,
+          is_delivered: false,
+          is_seen: false,
+          is_sent_to_internal: true,
+        },
+        date: '2026-07-02T12:00:00.000Z',
+      })
+    ).toBe(true);
+  });
 });

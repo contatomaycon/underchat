@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { nextTick, computed, ref, watch, onMounted, onUnmounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar';
 import ChatQueue from './ChatQueue.vue';
 import AppAddContactChat from '@/components/chat/AppAddContactChat.vue';
@@ -34,12 +35,21 @@ import {
 } from '@core/schema/chat/listTransferOptions/response.schema';
 import type {
   OfficialOpeningContextResponse,
-  OfficialOpeningTemplate,
 } from '@core/schema/chat/officialOpeningContext/response.schema';
+import type { IOfficialTemplateVariableValue } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import {
+  buildOfficialTemplatePreview,
+  buildOfficialTemplateVariablePayload,
+  createManualOfficialTemplateVariable,
+  createOfficialTemplateOptions,
+  findOfficialTemplate,
+  formatOfficialTemplateLanguage,
+  refreshOfficialTemplateVariableKey,
+} from '@/utils/officialTemplate';
 import type {
-  IOfficialTemplateVariableValue,
-  OfficialTemplateVariableComponent,
-} from '@core/common/interfaces/IOfficialWhatsappTemplate';
+  OfficialTemplateVariable,
+  OfficialTemplateVariableValue,
+} from '@/utils/officialTemplate';
 import type { TransferUserResponse } from '@core/schema/chat/listTransferUsers/response.schema';
 import type { TransferSectorUserResponse } from '@core/schema/chat/listTransferSectorUsers/response.schema';
 import type { BulkActionChatRequest } from '@core/schema/chat/bulkAction/request.schema';
@@ -67,6 +77,8 @@ const props = defineProps<{
   isDrawerOpen: boolean;
   search: string;
 }>();
+
+const { locale } = useI18n();
 
 const chatStore = useChatStore();
 const channelsStore = useChannelsStore();
@@ -257,29 +269,46 @@ const isLoadingOfficialOpeningContext = ref(false);
 const officialOpeningError = ref<string | null>(null);
 const selectedOfficialTemplateKey = ref<string | null>(null);
 const officialTemplateVariableValues = ref<Record<string, string>>({});
+const manualOfficialTemplateVariables = ref<OfficialTemplateVariableValue[]>(
+  []
+);
 let officialOpeningContextRequestId = 0;
 
 const officialTemplateOptions = computed(() =>
-  (officialOpeningContext.value?.templates ?? []).map((template) => ({
-    value: `${template.name}::${template.language}`,
-    title: `${template.name} - ${template.language}`,
-    name: template.name,
-    language: template.language,
-    category: template.category ?? null,
-  }))
+  createOfficialTemplateOptions(
+    officialOpeningContext.value?.templates,
+    locale.value
+  )
 );
 
-const selectedOfficialTemplate = computed<OfficialOpeningTemplate | null>(
-  () =>
-    officialOpeningContext.value?.templates.find(
-      (template) =>
-        `${template.name}::${template.language}` ===
-        selectedOfficialTemplateKey.value
-    ) ?? null
+const selectedOfficialTemplate = computed(() =>
+  findOfficialTemplate(
+    officialOpeningContext.value?.templates,
+    selectedOfficialTemplateKey.value
+  )
 );
 
-const officialTemplateVariableRows = computed(
+const selectedOfficialTemplateLanguageLabel = computed(() =>
+  selectedOfficialTemplate.value
+    ? formatOfficialTemplateLanguage(
+        selectedOfficialTemplate.value.language,
+        locale.value
+      )
+    : ''
+);
+
+const officialTemplateDetectedVariableRows = computed(
   () => selectedOfficialTemplate.value?.variables ?? []
+);
+
+const hasOfficialTemplateDetectedVariables = computed(
+  () => officialTemplateDetectedVariableRows.value.length > 0
+);
+
+const officialTemplateVariableRows = computed<OfficialTemplateVariable[]>(() =>
+  hasOfficialTemplateDetectedVariables.value
+    ? officialTemplateDetectedVariableRows.value
+    : manualOfficialTemplateVariables.value
 );
 
 const areOfficialTemplateVariablesValid = computed(() =>
@@ -305,56 +334,81 @@ const isOfficialOpeningReady = computed(() => {
 const officialTemplateSelectedVariableValues = computed<
   IOfficialTemplateVariableValue[]
 >(() =>
-  officialTemplateVariableRows.value.map((variable) => ({
-    key: variable.key,
-    component_type:
-      variable.component_type as OfficialTemplateVariableComponent,
-    index: variable.index,
-    button_index: variable.button_index ?? null,
-    value: officialTemplateVariableValues.value[variable.key]?.trim() ?? '',
-  }))
+  hasOfficialTemplateDetectedVariables.value
+    ? buildOfficialTemplateVariablePayload(
+        officialTemplateDetectedVariableRows.value,
+        officialTemplateVariableValues.value
+      )
+    : manualOfficialTemplateVariables.value.map((variable) => ({
+        key: variable.key,
+        component_type: variable.component_type,
+        index: variable.index,
+        button_index: variable.button_index ?? null,
+        value: officialTemplateVariableValues.value[variable.key]?.trim() ?? '',
+      }))
 );
 
-const fillOfficialTemplateText = (
-  text: string | null | undefined,
-  componentType: OfficialTemplateVariableComponent,
-  buttonIndex?: number | null
-): string => {
-  if (!text) return '';
+const selectedOfficialTemplatePreview = computed(() =>
+  buildOfficialTemplatePreview(
+    selectedOfficialTemplate.value,
+    officialTemplateVariableValues.value,
+    officialTemplateVariableRows.value
+  )
+);
 
-  return text.replace(/\{\{\s*(\d+)\s*\}\}/gu, (_, index: string) => {
-    const key =
-      componentType === 'BUTTON'
-        ? `${componentType}:${buttonIndex ?? 0}:${index}`
-        : `${componentType}:${index}`;
-    const value = officialTemplateVariableValues.value[key]?.trim();
-    const sample = selectedOfficialTemplate.value?.variables.find(
-      (variable) => variable.key === key
-    )?.sample;
-
-    return value || sample || `{{${index}}}`;
-  });
+const addManualOfficialTemplateVariable = () => {
+  const variable = createManualOfficialTemplateVariable(
+    manualOfficialTemplateVariables.value.length
+  );
+  manualOfficialTemplateVariables.value = [
+    ...manualOfficialTemplateVariables.value,
+    variable,
+  ];
+  officialTemplateVariableValues.value = {
+    ...officialTemplateVariableValues.value,
+    [variable.key]: '',
+  };
 };
 
-const selectedOfficialTemplatePreview = computed(() => {
-  const template = selectedOfficialTemplate.value;
-  if (!template) {
-    return null;
+const removeManualOfficialTemplateVariable = (index: number) => {
+  const variable = manualOfficialTemplateVariables.value[index];
+  if (!variable) {
+    return;
   }
 
-  return {
-    header: fillOfficialTemplateText(template.preview.header, 'HEADER'),
-    body: fillOfficialTemplateText(template.preview.body, 'BODY'),
-    footer: fillOfficialTemplateText(template.preview.footer, 'FOOTER'),
-    buttons:
-      template.components
-        .find((component) => component.type === 'BUTTONS')
-        ?.buttons?.map((button, index) =>
-          fillOfficialTemplateText(button.text ?? button.url, 'BUTTON', index)
-        )
-        .filter((text) => text.trim()) ?? [],
+  const nextValues = { ...officialTemplateVariableValues.value };
+  delete nextValues[variable.key];
+  officialTemplateVariableValues.value = nextValues;
+  manualOfficialTemplateVariables.value =
+    manualOfficialTemplateVariables.value.filter(
+      (_, itemIndex) => itemIndex !== index
+    );
+};
+
+const syncManualOfficialTemplateVariable = (index: number) => {
+  const variable = manualOfficialTemplateVariables.value[index];
+  if (!variable) {
+    return;
+  }
+
+  const previousKey = variable.key;
+  const refreshed = refreshOfficialTemplateVariableKey(variable);
+  const previousValue =
+    officialTemplateVariableValues.value[previousKey] ?? variable.value ?? '';
+  manualOfficialTemplateVariables.value[index] = {
+    ...refreshed,
+    value: previousValue,
   };
-});
+
+  if (previousKey === refreshed.key) {
+    return;
+  }
+
+  const nextValues = { ...officialTemplateVariableValues.value };
+  delete nextValues[previousKey];
+  nextValues[refreshed.key] = previousValue;
+  officialTemplateVariableValues.value = nextValues;
+};
 const isLoadingWorkerConfigs = ref(false);
 const isLoadingMoreQueue = ref(false);
 const isLoadingMoreInChat = ref(false);
@@ -3429,6 +3483,7 @@ const resetOfficialOpeningState = () => {
   officialOpeningError.value = null;
   selectedOfficialTemplateKey.value = null;
   officialTemplateVariableValues.value = {};
+  manualOfficialTemplateVariables.value = [];
   isLoadingOfficialOpeningContext.value = false;
 };
 
@@ -3447,6 +3502,7 @@ const loadOfficialOpeningContext = async () => {
   officialOpeningError.value = null;
   selectedOfficialTemplateKey.value = null;
   officialTemplateVariableValues.value = {};
+  manualOfficialTemplateVariables.value = [];
   selectedSectorId.value = null;
   isLoadingOfficialOpeningContext.value = true;
 
@@ -3485,6 +3541,7 @@ watch(selectedWorkerId, () => {
 
 watch(selectedOfficialTemplateKey, () => {
   officialTemplateVariableValues.value = {};
+  manualOfficialTemplateVariables.value = [];
   selectedSectorId.value = null;
 });
 
@@ -5501,7 +5558,7 @@ defineExpose({
                 </VChip>
                 <VChip size="small" color="primary" variant="tonal">
                   <VIcon size="15" class="me-1">tabler-language</VIcon>
-                  {{ selectedOfficialTemplate.language }}
+                  {{ selectedOfficialTemplateLanguageLabel }}
                 </VChip>
                 <VChip
                   v-if="selectedOfficialTemplate.category"
@@ -5515,7 +5572,7 @@ defineExpose({
               </div>
 
               <div
-                v-if="officialTemplateVariableRows.length"
+                v-if="hasOfficialTemplateDetectedVariables"
                 class="official-template-variables"
               >
                 <VTextField
@@ -5530,6 +5587,71 @@ defineExpose({
                   variant="outlined"
                   hide-details="auto"
                 />
+              </div>
+
+              <div
+                v-else
+                class="official-template-manual-variables"
+              >
+                <div class="official-template-manual-variables-header">
+                  <span>{{ $t('chatbot_message_variables_legend') }}</span>
+                  <VBtn
+                    size="small"
+                    variant="outlined"
+                    color="primary"
+                    @click="addManualOfficialTemplateVariable"
+                  >
+                    <VIcon icon="tabler-plus" size="16" class="me-1" />
+                    {{ $t('add') }}
+                  </VBtn>
+                </div>
+
+                <div
+                  v-for="(variable, variableIndex) in manualOfficialTemplateVariables"
+                  :key="`opening-manual-variable-${variableIndex}`"
+                  class="official-template-manual-variable-row"
+                >
+                  <VSelect
+                    v-model="variable.component_type"
+                    :items="['HEADER', 'BODY', 'BUTTON']"
+                    placeholder="Componente"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    @update:model-value="
+                      syncManualOfficialTemplateVariable(variableIndex)
+                    "
+                  />
+                  <VTextField
+                    v-model.number="variable.index"
+                    placeholder="Índice"
+                    type="number"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    @update:model-value="
+                      syncManualOfficialTemplateVariable(variableIndex)
+                    "
+                  />
+                  <VTextField
+                    v-model="officialTemplateVariableValues[variable.key]"
+                    :placeholder="$t('template_variable_value')"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                  />
+                  <VBtn
+                    icon
+                    size="small"
+                    variant="text"
+                    color="error"
+                    @click.stop="
+                      removeManualOfficialTemplateVariable(variableIndex)
+                    "
+                  >
+                    <VIcon icon="tabler-x" size="16" />
+                  </VBtn>
+                </div>
               </div>
 
               <div
@@ -6197,6 +6319,29 @@ defineExpose({
   display: grid;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.official-template-manual-variables {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.official-template-manual-variables-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.official-template-manual-variable-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.85fr) 72px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .official-template-preview {

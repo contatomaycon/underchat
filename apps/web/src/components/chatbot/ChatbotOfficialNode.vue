@@ -1,7 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { NodeProps } from '@vue-flow/core';
 import { Handle, Position, useVueFlow } from '@vue-flow/core';
+import {
+  buildOfficialTemplateKey,
+  buildOfficialTemplatePreview,
+  createManualOfficialTemplateVariable,
+  createOfficialTemplateOptions,
+  createOfficialTemplateVariableValues,
+  findOfficialTemplate,
+  formatOfficialTemplateLanguage,
+  refreshOfficialTemplateVariableKey,
+} from '@/utils/officialTemplate';
+import type {
+  OfficialTemplate,
+  OfficialTemplatePreview,
+} from '@/utils/officialTemplate';
 
 interface OfficialOption {
   id: string;
@@ -66,6 +81,10 @@ interface OfficialNodeData {
   addressCountry?: string;
   templateName?: string;
   templateLanguage?: string;
+  templateCategory?: string | null;
+  templateComponents?: OfficialTemplate['components'];
+  templatePreview?:
+    OfficialTemplatePreview | OfficialTemplate['preview'] | null;
   attachmentUrl?: string;
   attachmentMimetype?: string;
   emoji?: string;
@@ -77,6 +96,9 @@ interface OfficialNodeData {
   templateVariables?: unknown[] | OfficialTemplateVariable[];
   parameters?: Record<string, unknown>;
   action?: Record<string, unknown>;
+  availableOfficialTemplates?: OfficialTemplate[];
+  isLoadingOfficialTemplates?: boolean;
+  officialTemplatesError?: string | null;
   officialType?: string;
   official?: Record<string, unknown>;
   onRemove?: () => void;
@@ -85,6 +107,7 @@ interface OfficialNodeData {
 
 const props = defineProps<NodeProps>();
 const { updateNodeInternals } = useVueFlow();
+const { locale } = useI18n();
 
 const nodeType = computed(() => props.type || '');
 
@@ -326,11 +349,7 @@ const normalizeCarouselCards = (cards?: unknown[]): OfficialCarouselCard[] => {
 };
 
 const createTemplateVariable = (index = 0): OfficialTemplateVariable => ({
-  key: `body_${index + 1}`,
-  component_type: 'BODY',
-  index,
-  button_index: null,
-  value: '',
+  ...createManualOfficialTemplateVariable(index),
 });
 
 const normalizeTemplateVariables = (
@@ -351,21 +370,23 @@ const normalizeTemplateVariables = (
         ? variableRecord.component_type
         : 'BODY';
 
-    return {
+    return refreshOfficialTemplateVariableKey({
       key:
         typeof variableRecord.key === 'string'
           ? variableRecord.key
-          : `${componentType.toLowerCase()}_${index + 1}`,
+          : `${componentType}:${index + 1}`,
       component_type: componentType,
       index:
-        typeof variableRecord.index === 'number' ? variableRecord.index : index,
+        typeof variableRecord.index === 'number' && variableRecord.index > 0
+          ? variableRecord.index
+          : index + 1,
       button_index:
         typeof variableRecord.button_index === 'number'
           ? variableRecord.button_index
           : null,
       value:
         typeof variableRecord.value === 'string' ? variableRecord.value : '',
-    };
+    });
   });
 };
 
@@ -431,6 +452,14 @@ const getInitialData = (): OfficialNodeData => {
     addressCountry: data?.addressCountry || 'BR',
     templateName: data?.templateName || '',
     templateLanguage: data?.templateLanguage || 'pt_BR',
+    templateCategory: data?.templateCategory ?? null,
+    templateComponents: Array.isArray(data?.templateComponents)
+      ? data.templateComponents
+      : [],
+    templatePreview:
+      data?.templatePreview && typeof data.templatePreview === 'object'
+        ? data.templatePreview
+        : null,
     attachmentUrl: data?.attachmentUrl || '',
     attachmentMimetype: data?.attachmentMimetype || 'image/webp',
     emoji: data?.emoji || '👍',
@@ -512,6 +541,166 @@ const carouselCards = computed(
 
 const templateVariables = computed(
   () => (nodeData.value.templateVariables ?? []) as OfficialTemplateVariable[]
+);
+
+const availableOfficialTemplates = computed<OfficialTemplate[]>(() => {
+  const data = props.data as OfficialNodeData | undefined;
+  return Array.isArray(data?.availableOfficialTemplates)
+    ? data.availableOfficialTemplates
+    : [];
+});
+
+const isLoadingOfficialTemplates = computed(() => {
+  const data = props.data as OfficialNodeData | undefined;
+  return data?.isLoadingOfficialTemplates === true;
+});
+
+const officialTemplatesError = computed(() => {
+  const data = props.data as OfficialNodeData | undefined;
+  return typeof data?.officialTemplatesError === 'string'
+    ? data.officialTemplatesError
+    : null;
+});
+
+const selectedOfficialTemplateKey = computed({
+  get: () =>
+    nodeData.value.templateName && nodeData.value.templateLanguage
+      ? buildOfficialTemplateKey({
+          name: nodeData.value.templateName,
+          language: nodeData.value.templateLanguage,
+        })
+      : null,
+  set: (key: string | null) => {
+    const option = officialTemplateOptions.value.find(
+      (item) => item.value === key
+    );
+    const template =
+      option?.template ??
+      findOfficialTemplate(availableOfficialTemplates.value, key);
+
+    if (!template) {
+      nodeData.value.templateName = '';
+      nodeData.value.templateLanguage = 'pt_BR';
+      nodeData.value.templateCategory = null;
+      nodeData.value.templateComponents = [];
+      nodeData.value.templatePreview = null;
+      nodeData.value.templateVariables = [];
+      updateNodeData();
+      return;
+    }
+
+    applyOfficialTemplate(template);
+  },
+});
+
+const selectedTemplateFromList = computed(() =>
+  findOfficialTemplate(
+    availableOfficialTemplates.value,
+    selectedOfficialTemplateKey.value
+  )
+);
+
+const savedOfficialTemplate = computed<OfficialTemplate | null>(() => {
+  if (!nodeData.value.templateName || !nodeData.value.templateLanguage) {
+    return null;
+  }
+
+  const components = Array.isArray(nodeData.value.templateComponents)
+    ? nodeData.value.templateComponents
+    : [];
+  const preview =
+    nodeData.value.templatePreview &&
+    typeof nodeData.value.templatePreview === 'object'
+      ? nodeData.value.templatePreview
+      : {};
+  const variables = templateVariables.value.map((variable) => ({
+    key: variable.key,
+    component_type: variable.component_type,
+    index: variable.index,
+    button_index: variable.button_index ?? null,
+  }));
+
+  return {
+    name: nodeData.value.templateName,
+    language: nodeData.value.templateLanguage,
+    status: 'APPROVED',
+    category: nodeData.value.templateCategory ?? null,
+    components,
+    variables,
+    preview,
+  };
+});
+
+const selectedOfficialTemplate = computed(
+  () => selectedTemplateFromList.value ?? savedOfficialTemplate.value
+);
+
+const officialTemplateOptions = computed(() => {
+  const options = createOfficialTemplateOptions(
+    availableOfficialTemplates.value,
+    locale.value
+  );
+
+  if (
+    selectedOfficialTemplate.value &&
+    !options.some(
+      (option) => option.value === selectedOfficialTemplateKey.value
+    )
+  ) {
+    return [
+      {
+        value: buildOfficialTemplateKey(selectedOfficialTemplate.value),
+        title: selectedOfficialTemplate.value.name,
+        name: selectedOfficialTemplate.value.name,
+        language: selectedOfficialTemplate.value.language,
+        languageLabel: formatOfficialTemplateLanguage(
+          selectedOfficialTemplate.value.language,
+          locale.value
+        ),
+        category: selectedOfficialTemplate.value.category ?? null,
+        template: selectedOfficialTemplate.value,
+      },
+      ...options,
+    ];
+  }
+
+  return options;
+});
+
+const hasDetectedTemplateVariables = computed(
+  () => (selectedTemplateFromList.value?.variables.length ?? 0) > 0
+);
+
+const officialTemplatePreview = computed(() =>
+  buildOfficialTemplatePreview(
+    selectedOfficialTemplate.value,
+    templateVariables.value,
+    templateVariables.value
+  )
+);
+
+const previewHeader = computed(() =>
+  nodeType.value === 'officialTemplate'
+    ? officialTemplatePreview.value?.header || ''
+    : nodeData.value.header || ''
+);
+
+const previewBody = computed(() =>
+  nodeType.value === 'officialTemplate'
+    ? officialTemplatePreview.value?.body || previewMessage.value
+    : previewMessage.value
+);
+
+const previewFooter = computed(() =>
+  nodeType.value === 'officialTemplate'
+    ? officialTemplatePreview.value?.footer || ''
+    : nodeData.value.footer || ''
+);
+
+const previewButtons = computed(() =>
+  nodeType.value === 'officialTemplate'
+    ? (officialTemplatePreview.value?.buttons ?? [])
+    : []
 );
 
 const contactItems = computed(
@@ -601,6 +790,19 @@ const syncTemplateVariables = () => {
   updateNodeData();
 };
 
+const applyOfficialTemplate = (template: OfficialTemplate) => {
+  nodeData.value.templateName = template.name;
+  nodeData.value.templateLanguage = template.language;
+  nodeData.value.templateCategory = template.category ?? null;
+  nodeData.value.templateComponents = template.components;
+  nodeData.value.templatePreview = template.preview;
+  nodeData.value.templateVariables = createOfficialTemplateVariableValues(
+    template.variables,
+    templateVariables.value
+  );
+  updateNodeData();
+};
+
 const addTemplateVariable = () => {
   nodeData.value.templateVariables = [
     ...templateVariables.value,
@@ -612,6 +814,18 @@ const addTemplateVariable = () => {
 const removeTemplateVariable = (variableIndex: number) => {
   const variables = [...templateVariables.value];
   variables.splice(variableIndex, 1);
+  nodeData.value.templateVariables = variables;
+  syncTemplateVariables();
+};
+
+const syncTemplateVariableKey = (variableIndex: number) => {
+  const variable = templateVariables.value[variableIndex];
+  if (!variable) {
+    return;
+  }
+
+  const variables = [...templateVariables.value];
+  variables[variableIndex] = refreshOfficialTemplateVariableKey(variable);
   nodeData.value.templateVariables = variables;
   syncTemplateVariables();
 };
@@ -677,6 +891,15 @@ const updateNodeData = () => {
   data.addressCountry = nodeData.value.addressCountry || 'BR';
   data.templateName = nodeData.value.templateName || '';
   data.templateLanguage = nodeData.value.templateLanguage || 'pt_BR';
+  data.templateCategory = nodeData.value.templateCategory ?? null;
+  data.templateComponents = Array.isArray(nodeData.value.templateComponents)
+    ? nodeData.value.templateComponents
+    : [];
+  data.templatePreview =
+    nodeData.value.templatePreview &&
+    typeof nodeData.value.templatePreview === 'object'
+      ? nodeData.value.templatePreview
+      : null;
   data.attachmentUrl = nodeData.value.attachmentUrl || '';
   data.attachmentMimetype = nodeData.value.attachmentMimetype || 'image/webp';
   data.emoji = nodeData.value.emoji || '👍';
@@ -761,6 +984,31 @@ const handleRemove = () => {
   data?.onRemove?.();
 };
 
+const hasTemplateMetadata = () =>
+  Array.isArray(nodeData.value.templateComponents) &&
+  nodeData.value.templateComponents.length > 0 &&
+  Boolean(nodeData.value.templatePreview);
+
+const hasTemplateVariableRows = (template: OfficialTemplate) =>
+  template.variables.length === 0 ||
+  template.variables.every((variable) =>
+    templateVariables.value.some((current) => current.key === variable.key)
+  );
+
+watch(
+  selectedTemplateFromList,
+  (template) => {
+    if (nodeType.value !== 'officialTemplate' || !template) {
+      return;
+    }
+
+    if (!hasTemplateMetadata() || !hasTemplateVariableRows(template)) {
+      applyOfficialTemplate(template);
+    }
+  },
+  { immediate: true }
+);
+
 watch(
   () => nodeData.value,
   () => updateNodeData(),
@@ -807,12 +1055,12 @@ watch(
       <VCardText class="pa-3">
         <div class="whatsapp-preview mb-3">
           <div class="whatsapp-bubble">
-            <div v-if="nodeData.header" class="preview-header">
-              {{ nodeData.header }}
+            <div v-if="previewHeader" class="preview-header">
+              {{ previewHeader }}
             </div>
-            <div class="preview-body">{{ previewMessage }}</div>
-            <div v-if="nodeData.footer" class="preview-footer">
-              {{ nodeData.footer }}
+            <div class="preview-body">{{ previewBody }}</div>
+            <div v-if="previewFooter" class="preview-footer">
+              {{ previewFooter }}
             </div>
 
             <div
@@ -850,6 +1098,21 @@ watch(
             >
               <div class="preview-button">
                 {{ nodeData.buttonText || 'Abrir link' }}
+              </div>
+            </div>
+
+            <div
+              v-else-if="
+                nodeType === 'officialTemplate' && previewButtons.length
+              "
+              class="preview-actions"
+            >
+              <div
+                v-for="(button, index) in previewButtons"
+                :key="`template-preview-button-${index}`"
+                class="preview-button"
+              >
+                {{ button }}
               </div>
             </div>
 
@@ -1180,27 +1443,66 @@ watch(
             </div>
           </div>
 
-          <div v-if="nodeType === 'officialTemplate'" class="split-fields">
-            <VTextField
-              v-model="nodeData.templateName"
-              placeholder="Nome do template"
-              variant="outlined"
+          <div v-if="nodeType === 'officialTemplate'" class="template-select">
+            <VAlert
+              v-if="officialTemplatesError"
+              type="error"
+              variant="tonal"
               density="compact"
-              hide-details
-            />
-            <VTextField
-              v-model="nodeData.templateLanguage"
-              placeholder="Idioma"
-              variant="outlined"
+            >
+              {{ officialTemplatesError }}
+            </VAlert>
+            <VAlert
+              v-else-if="
+                !isLoadingOfficialTemplates &&
+                officialTemplateOptions.length === 0
+              "
+              type="warning"
+              variant="tonal"
               density="compact"
-              hide-details
+            >
+              Nenhum template oficial aprovado disponível.
+            </VAlert>
+            <AppSelectSearch
+              v-model="selectedOfficialTemplateKey"
+              :items="officialTemplateOptions"
+              placeholder="Selecione o template aprovado"
+              item-value="value"
+              item-title="title"
+              :loading="isLoadingOfficialTemplates"
+              :disabled="isLoadingOfficialTemplates"
             />
+
+            <div v-if="selectedOfficialTemplate" class="template-meta-chips">
+              <VChip size="small" color="success" variant="tonal">
+                <VIcon size="15" class="me-1">tabler-circle-check</VIcon>
+                Aprovado
+              </VChip>
+              <VChip size="small" color="primary" variant="tonal">
+                <VIcon size="15" class="me-1">tabler-language</VIcon>
+                {{
+                  officialTemplateOptions.find(
+                    (option) => option.value === selectedOfficialTemplateKey
+                  )?.languageLabel || selectedOfficialTemplate.language
+                }}
+              </VChip>
+              <VChip
+                v-if="selectedOfficialTemplate.category"
+                size="small"
+                color="secondary"
+                variant="tonal"
+              >
+                <VIcon size="15" class="me-1">tabler-tag</VIcon>
+                {{ selectedOfficialTemplate.category }}
+              </VChip>
+            </div>
           </div>
 
           <div v-if="nodeType === 'officialTemplate'" class="structured-list">
             <div class="structured-list-header">
               <span>Variáveis</span>
               <VBtn
+                v-if="!hasDetectedTemplateVariables"
                 size="small"
                 variant="outlined"
                 color="primary"
@@ -1214,28 +1516,35 @@ watch(
             <div
               v-for="(variable, variableIndex) in templateVariables"
               :key="`template-variable-${variableIndex}`"
-              class="structured-row"
+              :class="
+                hasDetectedTemplateVariables
+                  ? 'template-variable-value-row'
+                  : 'structured-row'
+              "
             >
               <VSelect
+                v-if="!hasDetectedTemplateVariables"
                 v-model="variable.component_type"
                 :items="['HEADER', 'BODY', 'BUTTON']"
                 placeholder="Componente"
                 variant="outlined"
                 density="compact"
                 hide-details
-                @update:model-value="syncTemplateVariables"
+                @update:model-value="syncTemplateVariableKey(variableIndex)"
               />
               <VTextField
+                v-if="!hasDetectedTemplateVariables"
                 v-model.number="variable.index"
                 placeholder="Índice"
                 type="number"
                 variant="outlined"
                 density="compact"
                 hide-details
-                @update:model-value="syncTemplateVariables"
+                @update:model-value="syncTemplateVariableKey(variableIndex)"
               />
               <VTextField
                 v-model="variable.value"
+                :label="`${variable.component_type} {{${variable.index}}}`"
                 placeholder="Valor"
                 variant="outlined"
                 density="compact"
@@ -1243,6 +1552,7 @@ watch(
                 @update:model-value="syncTemplateVariables"
               />
               <VBtn
+                v-if="!hasDetectedTemplateVariables"
                 icon
                 size="small"
                 variant="text"
@@ -1611,11 +1921,29 @@ watch(
   background: rgba(var(--v-theme-on-surface), 0.025);
 }
 
+.template-select {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.template-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .structured-row {
   display: grid;
   grid-template-columns: minmax(84px, 0.85fr) 72px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.template-variable-value-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
 .official-option {

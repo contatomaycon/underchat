@@ -37,13 +37,62 @@ function getText(msg: proto.IMessage): string {
     return (base as any).listResponseMessage.title;
   if ((base as any).templateMessage?.hydratedTemplate?.hydratedContentText)
     return (base as any).templateMessage.hydratedTemplate.hydratedContentText;
+  if ((base as any).interactiveMessage?.body?.text)
+    return (base as any).interactiveMessage.body.text;
 
   return '';
+}
+
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as Record<string, unknown>;
 }
 
 function hasMeaningfulTextField(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   return value.trim().length > 0;
+}
+
+function parseRecordJson(value: unknown): Record<string, unknown> | undefined {
+  const record = toRecord(value);
+  if (record) return record;
+
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    return toRecord(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function hasNativeFlowCtaUrl(msg: proto.IMessage): boolean {
+  const base = unwrapMessage(msg, { keepViewOnce: true }) ?? msg;
+  const interactiveMessage = toRecord((base as any).interactiveMessage);
+  const nativeFlowMessage = toRecord(interactiveMessage?.nativeFlowMessage);
+  const buttons = Array.isArray(nativeFlowMessage?.buttons)
+    ? nativeFlowMessage.buttons
+    : [];
+
+  return buttons.some((rawButton) => {
+    const button = toRecord(rawButton);
+    if (!button) return false;
+
+    const name = String(button.name ?? '')
+      .trim()
+      .toLowerCase();
+    if (name !== 'cta_url') return false;
+
+    const params = parseRecordJson(
+      button.buttonParamsJson ?? button.buttonParamsJSON
+    );
+    return hasMeaningfulTextField(params?.url);
+  });
 }
 
 function hasAlbumContainerOnly(msg: proto.IMessage): boolean {
@@ -80,6 +129,7 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
     (base as any).listResponseMessage,
     base.templateButtonReplyMessage,
     base.interactiveResponseMessage,
+    (base as any).interactiveMessage,
   ]
     .map((entry) => entry?.contextInfo)
     .filter(Boolean);
@@ -169,6 +219,14 @@ function detectList({ msg }: IMapCtx): EMessageType | undefined {
   return undefined;
 }
 
+function detectNativeFlow({ msg }: IMapCtx): EMessageType | undefined {
+  if (hasNativeFlowCtaUrl(msg)) {
+    return EMessageType.text;
+  }
+
+  return undefined;
+}
+
 function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
   if (text) return EMessageType.text;
 
@@ -223,6 +281,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
     detectTemplate,
     detectButtons,
     detectList,
+    detectNativeFlow,
     detectText,
   ];
 

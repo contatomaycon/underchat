@@ -70,6 +70,58 @@ func TestUnsupportedFeaturesFailExplicitly(t *testing.T) {
 	}
 }
 
+func TestIncomingInteractiveCtaURLContent(t *testing.T) {
+	interactive := &waE2E.InteractiveMessage{
+		Body: &waE2E.InteractiveMessage_Body{
+			Text: proto.String("Clique no link para abrir"),
+		},
+		InteractiveMessage: &waE2E.InteractiveMessage_NativeFlowMessage_{
+			NativeFlowMessage: &waE2E.InteractiveMessage_NativeFlowMessage{
+				Buttons: []*waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton{
+					{
+						Name:             proto.String("cta_url"),
+						ButtonParamsJSON: proto.String(`{"display_text":"Underchat","url":"https:\/\/underchat.com.br\/","payment_link_preview":false}`),
+					},
+				},
+			},
+		},
+	}
+
+	content := incomingInteractiveCtaURLContent(interactive)
+	if content == nil {
+		t.Fatal("expected CTA URL content")
+	}
+	if got := content["type"]; got != MessageTypeText {
+		t.Fatalf("unexpected type %#v", got)
+	}
+	if got := content["message"]; got != "Clique no link para abrir" {
+		t.Fatalf("unexpected message %#v", got)
+	}
+
+	official := content["official"].(map[string]any)
+	display := official["display"].(map[string]any)
+	if got := display["kind"]; got != "cta_url" {
+		t.Fatalf("unexpected display kind %#v", got)
+	}
+	if got := display["body"]; got != "Clique no link para abrir" {
+		t.Fatalf("unexpected display body %#v", got)
+	}
+	if got := display["action_label"]; got != "Underchat" {
+		t.Fatalf("unexpected action label %#v", got)
+	}
+
+	actions := display["actions"].([]map[string]any)
+	if len(actions) != 1 {
+		t.Fatalf("expected one action, got %#v", actions)
+	}
+	if got := actions[0]["title"]; got != "Underchat" {
+		t.Fatalf("unexpected action title %#v", got)
+	}
+	if got := actions[0]["url"]; got != "https://underchat.com.br/" {
+		t.Fatalf("unexpected action url %#v", got)
+	}
+}
+
 func TestBuildOutgoingTextWithQuotedMessageAndMentions(t *testing.T) {
 	manager := &WhatsAppManager{}
 	target := types.NewJID("5511999999999", types.DefaultUserServer)

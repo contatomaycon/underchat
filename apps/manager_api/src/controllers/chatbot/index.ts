@@ -22,6 +22,7 @@ import { createLocalHoliday } from './methods/createLocalHoliday';
 import { updateLocalHoliday } from './methods/updateLocalHoliday';
 import { deleteLocalHoliday } from './methods/deleteLocalHoliday';
 import { officialCapabilities } from './methods/officialCapabilities';
+import { officialTemplates } from './methods/officialTemplates';
 
 @injectable()
 class ChatbotController {
@@ -48,6 +49,7 @@ class ChatbotController {
   public updateLocalHoliday = updateLocalHoliday;
   public deleteLocalHoliday = deleteLocalHoliday;
   public officialCapabilities = officialCapabilities;
+  public officialTemplates = officialTemplates;
 }
 
 export default ChatbotController;

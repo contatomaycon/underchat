@@ -2650,6 +2650,23 @@ export class ChatbotFlowRunnerService {
             'templateVariables'
           ) ?? [],
       };
+      const templateCategory = this.getNodeTextValue(node, 'templateCategory');
+      const templateComponents = this.getNodeDataValue<
+        IOfficialWhatsappTemplateMessage['components']
+      >(node, 'templateComponents');
+      const templatePreview = this.getNodeDataValue<
+        IOfficialWhatsappTemplateMessage['preview']
+      >(node, 'templatePreview');
+
+      if (templateCategory) {
+        template.category = templateCategory;
+      }
+      if (Array.isArray(templateComponents) && templateComponents.length > 0) {
+        template.components = templateComponents;
+      }
+      if (templatePreview && typeof templatePreview === 'object') {
+        template.preview = templatePreview;
+      }
 
       return this.chatMessageService.publishPreparedMessage(
         this.buildPreparedOfficialMessage(

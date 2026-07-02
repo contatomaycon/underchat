@@ -61,6 +61,14 @@ type WwebjsListResponsePayload = {
   description?: string;
 };
 
+type WwebjsCtaUrlPayload = {
+  body?: string;
+  displayText: string;
+  url: string;
+  rawButton: Record<string, unknown>;
+  rawInteractive?: Record<string, unknown>;
+};
+
 type WwebjsContent = NonNullable<IUpsertMessage['content']>;
 
 interface WwebjsInteractiveResolutionInput {
@@ -79,6 +87,8 @@ interface WwebjsInteractiveResolution {
   buttonsResponseText?: string;
   listContent?: WwebjsContent;
   listResponse?: WwebjsListResponsePayload;
+  ctaUrlContent?: WwebjsContent;
+  ctaUrlPayload?: WwebjsCtaUrlPayload;
 }
 
 function getMessageId(msg: Message): string | undefined {
@@ -257,6 +267,130 @@ function getObjectRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+function parseJsonRecord(value: unknown): Record<string, unknown> | undefined {
+  const record = getObjectRecord(value);
+  if (record) return record;
+
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    return getObjectRecord(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function getNativeFlowBody(
+  body: string,
+  rawData?: Record<string, unknown>
+): string | undefined {
+  const interactiveMessage = getObjectRecord(rawData?.interactiveMessage);
+  const interactiveBody = getObjectRecord(interactiveMessage?.body);
+  const rawBody = getObjectRecord(rawData?.body);
+
+  return (
+    getNonEmptyString(interactiveBody?.text) ??
+    getNonEmptyString(interactiveMessage?.body) ??
+    getNonEmptyString(interactiveMessage?.text) ??
+    getNonEmptyString(rawBody?.text) ??
+    getNonEmptyString(rawData?.body) ??
+    getNonEmptyString(body)
+  );
+}
+
+function getCtaUrlPayload(
+  body: string,
+  rawData?: Record<string, unknown>
+): WwebjsCtaUrlPayload | undefined {
+  const interactiveMessage = getObjectRecord(rawData?.interactiveMessage);
+  const nativeFlowSources = [
+    getObjectRecord(interactiveMessage?.nativeFlowMessage),
+    getObjectRecord(rawData?.nativeFlowMessage),
+    getObjectRecord(rawData?.nativeFlow),
+  ].filter((source): source is Record<string, unknown> => source !== undefined);
+  const buttonArrays = [
+    ...nativeFlowSources.map((source) => source.buttons),
+    interactiveMessage?.buttons,
+    rawData?.buttons,
+  ];
+  const rawButtons = buttonArrays.find(
+    (value): value is unknown[] => Array.isArray(value) && value.length > 0
+  );
+
+  if (!rawButtons?.length) return undefined;
+
+  for (const rawButton of rawButtons) {
+    const button = getObjectRecord(rawButton);
+    if (!button) continue;
+
+    const name = getNonEmptyString(button.name)?.toLowerCase();
+    if (name !== 'cta_url') continue;
+
+    const params = parseJsonRecord(
+      button.buttonParamsJson ??
+        button.buttonParamsJSON ??
+        button.paramsJson ??
+        button.paramsJSON
+    );
+    const url = getNonEmptyString(params?.url);
+    if (!url) continue;
+
+    return {
+      body: getNativeFlowBody(body, rawData),
+      displayText:
+        getNonEmptyString(params?.display_text) ??
+        getNonEmptyString(params?.displayText) ??
+        getNonEmptyString(params?.title) ??
+        getNonEmptyString(params?.text) ??
+        'Abrir link',
+      url,
+      rawButton: button,
+      rawInteractive: interactiveMessage,
+    };
+  }
+
+  return undefined;
+}
+
+function buildCtaUrlContent(payload: WwebjsCtaUrlPayload): WwebjsContent {
+  const message = payload.body ?? payload.displayText;
+
+  return {
+    type: EMessageType.text,
+    message,
+    official: {
+      provider: 'meta_whatsapp',
+      type: 'interactive',
+      display: {
+        kind: 'cta_url',
+        raw_type: 'cta_url',
+        body: payload.body ?? null,
+        action_label: payload.displayText,
+        actions: [
+          {
+            type: 'cta_url',
+            title: payload.displayText,
+            url: payload.url,
+          },
+        ],
+      },
+      raw: {
+        type: 'interactive',
+        interactive: {
+          body:
+            payload.rawInteractive?.body ??
+            (payload.body ? { text: payload.body } : undefined),
+          nativeFlowMessage: {
+            buttons: [payload.rawButton],
+          },
+        },
+      },
+    },
+  };
+}
+
 function getButtonPayload(
   rawData?: Record<string, unknown>
 ): WwebjsButtonPayload | undefined {
@@ -377,6 +511,27 @@ function buildButtonsProtoMessage(
         buttonText: { displayText: button.displayText },
         type: button.type ?? undefined,
       })),
+    },
+  };
+}
+
+function buildCtaUrlProtoMessage(
+  payload: WwebjsCtaUrlPayload
+): Record<string, unknown> {
+  const button = { ...payload.rawButton };
+  if (!button.buttonParamsJson && !button.buttonParamsJSON) {
+    button.buttonParamsJson = JSON.stringify({
+      display_text: payload.displayText,
+      url: payload.url,
+    });
+  }
+
+  return {
+    interactiveMessage: {
+      body: payload.body ? { text: payload.body } : undefined,
+      nativeFlowMessage: {
+        buttons: [button],
+      },
     },
   };
 }
@@ -622,6 +777,11 @@ function resolveMessageBody(
   body: string,
   rawData?: Record<string, unknown>
 ): string {
+  const ctaUrlBody = getCtaUrlPayload(body, rawData)?.body;
+  if (ctaUrlBody) {
+    return ctaUrlBody;
+  }
+
   const listContentText =
     getListPayload(rawData)?.text ??
     getListResponsePayload(rawType, rawData)?.title;
@@ -664,6 +824,10 @@ function resolveWwebjsInteractiveMessage({
 }: WwebjsInteractiveResolutionInput): WwebjsInteractiveResolution {
   let nextBody = body;
   let nextMessageType = messageType;
+  const ctaUrlPayload = getCtaUrlPayload(body, rawData);
+  const ctaUrlContent = ctaUrlPayload
+    ? buildCtaUrlContent(ctaUrlPayload)
+    : undefined;
   const isWwebjsButtonType = WWEBJS_BUTTON_TYPES.has(rawType);
   const buttonsContent =
     buildButtonContent(rawType, body, rawData) ?? undefined;
@@ -675,7 +839,21 @@ function resolveWwebjsInteractiveMessage({
   const listContent = buildListContent(rawType, body, rawData) ?? undefined;
   const listResponse = getListResponsePayload(rawType, rawData);
 
-  if (buttonsContent || buttonsResponseText) {
+  if (ctaUrlContent) {
+    nextMessageType = EMessageType.text;
+    nextBody = ctaUrlContent.message ?? body;
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.cta_url',
+      id,
+      raw_type: rawType,
+      from_me: fromMe,
+      mapped_type: nextMessageType,
+      body: nextBody,
+      raw_data: rawData,
+    });
+  }
+
+  if (!ctaUrlContent && (buttonsContent || buttonsResponseText)) {
     nextMessageType = EMessageType.text;
     nextBody = buttonsContent?.message ?? buttonsResponseText ?? body;
     logWwebjsIncomingDebug({
@@ -730,6 +908,8 @@ function resolveWwebjsInteractiveMessage({
     buttonsResponseText,
     listContent,
     listResponse,
+    ctaUrlContent,
+    ctaUrlPayload,
   };
 }
 
@@ -1895,8 +2075,14 @@ export async function wwebjsMessageToUpsert(
   });
   body = interactiveResolution.body;
   messageType = interactiveResolution.messageType;
-  const { buttonsContent, buttonsResponseText, listContent, listResponse } =
-    interactiveResolution;
+  const {
+    buttonsContent,
+    buttonsResponseText,
+    listContent,
+    listResponse,
+    ctaUrlContent,
+    ctaUrlPayload,
+  } = interactiveResolution;
   const pinInChatMessage = buildPinInChatMessage(
     rawType,
     rawData,
@@ -2013,6 +2199,9 @@ export async function wwebjsMessageToUpsert(
       selectedDisplayText: buttonsResponseText,
     };
   }
+  if (ctaUrlPayload) {
+    Object.assign(innerMessage, buildCtaUrlProtoMessage(ctaUrlPayload));
+  }
   if (listContent?.list) {
     Object.assign(
       innerMessage,
@@ -2091,21 +2280,23 @@ export async function wwebjsMessageToUpsert(
           type: EMessageType.system,
           message: body || UNSUPPORTED_INCOMING_MESSAGE_TEXT,
         }
-      : buttonsContent
-        ? buttonsContent
-        : buttonsResponseText
-          ? {
-              type: EMessageType.text,
-              message: buttonsResponseText,
-            }
-          : listContent
-            ? listContent
-            : listResponse
-              ? {
-                  type: EMessageType.text,
-                  message: listResponse.title,
-                }
-              : undefined,
+      : ctaUrlContent
+        ? ctaUrlContent
+        : buttonsContent
+          ? buttonsContent
+          : buttonsResponseText
+            ? {
+                type: EMessageType.text,
+                message: buttonsResponseText,
+              }
+            : listContent
+              ? listContent
+              : listResponse
+                ? {
+                    type: EMessageType.text,
+                    message: listResponse.title,
+                  }
+                : undefined,
     has_quoted: (msg.hasQuotedMsg ?? false) || !!quotedContextInfo,
   };
 }

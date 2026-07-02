@@ -2,6 +2,7 @@ import * as schema from '@core/models';
 import { worker, workerConfig } from '@core/models';
 import { EWorkerConfigStatus } from '@core/common/enums/EWorkerConfigStatus';
 import { EWorkerConfigType } from '@core/common/enums/EWorkerConfigType';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -49,5 +50,16 @@ export class ChatbotOfficialCompatibilityRepository {
     }
 
     return Array.from(unique.values());
+  };
+
+  listActiveLinkedOfficialWorkerIds = async (
+    accountId: string,
+    chatbotId: string
+  ): Promise<string[]> => {
+    const rows = await this.listActiveLinkedWorkerTypes(accountId, chatbotId);
+
+    return rows
+      .filter((row) => row.worker_type_id === EWorkerType.whatsapp)
+      .map((row) => row.worker_id);
   };
 }

@@ -47,7 +47,7 @@ const officialTemplatePreviewSchema = Type.Object({
   buttons: Type.Optional(Type.Array(Type.String())),
 });
 
-const officialTemplateSchema = Type.Object({
+export const officialTemplateSchema = Type.Object({
   id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   name: Type.String(),
   language: Type.String(),

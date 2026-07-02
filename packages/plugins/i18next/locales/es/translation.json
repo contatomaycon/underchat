@@ -1287,6 +1287,7 @@
   "whatsapp_profile_category_invalid": "Categoría de perfil de WhatsApp Oficial inválida.",
   "chatbot_flow_validation_holiday_options_required": "Las salidas \"Es feriado\" y \"No es feriado\" son obligatorias en el nodo \"{{nodeLabel}}\"",
   "chatbot_official_capabilities_success": "Capacidad oficial del chatbot cargada con éxito.",
+  "chatbot_official_templates_success": "Plantillas oficiales del chatbot cargadas con éxito.",
   "chatbot_official_nodes_require_online_channel": "Para guardar nodos oficiales, la cuenta debe tener un canal WhatsApp Oficial en línea.",
   "chatbot_official_nodes_not_allowed_on_non_official_channel": "Los nodos oficiales solo pueden usarse en chatbots vinculados a canales WhatsApp Oficial.",
   "chatbot_flow_validation_official_options_limit": "El nodo oficial \"{{nodeLabel}}\" excede el límite de opciones permitido.",

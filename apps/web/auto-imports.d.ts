@@ -19,6 +19,9 @@ declare global {
   const autoResetRef: typeof import('@vueuse/core').autoResetRef
   const avatarText: typeof import('./src/@webcore/utils/formatters').avatarText
   const betweenValidator: typeof import('./src/@webcore/utils/validators').betweenValidator
+  const buildOfficialTemplateKey: typeof import('./src/utils/officialTemplate').buildOfficialTemplateKey
+  const buildOfficialTemplatePreview: typeof import('./src/utils/officialTemplate').buildOfficialTemplatePreview
+  const buildOfficialTemplateVariablePayload: typeof import('./src/utils/officialTemplate').buildOfficialTemplateVariablePayload
   const calculatePasswordStrength: typeof import('./src/@webcore/utils/passwordStrength').calculatePasswordStrength
   const clearAllCookies: typeof import('./src/@webcore/utils/clearAllData').clearAllCookies
   const clearAllData: typeof import('./src/@webcore/utils/clearAllData').clearAllData
@@ -38,6 +41,9 @@ declare global {
   const createGenericProjection: typeof import('@vueuse/math').createGenericProjection
   const createGlobalState: typeof import('@vueuse/core').createGlobalState
   const createInjectionState: typeof import('@vueuse/core').createInjectionState
+  const createManualOfficialTemplateVariable: typeof import('./src/utils/officialTemplate').createManualOfficialTemplateVariable
+  const createOfficialTemplateOptions: typeof import('./src/utils/officialTemplate').createOfficialTemplateOptions
+  const createOfficialTemplateVariableValues: typeof import('./src/utils/officialTemplate').createOfficialTemplateVariableValues
   const createPinia: typeof import('pinia').createPinia
   const createProjection: typeof import('@vueuse/math').createProjection
   const createReactiveFn: typeof import('@vueuse/core').createReactiveFn
@@ -60,10 +66,13 @@ declare global {
   const emailValidator: typeof import('./src/@webcore/utils/validators').emailValidator
   const emitInternalChatNotificationMessage: typeof import('./src/composables/useInternalChatNotifications').emitInternalChatNotificationMessage
   const extendRef: typeof import('@vueuse/core').extendRef
+  const fillOfficialTemplateText: typeof import('./src/utils/officialTemplate').fillOfficialTemplateText
+  const findOfficialTemplate: typeof import('./src/utils/officialTemplate').findOfficialTemplate
   const formatDate: typeof import('./src/@webcore/utils/formatters').formatDate
   const formatDateLong: typeof import('./src/@webcore/utils/formatters').formatDateLong
   const formatDateToMonthShort: typeof import('./src/@webcore/utils/formatters').formatDateToMonthShort
   const formatNotificationBody: typeof import('./src/composables/useChatNotifications').formatNotificationBody
+  const formatOfficialTemplateLanguage: typeof import('./src/utils/officialTemplate').formatOfficialTemplateLanguage
   const getActivePinia: typeof import('pinia').getActivePinia
   const getCurrentInstance: typeof import('vue').getCurrentInstance
   const getCurrentScope: typeof import('vue').getCurrentScope
@@ -116,6 +125,7 @@ declare global {
   const maxNumberValidator: typeof import('./src/@webcore/utils/validators').maxNumberValidator
   const nextTick: typeof import('vue').nextTick
   const normalizeBaseUrl: typeof import('./src/@webcore/utils/helpers').normalizeBaseUrl
+  const normalizeOfficialTemplateLanguageCode: typeof import('./src/utils/officialTemplate').normalizeOfficialTemplateLanguageCode
   const onActivated: typeof import('vue').onActivated
   const onBeforeMount: typeof import('vue').onBeforeMount
   const onBeforeRouteLeave: typeof import('vue-router').onBeforeRouteLeave
@@ -158,6 +168,7 @@ declare global {
   const refManualReset: typeof import('@vueuse/core').refManualReset
   const refThrottled: typeof import('@vueuse/core').refThrottled
   const refWithControl: typeof import('@vueuse/core').refWithControl
+  const refreshOfficialTemplateVariableKey: typeof import('./src/utils/officialTemplate').refreshOfficialTemplateVariableKey
   const regexValidator: typeof import('./src/@webcore/utils/validators').regexValidator
   const registerPlugins: typeof import('./src/@webcore/utils/plugins').registerPlugins
   const registerPlugins_: (typeof import('./src/@webcore/utils/plugins'))['registerPlugins_']
@@ -454,6 +465,9 @@ declare global {
   // @ts-ignore
   export type { WhatsappEmbeddedSignupResult } from './src/composables/useWhatsappEmbeddedSignup'
   import('./src/composables/useWhatsappEmbeddedSignup')
+  // @ts-ignore
+  export type { OfficialTemplate, OfficialTemplateVariable, OfficialTemplateVariableValue, OfficialTemplateOption, OfficialTemplatePreview } from './src/utils/officialTemplate'
+  import('./src/utils/officialTemplate')
 }
 
 // for vue template auto import
@@ -472,6 +486,9 @@ declare module 'vue' {
     readonly autoResetRef: UnwrapRef<typeof import('@vueuse/core')['autoResetRef']>
     readonly avatarText: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['avatarText']>
     readonly betweenValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['betweenValidator']>
+    readonly buildOfficialTemplateKey: UnwrapRef<typeof import('./src/utils/officialTemplate')['buildOfficialTemplateKey']>
+    readonly buildOfficialTemplatePreview: UnwrapRef<typeof import('./src/utils/officialTemplate')['buildOfficialTemplatePreview']>
+    readonly buildOfficialTemplateVariablePayload: UnwrapRef<typeof import('./src/utils/officialTemplate')['buildOfficialTemplateVariablePayload']>
     readonly calculatePasswordStrength: UnwrapRef<typeof import('./src/@webcore/utils/passwordStrength')['calculatePasswordStrength']>
     readonly clearAllCookies: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllCookies']>
     readonly clearAllData: UnwrapRef<typeof import('./src/@webcore/utils/clearAllData')['clearAllData']>
@@ -491,6 +508,9 @@ declare module 'vue' {
     readonly createGenericProjection: UnwrapRef<typeof import('@vueuse/math')['createGenericProjection']>
     readonly createGlobalState: UnwrapRef<typeof import('@vueuse/core')['createGlobalState']>
     readonly createInjectionState: UnwrapRef<typeof import('@vueuse/core')['createInjectionState']>
+    readonly createManualOfficialTemplateVariable: UnwrapRef<typeof import('./src/utils/officialTemplate')['createManualOfficialTemplateVariable']>
+    readonly createOfficialTemplateOptions: UnwrapRef<typeof import('./src/utils/officialTemplate')['createOfficialTemplateOptions']>
+    readonly createOfficialTemplateVariableValues: UnwrapRef<typeof import('./src/utils/officialTemplate')['createOfficialTemplateVariableValues']>
     readonly createPinia: UnwrapRef<typeof import('pinia')['createPinia']>
     readonly createProjection: UnwrapRef<typeof import('@vueuse/math')['createProjection']>
     readonly createReactiveFn: UnwrapRef<typeof import('@vueuse/core')['createReactiveFn']>
@@ -510,10 +530,13 @@ declare module 'vue' {
     readonly emailValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['emailValidator']>
     readonly emitInternalChatNotificationMessage: UnwrapRef<typeof import('./src/composables/useInternalChatNotifications')['emitInternalChatNotificationMessage']>
     readonly extendRef: UnwrapRef<typeof import('@vueuse/core')['extendRef']>
+    readonly fillOfficialTemplateText: UnwrapRef<typeof import('./src/utils/officialTemplate')['fillOfficialTemplateText']>
+    readonly findOfficialTemplate: UnwrapRef<typeof import('./src/utils/officialTemplate')['findOfficialTemplate']>
     readonly formatDate: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDate']>
     readonly formatDateLong: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateLong']>
     readonly formatDateToMonthShort: UnwrapRef<typeof import('./src/@webcore/utils/formatters')['formatDateToMonthShort']>
     readonly formatNotificationBody: UnwrapRef<typeof import('./src/composables/useChatNotifications')['formatNotificationBody']>
+    readonly formatOfficialTemplateLanguage: UnwrapRef<typeof import('./src/utils/officialTemplate')['formatOfficialTemplateLanguage']>
     readonly getActivePinia: UnwrapRef<typeof import('pinia')['getActivePinia']>
     readonly getCurrentInstance: UnwrapRef<typeof import('vue')['getCurrentInstance']>
     readonly getCurrentScope: UnwrapRef<typeof import('vue')['getCurrentScope']>
@@ -563,6 +586,7 @@ declare module 'vue' {
     readonly maxNumberValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['maxNumberValidator']>
     readonly nextTick: UnwrapRef<typeof import('vue')['nextTick']>
     readonly normalizeBaseUrl: UnwrapRef<typeof import('./src/@webcore/utils/helpers')['normalizeBaseUrl']>
+    readonly normalizeOfficialTemplateLanguageCode: UnwrapRef<typeof import('./src/utils/officialTemplate')['normalizeOfficialTemplateLanguageCode']>
     readonly onActivated: UnwrapRef<typeof import('vue')['onActivated']>
     readonly onBeforeMount: UnwrapRef<typeof import('vue')['onBeforeMount']>
     readonly onBeforeRouteLeave: UnwrapRef<typeof import('vue-router')['onBeforeRouteLeave']>
@@ -603,6 +627,7 @@ declare module 'vue' {
     readonly refDefault: UnwrapRef<typeof import('@vueuse/core')['refDefault']>
     readonly refThrottled: UnwrapRef<typeof import('@vueuse/core')['refThrottled']>
     readonly refWithControl: UnwrapRef<typeof import('@vueuse/core')['refWithControl']>
+    readonly refreshOfficialTemplateVariableKey: UnwrapRef<typeof import('./src/utils/officialTemplate')['refreshOfficialTemplateVariableKey']>
     readonly regexValidator: UnwrapRef<typeof import('./src/@webcore/utils/validators')['regexValidator']>
     readonly registerPlugins: UnwrapRef<typeof import('./src/@webcore/utils/plugins')['registerPlugins']>
     readonly registerWebServiceWorker: UnwrapRef<typeof import('./src/composables/useWebPushSubscription')['registerWebServiceWorker']>

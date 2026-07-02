@@ -148,6 +148,34 @@ describe('BaileysIncomingMessageService', () => {
     ).toBe(EMessageType.text);
   });
 
+  it('maps native flow CTA URL interactive messages as text', () => {
+    expect(
+      mapIncomingToType({
+        key: {
+          id: 'cta-url-message-1',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: true,
+        },
+        message: {
+          interactiveMessage: {
+            body: { text: 'Clique no link para abrir' },
+            nativeFlowMessage: {
+              buttons: [
+                {
+                  name: 'cta_url',
+                  buttonParamsJson: JSON.stringify({
+                    display_text: 'Underchat',
+                    url: 'https://underchat.com.br/',
+                  }),
+                },
+              ],
+            },
+          },
+        },
+      } as never)
+    ).toBe(EMessageType.text);
+  });
+
   it('publishes message edit updates from Baileys messages.update as edit_text upserts', async () => {
     const { service, streamProducerService } = makeService();
     const sut = service as unknown as {

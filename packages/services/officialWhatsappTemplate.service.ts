@@ -81,6 +81,29 @@ export class OfficialWhatsappTemplateService {
       IOfficialWhatsappTemplateMessage['variables']
     > = [];
 
+    if (input.template.variables.length === 0) {
+      for (const item of values) {
+        const value = item.value?.trim();
+        if (!value) {
+          continue;
+        }
+
+        normalizedValues.push({
+          key: this.variableKey(
+            item.component_type,
+            item.index,
+            item.button_index ?? null
+          ),
+          component_type: item.component_type,
+          index: item.index,
+          button_index: item.button_index ?? null,
+          value,
+        });
+      }
+
+      return normalizedValues;
+    }
+
     for (const variable of input.template.variables) {
       const value = valueMap.get(variable.key)?.value?.trim();
       if (!value) {

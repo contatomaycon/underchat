@@ -38,6 +38,7 @@ import {
   isOfficialChatbotNodeType,
 } from '@core/common/functions/chatbotOfficialNodes';
 import { OfficialCapabilitiesResponse } from '@core/schema/chatbot/officialCapabilities/response.schema';
+import { OfficialTemplatesResponse } from '@core/schema/chatbot/officialTemplates/response.schema';
 import { useI18n } from 'vue-i18n';
 import { useRouter, useRoute } from 'vue-router';
 import DialogCloseBtn from '@/@webcore/components/DialogCloseBtn.vue';
@@ -133,6 +134,9 @@ const chatbotId = computed(() => {
 type OfficialNodeType = (typeof OFFICIAL_CHATBOT_NODE_TYPES)[number];
 
 const officialCapabilities = ref<OfficialCapabilitiesResponse | null>(null);
+const officialTemplates = ref<OfficialTemplatesResponse>([]);
+const isLoadingOfficialTemplates = ref(false);
+const officialTemplatesError = ref<string | null>(null);
 const canUseOfficialNodes = computed(
   () => officialCapabilities.value?.can_use_official_nodes === true
 );
@@ -140,6 +144,22 @@ const canUseOfficialNodes = computed(
 const hasOfficialNodesInCanvas = computed(() =>
   nodes.value.some((node) => isOfficialChatbotNodeType(node.type || ''))
 );
+
+const applyOfficialTemplateContextToData = (data: Record<string, any>) => {
+  data.availableOfficialTemplates = officialTemplates.value;
+  data.isLoadingOfficialTemplates = isLoadingOfficialTemplates.value;
+  data.officialTemplatesError = officialTemplatesError.value;
+};
+
+const syncOfficialTemplateContextToNodes = () => {
+  for (const node of nodes.value) {
+    if (node.type !== 'officialTemplate' || !node.data) {
+      continue;
+    }
+
+    applyOfficialTemplateContextToData(node.data as Record<string, any>);
+  }
+};
 
 const officialNodeItems: Array<{
   type: OfficialNodeType;
@@ -1476,6 +1496,9 @@ const getOfficialDefaultData = (nodeType: OfficialNodeType) => {
       templateName: '',
       templateLanguage: 'pt_BR',
       templateVariables: [],
+      templateCategory: null,
+      templateComponents: [],
+      templatePreview: null,
       continueType: 'automatic',
     };
   }
@@ -1547,6 +1570,9 @@ const addOfficialNode = (
 
   const nodeId = `${nodeType}-${nodeIdCounter++}`;
   const data = getOfficialDefaultData(nodeType);
+  if (nodeType === 'officialTemplate') {
+    applyOfficialTemplateContextToData(data);
+  }
   const newNode: Node = {
     id: nodeId,
     type: nodeType,
@@ -1920,6 +1946,9 @@ const prepareNodesForSave = (
     if (nodeData && 'onRemoveOption' in nodeData) {
       delete nodeData.onRemoveOption;
     }
+    delete nodeData.availableOfficialTemplates;
+    delete nodeData.isLoadingOfficialTemplates;
+    delete nodeData.officialTemplatesError;
     if (
       node.type === 'data' &&
       (nodeData.dataType === null || nodeData.dataType === undefined)
@@ -2682,6 +2711,16 @@ const processOfficialNodeData = (node: Node): void => {
     if (!node.data.templateLanguage) {
       node.data.templateLanguage = 'pt_BR';
     }
+    if (!Array.isArray(node.data.templateComponents)) {
+      node.data.templateComponents = [];
+    }
+    if (
+      !node.data.templatePreview ||
+      typeof node.data.templatePreview !== 'object' ||
+      Array.isArray(node.data.templatePreview)
+    ) {
+      node.data.templatePreview = null;
+    }
   }
 
   if (node.type === 'officialMultiProduct') {
@@ -2820,6 +2859,9 @@ const processLoadedNode = (node: Node): Node => {
   }
 
   processNodeDataByType(node);
+  if (node.type === 'officialTemplate' && node.data) {
+    applyOfficialTemplateContextToData(node.data as Record<string, any>);
+  }
   return node;
 };
 
@@ -2908,12 +2950,51 @@ const loadChatbotFlow = async () => {
 const loadOfficialCapabilities = async () => {
   if (!chatbotId.value) {
     officialCapabilities.value = null;
+    officialTemplates.value = [];
+    officialTemplatesError.value = null;
+    syncOfficialTemplateContextToNodes();
     return;
   }
 
   officialCapabilities.value = await chatbotStore.listOfficialCapabilities(
     chatbotId.value
   );
+
+  if (!canUseOfficialNodes.value) {
+    officialTemplates.value = [];
+    officialTemplatesError.value = null;
+    syncOfficialTemplateContextToNodes();
+    return;
+  }
+
+  await loadOfficialTemplates();
+};
+
+const loadOfficialTemplates = async () => {
+  if (!chatbotId.value) {
+    officialTemplates.value = [];
+    officialTemplatesError.value = null;
+    syncOfficialTemplateContextToNodes();
+    return;
+  }
+
+  isLoadingOfficialTemplates.value = true;
+  officialTemplatesError.value = null;
+  syncOfficialTemplateContextToNodes();
+
+  try {
+    const response = await chatbotStore.listOfficialTemplates(chatbotId.value);
+    officialTemplates.value = response ?? [];
+    if (!response) {
+      officialTemplatesError.value = t('official_templates_loading_error');
+    }
+  } catch {
+    officialTemplates.value = [];
+    officialTemplatesError.value = t('official_templates_loading_error');
+  } finally {
+    isLoadingOfficialTemplates.value = false;
+    syncOfficialTemplateContextToNodes();
+  }
 };
 
 const processInactivityAlertConfig = async (config: any): Promise<void> => {

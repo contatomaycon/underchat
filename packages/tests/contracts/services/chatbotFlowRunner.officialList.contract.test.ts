@@ -21,6 +21,7 @@ const makeService = () => {
   };
   const chatMessageService = {
     sendMessage: jest.fn(async () => true),
+    publishPreparedMessage: jest.fn(async () => true),
   };
   const contactService = {
     getContactByPhone: jest.fn(async () => null),
@@ -261,6 +262,84 @@ describe('ChatbotFlowRunnerService official list payload', () => {
         type: EMessageType.text,
         message: 'Informe seu endereço',
         typeUser: 'bot',
+      })
+    );
+  });
+
+  it('keeps official template metadata when publishing a prepared template message', async () => {
+    const { service, chatMessageService } = makeService();
+    const runner = service as unknown as {
+      sendOfficialNode: (
+        t: (key: string) => string,
+        createChat: IChat,
+        node: ListChatbotFlowResponse['nodes'][number]
+      ) => Promise<boolean>;
+    };
+
+    await expect(
+      runner.sendOfficialNode((key) => key, makeChat(), {
+        id: 'template-node',
+        type: 'officialTemplate',
+        position: { x: 100, y: 0 },
+        data: {
+          title: 'Template oficial',
+          templateName: 'abertura',
+          templateLanguage: 'pt_BR',
+          templateCategory: 'MARKETING',
+          templateComponents: [
+            {
+              type: 'BODY',
+              text: 'Olá {{1}}',
+            },
+          ],
+          templatePreview: {
+            body: 'Olá {{1}}',
+            buttons: ['Continuar'],
+          },
+          templateVariables: [
+            {
+              key: 'BODY:1',
+              component_type: 'BODY',
+              index: 1,
+              button_index: null,
+              value: 'Maycon',
+            },
+          ],
+        },
+      })
+    ).resolves.toBe(true);
+
+    expect(chatMessageService.publishPreparedMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({
+          official_template: expect.objectContaining({
+            name: 'abertura',
+            language: 'pt_BR',
+            category: 'MARKETING',
+            components: [
+              {
+                type: 'BODY',
+                text: 'Olá {{1}}',
+              },
+            ],
+            preview: {
+              body: 'Olá {{1}}',
+              buttons: ['Continuar'],
+            },
+          }),
+          official: expect.objectContaining({
+            display: expect.objectContaining({
+              body: 'Olá {{1}}',
+              actions: [
+                {
+                  id: '0',
+                  title: 'Continuar',
+                  type: 'button',
+                },
+              ],
+            }),
+          }),
+        }),
       })
     );
   });

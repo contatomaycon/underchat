@@ -315,6 +315,33 @@ describe('MessageUpsertConsume edit fallback', () => {
     },
   });
 
+  const makeCtaUrlUpsert = (): IUpsertMessage => ({
+    ...makeTextUpsert(''),
+    source_provider: 'baileys',
+    type: EMessageType.text,
+    message: {
+      ...makeTextUpsert('').message,
+      message: {
+        interactiveMessage: {
+          body: {
+            text: 'Clique no link para abrir',
+          },
+          nativeFlowMessage: {
+            buttons: [
+              {
+                name: 'cta_url',
+                buttonParamsJson: JSON.stringify({
+                  display_text: 'Underchat',
+                  url: 'https://underchat.com.br/',
+                }),
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+
   const makeListResponseUpsert = (): IUpsertMessage => ({
     ...makeTextUpsert(''),
     source_provider: 'baileys',
@@ -977,6 +1004,35 @@ describe('MessageUpsertConsume edit fallback', () => {
         }),
       ])
     );
+  });
+
+  it('maps provider native flow CTA URL messages to official display metadata', () => {
+    const { consumer } = makeConsumer();
+    const content = (consumer as any).buildMessageContent(
+      makeCtaUrlUpsert()
+    ) as IChatMessage['content'];
+
+    expect(content).toMatchObject({
+      type: EMessageType.text,
+      message: 'Clique no link para abrir',
+      official: {
+        provider: 'meta_whatsapp',
+        type: 'interactive',
+        display: {
+          kind: 'cta_url',
+          raw_type: 'cta_url',
+          body: 'Clique no link para abrir',
+          action_label: 'Underchat',
+          actions: [
+            {
+              type: 'cta_url',
+              title: 'Underchat',
+              url: 'https://underchat.com.br/',
+            },
+          ],
+        },
+      },
+    });
   });
 
   it('normalizes prebuilt list metadata before indexing', () => {

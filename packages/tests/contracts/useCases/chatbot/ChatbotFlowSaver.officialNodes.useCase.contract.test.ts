@@ -117,6 +117,71 @@ const makeMultiProductFlow = (
   ],
 });
 
+const makeOfficialTemplateFlow = (
+  officialNodeData?: Partial<
+    SaveChatbotFlowRequestData['nodes'][number]['data']
+  >
+): SaveChatbotFlowRequestData => ({
+  chatbot_id: '11111111-1111-4111-8111-111111111111',
+  nodes: [
+    {
+      id: 'start-1',
+      type: 'start',
+      position: { x: 0, y: 0 },
+      data: {},
+    },
+    {
+      id: 'official-template-1',
+      type: 'officialTemplate',
+      position: { x: 100, y: 100 },
+      data: {
+        title: 'Template oficial',
+        templateName: 'abertura',
+        templateLanguage: 'pt_BR',
+        templateCategory: 'MARKETING',
+        templateComponents: [
+          {
+            type: 'BODY',
+            text: 'Olá {{1}}',
+          },
+        ],
+        templatePreview: {
+          body: 'Olá {{1}}',
+          buttons: [],
+        },
+        templateVariables: [
+          {
+            key: 'BODY:1',
+            component_type: 'BODY',
+            index: 1,
+            button_index: null,
+            value: 'Cliente',
+          },
+        ],
+        ...officialNodeData,
+      },
+    },
+    {
+      id: 'finish-1',
+      type: 'finish',
+      position: { x: 200, y: 100 },
+      data: {},
+    },
+  ],
+  edges: [
+    {
+      id: 'edge-start-official',
+      source: 'start-1',
+      target: 'official-template-1',
+    },
+    {
+      id: 'edge-official-finish',
+      source: 'official-template-1',
+      target: 'finish-1',
+    },
+  ],
+});
+
 const makeUseCase = (options?: {
   hasOfficialOnlineChannel?: boolean;
   hasNonOfficialLinkedChannel?: boolean;
@@ -230,5 +295,14 @@ describe('ChatbotFlowSaverUseCase official nodes', () => {
       useCase.validate(t, flow, { request: flow }, 'account-1')
     ).rejects.toThrow('chatbot_flow_validation_official_field_required');
     expect(chatbotService.hasOfficialOnlineChannel).not.toHaveBeenCalled();
+  });
+
+  it('accepts official template nodes with selected template metadata', async () => {
+    const { useCase } = makeUseCase();
+    const flow = makeOfficialTemplateFlow();
+
+    await expect(
+      useCase.validate(t, flow, { request: flow }, 'account-1')
+    ).resolves.toBeUndefined();
   });
 });

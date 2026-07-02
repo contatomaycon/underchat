@@ -642,6 +642,21 @@ export class MessageUpsertConsume {
     return value as Record<string, unknown>;
   }
 
+  private parseJsonRecord(value: unknown): Record<string, unknown> | undefined {
+    const record = this.toRecord(value);
+    if (record) return record;
+
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return undefined;
+    }
+
+    try {
+      return this.toRecord(JSON.parse(value));
+    } catch {
+      return undefined;
+    }
+  }
+
   private firstStringField(
     record: Record<string, unknown> | undefined,
     keys: string[]
@@ -959,6 +974,87 @@ export class MessageUpsertConsume {
       'list',
       list.text
     );
+  }
+
+  private getNativeFlowMessageBody(
+    interactiveMessage: Record<string, unknown> | undefined,
+    msg: Record<string, unknown> | null,
+    data: IUpsertMessage
+  ): string | null {
+    const body = this.toRecord(interactiveMessage?.body);
+    const extendedText = this.toRecord(msg?.extendedTextMessage);
+
+    return (
+      this.firstStringField(body, ['text']) ??
+      this.firstStringField(interactiveMessage, ['body', 'text', 'message']) ??
+      this.firstStringField(extendedText, ['text']) ??
+      this.firstStringField(msg ?? undefined, ['conversation']) ??
+      this.toNonEmptyString(data.content?.message) ??
+      null
+    );
+  }
+
+  private buildNativeFlowCtaUrlContent(data: IUpsertMessage): IContent | null {
+    const msg = this.getInnerMessage(data);
+    const interactiveMessage = this.toRecord(msg?.interactiveMessage);
+    const nativeFlowMessage = this.toRecord(
+      interactiveMessage?.nativeFlowMessage
+    );
+    const buttons = Array.isArray(nativeFlowMessage?.buttons)
+      ? nativeFlowMessage.buttons
+      : [];
+
+    for (const rawButton of buttons) {
+      const button = this.toRecord(rawButton);
+      if (!button) continue;
+
+      const name = this.toNonEmptyString(button.name)?.toLowerCase();
+      if (name !== 'cta_url') continue;
+
+      const params = this.parseJsonRecord(
+        button.buttonParamsJson ?? button.buttonParamsJSON
+      );
+      const url = this.firstStringField(params, ['url']);
+      if (!url) continue;
+
+      const displayText =
+        this.firstStringField(params, [
+          'display_text',
+          'displayText',
+          'title',
+          'text',
+        ]) ?? 'Abrir link';
+      const body = this.getNativeFlowMessageBody(interactiveMessage, msg, data);
+      const action: IOfficialWhatsappDisplayAction = {
+        type: 'cta_url',
+        title: displayText,
+        url,
+      };
+      const display: IOfficialWhatsappDisplayMetadata = {
+        kind: 'cta_url',
+        raw_type: 'cta_url',
+        body,
+        action_label: displayText,
+        actions: [action],
+      };
+      const official = this.buildOfficialInteractiveMetadata(display, {
+        type: 'interactive',
+        interactive: {
+          body: interactiveMessage?.body ?? (body ? { text: body } : undefined),
+          nativeFlowMessage: {
+            buttons: [button],
+          },
+        },
+      });
+
+      return {
+        type: EMessageType.text,
+        message: body ?? displayText,
+        official,
+      };
+    }
+
+    return null;
   }
 
   private buildOfficialListResponseDisplay(
@@ -4556,6 +4652,13 @@ export class MessageUpsertConsume {
       return false;
     }
 
+    if (
+      data.content?.official?.display ||
+      this.buildNativeFlowCtaUrlContent(data)
+    ) {
+      return false;
+    }
+
     if (this.getButtonsResponseText(data)) {
       return false;
     }
@@ -4601,7 +4704,8 @@ export class MessageUpsertConsume {
     content: IContent,
     buttonsContent: IButtonMessage | null,
     listContent: IListMessage | null,
-    listResponse: IListResponsePayload | null
+    listResponse: IListResponsePayload | null,
+    ctaUrlContent: IContent | null
   ): IContent {
     if (buttonsContent) {
       content.buttons = buttonsContent;
@@ -4638,7 +4742,78 @@ export class MessageUpsertConsume {
       }
     }
 
+    if (ctaUrlContent) {
+      content.type = EMessageType.text;
+      if (!content.message) {
+        content.message = ctaUrlContent.message ?? null;
+      }
+      if (!content.official) {
+        content.official = ctaUrlContent.official ?? null;
+      }
+    }
+
     return content;
+  }
+
+  private resolveMessageText(
+    data: IUpsertMessage,
+    msg: Record<string, unknown> | undefined,
+    buttonsContent: IButtonMessage | null,
+    listContent: IListMessage | null,
+    listResponse: IListResponsePayload | null,
+    ctaUrlContent: IContent | null
+  ): string | undefined {
+    const extText = msg?.extendedTextMessage as { text?: string } | undefined;
+    const baseText =
+      extText?.text ?? (msg?.conversation as string | undefined) ?? undefined;
+    if (baseText) {
+      return baseText;
+    }
+
+    if (data.type === EMessageType.document) {
+      const documentMsg = this.getDocumentMessage(data) as {
+        caption?: string;
+      } | null;
+      if (documentMsg?.caption) {
+        return documentMsg.caption;
+      }
+    }
+
+    if (data.type === EMessageType.image) {
+      const imageMsg = this.getImageMessage(data) as {
+        caption?: string;
+      } | null;
+      if (imageMsg?.caption) {
+        return imageMsg.caption;
+      }
+    }
+
+    if (
+      data.type === EMessageType.video ||
+      data.type === EMessageType.video_note
+    ) {
+      const videoMsg = this.getVideoMessage(data) as {
+        caption?: string;
+      } | null;
+      if (videoMsg?.caption) {
+        return videoMsg.caption;
+      }
+    }
+
+    if (buttonsContent?.text) {
+      return buttonsContent.text;
+    }
+
+    if (listContent?.text) {
+      return listContent.text;
+    }
+
+    return (
+      this.getButtonsResponseText(data) ??
+      listResponse?.title ??
+      ctaUrlContent?.message ??
+      undefined
+    );
   }
 
   private buildMessageContent(data: IUpsertMessage): IContent {
@@ -4658,59 +4833,18 @@ export class MessageUpsertConsume {
         } as LinkPreview)
       : undefined;
 
-    const extText = msg?.extendedTextMessage as { text?: string } | undefined;
-    let messageText: string | undefined =
-      extText?.text ?? (msg?.conversation as string | undefined) ?? undefined;
     const buttonsContent = this.buildButtonsContent(data);
     const listContent = this.buildListContent(data);
     const listResponse = this.getListResponsePayload(data);
-
-    if (!messageText && data.type === EMessageType.document) {
-      const documentMsg = this.getDocumentMessage(data) as {
-        caption?: string;
-      } | null;
-      if (documentMsg?.caption) {
-        messageText = documentMsg.caption;
-      }
-    }
-
-    if (!messageText && data.type === EMessageType.image) {
-      const imageMsg = this.getImageMessage(data) as {
-        caption?: string;
-      } | null;
-      if (imageMsg?.caption) {
-        messageText = imageMsg.caption;
-      }
-    }
-
-    if (
-      !messageText &&
-      (data.type === EMessageType.video ||
-        data.type === EMessageType.video_note)
-    ) {
-      const videoMsg = this.getVideoMessage(data) as {
-        caption?: string;
-      } | null;
-      if (videoMsg?.caption) {
-        messageText = videoMsg.caption;
-      }
-    }
-
-    if (!messageText && buttonsContent?.text) {
-      messageText = buttonsContent.text;
-    }
-
-    if (!messageText && listContent?.text) {
-      messageText = listContent.text;
-    }
-
-    if (!messageText) {
-      messageText = this.getButtonsResponseText(data);
-    }
-
-    if (!messageText && listResponse?.title) {
-      messageText = listResponse.title;
-    }
+    const ctaUrlContent = this.buildNativeFlowCtaUrlContent(data);
+    const messageText = this.resolveMessageText(
+      data,
+      msg,
+      buttonsContent,
+      listContent,
+      listResponse,
+      ctaUrlContent
+    );
 
     let content: IContent = {
       type: data.type,
@@ -4762,7 +4896,8 @@ export class MessageUpsertConsume {
       content,
       buttonsContent,
       listContent,
-      listResponse
+      listResponse,
+      ctaUrlContent
     );
 
     if (data.type === EMessageType.set_disappearing_messages) {
