@@ -17,6 +17,7 @@ import {
   mapIncomingToType,
   messageHasQuoted,
 } from '@core/common/functions/mapIncomingToType';
+import { unwrapMessage } from '@core/common/functions/unwrapMessage';
 import { KafkaServiceQueueService } from '@core/services/kafkaServiceQueue.service';
 import { StreamProducerService } from '@core/services/streamProducer.service';
 import { IUpsertMessage } from '@core/common/interfaces/IUpsertMessage';
@@ -65,6 +66,32 @@ function readPositiveIntEnv(key: string, fallback: number): number {
   }
 
   return Math.floor(parsed);
+}
+
+function readBooleanEnv(key: string): boolean {
+  const raw = process.env[key];
+  if (!raw) {
+    return false;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
+}
+
+function csvEnvIncludes(key: string, value: string): boolean {
+  const raw = process.env[key];
+  if (!raw?.trim()) {
+    return true;
+  }
+
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return false;
+  }
+
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .some((item) => item === '*' || item === normalizedValue);
 }
 
 const HISTORY_RECONCILIATION_ENABLED =
@@ -298,6 +325,82 @@ export class BaileysIncomingMessageService {
       compact: false,
       sorted: true,
     });
+  }
+
+  private shouldLogIncomingRawDebug(): boolean {
+    const enabled =
+      readBooleanEnv('MESSAGE_DEBUG_ENABLED') ||
+      readBooleanEnv('BAILEYS_INCOMING_DEBUG_RAW');
+
+    return (
+      enabled &&
+      csvEnvIncludes(
+        'MESSAGE_DEBUG_ACCOUNT_IDS',
+        baileysEnvironment.baileysAccountId
+      ) &&
+      csvEnvIncludes(
+        'MESSAGE_DEBUG_WORKER_IDS',
+        baileysEnvironment.baileysWorkerId
+      )
+    );
+  }
+
+  private getIncomingMessageFieldNames(m: WAMessage): string[] {
+    const message = m.message;
+    if (!message || typeof message !== 'object') {
+      return [];
+    }
+
+    return Object.keys(message).sort();
+  }
+
+  private getIncomingMessageTextPreview(m: WAMessage): string | null {
+    const message = m.message as proto.IMessage | undefined;
+    if (!message) {
+      return null;
+    }
+
+    const base = unwrapMessage(message, { keepViewOnce: true }) ?? message;
+    const raw = base as Record<string, any>;
+    const text =
+      base.conversation ||
+      base.extendedTextMessage?.text ||
+      raw.buttonsMessage?.contentText ||
+      raw.buttonsResponseMessage?.selectedDisplayText ||
+      raw.listMessage?.description ||
+      raw.listResponseMessage?.title ||
+      raw.templateMessage?.hydratedTemplate?.hydratedContentText ||
+      raw.interactiveMessage?.body?.text ||
+      null;
+
+    if (typeof text !== 'string' || !text.trim()) {
+      return null;
+    }
+
+    return text.trim().slice(0, 500);
+  }
+
+  private logIncomingMessageSummary(
+    stage: string,
+    m: WAMessage,
+    meta: Record<string, unknown> = {}
+  ): void {
+    console.info(
+      '[BAILEYS_INCOMING_SUMMARY]',
+      this.inspectDebugPayload({
+        stage,
+        worker_id: baileysEnvironment.baileysWorkerId,
+        account_id: baileysEnvironment.baileysAccountId,
+        message_id: m.key?.id ?? null,
+        remote_jid: m.key?.remoteJid ?? null,
+        remote_jid_alt: (m.key as { remoteJidAlt?: string | null } | undefined)
+          ?.remoteJidAlt,
+        from_me: m.key?.fromMe ?? null,
+        message_fields: this.getIncomingMessageFieldNames(m),
+        text_preview: this.getIncomingMessageTextPreview(m),
+        ...meta,
+      })
+    );
   }
 
   private hasDeepMessageField(
@@ -1010,6 +1113,23 @@ export class BaileysIncomingMessageService {
         : e.messages;
 
       for (const m of messages) {
+        const mappedType = mapIncomingToType(m) ?? null;
+        this.logIncomingMessageSummary('messages.upsert.message', m, {
+          provider_upsert_type: e.type ?? null,
+          selected_from_history: Boolean(isHistoryUpsert),
+          mapped_type: mappedType,
+        });
+        if (this.shouldLogIncomingRawDebug()) {
+          this.logIncomingProviderPayloadDebug(
+            'messages.upsert.message_raw',
+            m,
+            {
+              provider_upsert_type: e.type ?? null,
+              selected_from_history: Boolean(isHistoryUpsert),
+              mapped_type: mappedType,
+            }
+          );
+        }
         this.logLifecycle(m, {
           stage: 'baileys.event.messages_upsert',
           decision: 'receive_provider_event',

@@ -610,19 +610,16 @@ export const buildOfficialWhatsappDisplayFromTemplate = (
     raw_type: 'template',
     title: firstText(
       template.preview?.header,
-      findTemplateComponentText(template, 'HEADER'),
-      template.name
+      findTemplateComponentText(template, 'HEADER')
     ),
     body: firstText(
       template.preview?.body,
       findTemplateComponentText(template, 'BODY'),
-      fallbackText,
-      template.name
+      fallbackText
     ),
     footer: firstText(
       template.preview?.footer,
-      findTemplateComponentText(template, 'FOOTER'),
-      template.language
+      findTemplateComponentText(template, 'FOOTER')
     ),
     actions: componentButtons.length > 0 ? componentButtons : previewButtons,
   };

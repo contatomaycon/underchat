@@ -92,6 +92,30 @@ describe('officialWhatsappDisplay', () => {
     );
   });
 
+  it('does not expose template technical name or language as display text', () => {
+    const display = buildOfficialWhatsappDisplayFromTemplate(
+      {
+        name: 'abertura',
+        language: 'en',
+        preview: {
+          body: 'Olá, tudo bem?',
+          buttons: ['Qualquer dúvida'],
+        },
+      },
+      'Olá, tudo bem?'
+    );
+
+    expect(display).toEqual(
+      expect.objectContaining({
+        kind: 'template',
+        title: null,
+        body: 'Olá, tudo bem?',
+        footer: null,
+        actions: [expect.objectContaining({ title: 'Qualquer dúvida' })],
+      })
+    );
+  });
+
   it('uses official display as text preview when regular message text is absent', () => {
     expect(
       extractMessageTextFromContent({

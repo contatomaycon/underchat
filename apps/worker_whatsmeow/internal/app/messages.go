@@ -14,6 +14,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -228,19 +229,37 @@ func (m *WhatsAppManager) logOutgoingSendDebug(stage string, data ChatMessage, t
 }
 
 const (
-	messageDebugBodyLimit           = 500
-	messageDebugRawLimit            = 4000
-	suppressedMessageDebugAccountID = "019a930d-c6f4-75ad-88ff-8d2fcd5839e1"
+	messageDebugBodyLimit = 500
+	messageDebugRawLimit  = 4000
 )
 
 func messageDebugEnabledForAccount(cfg Config, accountID string) bool {
-	_ = cfg
-	_ = accountID
-	return false
+	enabled := envBoolDefault("MESSAGE_DEBUG_ENABLED", false) || envBoolDefault("WHATS_MEOW_MESSAGE_DEBUG_ENABLED", false)
+	if !enabled {
+		return false
+	}
+
+	accountID = firstNonEmpty(strings.TrimSpace(accountID), cfg.AccountID)
+	return messageDebugFilterMatches("MESSAGE_DEBUG_ACCOUNT_IDS", accountID) &&
+		messageDebugFilterMatches("MESSAGE_DEBUG_WORKER_IDS", cfg.WorkerID)
 }
 
-func messageDebugAccountSuppressed(accountID string) bool {
-	return strings.TrimSpace(accountID) == suppressedMessageDebugAccountID
+func messageDebugFilterMatches(key string, value string) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return true
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, item := range strings.Split(raw, ",") {
+		normalized := strings.TrimSpace(item)
+		if normalized == "*" || normalized == value {
+			return true
+		}
+	}
+	return false
 }
 
 func debugJSONPayload(value any, limit int) (string, bool, string) {

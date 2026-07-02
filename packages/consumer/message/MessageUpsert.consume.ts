@@ -98,12 +98,20 @@ import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.s
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
 import { LidJidCacheService } from '@core/services/lidJidCache.service';
 import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
-import { buildOfficialWhatsappDisplayFromInteractive } from '@core/common/functions/officialWhatsappDisplay';
+import {
+  buildOfficialWhatsappDisplayFromInteractive,
+  buildOfficialWhatsappDisplayFromTemplate,
+} from '@core/common/functions/officialWhatsappDisplay';
 import {
   IOfficialWhatsappContentMetadata,
   IOfficialWhatsappDisplayAction,
   IOfficialWhatsappDisplayMetadata,
 } from '@core/common/interfaces/IOfficialWhatsappContentMetadata';
+import type {
+  IOfficialTemplateButton,
+  IOfficialTemplateComponent,
+  IOfficialWhatsappTemplateMessage,
+} from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -4816,12 +4824,101 @@ export class MessageUpsertConsume {
     );
   }
 
+  private buildOfficialTemplateButtonFromHydrated(
+    rawButton: unknown
+  ): IOfficialTemplateButton | null {
+    const button = this.toRecord(rawButton);
+    if (!button) return null;
+
+    const quickReply = this.toRecord(button.quickReplyButton);
+    if (quickReply) {
+      const text = this.firstStringField(quickReply, ['displayText', 'text']);
+      return text ? { type: 'QUICK_REPLY', text } : null;
+    }
+
+    const urlButton = this.toRecord(button.urlButton);
+    if (urlButton) {
+      const text = this.firstStringField(urlButton, ['displayText', 'text']);
+      const url = this.firstStringField(urlButton, ['url']);
+      return text || url ? { type: 'URL', text, url } : null;
+    }
+
+    const callButton = this.toRecord(button.callButton);
+    if (callButton) {
+      const text = this.firstStringField(callButton, ['displayText', 'text']);
+      const phoneNumber = this.firstStringField(callButton, ['phoneNumber']);
+      return text || phoneNumber
+        ? { type: 'PHONE_NUMBER', text, phone_number: phoneNumber }
+        : null;
+    }
+
+    return null;
+  }
+
+  private buildOfficialTemplateButtonsFromHydrated(
+    rawButtons: unknown
+  ): IOfficialTemplateButton[] {
+    if (!Array.isArray(rawButtons)) {
+      return [];
+    }
+
+    return rawButtons
+      .map((button) => this.buildOfficialTemplateButtonFromHydrated(button))
+      .filter((button): button is IOfficialTemplateButton => Boolean(button));
+  }
+
+  private buildOfficialTemplateMessageFromHydrated(
+    templateMessage: Record<string, unknown>,
+    templateId: unknown
+  ): IOfficialWhatsappTemplateMessage | null {
+    const header = this.toNonEmptyString(templateMessage.hydratedTitleText);
+    const body = this.toNonEmptyString(templateMessage.hydratedContentText);
+    const footer = this.toNonEmptyString(templateMessage.hydratedFooterText);
+    const buttons = this.buildOfficialTemplateButtonsFromHydrated(
+      templateMessage.hydratedButtons
+    );
+
+    if (!header && !body && !footer && buttons.length === 0) {
+      return null;
+    }
+
+    const components: IOfficialTemplateComponent[] = [];
+    if (header) {
+      components.push({ type: 'HEADER', text: header });
+    }
+    if (body) {
+      components.push({ type: 'BODY', text: body });
+    }
+    if (footer) {
+      components.push({ type: 'FOOTER', text: footer });
+    }
+    if (buttons.length > 0) {
+      components.push({ type: 'BUTTONS', buttons });
+    }
+
+    return {
+      name: this.toNonEmptyString(templateId) ?? 'template',
+      language: '',
+      components,
+      variables: [],
+      preview: {
+        header,
+        body,
+        footer,
+        buttons: buttons
+          .map((button) => button.text)
+          .filter((text): text is string => Boolean(text)),
+      },
+    };
+  }
+
   private buildMessageContent(data: IUpsertMessage): IContent {
     const baseMessage = this.getBaseMessage(data);
     const msg = baseMessage?.message as Record<string, unknown> | undefined;
     const extended = msg?.extendedTextMessage as
       Record<string, unknown> | undefined;
-    const templateMessage = (msg as any)?.templateMessage?.hydratedTemplate;
+    const templateContainer = this.toRecord(msg?.templateMessage);
+    const templateMessage = this.toRecord(templateContainer?.hydratedTemplate);
 
     const linkPreview = extended
       ? ({
@@ -4935,34 +5032,64 @@ export class MessageUpsertConsume {
     }
 
     if (templateMessage) {
-      const hydratedButtons = templateMessage.hydratedButtons
-        ?.filter(
-          (btn: Record<string, unknown>) =>
-            (btn as { quickReplyButton?: unknown }).quickReplyButton
-        )
+      const rawHydratedButtons = Array.isArray(templateMessage.hydratedButtons)
+        ? templateMessage.hydratedButtons
+        : [];
+      const hydratedButtons = rawHydratedButtons
+        .filter((btn) => this.toRecord(btn)?.quickReplyButton)
         .map((btn: Record<string, unknown>) => {
-          const quickReply = (
-            btn as { quickReplyButton?: { displayText?: string; id?: string } }
-          ).quickReplyButton;
+          const quickReply = this.toRecord(
+            this.toRecord(btn)?.quickReplyButton
+          );
           return {
-            displayText: quickReply?.displayText ?? '',
-            id: quickReply?.id ?? '',
+            displayText: this.toNonEmptyString(quickReply?.displayText) ?? '',
+            id: this.toNonEmptyString(quickReply?.id) ?? '',
           };
         });
 
       content.template = {
-        hydratedTitleText: templateMessage.hydratedTitleText ?? null,
-        hydratedContentText: templateMessage.hydratedContentText ?? null,
+        hydratedTitleText:
+          this.toNonEmptyString(templateMessage.hydratedTitleText) ?? null,
+        hydratedContentText:
+          this.toNonEmptyString(templateMessage.hydratedContentText) ?? null,
         hydratedButtons:
           hydratedButtons && hydratedButtons.length > 0
             ? hydratedButtons
             : null,
-        templateId: (msg as any)?.templateMessage?.templateId ?? null,
+        templateId:
+          this.toNonEmptyString(templateContainer?.templateId) ?? null,
         verifiedBizName: data.message?.verifiedBizName ?? null,
       };
 
-      if (templateMessage.hydratedContentText) {
-        content.message = templateMessage.hydratedContentText;
+      const hydratedContentText = this.toNonEmptyString(
+        templateMessage.hydratedContentText
+      );
+      if (hydratedContentText) {
+        content.message = hydratedContentText;
+      }
+
+      const officialTemplate = this.buildOfficialTemplateMessageFromHydrated(
+        templateMessage,
+        templateContainer?.templateId
+      );
+
+      if (officialTemplate && !content.official_template) {
+        content.official_template = officialTemplate;
+      }
+
+      if (officialTemplate && !content.official) {
+        content.official = {
+          provider: 'meta_whatsapp',
+          type: 'template',
+          display: buildOfficialWhatsappDisplayFromTemplate(
+            officialTemplate,
+            content.message
+          ),
+          raw: {
+            type: 'template',
+            template: officialTemplate,
+          },
+        };
       }
     }
 

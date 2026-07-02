@@ -342,6 +342,33 @@ describe('MessageUpsertConsume edit fallback', () => {
     },
   });
 
+  const makeTemplateUpsert = (): IUpsertMessage => ({
+    ...makeTextUpsert(''),
+    source_provider: 'baileys',
+    type: EMessageType.text,
+    message: {
+      ...makeTextUpsert('').message,
+      verifiedBizName: 'Underchat',
+      message: {
+        templateMessage: {
+          templateId: 'abertura',
+          hydratedTemplate: {
+            hydratedContentText:
+              'Olá, tudo bem?\n\nEu sou da underchat, gostaria de conversar contigo.\nTem um momento?',
+            hydratedButtons: [
+              {
+                urlButton: {
+                  displayText: 'Qualquer dúvida',
+                  url: 'https://underchat.com.br/',
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+
   const makeListResponseUpsert = (): IUpsertMessage => ({
     ...makeTextUpsert(''),
     source_provider: 'baileys',
@@ -1027,6 +1054,41 @@ describe('MessageUpsertConsume edit fallback', () => {
             {
               type: 'cta_url',
               title: 'Underchat',
+              url: 'https://underchat.com.br/',
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it('maps provider hydrated template messages to official template display metadata', () => {
+    const { consumer } = makeConsumer();
+    const content = (consumer as any).buildMessageContent(
+      makeTemplateUpsert()
+    ) as IChatMessage['content'];
+
+    expect(content).toMatchObject({
+      type: EMessageType.text,
+      message:
+        'Olá, tudo bem?\n\nEu sou da underchat, gostaria de conversar contigo.\nTem um momento?',
+      official_template: expect.objectContaining({
+        name: 'abertura',
+        language: '',
+      }),
+      official: {
+        provider: 'meta_whatsapp',
+        type: 'template',
+        display: {
+          kind: 'template',
+          raw_type: 'template',
+          title: null,
+          body: 'Olá, tudo bem?\n\nEu sou da underchat, gostaria de conversar contigo.\nTem um momento?',
+          footer: null,
+          actions: [
+            {
+              type: 'URL',
+              title: 'Qualquer dúvida',
               url: 'https://underchat.com.br/',
             },
           ],

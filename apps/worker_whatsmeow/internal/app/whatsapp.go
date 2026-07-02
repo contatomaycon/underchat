@@ -1886,6 +1886,7 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 	case *events.KeepAliveRestored:
 		m.recordKeepAliveRestored(context.Background())
 	case *events.Message:
+		m.logIncomingMessageSummary(event, incomingSkipReason(event))
 		go m.handleIncomingMessage(context.Background(), event)
 	case *events.HistorySync:
 		go m.handleHistorySync(context.Background(), event)
@@ -3513,6 +3514,33 @@ func (m *WhatsAppManager) logIncomingMessageDebug(ctx context.Context, evt *even
 		rawJSON,
 		rawTruncated,
 		rawErr,
+		skipReason,
+	)
+}
+
+func (m *WhatsAppManager) logIncomingMessageSummary(evt *events.Message, skipReason string) {
+	messageText := truncateLogValue(incomingTextPreview(evt), messageDebugBodyLimit)
+	log.Printf(
+		"message_summary direction=in provider=whatsmeow event_type=%T worker_id=%s account_id=%s chat=%s sender=%s sender_alt=%s recipient_alt=%s id=%s from_me=%t category=%q info_type=%q media_type=%q edit=%q timestamp=%s source_web_msg=%t is_view_once=%t is_edit=%t kinds=%q message_text=%q skip_reason=%q",
+		evt,
+		m.cfg.WorkerID,
+		m.cfg.AccountID,
+		incomingChatString(evt),
+		incomingSenderString(evt),
+		incomingSenderAltString(evt),
+		incomingRecipientAltString(evt),
+		incomingMessageID(evt),
+		incomingFromMe(evt),
+		incomingCategory(evt),
+		incomingInfoType(evt),
+		incomingMediaType(evt),
+		incomingEdit(evt),
+		incomingTimestamp(evt),
+		evt != nil && evt.SourceWebMsg != nil,
+		evt != nil && (evt.IsViewOnce || evt.IsViewOnceV2 || evt.IsViewOnceV2Extension),
+		evt != nil && evt.IsEdit,
+		strings.Join(incomingMessageKinds(evt), ","),
+		messageText,
 		skipReason,
 	)
 }

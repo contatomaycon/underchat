@@ -22,6 +22,47 @@ const WWEBJS_BUTTON_TYPES = new Set([
 ]);
 const WWEBJS_LIST_TYPES = new Set(['list', 'list_message', 'list_response']);
 
+function readBooleanEnv(key: string): boolean {
+  const raw = process.env[key];
+  if (!raw) {
+    return false;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
+}
+
+function csvEnvIncludes(key: string, value: string): boolean {
+  const raw = process.env[key];
+  if (!raw?.trim()) {
+    return true;
+  }
+
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return false;
+  }
+
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .some((item) => item === '*' || item === normalizedValue);
+}
+
+function shouldLogWwebjsIncomingRawDebug(): boolean {
+  const enabled =
+    readBooleanEnv('MESSAGE_DEBUG_ENABLED') ||
+    readBooleanEnv('WWEBJS_INCOMING_DEBUG_RAW');
+
+  return (
+    enabled &&
+    csvEnvIncludes(
+      'MESSAGE_DEBUG_ACCOUNT_IDS',
+      wwebjsEnvironment.wwebjsAccountId
+    ) &&
+    csvEnvIncludes('MESSAGE_DEBUG_WORKER_IDS', wwebjsEnvironment.wwebjsWorkerId)
+  );
+}
+
 type WwebjsButtonPayloadButton = {
   id?: string;
   displayText: string;
@@ -770,6 +811,23 @@ function safeStringify(value: unknown, maxLength = 4000): string {
 
 function logWwebjsIncomingDebug(payload: Record<string, unknown>): void {
   console.warn('[WWEBJS_INCOMING_DEBUG]', safeStringify(payload));
+}
+
+function getRawDataFieldNames(
+  rawData: Record<string, unknown> | undefined
+): string[] {
+  return rawData ? Object.keys(rawData).sort() : [];
+}
+
+function hasRawDataRecord(
+  rawData: Record<string, unknown> | undefined,
+  key: string
+): boolean {
+  return Boolean(getObjectRecord(rawData?.[key]));
+}
+
+function logWwebjsIncomingSummary(payload: Record<string, unknown>): void {
+  console.info('[WWEBJS_INCOMING_SUMMARY]', safeStringify(payload));
 }
 
 function resolveMessageBody(
@@ -2063,6 +2121,41 @@ export async function wwebjsMessageToUpsert(
   const ack = getNumber(msg.ack) ?? getNumber(rawData?.ack);
   const rawSubType = getNonEmptyString(rawData?.subtype)?.toLowerCase();
   const rawBody = typeof msg.body === 'string' ? msg.body : '';
+  logWwebjsIncomingSummary({
+    stage: 'wwebjs.message_to_upsert.received',
+    worker_id: wwebjsEnvironment.wwebjsWorkerId,
+    account_id: wwebjsEnvironment.wwebjsAccountId,
+    id,
+    raw_type: rawType,
+    raw_subtype: rawSubType ?? null,
+    from_me: msg.fromMe,
+    from: msg.from ?? null,
+    to: msg.to ?? null,
+    author: msg.author ?? null,
+    body_preview: rawBody.trim().slice(0, 500) || null,
+    raw_data_fields: getRawDataFieldNames(rawData),
+    has_interactive_message: hasRawDataRecord(rawData, 'interactiveMessage'),
+    has_native_flow_message: hasRawDataRecord(rawData, 'nativeFlowMessage'),
+    has_native_flow: hasRawDataRecord(rawData, 'nativeFlow'),
+    has_buttons_message: hasRawDataRecord(rawData, 'buttonsMessage'),
+    has_buttons_response_message: hasRawDataRecord(
+      rawData,
+      'buttonsResponseMessage'
+    ),
+  });
+  if (shouldLogWwebjsIncomingRawDebug()) {
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.received_raw',
+      worker_id: wwebjsEnvironment.wwebjsWorkerId,
+      account_id: wwebjsEnvironment.wwebjsAccountId,
+      id,
+      raw_type: rawType,
+      raw_subtype: rawSubType ?? null,
+      from_me: msg.fromMe,
+      body: rawBody,
+      raw_data: rawData,
+    });
+  }
   let body = resolveMessageBody(rawType, rawBody, rawData);
   let messageType = mapWwebjsTypeToMessageType(rawType, rawData);
   const interactiveResolution = resolveWwebjsInteractiveMessage({

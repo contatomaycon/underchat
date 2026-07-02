@@ -29,8 +29,8 @@ const props = withDefaults(defineProps<Props>(), {
 const { t } = useI18n();
 const isOptionsDialogOpen = shallowRef(false);
 
-const display = computed<OfficialDisplay | null>(
-  () => props.message.content?.official?.display ?? null
+const display = computed<OfficialDisplay | null>(() =>
+  sanitizeTemplateDisplay(props.message.content?.official?.display ?? null)
 );
 
 const isUnsupported = computed(() => display.value?.kind === 'unsupported');
@@ -209,6 +209,91 @@ function formatValue(value: unknown): string {
   } catch {
     return '';
   }
+}
+
+function normalizeTemplateMetaText(value: string | null | undefined): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function normalizeTemplateLanguageCode(value: string | null | undefined) {
+  return normalizeTemplateMetaText(value).replace(/_/gu, '-');
+}
+
+function isLikelyTechnicalTemplateName(
+  value: string | null | undefined
+): boolean {
+  const normalized = normalizeTemplateMetaText(value);
+  return /^[a-z0-9_]+$/u.test(normalized) && normalized.length > 0;
+}
+
+function isLikelyTemplateLanguageCode(
+  value: string | null | undefined
+): boolean {
+  const normalized = normalizeTemplateMetaText(value);
+  return /^[a-z]{2}(?:[-_][a-z]{2})?$/iu.test(normalized);
+}
+
+function shouldHideTemplateTitle(displayValue: OfficialDisplay): boolean {
+  const title = displayValue.title?.trim();
+  const body = displayValue.body?.trim();
+  if (!title || !body) return false;
+
+  const templateName = props.message.content?.official_template?.name;
+  if (
+    templateName &&
+    normalizeTemplateMetaText(title) === normalizeTemplateMetaText(templateName)
+  ) {
+    return true;
+  }
+
+  return (
+    isLikelyTechnicalTemplateName(title) &&
+    isLikelyTemplateLanguageCode(displayValue.footer)
+  );
+}
+
+function shouldHideTemplateFooter(displayValue: OfficialDisplay): boolean {
+  const footer = displayValue.footer?.trim();
+  if (!footer) return false;
+
+  const templateLanguage = props.message.content?.official_template?.language;
+  if (
+    templateLanguage &&
+    normalizeTemplateLanguageCode(footer) ===
+      normalizeTemplateLanguageCode(templateLanguage)
+  ) {
+    return true;
+  }
+
+  return (
+    isLikelyTemplateLanguageCode(footer) &&
+    shouldHideTemplateTitle(displayValue)
+  );
+}
+
+function sanitizeTemplateDisplay(
+  displayValue: OfficialDisplay | null
+): OfficialDisplay | null {
+  if (!displayValue || displayValue.kind !== 'template') {
+    return displayValue;
+  }
+
+  const title = shouldHideTemplateTitle(displayValue)
+    ? null
+    : displayValue.title;
+  const footer = shouldHideTemplateFooter(displayValue)
+    ? null
+    : displayValue.footer;
+
+  if (title === displayValue.title && footer === displayValue.footer) {
+    return displayValue;
+  }
+
+  return {
+    ...displayValue,
+    title,
+    footer,
+  };
 }
 
 function actionTitle(action: OfficialAction): string {
