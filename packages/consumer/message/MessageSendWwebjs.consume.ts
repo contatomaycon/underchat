@@ -761,6 +761,18 @@ export class MessageSendWwebjsConsume {
     forwardExtra?: Record<string, unknown>
   ): Promise<boolean> {
     if (
+      await this.processOfficialCtaUrlMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        hasQuoted,
+        forwardExtra
+      )
+    )
+      return true;
+
+    if (
       await this.processTextOrSystemMessage(
         data,
         jid,
@@ -956,6 +968,17 @@ export class MessageSendWwebjsConsume {
       return;
 
     if (
+      await this.processOfficialCtaUrlMessage(
+        data,
+        jid,
+        chatId,
+        currentType,
+        hasQuoted
+      )
+    )
+      return;
+
+    if (
       await this.processTextOrSystemMessage(
         data,
         jid,
@@ -999,6 +1022,104 @@ export class MessageSendWwebjsConsume {
       return;
     if (await this.processDeleteMessage(data, jid, chatId, currentType)) return;
     await this.processReactMessage(data, jid, chatId, currentType);
+  }
+
+  private isOfficialCtaUrlMessage(data: IChatMessage): boolean {
+    const display = data.content?.official?.display;
+    if (display?.kind === 'cta_url') {
+      return true;
+    }
+
+    const raw = data.content?.official?.raw;
+    const rawType = typeof raw?.type === 'string' ? raw.type : null;
+    if (rawType?.toLowerCase() === 'cta_url') {
+      return true;
+    }
+
+    const interactive = raw?.interactive;
+    if (!interactive || typeof interactive !== 'object') {
+      return false;
+    }
+
+    const interactiveType = (interactive as { type?: unknown }).type;
+    return (
+      typeof interactiveType === 'string' &&
+      interactiveType.toLowerCase() === 'cta_url'
+    );
+  }
+
+  private resolveOfficialCtaUrlFallbackText(data: IChatMessage): string {
+    const display = data.content?.official?.display;
+    const firstAction = display?.actions?.find(
+      (action) =>
+        !!action.title?.trim() ||
+        !!action.description?.trim() ||
+        !!action.url?.trim()
+    );
+
+    return (
+      data.content?.message?.trim() ||
+      display?.body?.trim() ||
+      display?.title?.trim() ||
+      display?.action_label?.trim() ||
+      firstAction?.title?.trim() ||
+      firstAction?.description?.trim() ||
+      firstAction?.url?.trim() ||
+      ''
+    );
+  }
+
+  private async processOfficialCtaUrlMessage(
+    data: IChatMessage,
+    jid: string,
+    chatId: string,
+    currentType: EMessageType | undefined,
+    hasQuoted: boolean,
+    forwardExtra?: Record<string, unknown>
+  ): Promise<boolean> {
+    if (
+      currentType !== EMessageType.official_interactive ||
+      !this.isOfficialCtaUrlMessage(data)
+    ) {
+      return false;
+    }
+
+    const text = this.resolveOfficialCtaUrlFallbackText(data);
+    if (!text) {
+      throw this.nonRetryableError(
+        'Official interactive message has no fallback text'
+      );
+    }
+
+    const quotedKey = this.getQuotedKey(data);
+
+    if (hasQuoted && quotedKey) {
+      const result = await this.wwebjsMessageTextService.sendTextQuoted(
+        jid,
+        text,
+        quotedKey,
+        { extra: forwardExtra }
+      );
+      if (result) await this.pushUpdate({ message: result, data });
+      this.lastMessageTypeByChatId.set(
+        chatId,
+        EMessageType.official_interactive
+      );
+      return true;
+    }
+
+    if (hasQuoted && !quotedKey) {
+      console.warn(
+        '[MessageSendWwebjs] Quoted flag is true but quoted key is missing. Sending official interactive fallback as regular text.'
+      );
+    }
+
+    const result = await this.wwebjsMessageTextService.sendText(jid, text, {
+      extra: forwardExtra,
+    });
+    if (result) await this.pushUpdate({ message: result, data });
+    this.lastMessageTypeByChatId.set(chatId, EMessageType.official_interactive);
+    return true;
   }
 
   private async processTextOrSystemMessage(
