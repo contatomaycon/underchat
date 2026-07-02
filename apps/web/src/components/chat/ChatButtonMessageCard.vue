@@ -42,9 +42,6 @@ const buttonItems = computed(() => props.buttons?.buttons ?? []);
         :key="`${button.id ?? index}-${button.display_text}`"
         class="button-message-card__action"
       >
-        <VIcon size="17" class="button-message-card__action-icon">
-          tabler-arrow-back-up
-        </VIcon>
         <span class="button-message-card__action-text">
           {{ button.display_text }}
         </span>
@@ -56,71 +53,78 @@ const buttonItems = computed(() => props.buttons?.buttons ?? []);
 <style scoped>
 .button-message-card {
   overflow: hidden;
+  width: min(100%, 336px);
   min-width: 210px;
-  max-width: min(280px, 72vw);
-  border: 1px solid rgba(var(--v-border-color), 0.42);
-  border-radius: 8px;
-  background: rgb(var(--v-theme-surface));
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  max-width: min(336px, 72vw);
+  border: 1px solid rgba(17, 27, 33, 0.08);
+  border-radius: 7.5px;
+  background: #fff;
+  color: #111b21;
+  box-shadow: 0 1px 1px rgba(11, 20, 26, 0.08);
 }
 
 .button-message-card--outgoing {
-  border-color: rgba(var(--v-theme-success), 0.2);
+  margin-left: auto;
 }
 
 .button-message-card__content {
-  padding: 10px 12px 8px;
+  overflow: hidden;
+  background: #fff;
 }
 
 .button-message-card__header {
-  color: rgba(var(--v-theme-on-surface), 0.9);
-  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+  padding: 10px 12px 3px;
+  color: #111b21;
+  font-size: 0.88rem;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.3;
+  white-space: pre-wrap;
 }
 
 .button-message-card__text {
-  color: rgba(var(--v-theme-on-surface), 0.88);
-  font-size: 0.88rem;
-  line-height: 1.35;
   overflow-wrap: anywhere;
-  white-space: pre-line;
+  padding: 9px 12px 10px;
+  color: #111b21;
+  font-size: 0.88rem;
+  line-height: 1.38;
+  white-space: pre-wrap;
 }
 
 .button-message-card__header + .button-message-card__text {
-  margin-top: 4px;
+  padding-top: 4px;
 }
 
 .button-message-card__footer {
-  margin-top: 6px;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-  font-size: 0.72rem;
-  line-height: 1.3;
+  overflow-wrap: anywhere;
+  padding: 7px 12px 9px;
+  border-top: 1px solid #e9edef;
+  color: #667781;
+  font-size: 0.74rem;
+  line-height: 1.25;
+  white-space: pre-wrap;
 }
 
 .button-message-card__actions {
-  border-top: 1px solid rgba(var(--v-border-color), 0.42);
+  border-top: 1px solid #e9edef;
 }
 
 .button-message-card__action {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 39px;
-  padding: 8px 12px;
-  color: rgb(var(--v-theme-primary));
-  font-size: 0.84rem;
-  font-weight: 600;
-  line-height: 1.2;
+  min-height: 40px;
+  padding: 9px 12px;
+  background: #fff;
+  color: #008069;
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.18;
+  text-align: center;
 }
 
 .button-message-card__action + .button-message-card__action {
-  border-top: 1px solid rgba(var(--v-border-color), 0.38);
-}
-
-.button-message-card__action-icon {
-  opacity: 0.82;
+  border-top: 1px solid #e9edef;
 }
 
 .button-message-card__action-text {

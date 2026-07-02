@@ -1858,9 +1858,9 @@ const handleContactClick = (message: ListMessageResult) => {
                       item.message.content?.type ===
                         EMessageType.contact_card ||
                       item.message.content?.type === EMessageType.contacts,
-                    'has-official-display': shouldShowOfficialDisplayCard(
-                      item.message
-                    ),
+                    'has-official-display':
+                      shouldShowOfficialDisplayCard(item.message) ||
+                      shouldShowButtonMessageCard(item.message),
                     'has-reactions':
                       item.message.content?.reactions &&
                       item.message.content.reactions.length > 0 &&

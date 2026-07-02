@@ -3833,9 +3833,9 @@ onUnmounted(() => {
                       item.message.content?.type ===
                         EMessageType.contact_card ||
                       item.message.content?.type === EMessageType.contacts,
-                    'has-official-display': shouldShowOfficialDisplayCard(
-                      item.message
-                    ),
+                    'has-official-display':
+                      shouldShowOfficialDisplayCard(item.message) ||
+                      shouldShowButtonMessageCard(item.message),
                     'has-official-unsupported': isUnsupportedProviderMessage(
                       item.message
                     ),
