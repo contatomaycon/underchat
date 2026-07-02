@@ -31,7 +31,7 @@ export class WorkerConnectionPasskeyUseCase {
     workerId: string,
     input: WorkerConnectionPasskeyResponseInput
   ): Promise<IBaileysConnectionState> {
-    const worker = await this.resolveWhatsmeowWorker(t, accountId, workerId);
+    const worker = await this.resolvePasskeyWorker(t, accountId, workerId);
     const passkeyResponse = this.serializePasskeyResponse(
       t,
       input.passkey_response
@@ -56,7 +56,7 @@ export class WorkerConnectionPasskeyUseCase {
     workerId: string,
     input: WorkerConnectionPasskeyConfirmationInput
   ): Promise<IBaileysConnectionState> {
-    const worker = await this.resolveWhatsmeowWorker(t, accountId, workerId);
+    const worker = await this.resolvePasskeyWorker(t, accountId, workerId);
 
     return this.workerBaileysGrpcClientService.confirmPasskey(
       workerId,
@@ -70,7 +70,7 @@ export class WorkerConnectionPasskeyUseCase {
     );
   }
 
-  private async resolveWhatsmeowWorker(
+  private async resolvePasskeyWorker(
     t: TFunction<'translation', undefined>,
     accountId: string,
     workerId: string
@@ -89,7 +89,10 @@ export class WorkerConnectionPasskeyUseCase {
       throw new Error(t('worker_not_found'));
     }
 
-    if (worker.type?.id !== EWorkerType.whatsmeow) {
+    if (
+      worker.type?.id !== EWorkerType.whatsmeow &&
+      worker.type?.id !== EWorkerType.baileys
+    ) {
       throw new Error(t('worker_type_invalid'));
     }
 

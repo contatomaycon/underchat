@@ -1018,7 +1018,12 @@ export class WorkerCommandHandlerService {
           await this.resolveQrRequestPayload(input, accountId);
 
         if (shouldReturnCached && cachedState) {
-          if (cachedState.qrcode || cachedState.pairing_code) {
+          if (
+            cachedState.qrcode ||
+            cachedState.pairing_code ||
+            cachedState.passkey_public_key ||
+            cachedState.passkey_confirmation_code
+          ) {
             return this.buildQrReadyStateFromState(
               cachedState,
               payload,
@@ -1344,6 +1349,9 @@ export class WorkerCommandHandlerService {
       reason: payload.reason,
       qrcode: payload.qrcode,
       pairing_code: payload.pairing_code,
+      has_passkey_public_key: Boolean(payload.passkey_public_key),
+      has_passkey_confirmation_code: Boolean(payload.passkey_confirmation_code),
+      passkey_skip_handoff_ux: payload.passkey_skip_handoff_ux === true,
       worker_status_id: workerStatusId,
       session_ready: payload.session_ready,
       can_send: payload.can_send,
@@ -1641,6 +1649,11 @@ export class WorkerCommandHandlerService {
       debug_trace_id: input.debug_trace_id || undefined,
       qrcode: input.qrcode || undefined,
       pairing_code: input.pairing_code || undefined,
+      passkey_public_key: input.passkey_public_key || undefined,
+      passkey_pending: input.passkey_pending === true ? true : undefined,
+      passkey_confirmation_code: input.passkey_confirmation_code || undefined,
+      passkey_skip_handoff_ux:
+        input.passkey_skip_handoff_ux === true ? true : undefined,
       qr_pending: input.qr_pending === true ? true : undefined,
       qr_generated_at: input.qr_generated_at || undefined,
       reason: input.reason || undefined,
@@ -2098,9 +2111,13 @@ export class WorkerCommandHandlerService {
     return (
       Boolean(payload.qrcode) ||
       Boolean(payload.pairing_code) ||
+      Boolean(payload.passkey_public_key) ||
+      Boolean(payload.passkey_confirmation_code) ||
       payload.qr_pending === true ||
       payload.code === ECodeMessage.awaitingReadQrCode ||
       payload.code === ECodeMessage.awaitingPairingCode ||
+      payload.code === ECodeMessage.awaitingPasskey ||
+      payload.code === ECodeMessage.awaitingPasskeyConfirmation ||
       payload.code === ECodeMessage.pairingInProgress
     );
   }
@@ -3033,7 +3050,12 @@ export class WorkerCommandHandlerService {
   ): Promise<{ ignored: boolean; reason?: string }> {
     const isTerminal = this.isQrAttemptTerminalState(state);
     const isQrAttemptState = this.isNotifyQrAttemptState(state);
-    const hasQrCredential = Boolean(state.qrcode || state.pairing_code);
+    const hasQrCredential = Boolean(
+      state.qrcode ||
+      state.pairing_code ||
+      state.passkey_public_key ||
+      state.passkey_confirmation_code
+    );
     const allowAttemptMismatch =
       hasQrCredential || this.isQrAttemptSuccessfulTerminalState(state);
 

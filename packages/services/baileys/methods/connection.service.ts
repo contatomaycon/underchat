@@ -114,6 +114,11 @@ const BAILEYS_BROWSER_NAME =
   process.env.BAILEYS_BROWSER_NAME?.trim() || 'Chrome';
 type WaVersion = [number, number, number];
 type BaileysBrowser = [string, string, string];
+type PasskeyCapableSocket = WASocket & {
+  sendPasskeyResponse?: (passkeyResponse: unknown) => Promise<void>;
+  confirmPasskey?: () => Promise<void>;
+};
+type BaileysPasskeyUpdate = NonNullable<IBaileysUpdateEvent['passkey']>;
 
 const DEFAULT_WA_VERSION = [
   DEFAULT_CONNECTION_CONFIG.version[0],
@@ -505,8 +510,83 @@ export class BaileysConnectionService {
     return this.socket;
   }
 
+  async sendPasskeyResponse(input: {
+    worker_id?: string;
+    account_id?: string;
+    connection_attempt_id?: string;
+    passkey_response: string;
+    debug_trace_id?: string;
+  }): Promise<IBaileysConnectionState> {
+    this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+    this.assertPasskeyRequestContext(input);
+
+    const socket = this.socket as PasskeyCapableSocket | undefined;
+    if (!socket?.sendPasskeyResponse) {
+      throw new Error('Baileys socket does not support passkey response');
+    }
+
+    await socket.sendPasskeyResponse(input.passkey_response);
+    this.setStatus(Status.connecting, ECodeMessage.pairingInProgress);
+
+    const payload = this.state(undefined, undefined, {
+      worker_status_id: EWorkerStatus.disponible,
+      reason: 'passkey_response_sent',
+    });
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, 'passkey_response_sent');
+    return payload;
+  }
+
+  async confirmPasskey(input: {
+    worker_id?: string;
+    account_id?: string;
+    connection_attempt_id?: string;
+    debug_trace_id?: string;
+  }): Promise<IBaileysConnectionState> {
+    this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+    this.assertPasskeyRequestContext(input);
+
+    const socket = this.socket as PasskeyCapableSocket | undefined;
+    if (!socket?.confirmPasskey) {
+      throw new Error('Baileys socket does not support passkey confirmation');
+    }
+
+    await socket.confirmPasskey();
+    this.setStatus(Status.connecting, ECodeMessage.pairingInProgress);
+
+    const payload = this.state(undefined, undefined, {
+      worker_status_id: EWorkerStatus.disponible,
+      reason: 'passkey_confirmation_sent',
+    });
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, 'passkey_confirmation_sent');
+    return payload;
+  }
+
   clearUserRequestedDisconnect(): void {
     this.userRequestedDisconnect = false;
+  }
+
+  private assertPasskeyRequestContext(input: {
+    worker_id?: string;
+    account_id?: string;
+    connection_attempt_id?: string;
+  }): void {
+    if (input.worker_id && input.worker_id !== getWorker()) {
+      throw new Error('Invalid worker for passkey request');
+    }
+
+    if (input.account_id && input.account_id !== getAccount()) {
+      throw new Error('Invalid account for passkey request');
+    }
+
+    if (
+      input.connection_attempt_id &&
+      this.connectionAttemptId &&
+      input.connection_attempt_id !== this.connectionAttemptId
+    ) {
+      throw new Error('Invalid connection attempt for passkey request');
+    }
   }
 
   republishLastState(): void {
@@ -1251,11 +1331,15 @@ export class BaileysConnectionService {
           return;
         }
 
-        const { qr, connection, isNewLogin, lastDisconnect } = u;
+        const { qr, connection, isNewLogin, lastDisconnect, passkey } = u;
         this.logConnectionUpdate(u, {
           opened,
           startedAtMs,
         });
+
+        if (passkey) {
+          return this.onPasskey(passkey, settle, id);
+        }
 
         if (
           qr &&
@@ -1322,6 +1406,11 @@ export class BaileysConnectionService {
       is_new_login: update.isNewLogin,
       has_qr: Boolean(update.qr),
       qr_length: update.qr?.length ?? 0,
+      has_passkey_public_key: Boolean(update.passkey?.publicKey),
+      has_passkey_confirmation_code: Boolean(update.passkey?.confirmationCode),
+      passkey_skip_handoff_ux: update.passkey?.skipHandoffUX === true,
+      passkey_continuation: update.passkey?.continuation === true,
+      passkey_error: update.passkey?.error,
       elapsed_ms: elapsedMs,
       opened: context.opened,
       disconnect_code: this.extractStatusCode(error),
@@ -1342,6 +1431,106 @@ export class BaileysConnectionService {
       qr_generation_count: this.qrGenerationCount,
       has_session: this.hasSession(),
     });
+  }
+
+  private async onPasskey(
+    passkey: BaileysPasskeyUpdate,
+    resolve: (s: IBaileysConnectionState) => void,
+    id: number
+  ): Promise<void> {
+    if (id !== this.socketId) {
+      return;
+    }
+
+    if (passkey.error) {
+      const payload = this.state(undefined, undefined, {
+        worker_status_id: EWorkerStatus.disponible,
+        reason: passkey.error,
+      });
+      this.publishSub(payload, true);
+      void this.notifyWorkerStatusSafely(payload, 'passkey_error');
+      resolve(payload);
+      this.pendingResolve = undefined;
+      return;
+    }
+
+    if (passkey.publicKey) {
+      const passkeyPublicKey = this.serializePasskeyPublicKey(
+        passkey.publicKey
+      );
+      this.setStatus(Status.connecting, ECodeMessage.awaitingPasskey);
+      const payload = this.state(undefined, undefined, {
+        worker_status_id: EWorkerStatus.disponible,
+        passkey_public_key: passkeyPublicKey,
+        passkey_pending: true,
+      });
+      this.logDebug('baileys.provider.passkey_request', {
+        trace_id: this.debugTraceId,
+        layer: 'baileys',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.baileys,
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+        has_passkey_public_key: true,
+        passkey_public_key_len: passkeyPublicKey.length,
+      });
+      this.publishSub(payload, true);
+      void this.notifyWorkerStatusSafely(payload, 'passkey_request');
+      resolve(payload);
+      this.pendingResolve = undefined;
+      return;
+    }
+
+    if (passkey.confirmationCode) {
+      if (passkey.skipHandoffUX === true) {
+        const payload = await this.confirmPasskey({
+          worker_id: getWorker(),
+          account_id: getAccount(),
+          connection_attempt_id: this.connectionAttemptId,
+          debug_trace_id: this.debugTraceId,
+        });
+        resolve(payload);
+        this.pendingResolve = undefined;
+        return;
+      }
+
+      this.setStatus(
+        Status.connecting,
+        ECodeMessage.awaitingPasskeyConfirmation
+      );
+      const payload = this.state(undefined, undefined, {
+        worker_status_id: EWorkerStatus.disponible,
+        passkey_confirmation_code: passkey.confirmationCode,
+        passkey_skip_handoff_ux: false,
+        passkey_pending: false,
+      });
+      this.logDebug('baileys.provider.passkey_confirmation', {
+        trace_id: this.debugTraceId,
+        layer: 'baileys',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.baileys,
+        connection_attempt_id: this.connectionAttemptId,
+        status: this.status,
+        code: this.code,
+        has_passkey_confirmation_code: true,
+        passkey_skip_handoff_ux: false,
+      });
+      this.publishSub(payload, true);
+      void this.notifyWorkerStatusSafely(payload, 'passkey_confirmation');
+      resolve(payload);
+      this.pendingResolve = undefined;
+    }
+  }
+
+  private serializePasskeyPublicKey(publicKey: unknown): string {
+    if (typeof publicKey === 'string') {
+      return publicKey;
+    }
+
+    return JSON.stringify(publicKey);
   }
 
   private async onQr(
@@ -2119,6 +2308,16 @@ export class BaileysConnectionService {
       phone: payloadWithConnectionMetadata.phone,
       qrcode: payloadWithConnectionMetadata.qrcode,
       pairing_code: payloadWithConnectionMetadata.pairing_code,
+      has_passkey_public_key: Boolean(
+        payloadWithConnectionMetadata.passkey_public_key
+      ),
+      passkey_public_key_len:
+        payloadWithConnectionMetadata.passkey_public_key?.length ?? 0,
+      has_passkey_confirmation_code: Boolean(
+        payloadWithConnectionMetadata.passkey_confirmation_code
+      ),
+      passkey_skip_handoff_ux:
+        payloadWithConnectionMetadata.passkey_skip_handoff_ux === true,
       force,
     });
     if (!this.initialConnection && !force) {
@@ -2133,7 +2332,9 @@ export class BaileysConnectionService {
     this.lastPayload = data;
     const hasConnectionCredential = Boolean(
       payloadWithConnectionMetadata.qrcode ||
-      payloadWithConnectionMetadata.pairing_code
+      payloadWithConnectionMetadata.pairing_code ||
+      payloadWithConnectionMetadata.passkey_public_key ||
+      payloadWithConnectionMetadata.passkey_confirmation_code
     );
     const publishPromise = hasConnectionCredential
       ? this.centrifugo.publishSubImmediate(
@@ -2175,6 +2376,14 @@ export class BaileysConnectionService {
         phone: payloadWithConnectionMetadata.phone,
         qrcode: payloadWithConnectionMetadata.qrcode,
         pairing_code: payloadWithConnectionMetadata.pairing_code,
+        has_passkey_public_key: Boolean(
+          payloadWithConnectionMetadata.passkey_public_key
+        ),
+        has_passkey_confirmation_code: Boolean(
+          payloadWithConnectionMetadata.passkey_confirmation_code
+        ),
+        passkey_skip_handoff_ux:
+          payloadWithConnectionMetadata.passkey_skip_handoff_ux === true,
       });
       await this.balanceWorkerStatusGrpcClientService.notifyWorkerStatus(
         payloadWithConnectionMetadata

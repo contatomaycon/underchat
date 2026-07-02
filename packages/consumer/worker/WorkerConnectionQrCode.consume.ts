@@ -278,6 +278,10 @@ export class WorkerConnectionQrCodeConsume {
           reason: state.reason,
           qrcode: state.qrcode,
           pairing_code: state.pairing_code,
+          has_passkey_public_key: Boolean(state.passkey_public_key),
+          has_passkey_confirmation_code: Boolean(
+            state.passkey_confirmation_code
+          ),
           stream_id: message.stream_id,
         }
       );
@@ -491,7 +495,12 @@ export class WorkerConnectionQrCodeConsume {
   }
 
   private isRetryableNoQrState(state: IBaileysConnectionState): boolean {
-    if (state.qrcode || state.pairing_code) {
+    if (
+      state.qrcode ||
+      state.pairing_code ||
+      state.passkey_public_key ||
+      state.passkey_confirmation_code
+    ) {
       return false;
     }
 
@@ -512,7 +521,12 @@ export class WorkerConnectionQrCodeConsume {
   }
 
   private isTerminalNoQrState(state: IBaileysConnectionState): boolean {
-    if (state.qrcode || state.pairing_code) {
+    if (
+      state.qrcode ||
+      state.pairing_code ||
+      state.passkey_public_key ||
+      state.passkey_confirmation_code
+    ) {
       return false;
     }
 
@@ -590,7 +604,12 @@ export class WorkerConnectionQrCodeConsume {
   }
 
   private shouldCompleteQrRequest(state: IBaileysConnectionState): boolean {
-    if (state.qrcode || state.pairing_code) {
+    if (
+      state.qrcode ||
+      state.pairing_code ||
+      state.passkey_public_key ||
+      state.passkey_confirmation_code
+    ) {
       return true;
     }
 
@@ -705,7 +724,12 @@ export class WorkerConnectionQrCodeConsume {
     state: IBaileysConnectionState,
     data: IWorkerConnectionQrCodeQueueMessage
   ): Promise<void> {
-    if (!state.qrcode && !state.pairing_code) {
+    if (
+      !state.qrcode &&
+      !state.pairing_code &&
+      !state.passkey_public_key &&
+      !state.passkey_confirmation_code
+    ) {
       return;
     }
 

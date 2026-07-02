@@ -616,7 +616,21 @@ function applyConnectionState(data: IBaileysConnectionState) {
 }
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
+  if (shouldClearPasskeyForDirectResponse(data)) {
+    resetPasskeyState();
+  }
+
   applyConnectionState(data);
+}
+
+function shouldClearPasskeyForDirectResponse(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  return (
+    data.code === ECodeMessage.pairingInProgress &&
+    !data.passkey_public_key &&
+    !data.passkey_confirmation_code
+  );
 }
 
 function handleWorkerConnectionMessage(data: IBaileysConnectionState) {

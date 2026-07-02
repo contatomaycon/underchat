@@ -71,6 +71,16 @@ const sanitizeObject = (
       continue;
     }
 
+    if (isPasskeyPublicKey(key)) {
+      Object.assign(output, secureStringMetadata('passkey_public_key', value));
+      continue;
+    }
+
+    if (isPasskeySecretKey(key)) {
+      Object.assign(output, secureStringMetadata('passkey_secret', value));
+      continue;
+    }
+
     const sanitizedValue = sanitizeValue(value, depth + 1);
     if (sanitizedValue !== undefined) {
       output[key] = sanitizedValue;
@@ -122,11 +132,34 @@ const isQrKey = (key: string): boolean =>
 const isPairingKey = (key: string): boolean =>
   ['pairing_code', 'pairingCode'].includes(key);
 
+const isPasskeyPublicKey = (key: string): boolean =>
+  ['passkey_public_key', 'passkeyPublicKey'].includes(key);
+
+const isPasskeySecretKey = (key: string): boolean =>
+  [
+    'passkey_response',
+    'passkeyResponse',
+    'passkey_confirmation_code',
+    'passkeyConfirmationCode',
+    'rawId',
+    'clientDataJSON',
+    'authenticatorData',
+    'signature',
+    'userHandle',
+    'credential_id',
+    'webauthn_assertion',
+  ].includes(key);
+
 const secureStringMetadata = (
-  prefix: 'qr' | 'pairing_code',
+  prefix: 'qr' | 'pairing_code' | 'passkey_public_key' | 'passkey_secret',
   value: unknown
 ): Record<string, unknown> => {
-  const raw = typeof value === 'string' ? value : '';
+  const raw =
+    typeof value === 'string'
+      ? value
+      : value === undefined || value === null
+        ? ''
+        : JSON.stringify(value);
   return {
     [`has_${prefix}`]: raw.length > 0,
     [`${prefix}_length`]: raw.length,

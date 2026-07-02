@@ -99,6 +99,16 @@ const sanitizeObject = (
       continue;
     }
 
+    if (isPasskeyPublicKey(key)) {
+      Object.assign(output, stringMetadata('passkey_public_key', value));
+      continue;
+    }
+
+    if (isPasskeySecretKey(key)) {
+      Object.assign(output, stringMetadata('passkey_secret', value));
+      continue;
+    }
+
     const sanitizedValue = sanitizeValue(value, depth + 1);
     if (sanitizedValue !== undefined) {
       output[key] = sanitizedValue;
@@ -142,21 +152,46 @@ const isQrKey = (key: string): boolean =>
 const isPairingKey = (key: string): boolean =>
   ['pairing_code', 'pairingCode'].includes(key);
 
+const isPasskeyPublicKey = (key: string): boolean =>
+  ['passkey_public_key', 'passkeyPublicKey'].includes(key);
+
+const isPasskeySecretKey = (key: string): boolean =>
+  [
+    'passkey_response',
+    'passkeyResponse',
+    'passkey_confirmation_code',
+    'passkeyConfirmationCode',
+    'rawId',
+    'clientDataJSON',
+    'authenticatorData',
+    'signature',
+    'userHandle',
+    'credential_id',
+    'webauthn_assertion',
+  ].includes(key);
+
 const qrMetadata = (value: unknown): Record<string, unknown> => {
-  const raw = typeof value === 'string' ? value : '';
-  return {
-    has_qr: raw.length > 0,
-    qr_length: raw.length,
-    qr_hash: raw ? hashString(raw) : undefined,
-  };
+  return stringMetadata('qr', value);
 };
 
 const pairingMetadata = (value: unknown): Record<string, unknown> => {
-  const raw = typeof value === 'string' ? value : '';
+  return stringMetadata('pairing_code', value);
+};
+
+const stringMetadata = (
+  prefix: 'qr' | 'pairing_code' | 'passkey_public_key' | 'passkey_secret',
+  value: unknown
+): Record<string, unknown> => {
+  const raw =
+    typeof value === 'string'
+      ? value
+      : value === undefined || value === null
+        ? ''
+        : JSON.stringify(value);
   return {
-    has_pairing_code: raw.length > 0,
-    pairing_code_length: raw.length,
-    pairing_code_hash: raw ? hashString(raw) : undefined,
+    [`has_${prefix}`]: raw.length > 0,
+    [`${prefix}_length`]: raw.length,
+    [`${prefix}_hash`]: raw ? hashString(raw) : undefined,
   };
 };
 

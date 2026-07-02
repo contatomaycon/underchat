@@ -69,6 +69,21 @@ interface IStatusConnectionRequestProto {
   warm_pool_id?: string;
 }
 
+interface IPasskeyResponseRequestProto {
+  worker_id?: string;
+  account_id?: string;
+  connection_attempt_id?: string;
+  passkey_response?: string;
+  debug_trace_id?: string;
+}
+
+interface IPasskeyConfirmationRequestProto {
+  worker_id?: string;
+  account_id?: string;
+  connection_attempt_id?: string;
+  debug_trace_id?: string;
+}
+
 interface WorkerConnectionGrpcOptions {
   module?: ERouteModule;
   activateRuntime?: (
@@ -543,11 +558,132 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     })();
   };
 
+  const handleSendPasskeyResponse = (
+    call: ServerUnaryCall<
+      IPasskeyResponseRequestProto,
+      IWorkerConnectionStateProto
+    >,
+    callback: sendUnaryData<IWorkerConnectionStateProto>
+  ) => {
+    if (module === ERouteModule.worker_wwebjs) {
+      callback(
+        {
+          code: status.UNIMPLEMENTED,
+          message: 'Passkey pairing is not supported by worker_wwebjs',
+          details: 'Passkey pairing is not supported by worker_wwebjs',
+        },
+        null
+      );
+      return;
+    }
+
+    const req = call.request;
+    if (!req.worker_id || !req.account_id || !req.passkey_response) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message:
+            'Missing required fields: worker_id, account_id, passkey_response',
+          details:
+            'Missing required fields: worker_id, account_id, passkey_response',
+        },
+        null
+      );
+      return;
+    }
+
+    container
+      .resolve(BaileysService)
+      .sendPasskeyResponse({
+        worker_id: req.worker_id,
+        account_id: req.account_id,
+        connection_attempt_id: req.connection_attempt_id,
+        passkey_response: req.passkey_response,
+        debug_trace_id: req.debug_trace_id,
+      })
+      .then((response) => {
+        callback(
+          null,
+          connectionStateToProto({
+            ...response,
+            worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
+            connection_attempt_id:
+              response.connection_attempt_id ?? req.connection_attempt_id,
+            debug_trace_id: response.debug_trace_id ?? req.debug_trace_id,
+          })
+        );
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
+  const handleConfirmPasskey = (
+    call: ServerUnaryCall<
+      IPasskeyConfirmationRequestProto,
+      IWorkerConnectionStateProto
+    >,
+    callback: sendUnaryData<IWorkerConnectionStateProto>
+  ) => {
+    if (module === ERouteModule.worker_wwebjs) {
+      callback(
+        {
+          code: status.UNIMPLEMENTED,
+          message: 'Passkey pairing is not supported by worker_wwebjs',
+          details: 'Passkey pairing is not supported by worker_wwebjs',
+        },
+        null
+      );
+      return;
+    }
+
+    const req = call.request;
+    if (!req.worker_id || !req.account_id) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message: 'Missing required fields: worker_id, account_id',
+          details: 'Missing required fields: worker_id, account_id',
+        },
+        null
+      );
+      return;
+    }
+
+    container
+      .resolve(BaileysService)
+      .confirmPasskey({
+        worker_id: req.worker_id,
+        account_id: req.account_id,
+        connection_attempt_id: req.connection_attempt_id,
+        debug_trace_id: req.debug_trace_id,
+      })
+      .then((response) => {
+        callback(
+          null,
+          connectionStateToProto({
+            ...response,
+            worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
+            connection_attempt_id:
+              response.connection_attempt_id ?? req.connection_attempt_id,
+            debug_trace_id: response.debug_trace_id ?? req.debug_trace_id,
+          })
+        );
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   grpcServer.addService(WorkerConnectionService.service, {
     RequestConnection: handleRequestConnection,
     ValidatePhone: handleValidatePhone,
     ActivateRuntime: handleActivateRuntime,
     RuntimeHealth: handleRuntimeHealth,
+    SendPasskeyResponse: handleSendPasskeyResponse,
+    ConfirmPasskey: handleConfirmPasskey,
   });
 
   const bind = `0.0.0.0:${grpcPort}`;

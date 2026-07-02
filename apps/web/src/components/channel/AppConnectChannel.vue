@@ -1281,6 +1281,10 @@ function applyReducedConnectionState(
     return;
   }
 
+  if (options.directResponse && shouldClearPasskeyForDirectResponse(data)) {
+    resetPasskeyState();
+  }
+
   activeDebugTraceId.value = data.debug_trace_id ?? activeDebugTraceId.value;
 
   if (data.worker_type_id) {
@@ -1459,6 +1463,16 @@ function applyReducedConnectionState(
 
 function applyDirectConnectionResponse(data: IBaileysConnectionState) {
   applyReducedConnectionState(data, { directResponse: true });
+}
+
+function shouldClearPasskeyForDirectResponse(
+  data: Partial<IBaileysConnectionState>
+): boolean {
+  return (
+    data.code === ECodeMessage.pairingInProgress &&
+    !data.passkey_public_key &&
+    !data.passkey_confirmation_code
+  );
 }
 
 async function recoverQrAfterCentrifugoRecoveryFailure() {

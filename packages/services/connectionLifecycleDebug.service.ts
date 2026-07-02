@@ -138,6 +138,19 @@ export class ConnectionLifecycleDebugService {
         continue;
       }
 
+      if (this.isPasskeyPublicKey(key)) {
+        Object.assign(
+          output,
+          this.safeStringMetadata('passkey_public_key', value)
+        );
+        continue;
+      }
+
+      if (this.isPasskeySecretKey(key)) {
+        Object.assign(output, this.safeStringMetadata('passkey_secret', value));
+        continue;
+      }
+
       const sanitizedValue = this.sanitizeValue(value, depth + 1);
       if (sanitizedValue !== undefined) {
         output[key] = sanitizedValue;
@@ -190,21 +203,48 @@ export class ConnectionLifecycleDebugService {
     return ['pairing_code', 'pairingCode'].includes(key);
   }
 
+  private isPasskeyPublicKey(key: string): boolean {
+    return ['passkey_public_key', 'passkeyPublicKey'].includes(key);
+  }
+
+  private isPasskeySecretKey(key: string): boolean {
+    return [
+      'passkey_response',
+      'passkeyResponse',
+      'passkey_confirmation_code',
+      'passkeyConfirmationCode',
+      'rawId',
+      'clientDataJSON',
+      'authenticatorData',
+      'signature',
+      'userHandle',
+      'credential_id',
+      'webauthn_assertion',
+    ].includes(key);
+  }
+
   private safeQrMetadata(value: unknown): Record<string, unknown> {
-    const raw = typeof value === 'string' ? value : '';
-    return {
-      has_qr: raw.length > 0,
-      qr_length: raw.length,
-      qr_sha256_12: raw ? this.hash12(raw) : undefined,
-    };
+    return this.safeStringMetadata('qr', value);
   }
 
   private safePairingMetadata(value: unknown): Record<string, unknown> {
-    const raw = typeof value === 'string' ? value : '';
+    return this.safeStringMetadata('pairing_code', value);
+  }
+
+  private safeStringMetadata(
+    prefix: 'qr' | 'pairing_code' | 'passkey_public_key' | 'passkey_secret',
+    value: unknown
+  ): Record<string, unknown> {
+    const raw =
+      typeof value === 'string'
+        ? value
+        : value === undefined || value === null
+          ? ''
+          : JSON.stringify(value);
     return {
-      has_pairing_code: raw.length > 0,
-      pairing_code_length: raw.length,
-      pairing_code_sha256_12: raw ? this.hash12(raw) : undefined,
+      [`has_${prefix}`]: raw.length > 0,
+      [`${prefix}_length`]: raw.length,
+      [`${prefix}_sha256_12`]: raw ? this.hash12(raw) : undefined,
     };
   }
 

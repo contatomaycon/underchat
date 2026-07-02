@@ -58,6 +58,25 @@ export class BaileysService {
     return this.connection.getSocket();
   }
 
+  sendPasskeyResponse(input: {
+    worker_id?: string;
+    account_id?: string;
+    connection_attempt_id?: string;
+    passkey_response: string;
+    debug_trace_id?: string;
+  }): Promise<IBaileysConnectionState> {
+    return this.connection.sendPasskeyResponse(input);
+  }
+
+  confirmPasskey(input: {
+    worker_id?: string;
+    account_id?: string;
+    connection_attempt_id?: string;
+    debug_trace_id?: string;
+  }): Promise<IBaileysConnectionState> {
+    return this.connection.confirmPasskey(input);
+  }
+
   clearUserRequestedDisconnect(): void {
     this.connection.clearUserRequestedDisconnect();
   }
