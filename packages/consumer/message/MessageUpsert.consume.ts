@@ -5101,8 +5101,10 @@ export class MessageUpsertConsume {
         templateContainer?.templateId
       );
 
-      if (officialTemplate && !content.official_template) {
-        content.official_template = officialTemplate;
+      if (officialTemplate) {
+        content.official_template =
+          content.official_template ?? officialTemplate;
+        content.type = EMessageType.official_template;
       }
 
       if (officialTemplate && !content.official) {

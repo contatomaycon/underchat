@@ -144,8 +144,11 @@ func TestIncomingHydratedTemplateContent(t *testing.T) {
 	messageType, content := manager.incomingContent(context.Background(), &events.Message{
 		Message: &waE2E.Message{TemplateMessage: template},
 	})
-	if messageType != MessageTypeText {
+	if messageType != MessageTypeOfficialTemplate {
 		t.Fatalf("unexpected message type %q", messageType)
+	}
+	if got := content["type"]; got != MessageTypeOfficialTemplate {
+		t.Fatalf("unexpected content type %#v", got)
 	}
 	if got := content["message"]; got != "O seu pedido Brasil está registado." {
 		t.Fatalf("unexpected message %#v", got)
@@ -182,8 +185,11 @@ func TestIncomingHydratedTemplateContent(t *testing.T) {
 			},
 		},
 	})
-	if messageType != MessageTypeText {
+	if messageType != MessageTypeOfficialTemplate {
 		t.Fatalf("unexpected hsm message type %q", messageType)
+	}
+	if got := content["type"]; got != MessageTypeOfficialTemplate {
+		t.Fatalf("unexpected hsm content type %#v", got)
 	}
 	if got := content["message"]; got != "O seu pedido Brasil está registado." {
 		t.Fatalf("unexpected hsm message %#v", got)

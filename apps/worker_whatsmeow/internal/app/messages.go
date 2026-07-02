@@ -757,12 +757,12 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 	}
 	if template := msg.GetTemplateMessage(); template != nil {
 		if content := incomingTemplateContent(template); content != nil {
-			return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+			return m.withIncomingQuoted(evt, msg, MessageTypeOfficialTemplate, content)
 		}
 	}
 	if hsm := msg.GetHighlyStructuredMessage(); hsm != nil {
 		if content := incomingTemplateContent(hsm.GetHydratedHsm()); content != nil {
-			return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+			return m.withIncomingQuoted(evt, msg, MessageTypeOfficialTemplate, content)
 		}
 	}
 	if buttons := msg.GetButtonsMessage(); buttons != nil {
@@ -1147,7 +1147,7 @@ func incomingTemplateContent(template *waE2E.TemplateMessage) map[string]any {
 	}
 
 	return map[string]any{
-		"type":              MessageTypeText,
+		"type":              MessageTypeOfficialTemplate,
 		"message":           firstNonEmpty(body, header, footer),
 		"official_template": officialTemplate,
 		"official": map[string]any{

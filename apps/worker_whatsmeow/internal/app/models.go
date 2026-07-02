@@ -37,6 +37,7 @@ const (
 	MessageTypeAudio                   = "audio"
 	MessageTypeSticker                 = "sticker"
 	MessageTypeDocument                = "document"
+	MessageTypeOfficialTemplate        = "official_template"
 	MessageTypeViewOnce                = "view_once"
 	MessageTypeDelete                  = "delete_message"
 	MessageTypeEditText                = "edit_text"

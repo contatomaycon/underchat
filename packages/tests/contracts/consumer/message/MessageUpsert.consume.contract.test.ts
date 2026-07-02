@@ -1069,7 +1069,7 @@ describe('MessageUpsertConsume edit fallback', () => {
     ) as IChatMessage['content'];
 
     expect(content).toMatchObject({
-      type: EMessageType.text,
+      type: EMessageType.official_template,
       message:
         'Olá, tudo bem?\n\nEu sou da underchat, gostaria de conversar contigo.\nTem um momento?',
       official_template: expect.objectContaining({
