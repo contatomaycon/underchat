@@ -2684,10 +2684,31 @@ const processOfficialNodeData = (node: Node): void => {
     }
   }
 
-  for (const arrayField of ['products', 'sections', 'cards', 'contacts']) {
-    if (!Array.isArray(node.data[arrayField])) {
-      node.data[arrayField] = [];
+  if (node.type === 'officialMultiProduct') {
+    for (const arrayField of ['products', 'sections']) {
+      if (!Array.isArray(node.data[arrayField])) {
+        node.data[arrayField] = [];
+      }
     }
+  } else {
+    delete node.data.products;
+    delete node.data.sections;
+  }
+
+  if (node.type === 'officialMediaCarousel') {
+    if (!Array.isArray(node.data.cards)) {
+      node.data.cards = [];
+    }
+  } else {
+    delete node.data.cards;
+  }
+
+  if (node.type === 'officialContacts') {
+    if (!Array.isArray(node.data.contacts)) {
+      node.data.contacts = [];
+    }
+  } else {
+    delete node.data.contacts;
   }
 
   for (const objectField of ['parameters', 'action']) {

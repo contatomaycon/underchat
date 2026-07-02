@@ -1931,6 +1931,18 @@ export class ChatbotFlowRunnerService {
     return fallback;
   }
 
+  private getTextFromUnknown(value: unknown): string {
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    return '';
+  }
+
   private getProductRetailerId(product: unknown): string {
     if (typeof product === 'string') return product.trim();
     if (!product || typeof product !== 'object') return '';
@@ -2146,6 +2158,120 @@ export class ChatbotFlowRunnerService {
       .filter((option) => option.id && option.text);
   }
 
+  private normalizeOfficialListSections(
+    sections: unknown,
+    fallbackRows: Array<{
+      id: string;
+      title: string;
+      description?: string;
+    }>,
+    fallbackTitle: string
+  ): Array<Record<string, unknown>> {
+    const normalizedSections = Array.isArray(sections)
+      ? sections
+          .map((section, sectionIndex): Record<string, unknown> | null => {
+            if (
+              !section ||
+              typeof section !== 'object' ||
+              Array.isArray(section)
+            ) {
+              return null;
+            }
+
+            const sectionRecord = section as Record<string, unknown>;
+            const rawRows = Array.isArray(sectionRecord.rows)
+              ? sectionRecord.rows
+              : Array.isArray(sectionRecord.items)
+                ? sectionRecord.items
+                : [];
+            const rows = rawRows
+              .map((row, rowIndex): Record<string, unknown> | null => {
+                if (!row || typeof row !== 'object' || Array.isArray(row)) {
+                  return null;
+                }
+
+                const rowRecord = row as Record<string, unknown>;
+                const id = this.getTextFromUnknown(
+                  rowRecord.id ??
+                    rowRecord.value ??
+                    rowRecord.product_retailer_id ??
+                    rowRecord.title ??
+                    `row-${sectionIndex + 1}-${rowIndex + 1}`
+                );
+                const title = this.getTextFromUnknown(
+                  rowRecord.title ??
+                    rowRecord.text ??
+                    rowRecord.name ??
+                    rowRecord.id ??
+                    `Opção ${rowIndex + 1}`
+                );
+                const description = this.getTextFromUnknown(
+                  rowRecord.description
+                );
+
+                if (!id || !title) {
+                  return null;
+                }
+
+                return {
+                  id,
+                  title,
+                  ...(description ? { description } : {}),
+                };
+              })
+              .filter((row): row is Record<string, unknown> => row !== null);
+
+            if (rows.length === 0) {
+              return null;
+            }
+
+            const title = this.getTextFromUnknown(sectionRecord.title);
+            return {
+              title: title || fallbackTitle,
+              rows,
+            };
+          })
+          .filter(
+            (section): section is Record<string, unknown> => section !== null
+          )
+      : [];
+
+    const fallbackSections: Array<Record<string, unknown>> =
+      fallbackRows.length > 0
+        ? [
+            {
+              title: fallbackTitle,
+              rows: fallbackRows,
+            },
+          ]
+        : [];
+    const sourceSections: Array<Record<string, unknown>> =
+      normalizedSections.length > 0 ? normalizedSections : fallbackSections;
+
+    let rowsCount = 0;
+    return sourceSections
+      .map((section): Record<string, unknown> | null => {
+        const rows = Array.isArray(section.rows) ? section.rows : [];
+        const remaining = 10 - rowsCount;
+        if (remaining <= 0) {
+          return null;
+        }
+
+        const limitedRows = rows.slice(0, remaining);
+        rowsCount += limitedRows.length;
+
+        return limitedRows.length > 0
+          ? {
+              ...section,
+              rows: limitedRows,
+            }
+          : null;
+      })
+      .filter(
+        (section): section is Record<string, unknown> => section !== null
+      );
+  }
+
   private async buildOfficialInteractivePayload(
     t: TFunction<'translation', undefined>,
     createChat: IChat,
@@ -2191,20 +2317,22 @@ export class ChatbotFlowRunnerService {
           title: option.text,
           ...(option.description ? { description: option.description } : {}),
         }));
+      const sections = this.normalizeOfficialListSections(
+        explicitSections,
+        rows,
+        this.getNodeTextValue(node, 'sectionTitle', 'Opções')
+      );
+
+      if (sections.length === 0) {
+        return null;
+      }
 
       return this.withOfficialHeaderFooter(node, {
         type: 'list',
         body: { text: message },
         action: {
           button: this.getNodeTextValue(node, 'buttonText', 'Selecionar'),
-          sections: Array.isArray(explicitSections)
-            ? explicitSections
-            : [
-                {
-                  title: this.getNodeTextValue(node, 'sectionTitle', 'Opções'),
-                  rows,
-                },
-              ],
+          sections,
         },
       });
     }

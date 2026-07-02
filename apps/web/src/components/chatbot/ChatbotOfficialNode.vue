@@ -691,12 +691,8 @@ const updateNodeData = () => {
       }))
     );
   } else {
-    data.products = Array.isArray(nodeData.value.products)
-      ? nodeData.value.products
-      : [];
-    data.sections = Array.isArray(nodeData.value.sections)
-      ? nodeData.value.sections
-      : [];
+    delete data.products;
+    delete data.sections;
   }
   data.cards =
     nodeType.value === 'officialMediaCarousel'
