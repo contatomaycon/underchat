@@ -33,9 +33,7 @@ import {
   TransferWorker,
   TransferSector,
 } from '@core/schema/chat/listTransferOptions/response.schema';
-import type {
-  OfficialOpeningContextResponse,
-} from '@core/schema/chat/officialOpeningContext/response.schema';
+import type { OfficialOpeningContextResponse } from '@core/schema/chat/officialOpeningContext/response.schema';
 import type { IOfficialTemplateVariableValue } from '@core/common/interfaces/IOfficialWhatsappTemplate';
 import {
   buildOfficialTemplatePreview,
@@ -5589,10 +5587,7 @@ defineExpose({
                 />
               </div>
 
-              <div
-                v-else
-                class="official-template-manual-variables"
-              >
+              <div v-else class="official-template-manual-variables">
                 <div class="official-template-manual-variables-header">
                   <span>{{ $t('chatbot_message_variables_legend') }}</span>
                   <VBtn
@@ -5607,7 +5602,9 @@ defineExpose({
                 </div>
 
                 <div
-                  v-for="(variable, variableIndex) in manualOfficialTemplateVariables"
+                  v-for="(
+                    variable, variableIndex
+                  ) in manualOfficialTemplateVariables"
                   :key="`opening-manual-variable-${variableIndex}`"
                   class="official-template-manual-variable-row"
                 >
