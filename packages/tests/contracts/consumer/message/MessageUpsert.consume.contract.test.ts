@@ -283,6 +283,79 @@ describe('MessageUpsertConsume edit fallback', () => {
     },
   });
 
+  const makeListUpsert = (): IUpsertMessage => ({
+    ...makeTextUpsert(''),
+    source_provider: 'baileys',
+    type: EMessageType.text,
+    message: {
+      ...makeTextUpsert('').message,
+      message: {
+        listMessage: {
+          description: 'Escolha uma opção',
+          buttonText: 'Selecionar',
+          listType: 1,
+          sections: [
+            {
+              rows: [
+                {
+                  rowId: '1',
+                  title: 'Endereço e finalizar',
+                  description: 'Descrição da opção 1',
+                },
+                {
+                  rowId: '2',
+                  title: 'Opção 2',
+                  description: 'Localização e Atendimento',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  const makeListResponseUpsert = (): IUpsertMessage => ({
+    ...makeTextUpsert(''),
+    source_provider: 'baileys',
+    type: EMessageType.text,
+    has_quoted: true,
+    message: {
+      ...makeTextUpsert('').message,
+      message: {
+        listResponseMessage: {
+          title: 'Opção 2',
+          description: 'Localização e Atendimento',
+          singleSelectReply: {
+            selectedRowId: '2',
+          },
+          contextInfo: {
+            stanzaId: 'LIST_MESSAGE_ID',
+            participant: '5500000000000@s.whatsapp.net',
+            quotedMessage: {
+              listMessage: {
+                description: 'Escolha uma opção',
+                buttonText: 'Selecionar',
+                listType: 1,
+                sections: [
+                  {
+                    rows: [
+                      {
+                        rowId: '2',
+                        title: 'Opção 2',
+                        description: 'Localização e Atendimento',
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
   const makeReactionUpsert = (input: {
     phone?: string;
     name?: string;
@@ -751,6 +824,111 @@ describe('MessageUpsertConsume edit fallback', () => {
       expect.objectContaining({
         type: EMessageType.text,
         message: 'Financeiro',
+      })
+    );
+  });
+
+  it('preserves provider list messages as official list display metadata', () => {
+    const { consumer } = makeConsumer();
+    const content = (consumer as any).buildMessageContent(
+      makeListUpsert()
+    ) as IChatMessage['content'];
+
+    expect(content).toMatchObject({
+      type: EMessageType.text,
+      message: 'Escolha uma opção',
+      list: {
+        text: 'Escolha uma opção',
+        button_text: 'Selecionar',
+        list_type: 1,
+        sections: [
+          {
+            id: 'section-1',
+            title: null,
+            rows: [
+              {
+                id: '1',
+                title: 'Endereço e finalizar',
+                description: 'Descrição da opção 1',
+              },
+              {
+                id: '2',
+                title: 'Opção 2',
+                description: 'Localização e Atendimento',
+              },
+            ],
+          },
+        ],
+      },
+      official: {
+        provider: 'meta_whatsapp',
+        type: 'interactive',
+        display: {
+          kind: 'list',
+          raw_type: 'list',
+          body: 'Escolha uma opção',
+          action_label: 'Selecionar',
+        },
+      },
+    });
+    const display = content?.official?.display;
+    expect(display?.sections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'section-1',
+          title: null,
+          rows: expect.arrayContaining([
+            expect.objectContaining({
+              id: '1',
+              title: 'Endereço e finalizar',
+              description: 'Descrição da opção 1',
+            }),
+            expect.objectContaining({
+              id: '2',
+              title: 'Opção 2',
+              description: 'Localização e Atendimento',
+            }),
+          ]),
+        }),
+      ])
+    );
+  });
+
+  it('maps provider list response messages to selected text and reply display metadata', () => {
+    const { consumer } = makeConsumer();
+    const content = (consumer as any).buildMessageContent(
+      makeListResponseUpsert()
+    ) as IChatMessage['content'];
+
+    expect(content).toEqual(
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: 'Opção 2',
+        quoted: expect.objectContaining({
+          message: 'Escolha uma opção',
+          list: expect.objectContaining({
+            text: 'Escolha uma opção',
+            button_text: 'Selecionar',
+          }),
+        }),
+        official: expect.objectContaining({
+          provider: 'meta_whatsapp',
+          type: 'interactive',
+          display: expect.objectContaining({
+            kind: 'reply',
+            raw_type: 'list_reply',
+            title: 'Opção 2',
+            body: 'Escolha uma opção',
+            actions: [
+              {
+                id: '2',
+                type: 'list_reply',
+                title: 'Opção 2',
+                description: 'Localização e Atendimento',
+              },
+            ],
+          }),
+        }),
       })
     );
   });

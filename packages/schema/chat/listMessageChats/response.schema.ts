@@ -126,6 +126,36 @@ export const buttonMessageSchema = Type.Object(
   { additionalProperties: true }
 );
 
+export const listMessageRowSchema = Type.Object(
+  {
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    title: Type.String(),
+    description: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  },
+  { additionalProperties: true }
+);
+
+export const listMessageSectionSchema = Type.Object(
+  {
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    title: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    rows: Type.Array(listMessageRowSchema),
+  },
+  { additionalProperties: true }
+);
+
+export const listMessageSchema = Type.Object(
+  {
+    text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    button_text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    list_type: Type.Optional(
+      Type.Union([Type.String(), Type.Number(), Type.Null()])
+    ),
+    sections: Type.Array(listMessageSectionSchema),
+  },
+  { additionalProperties: true }
+);
+
 export const quotedMessageSchema = Type.Object({
   key: messageKeySchema,
   message: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -138,6 +168,7 @@ export const quotedMessageSchema = Type.Object({
   location: Type.Optional(Type.Union([locationSchema, Type.Null()])),
   contact: Type.Optional(Type.Union([contactSchema, Type.Null()])),
   buttons: Type.Optional(Type.Union([buttonMessageSchema, Type.Null()])),
+  list: Type.Optional(Type.Union([listMessageSchema, Type.Null()])),
 });
 
 export const reactionSchema = Type.Object({
@@ -533,6 +564,7 @@ export const contentSchema = Type.Object(
     context_info: Type.Optional(Type.Union([contextInfoSchema, Type.Null()])),
     template: Type.Optional(Type.Union([templateMessageSchema, Type.Null()])),
     buttons: Type.Optional(Type.Union([buttonMessageSchema, Type.Null()])),
+    list: Type.Optional(Type.Union([listMessageSchema, Type.Null()])),
     official_template: Type.Optional(
       Type.Union([officialTemplateMessageSchema, Type.Null()])
     ),
@@ -581,6 +613,7 @@ export type MessageVersion = Static<typeof messageVersionSchema>;
 export type AlbumMessageChat = Static<typeof albumMessageSchema>;
 export type ForwardMessageChat = Static<typeof forwardMessageSchema>;
 export type ButtonMessageChat = Static<typeof buttonMessageSchema>;
+export type ListInteractiveMessageChat = Static<typeof listMessageSchema>;
 export type ImageMessageChat = Static<typeof imageSchema>;
 export type VideoMessageChat = Static<typeof videoSchema>;
 export type AudioMessageChat = Static<typeof audioSchema>;

@@ -101,4 +101,77 @@ describe('buildQuotedTextFromExtended', () => {
       },
     });
   });
+
+  it('preserves quoted list metadata for list reply rendering', () => {
+    const quoted = buildQuotedTextFromExtended({
+      key: {
+        remoteJid: '5511999999999@s.whatsapp.net',
+        fromMe: false,
+      },
+      message: {
+        listResponseMessage: {
+          title: 'Opção 2',
+          description: 'Localização e Atendimento',
+          singleSelectReply: {
+            selectedRowId: '2',
+          },
+          contextInfo: {
+            stanzaId: 'quoted-list-id',
+            participant: '5500000000000@s.whatsapp.net',
+            quotedMessage: {
+              listMessage: {
+                description: 'Escolha uma opção',
+                buttonText: 'Selecionar',
+                listType: 1,
+                sections: [
+                  {
+                    rows: [
+                      {
+                        rowId: '1',
+                        title: 'Endereço e finalizar',
+                        description: 'Descrição da opção 1',
+                      },
+                      {
+                        rowId: '2',
+                        title: 'Opção 2',
+                        description: 'Localização e Atendimento',
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    } as never);
+
+    expect(quoted).toMatchObject({
+      type: EMessageType.text,
+      message: 'Escolha uma opção',
+      list: {
+        text: 'Escolha uma opção',
+        button_text: 'Selecionar',
+        list_type: 1,
+        sections: [
+          {
+            id: 'section-1',
+            title: null,
+            rows: [
+              {
+                id: '1',
+                title: 'Endereço e finalizar',
+                description: 'Descrição da opção 1',
+              },
+              {
+                id: '2',
+                title: 'Opção 2',
+                description: 'Localização e Atendimento',
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
 });

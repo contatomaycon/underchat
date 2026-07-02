@@ -31,6 +31,10 @@ function getText(msg: proto.IMessage): string {
   if (base.buttonsMessage?.contentText) return base.buttonsMessage.contentText;
   if ((base as any).buttonsResponseMessage?.selectedDisplayText)
     return (base as any).buttonsResponseMessage.selectedDisplayText;
+  if ((base as any).listMessage?.description)
+    return (base as any).listMessage.description;
+  if ((base as any).listResponseMessage?.title)
+    return (base as any).listResponseMessage.title;
   if ((base as any).templateMessage?.hydratedTemplate?.hydratedContentText)
     return (base as any).templateMessage.hydratedTemplate.hydratedContentText;
 
@@ -72,6 +76,8 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
     base.stickerMessage,
     base.buttonsMessage,
     (base as any).buttonsResponseMessage,
+    (base as any).listMessage,
+    (base as any).listResponseMessage,
     base.templateButtonReplyMessage,
     base.interactiveResponseMessage,
   ]
@@ -154,6 +160,15 @@ function detectButtons({ msg }: IMapCtx): EMessageType | undefined {
   return undefined;
 }
 
+function detectList({ msg }: IMapCtx): EMessageType | undefined {
+  const base = unwrapMessage(msg) ?? msg;
+  if ((base as any).listMessage || (base as any).listResponseMessage) {
+    return EMessageType.text;
+  }
+
+  return undefined;
+}
+
 function detectText({ text, msg }: IMapCtx): EMessageType | undefined {
   if (text) return EMessageType.text;
 
@@ -207,6 +222,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
     detectProtocol,
     detectTemplate,
     detectButtons,
+    detectList,
     detectText,
   ];
 

@@ -20,6 +20,7 @@ const WWEBJS_BUTTON_TYPES = new Set([
   'button_response',
   'template_button_reply',
 ]);
+const WWEBJS_LIST_TYPES = new Set(['list', 'list_message', 'list_response']);
 
 type WwebjsButtonPayloadButton = {
   id?: string;
@@ -34,6 +35,51 @@ type WwebjsButtonPayload = {
   headerType?: string | number;
   buttons: WwebjsButtonPayloadButton[];
 };
+
+type WwebjsListPayloadRow = {
+  id?: string;
+  title: string;
+  description?: string;
+};
+
+type WwebjsListPayloadSection = {
+  id?: string;
+  title?: string;
+  rows: WwebjsListPayloadRow[];
+};
+
+type WwebjsListPayload = {
+  text?: string;
+  buttonText?: string;
+  listType?: string | number;
+  sections: WwebjsListPayloadSection[];
+};
+
+type WwebjsListResponsePayload = {
+  id?: string;
+  title: string;
+  description?: string;
+};
+
+type WwebjsContent = NonNullable<IUpsertMessage['content']>;
+
+interface WwebjsInteractiveResolutionInput {
+  id: string;
+  rawType: string;
+  rawData?: Record<string, unknown>;
+  fromMe: boolean;
+  body: string;
+  messageType: EMessageType | null;
+}
+
+interface WwebjsInteractiveResolution {
+  body: string;
+  messageType: EMessageType | null;
+  buttonsContent?: WwebjsContent;
+  buttonsResponseText?: string;
+  listContent?: WwebjsContent;
+  listResponse?: WwebjsListResponsePayload;
+}
 
 function getMessageId(msg: Message): string | undefined {
   if (!msg?.id) return undefined;
@@ -126,7 +172,8 @@ function mapWwebjsTypeToMessageType(
     t === 'automated_greeting_message' ||
     t === 'interactive' ||
     t === 'native_flow' ||
-    isButtonPayload(t, rawData)
+    isButtonPayload(t, rawData) ||
+    isListPayload(t, rawData)
   ) {
     return EMessageType.text;
   }
@@ -348,6 +395,204 @@ function getButtonsResponseText(
   );
 }
 
+function getListRowTitle(row: Record<string, unknown>): string | undefined {
+  return (
+    getNonEmptyString(row.title) ??
+    getNonEmptyString(row.name) ??
+    getNonEmptyString(row.text) ??
+    getNonEmptyString(row.displayText) ??
+    getNonEmptyString(row.rowId) ??
+    getNonEmptyString(row.rowID) ??
+    getNonEmptyString(row.id)
+  );
+}
+
+function getListPayload(
+  rawData?: Record<string, unknown>
+): WwebjsListPayload | undefined {
+  const listMessage = getObjectRecord(rawData?.listMessage);
+  const list = getObjectRecord(rawData?.list);
+  const source = listMessage ?? list ?? rawData;
+  if (!source) return undefined;
+
+  const rawSections = Array.isArray(source.sections) ? source.sections : [];
+  const sections = rawSections
+    .map((item, index): WwebjsListPayloadSection | null => {
+      const section = getObjectRecord(item);
+      if (!section) return null;
+
+      const rawRows = Array.isArray(section.rows) ? section.rows : [];
+      const rows = rawRows
+        .map((rawRow): WwebjsListPayloadRow | null => {
+          const row = getObjectRecord(rawRow);
+          if (!row) return null;
+
+          const title = getListRowTitle(row);
+          if (!title) return null;
+
+          const payload: WwebjsListPayloadRow = { title };
+          const id =
+            getNonEmptyString(row.rowId) ??
+            getNonEmptyString(row.rowID) ??
+            getNonEmptyString(row.id);
+          const description = getNonEmptyString(row.description);
+
+          if (id) payload.id = id;
+          if (description) payload.description = description;
+
+          return payload;
+        })
+        .filter((row): row is WwebjsListPayloadRow => row !== null);
+
+      if (!rows.length) return null;
+
+      const payload: WwebjsListPayloadSection = { rows };
+      const id =
+        getNonEmptyString(section.id) ??
+        getNonEmptyString(section.sectionId) ??
+        `section-${index + 1}`;
+      const title = getNonEmptyString(section.title);
+
+      if (id) payload.id = id;
+      if (title) payload.title = title;
+
+      return payload;
+    })
+    .filter((section): section is WwebjsListPayloadSection => section !== null);
+
+  if (!sections.length) return undefined;
+
+  return {
+    text:
+      getNonEmptyString(source.description) ??
+      getNonEmptyString(source.text) ??
+      getNonEmptyString(source.body) ??
+      getNonEmptyString(rawData?.body),
+    buttonText:
+      getNonEmptyString(source.buttonText) ??
+      getNonEmptyString(source.button_text) ??
+      getNonEmptyString(source.button),
+    listType:
+      getNonEmptyString(source.listType) ??
+      (typeof source.listType === 'number' ? source.listType : undefined),
+    sections,
+  };
+}
+
+function getListResponsePayload(
+  rawType: string,
+  rawData?: Record<string, unknown>
+): WwebjsListResponsePayload | undefined {
+  const response =
+    getObjectRecord(rawData?.listResponseMessage) ??
+    getObjectRecord(rawData?.listResponse) ??
+    (rawType === 'list_response' ? rawData : undefined);
+  if (!response) return undefined;
+
+  const singleSelectReply = getObjectRecord(response.singleSelectReply);
+  const id =
+    getNonEmptyString(singleSelectReply?.selectedRowId) ??
+    getNonEmptyString(singleSelectReply?.selectedRowID) ??
+    getNonEmptyString(singleSelectReply?.rowId) ??
+    getNonEmptyString(singleSelectReply?.rowID) ??
+    getNonEmptyString(response.selectedRowId) ??
+    getNonEmptyString(response.selectedRowID) ??
+    getNonEmptyString(response.rowId) ??
+    getNonEmptyString(response.rowID) ??
+    getNonEmptyString(response.id);
+  const title =
+    getNonEmptyString(response.title) ??
+    getNonEmptyString(response.body)?.split('\n')[0]?.trim() ??
+    getNonEmptyString(response.selectedDisplayText) ??
+    id;
+  const description =
+    getNonEmptyString(response.description) ??
+    getNonEmptyString(response.body)?.split('\n').slice(1).join('\n').trim();
+
+  if (!title) return undefined;
+
+  return {
+    id,
+    title,
+    description: description || undefined,
+  };
+}
+
+function isListPayload(
+  rawType: string,
+  rawData?: Record<string, unknown>
+): boolean {
+  return (
+    WWEBJS_LIST_TYPES.has(rawType) ||
+    Boolean(getListPayload(rawData)) ||
+    Boolean(getListResponsePayload(rawType, rawData))
+  );
+}
+
+function buildListContent(
+  rawType: string,
+  body: string,
+  rawData?: Record<string, unknown>
+): IUpsertMessage['content'] | undefined {
+  const payload = getListPayload(rawData);
+  if (!payload) return undefined;
+
+  const text = payload.text ?? body;
+  return {
+    type: EMessageType.text,
+    message: text,
+    list: {
+      text: text || null,
+      button_text: payload.buttonText ?? null,
+      list_type: payload.listType ?? rawType,
+      sections: payload.sections.map((section) => ({
+        id: section.id ?? null,
+        title: section.title ?? null,
+        rows: section.rows.map((row) => ({
+          id: row.id ?? null,
+          title: row.title,
+          description: row.description ?? null,
+        })),
+      })),
+    },
+  };
+}
+
+function buildListProtoMessage(
+  payload: WwebjsListPayload,
+  fallbackText?: string
+): Record<string, unknown> {
+  return {
+    listMessage: {
+      description: payload.text ?? fallbackText,
+      buttonText: payload.buttonText ?? undefined,
+      listType: payload.listType ?? undefined,
+      sections: payload.sections.map((section) => ({
+        title: section.title ?? undefined,
+        rows: section.rows.map((row) => ({
+          rowId: row.id ?? undefined,
+          title: row.title,
+          description: row.description ?? undefined,
+        })),
+      })),
+    },
+  };
+}
+
+function buildListResponseProtoMessage(
+  payload: WwebjsListResponsePayload
+): Record<string, unknown> {
+  return {
+    listResponseMessage: {
+      title: payload.title,
+      description: payload.description,
+      singleSelectReply: {
+        selectedRowId: payload.id,
+      },
+    },
+  };
+}
+
 function safeStringify(value: unknown, maxLength = 4000): string {
   try {
     const seen = new WeakSet<object>();
@@ -377,6 +622,13 @@ function resolveMessageBody(
   body: string,
   rawData?: Record<string, unknown>
 ): string {
+  const listContentText =
+    getListPayload(rawData)?.text ??
+    getListResponsePayload(rawType, rawData)?.title;
+  if (listContentText) {
+    return listContentText;
+  }
+
   const buttonContentText =
     getButtonPayload(rawData)?.text ?? getButtonsResponseText(rawData);
   if (buttonContentText) {
@@ -400,6 +652,85 @@ function resolveMessageBody(
   }
 
   return body;
+}
+
+function resolveWwebjsInteractiveMessage({
+  id,
+  rawType,
+  rawData,
+  fromMe,
+  body,
+  messageType,
+}: WwebjsInteractiveResolutionInput): WwebjsInteractiveResolution {
+  let nextBody = body;
+  let nextMessageType = messageType;
+  const isWwebjsButtonType = WWEBJS_BUTTON_TYPES.has(rawType);
+  const buttonsContent =
+    buildButtonContent(rawType, body, rawData) ?? undefined;
+  const buttonsResponseText =
+    isWwebjsButtonType || getObjectRecord(rawData?.buttonsResponseMessage)
+      ? getButtonsResponseText(rawData)
+      : undefined;
+  const isWwebjsListType = WWEBJS_LIST_TYPES.has(rawType);
+  const listContent = buildListContent(rawType, body, rawData) ?? undefined;
+  const listResponse = getListResponsePayload(rawType, rawData);
+
+  if (buttonsContent || buttonsResponseText) {
+    nextMessageType = EMessageType.text;
+    nextBody = buttonsContent?.message ?? buttonsResponseText ?? body;
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.buttons',
+      id,
+      raw_type: rawType,
+      from_me: fromMe,
+      mapped_type: nextMessageType,
+      body: nextBody,
+      raw_data: rawData,
+    });
+  } else if (isWwebjsButtonType) {
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.button_type_without_payload',
+      id,
+      raw_type: rawType,
+      from_me: fromMe,
+      mapped_type: nextMessageType,
+      body: nextBody,
+      raw_data: rawData,
+    });
+  }
+
+  if (listContent || listResponse) {
+    nextMessageType = EMessageType.text;
+    nextBody = listContent?.message ?? listResponse?.title ?? nextBody;
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.list',
+      id,
+      raw_type: rawType,
+      from_me: fromMe,
+      mapped_type: nextMessageType,
+      body: nextBody,
+      raw_data: rawData,
+    });
+  } else if (isWwebjsListType) {
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.list_type_without_payload',
+      id,
+      raw_type: rawType,
+      from_me: fromMe,
+      mapped_type: nextMessageType,
+      body: nextBody,
+      raw_data: rawData,
+    });
+  }
+
+  return {
+    body: nextBody,
+    messageType: nextMessageType,
+    buttonsContent,
+    buttonsResponseText,
+    listContent,
+    listResponse,
+  };
 }
 
 function getPinTypeValue(value: unknown): string | number | undefined {
@@ -1281,9 +1612,16 @@ function buildQuotedProtoMessage(
   const buttonPayload = getButtonPayload(
     rawData as Record<string, unknown> | undefined
   );
+  const listPayload = getListPayload(
+    rawData as Record<string, unknown> | undefined
+  );
 
   if (buttonPayload) {
     return buildButtonsProtoMessage(buttonPayload, body);
+  }
+
+  if (listPayload) {
+    return buildListProtoMessage(listPayload, body);
   }
 
   if (rawType === 'chat') {
@@ -1425,11 +1763,17 @@ function buildQuotedProtoMessageFromRaw(
     getNonEmptyString(raw.body) ??
     getNonEmptyString(raw.caption) ??
     getNonEmptyString(raw.contentText) ??
+    getNonEmptyString(raw.description) ??
     '';
   const buttonPayload = getButtonPayload(raw);
+  const listPayload = getListPayload(raw);
 
   if (buttonPayload) {
     return buildButtonsProtoMessage(buttonPayload, body);
+  }
+
+  if (listPayload) {
+    return buildListProtoMessage(listPayload, body);
   }
 
   if (rawType === 'chat' && body) {
@@ -1541,32 +1885,18 @@ export async function wwebjsMessageToUpsert(
   const rawBody = typeof msg.body === 'string' ? msg.body : '';
   let body = resolveMessageBody(rawType, rawBody, rawData);
   let messageType = mapWwebjsTypeToMessageType(rawType, rawData);
-  const isWwebjsButtonType = WWEBJS_BUTTON_TYPES.has(rawType);
-  const buttonsContent = buildButtonContent(rawType, body, rawData);
-  const buttonsResponseText = getButtonsResponseText(rawData);
-  if (buttonsContent || buttonsResponseText) {
-    messageType = EMessageType.text;
-    body = buttonsContent?.message ?? buttonsResponseText ?? body;
-    logWwebjsIncomingDebug({
-      stage: 'wwebjs.message_to_upsert.buttons',
-      id,
-      raw_type: rawType,
-      from_me: msg.fromMe,
-      mapped_type: messageType,
-      body,
-      raw_data: rawData,
-    });
-  } else if (isWwebjsButtonType) {
-    logWwebjsIncomingDebug({
-      stage: 'wwebjs.message_to_upsert.button_type_without_payload',
-      id,
-      raw_type: rawType,
-      from_me: msg.fromMe,
-      mapped_type: messageType,
-      body,
-      raw_data: rawData,
-    });
-  }
+  const interactiveResolution = resolveWwebjsInteractiveMessage({
+    id,
+    rawType,
+    rawData,
+    fromMe: msg.fromMe,
+    body,
+    messageType,
+  });
+  body = interactiveResolution.body;
+  messageType = interactiveResolution.messageType;
+  const { buttonsContent, buttonsResponseText, listContent, listResponse } =
+    interactiveResolution;
   const pinInChatMessage = buildPinInChatMessage(
     rawType,
     rawData,
@@ -1683,6 +2013,31 @@ export async function wwebjsMessageToUpsert(
       selectedDisplayText: buttonsResponseText,
     };
   }
+  if (listContent?.list) {
+    Object.assign(
+      innerMessage,
+      buildListProtoMessage(
+        {
+          text: listContent.list.text ?? undefined,
+          buttonText: listContent.list.button_text ?? undefined,
+          listType: listContent.list.list_type ?? undefined,
+          sections: listContent.list.sections.map((section) => ({
+            id: section.id ?? undefined,
+            title: section.title ?? undefined,
+            rows: section.rows.map((row) => ({
+              id: row.id ?? undefined,
+              title: row.title,
+              description: row.description ?? undefined,
+            })),
+          })),
+        },
+        body
+      )
+    );
+  }
+  if (listResponse) {
+    Object.assign(innerMessage, buildListResponseProtoMessage(listResponse));
+  }
 
   const quotedContextInfo = await buildQuotedContextInfo(msg);
   const forwardedContextInfo = buildForwardedContextInfo(msg);
@@ -1743,7 +2098,14 @@ export async function wwebjsMessageToUpsert(
               type: EMessageType.text,
               message: buttonsResponseText,
             }
-          : undefined,
+          : listContent
+            ? listContent
+            : listResponse
+              ? {
+                  type: EMessageType.text,
+                  message: listResponse.title,
+                }
+              : undefined,
     has_quoted: (msg.hasQuotedMsg ?? false) || !!quotedContextInfo,
   };
 }

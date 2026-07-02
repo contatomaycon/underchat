@@ -278,6 +278,159 @@ describe('wwebjsMessageToUpsert', () => {
     });
   });
 
+  it('converts WWebJS list payloads into text content with list metadata', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      id: {
+        ...baseMessage.id,
+        id: 'LIST_MESSAGE_ID',
+        _serialized: 'true_5511999999999@c.us_LIST_MESSAGE_ID',
+      },
+      fromMe: true,
+      type: 'list',
+      body: '',
+      _data: {
+        list: {
+          description: 'Escolha uma opção',
+          buttonText: 'Selecionar',
+          listType: 1,
+          sections: [
+            {
+              rows: [
+                {
+                  rowId: '1',
+                  title: 'Endereço e finalizar',
+                  description: 'Descrição da opção 1',
+                },
+                {
+                  rowId: '2',
+                  title: 'Opção 2',
+                  description: 'Localização e Atendimento',
+                },
+              ],
+            },
+          ],
+        },
+      },
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.text);
+    expect(upsert?.content).toEqual(
+      expect.objectContaining({
+        message: 'Escolha uma opção',
+        list: expect.objectContaining({
+          text: 'Escolha uma opção',
+          button_text: 'Selecionar',
+          list_type: 1,
+          sections: [
+            {
+              id: 'section-1',
+              title: null,
+              rows: [
+                {
+                  id: '1',
+                  title: 'Endereço e finalizar',
+                  description: 'Descrição da opção 1',
+                },
+                {
+                  id: '2',
+                  title: 'Opção 2',
+                  description: 'Localização e Atendimento',
+                },
+              ],
+            },
+          ],
+        }),
+      })
+    );
+    expect(innerMessage.listMessage).toEqual(
+      expect.objectContaining({
+        description: 'Escolha uma opção',
+        buttonText: 'Selecionar',
+        listType: 1,
+      })
+    );
+    expect(warn).toHaveBeenCalledWith(
+      '[WWEBJS_INCOMING_DEBUG]',
+      expect.stringContaining('wwebjs.message_to_upsert.list')
+    );
+  });
+
+  it('uses WWebJS list response title with quoted list metadata', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      id: {
+        ...baseMessage.id,
+        id: 'LIST_RESPONSE_ID',
+        _serialized: 'false_5511999999999@c.us_LIST_RESPONSE_ID',
+      },
+      type: 'list_response',
+      body: '2',
+      _data: {
+        body: 'Opção 2\nLocalização e Atendimento',
+        listResponse: {
+          title: 'Opção 2',
+          description: 'Localização e Atendimento',
+          singleSelectReply: {
+            selectedRowId: '2',
+          },
+        },
+        quotedMsg: {
+          type: 'list',
+          list: {
+            description: 'Escolha uma opção',
+            buttonText: 'Selecionar',
+            listType: 1,
+            sections: [
+              {
+                rows: [
+                  {
+                    rowId: '2',
+                    title: 'Opção 2',
+                    description: 'Localização e Atendimento',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        quotedStanzaID: 'LIST_MESSAGE_ID',
+        quotedParticipant: '5500000000000@c.us',
+      },
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.text);
+    expect(upsert?.content?.message).toBe('Opção 2');
+    expect(innerMessage.conversation).toBe('Opção 2');
+    expect(innerMessage.listResponseMessage).toEqual({
+      title: 'Opção 2',
+      description: 'Localização e Atendimento',
+      singleSelectReply: {
+        selectedRowId: '2',
+      },
+    });
+    expect(innerMessage.extendedTextMessage).toMatchObject({
+      contextInfo: {
+        stanzaId: 'LIST_MESSAGE_ID',
+        quotedMessage: {
+          listMessage: {
+            description: 'Escolha uma opção',
+            buttonText: 'Selecionar',
+            listType: 1,
+          },
+        },
+      },
+    });
+  });
+
   it('converts unknown WWebJS message types with body into system fallback', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 

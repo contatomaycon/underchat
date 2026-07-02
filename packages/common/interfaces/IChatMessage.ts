@@ -52,6 +52,7 @@ export interface IQuotedMessage {
   location?: LocationMessageChat | null;
   contact?: IContactMessage | null;
   buttons?: IButtonMessage | null;
+  list?: IListMessage | null;
 }
 
 export type QuotedMessageType = Omit<IQuotedMessage, 'key' | 'type'> & {
@@ -106,6 +107,25 @@ export interface IButtonMessage {
   buttons: IButtonMessageOption[];
 }
 
+export interface IListMessageRow {
+  id?: string | null;
+  title: string;
+  description?: string | null;
+}
+
+export interface IListMessageSection {
+  id?: string | null;
+  title?: string | null;
+  rows: IListMessageRow[];
+}
+
+export interface IListMessage {
+  text?: string | null;
+  button_text?: string | null;
+  list_type?: string | number | null;
+  sections: IListMessageSection[];
+}
+
 export interface IPinMessage {
   pin_action?: string | null;
   pin_user_name?: string | null;
@@ -157,6 +177,7 @@ export interface IContent {
   context_info?: IMessageContextInfo | null;
   template?: ITemplateMessage | null;
   buttons?: IButtonMessage | null;
+  list?: IListMessage | null;
   official_template?: IOfficialWhatsappTemplateMessage | null;
   official?: IOfficialWhatsappContentMetadata | null;
   pin?: IPinMessage | null;

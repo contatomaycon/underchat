@@ -22,6 +22,9 @@ import {
   IChatMessage,
   IContactMessage,
   IContent,
+  IListMessage,
+  IListMessageRow,
+  IListMessageSection,
   IQuotedMessage,
 } from '@core/common/interfaces/IChatMessage';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
@@ -95,6 +98,12 @@ import { InboundMessageSpoolService } from '@core/services/inboundMessageSpool.s
 import { IInboundMessageSpoolPayload } from '@core/common/interfaces/IInboundMessageSpoolPayload';
 import { LidJidCacheService } from '@core/services/lidJidCache.service';
 import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
+import { buildOfficialWhatsappDisplayFromInteractive } from '@core/common/functions/officialWhatsappDisplay';
+import {
+  IOfficialWhatsappContentMetadata,
+  IOfficialWhatsappDisplayAction,
+  IOfficialWhatsappDisplayMetadata,
+} from '@core/common/interfaces/IOfficialWhatsappContentMetadata';
 
 type ReactionInactivityTypeUser = ETypeUserChat.operator | ETypeUserChat.client;
 
@@ -117,6 +126,12 @@ interface IEditMessagePayload {
   protocolKey?: Record<string, unknown>;
   targetMessageId?: string;
   editedContent?: Record<string, unknown>;
+}
+
+interface IListResponsePayload {
+  id: string | null;
+  title: string;
+  description: string | null;
 }
 
 interface IAutomationTriggerGuard {
@@ -730,6 +745,202 @@ export class MessageUpsertConsume {
         ]) ?? null,
       header_type: this.normalizeButtonType(buttonsMessage.headerType),
       buttons,
+    };
+  }
+
+  private getListRowTitle(row: Record<string, unknown>): string | undefined {
+    return this.firstStringField(row, [
+      'title',
+      'name',
+      'text',
+      'displayText',
+      'rowId',
+      'rowID',
+      'id',
+    ]);
+  }
+
+  private buildListContent(data: IUpsertMessage): IListMessage | null {
+    if (data.content?.list) {
+      return data.content.list;
+    }
+
+    const msg = this.getInnerMessage(data);
+    const listMessage = this.toRecord(msg?.listMessage);
+    if (!listMessage) {
+      return null;
+    }
+
+    const rawSections = Array.isArray(listMessage.sections)
+      ? listMessage.sections
+      : [];
+    const sections = rawSections
+      .map((rawSection, sectionIndex) => {
+        const section = this.toRecord(rawSection);
+        if (!section) return null;
+
+        const rawRows = Array.isArray(section.rows) ? section.rows : [];
+        const rows: IListMessageRow[] = rawRows
+          .map((rawRow) => {
+            const row = this.toRecord(rawRow);
+            if (!row) return null;
+
+            const title = this.getListRowTitle(row);
+            if (!title) return null;
+
+            const builtRow: IListMessageRow = {
+              id: this.firstStringField(row, ['rowId', 'rowID', 'id']) ?? null,
+              title,
+              description:
+                this.firstStringField(row, ['description', 'body']) ?? null,
+            };
+
+            return builtRow;
+          })
+          .filter((row): row is IListMessageRow => Boolean(row));
+
+        if (!rows.length) return null;
+
+        const builtSection: IListMessageSection = {
+          id:
+            this.firstStringField(section, ['id', 'sectionId']) ??
+            `section-${sectionIndex + 1}`,
+          title: this.firstStringField(section, ['title']) ?? null,
+          rows,
+        };
+
+        return builtSection;
+      })
+      .filter((section): section is IListMessageSection => Boolean(section));
+
+    if (!sections.length) {
+      return null;
+    }
+
+    return {
+      text:
+        this.firstStringField(listMessage, [
+          'description',
+          'text',
+          'body',
+          'message',
+        ]) ?? null,
+      button_text:
+        this.firstStringField(listMessage, [
+          'buttonText',
+          'button_text',
+          'button',
+        ]) ?? null,
+      list_type: this.normalizeButtonType(listMessage.listType),
+      sections,
+    };
+  }
+
+  private getListResponsePayload(
+    data: IUpsertMessage
+  ): IListResponsePayload | null {
+    const msg = this.getInnerMessage(data);
+    const response = this.toRecord(msg?.listResponseMessage);
+    if (!response) {
+      return null;
+    }
+
+    const singleSelectReply = this.toRecord(response.singleSelectReply);
+    const id =
+      this.firstStringField(singleSelectReply, [
+        'selectedRowId',
+        'selectedRowID',
+        'rowId',
+        'rowID',
+        'id',
+      ]) ??
+      this.firstStringField(response, [
+        'selectedRowId',
+        'selectedRowID',
+        'rowId',
+        'rowID',
+        'id',
+      ]) ??
+      null;
+    const title =
+      this.firstStringField(response, [
+        'title',
+        'selectedDisplayText',
+        'displayText',
+        'body',
+        'text',
+      ]) ?? id;
+
+    if (!title) {
+      return null;
+    }
+
+    return {
+      id,
+      title,
+      description:
+        this.firstStringField(response, ['description', 'body']) ?? null,
+    };
+  }
+
+  private buildOfficialListDisplay(
+    list: IListMessage
+  ): IOfficialWhatsappDisplayMetadata | null {
+    return buildOfficialWhatsappDisplayFromInteractive(
+      {
+        type: 'list',
+        body: list.text ? { text: list.text } : undefined,
+        action: {
+          button: list.button_text ?? 'Selecionar',
+          sections: list.sections.map((section) => ({
+            id: section.id ?? undefined,
+            title: section.title ?? undefined,
+            rows: section.rows.map((row) => ({
+              id: row.id ?? undefined,
+              title: row.title,
+              description: row.description ?? undefined,
+            })),
+          })),
+        },
+      },
+      'list',
+      list.text
+    );
+  }
+
+  private buildOfficialListResponseDisplay(
+    response: IListResponsePayload,
+    quoted?: IQuotedMessage | null
+  ): IOfficialWhatsappDisplayMetadata {
+    const action: IOfficialWhatsappDisplayAction = {
+      id: response.id,
+      type: 'list_reply',
+      title: response.title,
+      description: response.description,
+    };
+
+    return {
+      kind: 'reply',
+      raw_type: 'list_reply',
+      title: response.title,
+      body: quoted?.message ?? response.description,
+      actions: [action],
+    };
+  }
+
+  private buildOfficialInteractiveMetadata(
+    display: IOfficialWhatsappDisplayMetadata | null,
+    raw: Record<string, unknown>
+  ): IOfficialWhatsappContentMetadata | null {
+    if (!display) {
+      return null;
+    }
+
+    return {
+      provider: 'meta_whatsapp',
+      type: 'interactive',
+      display,
+      raw,
     };
   }
 
@@ -4288,7 +4499,15 @@ export class MessageUpsertConsume {
       return false;
     }
 
+    if (data.content?.list || this.buildListContent(data)) {
+      return false;
+    }
+
     if (this.getButtonsResponseText(data)) {
+      return false;
+    }
+
+    if (this.getListResponsePayload(data)) {
       return false;
     }
 
@@ -4300,6 +4519,14 @@ export class MessageUpsertConsume {
 
   private isEmptyTextContent(content: IContent): boolean {
     if (content.type !== EMessageType.text) {
+      return false;
+    }
+
+    if (
+      content.buttons?.buttons?.length ||
+      content.list?.sections?.length ||
+      content.official?.display
+    ) {
       return false;
     }
 
@@ -4315,6 +4542,50 @@ export class MessageUpsertConsume {
     }
 
     return text.replace(/[\u200B-\u200F\u2060\uFEFF]/g, '').trim();
+  }
+
+  private applyInteractiveContent(
+    content: IContent,
+    buttonsContent: IButtonMessage | null,
+    listContent: IListMessage | null,
+    listResponse: IListResponsePayload | null
+  ): IContent {
+    if (buttonsContent) {
+      content.buttons = buttonsContent;
+      content.type = EMessageType.text;
+      if (!content.message) {
+        content.message = buttonsContent.text ?? null;
+      }
+    }
+
+    if (listContent) {
+      content.list = listContent;
+      content.type = EMessageType.text;
+      if (!content.message) {
+        content.message = listContent.text ?? null;
+      }
+      if (!content.official) {
+        content.official = this.buildOfficialInteractiveMetadata(
+          this.buildOfficialListDisplay(listContent),
+          { type: 'list', list: listContent }
+        );
+      }
+    }
+
+    if (listResponse) {
+      content.type = EMessageType.text;
+      if (!content.message) {
+        content.message = listResponse.title;
+      }
+      if (!content.official) {
+        content.official = this.buildOfficialInteractiveMetadata(
+          this.buildOfficialListResponseDisplay(listResponse, content.quoted),
+          { type: 'list_response', list_response: listResponse }
+        );
+      }
+    }
+
+    return content;
   }
 
   private buildMessageContent(data: IUpsertMessage): IContent {
@@ -4338,6 +4609,8 @@ export class MessageUpsertConsume {
     let messageText: string | undefined =
       extText?.text ?? (msg?.conversation as string | undefined) ?? undefined;
     const buttonsContent = this.buildButtonsContent(data);
+    const listContent = this.buildListContent(data);
+    const listResponse = this.getListResponsePayload(data);
 
     if (!messageText && data.type === EMessageType.document) {
       const documentMsg = this.getDocumentMessage(data) as {
@@ -4374,8 +4647,16 @@ export class MessageUpsertConsume {
       messageText = buttonsContent.text;
     }
 
+    if (!messageText && listContent?.text) {
+      messageText = listContent.text;
+    }
+
     if (!messageText) {
       messageText = this.getButtonsResponseText(data);
+    }
+
+    if (!messageText && listResponse?.title) {
+      messageText = listResponse.title;
     }
 
     let content: IContent = {
@@ -4422,13 +4703,12 @@ export class MessageUpsertConsume {
       content.official = data.content.official;
     }
 
-    if (buttonsContent) {
-      content.buttons = buttonsContent;
-      content.type = EMessageType.text;
-      if (!content.message) {
-        content.message = buttonsContent.text ?? null;
-      }
-    }
+    content = this.applyInteractiveContent(
+      content,
+      buttonsContent,
+      listContent,
+      listResponse
+    );
 
     if (data.type === EMessageType.set_disappearing_messages) {
       const protocolMessage = (msg as any)?.protocolMessage;

@@ -743,6 +743,14 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		text := firstNonEmpty(response.GetSelectedDisplayText(), response.GetSelectedButtonID())
 		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
 	}
+	if list := msg.GetListMessage(); list != nil {
+		content := incomingListContent(list)
+		return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+	}
+	if response := msg.GetListResponseMessage(); response != nil {
+		content := incomingListResponseContent(response)
+		return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+	}
 	if image := msg.GetImageMessage(); image != nil {
 		base = mediaContent(ctx, m, image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), viewOnce)
 		enrichIncomingAlbumContent(base, msg)
@@ -824,6 +832,88 @@ func incomingButtonsContent(buttons *waE2E.ButtonsMessage) map[string]any {
 			"header":      emptyStringAsNil(buttons.GetText()),
 			"header_type": buttons.GetHeaderType().String(),
 			"buttons":     options,
+		},
+	}
+}
+
+func incomingListContent(list *waE2E.ListMessage) map[string]any {
+	payload := listContentPayload(list)
+	return map[string]any{
+		"type":    MessageTypeText,
+		"message": emptyStringAsNil(list.GetDescription()),
+		"list":    payload,
+	}
+}
+
+func listContentPayload(list *waE2E.ListMessage) map[string]any {
+	sections := make([]map[string]any, 0, len(list.GetSections()))
+	for sectionIndex, section := range list.GetSections() {
+		if section == nil {
+			continue
+		}
+
+		rows := make([]map[string]any, 0, len(section.GetRows()))
+		for _, row := range section.GetRows() {
+			if row == nil || strings.TrimSpace(row.GetTitle()) == "" {
+				continue
+			}
+
+			rows = append(rows, map[string]any{
+				"id":          emptyStringAsNil(row.GetRowID()),
+				"title":       row.GetTitle(),
+				"description": emptyStringAsNil(row.GetDescription()),
+			})
+		}
+		if len(rows) == 0 {
+			continue
+		}
+
+		sections = append(sections, map[string]any{
+			"id":    fmt.Sprintf("section-%d", sectionIndex+1),
+			"title": emptyStringAsNil(section.GetTitle()),
+			"rows":  rows,
+		})
+	}
+
+	return map[string]any{
+		"text":        emptyStringAsNil(list.GetDescription()),
+		"button_text": emptyStringAsNil(list.GetButtonText()),
+		"list_type":   list.GetListType().String(),
+		"sections":    sections,
+	}
+}
+
+func incomingListResponseContent(response *waE2E.ListResponseMessage) map[string]any {
+	id := response.GetSingleSelectReply().GetSelectedRowID()
+	title := firstNonEmpty(response.GetTitle(), id)
+	description := response.GetDescription()
+
+	return map[string]any{
+		"type":    MessageTypeText,
+		"message": title,
+		"official": map[string]any{
+			"provider": "meta_whatsapp",
+			"type":     "interactive",
+			"display": map[string]any{
+				"kind":     "reply",
+				"raw_type": "list_reply",
+				"title":    title,
+				"body":     emptyStringAsNil(description),
+				"actions": []map[string]any{{
+					"id":          emptyStringAsNil(id),
+					"type":        "list_reply",
+					"title":       title,
+					"description": emptyStringAsNil(description),
+				}},
+			},
+			"raw": map[string]any{
+				"type": "list_response",
+				"list_response": map[string]any{
+					"id":          emptyStringAsNil(id),
+					"title":       title,
+					"description": emptyStringAsNil(description),
+				},
+			},
 		},
 	}
 }
@@ -1348,6 +1438,10 @@ func incomingMessageContextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
 		return msg.GetButtonsMessage().GetContextInfo()
 	case msg.GetButtonsResponseMessage() != nil:
 		return msg.GetButtonsResponseMessage().GetContextInfo()
+	case msg.GetListMessage() != nil:
+		return msg.GetListMessage().GetContextInfo()
+	case msg.GetListResponseMessage() != nil:
+		return msg.GetListResponseMessage().GetContextInfo()
 	}
 	return nil
 }
@@ -1377,6 +1471,10 @@ func quotedMessageType(msg *waE2E.Message) string {
 	case msg.GetButtonsMessage() != nil:
 		return MessageTypeText
 	case msg.GetButtonsResponseMessage() != nil:
+		return MessageTypeText
+	case msg.GetListMessage() != nil:
+		return MessageTypeText
+	case msg.GetListResponseMessage() != nil:
 		return MessageTypeText
 	default:
 		return MessageTypeText
@@ -1413,6 +1511,13 @@ func quotedMessageText(msg *waE2E.Message) string {
 		return firstNonEmpty(
 			msg.GetButtonsResponseMessage().GetSelectedDisplayText(),
 			msg.GetButtonsResponseMessage().GetSelectedButtonID(),
+		)
+	case msg.GetListMessage() != nil:
+		return msg.GetListMessage().GetDescription()
+	case msg.GetListResponseMessage() != nil:
+		return firstNonEmpty(
+			msg.GetListResponseMessage().GetTitle(),
+			msg.GetListResponseMessage().GetSingleSelectReply().GetSelectedRowID(),
 		)
 	default:
 		return ""
@@ -1505,6 +1610,11 @@ func enrichQuotedContent(msg *waE2E.Message, quoted map[string]any) {
 			items = append(items, quotedContactPayload(contact.GetDisplayName(), contact.GetVcard()))
 		}
 		quoted["contacts"] = items
+		return
+	}
+	if list := msg.GetListMessage(); list != nil {
+		quoted["list"] = listContentPayload(list)
+		return
 	}
 }
 

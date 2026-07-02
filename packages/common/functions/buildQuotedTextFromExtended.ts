@@ -2,6 +2,7 @@ import { WAMessage } from '@whiskeysockets/baileys';
 import { Buffer } from 'node:buffer';
 import type {
   IButtonMessage,
+  IListMessage,
   IQuotedMessage,
 } from '../interfaces/IChatMessage';
 import { remoteJid } from './remoteJid';
@@ -34,6 +35,7 @@ function extractText(quotedMessage: any): string {
     quotedMessage.buttonsMessage?.contentText ??
     quotedMessage.buttonsResponseMessage?.selectedDisplayText ??
     quotedMessage.listMessage?.description ??
+    quotedMessage.listResponseMessage?.title ??
     quotedMessage.documentMessage?.caption ??
     quotedMessage.imageMessage?.caption ??
     ''
@@ -117,6 +119,108 @@ function buildButtonsContent(quotedMessage: any): IButtonMessage | null {
   };
 }
 
+function getListRowTitle(row: any): string | null {
+  const value =
+    row?.title ??
+    row?.name ??
+    row?.text ??
+    row?.displayText ??
+    row?.rowId ??
+    row?.rowID ??
+    row?.id;
+
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function normalizeListRowId(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function buildListContent(quotedMessage: any): IListMessage | null {
+  const listMessage = quotedMessage?.listMessage;
+  if (!listMessage || !Array.isArray(listMessage.sections)) {
+    return null;
+  }
+
+  const sections = listMessage.sections
+    .map((section: any, sectionIndex: number) => {
+      const rows = Array.isArray(section?.rows) ? section.rows : [];
+      const normalizedRows = rows
+        .map((row: any) => {
+          const title = getListRowTitle(row);
+          if (!title) return null;
+
+          return {
+            id: normalizeListRowId(row?.rowId ?? row?.rowID ?? row?.id),
+            title,
+            description:
+              typeof row?.description === 'string' &&
+              row.description.trim().length > 0
+                ? row.description.trim()
+                : null,
+          };
+        })
+        .filter(
+          (
+            row: {
+              id: string | null;
+              title: string;
+              description: string | null;
+            } | null
+          ): row is {
+            id: string | null;
+            title: string;
+            description: string | null;
+          } => row !== null
+        );
+
+      if (!normalizedRows.length) return null;
+
+      return {
+        id:
+          normalizeListRowId(section?.id ?? section?.sectionId) ??
+          `section-${sectionIndex + 1}`,
+        title:
+          typeof section?.title === 'string' && section.title.trim().length > 0
+            ? section.title.trim()
+            : null,
+        rows: normalizedRows,
+      };
+    })
+    .filter(
+      (
+        section: {
+          id: string | null;
+          title: string | null;
+          rows: IListMessage['sections'][number]['rows'];
+        } | null
+      ): section is {
+        id: string | null;
+        title: string | null;
+        rows: IListMessage['sections'][number]['rows'];
+      } => section !== null
+    );
+
+  if (!sections.length) {
+    return null;
+  }
+
+  return {
+    text: listMessage.description ?? listMessage.text ?? null,
+    button_text: listMessage.buttonText ?? listMessage.button_text ?? null,
+    list_type: normalizeButtonType(listMessage.listType),
+    sections,
+  };
+}
+
 function processButtonsMessage(
   quotedMessage: any,
   quoted: IQuotedMessage
@@ -127,6 +231,16 @@ function processButtonsMessage(
   quoted.buttons = buttons;
   if (!quoted.message && buttons.text) {
     quoted.message = buttons.text;
+  }
+}
+
+function processListMessage(quotedMessage: any, quoted: IQuotedMessage): void {
+  const list = buildListContent(quotedMessage);
+  if (!list) return;
+
+  quoted.list = list;
+  if (!quoted.message && list.text) {
+    quoted.message = list.text;
   }
 }
 
@@ -313,6 +427,8 @@ export function buildQuotedTextFromExtended(
     (message as any).contactsArrayMessage?.contextInfo,
     (message as any).buttonsMessage?.contextInfo,
     (message as any).buttonsResponseMessage?.contextInfo,
+    (message as any).listMessage?.contextInfo,
+    (message as any).listResponseMessage?.contextInfo,
     (message as any).templateButtonReplyMessage?.contextInfo,
     (message as any).interactiveResponseMessage?.contextInfo,
   ];
@@ -354,6 +470,7 @@ export function buildQuotedTextFromExtended(
   processLocationMessage(quotedMessage, quoted);
   processContactMessage(quotedMessage, quoted);
   processButtonsMessage(quotedMessage, quoted);
+  processListMessage(quotedMessage, quoted);
 
   return quoted;
 }
