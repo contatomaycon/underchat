@@ -60,17 +60,17 @@ describe('buildQuotedTextFromExtended', () => {
             quotedMessage: {
               buttonsMessage: {
                 contentText: 'Escolha uma opção',
-                headerType: 1,
+                headerType: 'EMPTY',
                 buttons: [
                   {
                     buttonId: '1',
                     buttonText: { displayText: 'Atendimento' },
-                    type: 1,
+                    type: 'RESPONSE',
                   },
                   {
                     buttonId: '2',
                     buttonText: { displayText: 'Financeiro' },
-                    type: 1,
+                    type: 'RESPONSE',
                   },
                 ],
               },
@@ -122,7 +122,7 @@ describe('buildQuotedTextFromExtended', () => {
               listMessage: {
                 description: 'Escolha uma opção',
                 buttonText: 'Selecionar',
-                listType: 1,
+                listType: 'SINGLE_SELECT',
                 sections: [
                   {
                     rows: [

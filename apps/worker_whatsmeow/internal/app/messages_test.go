@@ -599,12 +599,18 @@ func TestIncomingButtonsMessageMapsAsTextWithButtonsContent(t *testing.T) {
 	if got := buttons["text"]; got != "Escolha uma opção" {
 		t.Fatalf("unexpected buttons text %#v", buttons)
 	}
+	if got := buttons["header_type"]; got != int(waE2E.ButtonsMessage_EMPTY) {
+		t.Fatalf("unexpected buttons header type %#v", buttons)
+	}
 	items, ok := buttons["buttons"].([]map[string]any)
 	if !ok {
 		t.Fatalf("unexpected buttons options type %#v", buttons["buttons"])
 	}
 	if len(items) != 2 || items[0]["display_text"] != "Atendimento" || items[1]["display_text"] != "Financeiro" {
 		t.Fatalf("unexpected buttons options %#v", items)
+	}
+	if got := items[0]["type"]; got != int(waE2E.ButtonsMessage_Button_RESPONSE) {
+		t.Fatalf("unexpected button type %#v", items)
 	}
 }
 
@@ -627,6 +633,39 @@ func TestIncomingButtonsResponseMessageMapsAsSelectedText(t *testing.T) {
 	}
 	if got := content["message"]; got != "Financeiro" {
 		t.Fatalf("unexpected selected response %#v", content)
+	}
+}
+
+func TestIncomingListMessageMapsAsTextWithNumericListType(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	messageType, content := manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			ListMessage: &waE2E.ListMessage{
+				Description: proto.String("Escolha uma opção"),
+				ButtonText:  proto.String("Selecionar"),
+				ListType:    waE2E.ListMessage_SINGLE_SELECT.Enum(),
+				Sections: []*waE2E.ListMessage_Section{
+					{
+						Rows: []*waE2E.ListMessage_Row{
+							{
+								RowID:       proto.String("1"),
+								Title:       proto.String("Atendimento"),
+								Description: proto.String("Descrição"),
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if messageType != MessageTypeText {
+		t.Fatalf("unexpected type %q", messageType)
+	}
+	list := asMap(content["list"])
+	if got := list["list_type"]; got != int(waE2E.ListMessage_SINGLE_SELECT) {
+		t.Fatalf("unexpected list type %#v", list)
 	}
 }
 

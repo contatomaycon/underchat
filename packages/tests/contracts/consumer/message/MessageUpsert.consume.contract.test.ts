@@ -250,17 +250,17 @@ describe('MessageUpsertConsume edit fallback', () => {
         buttonsMessage: {
           contentText: 'Escolha uma opção',
           footerText: 'Underchat',
-          headerType: 1,
+          headerType: 'EMPTY',
           buttons: [
             {
               buttonId: '1',
               buttonText: { displayText: 'Atendimento' },
-              type: 1,
+              type: 'RESPONSE',
             },
             {
               buttonId: '2',
               buttonText: { displayText: 'Financeiro' },
-              type: 1,
+              type: 'RESPONSE',
             },
           ],
         },
@@ -293,7 +293,7 @@ describe('MessageUpsertConsume edit fallback', () => {
         listMessage: {
           description: 'Escolha uma opção',
           buttonText: 'Selecionar',
-          listType: 1,
+          listType: 'SINGLE_SELECT',
           sections: [
             {
               rows: [
@@ -336,7 +336,7 @@ describe('MessageUpsertConsume edit fallback', () => {
               listMessage: {
                 description: 'Escolha uma opção',
                 buttonText: 'Selecionar',
-                listType: 1,
+                listType: 'SINGLE_SELECT',
                 sections: [
                   {
                     rows: [
@@ -814,6 +814,91 @@ describe('MessageUpsertConsume edit fallback', () => {
     );
   });
 
+  it('normalizes prebuilt button metadata before indexing', () => {
+    const { consumer } = makeConsumer();
+    const upsert = makeTextUpsert('Escolha uma opção');
+    upsert.content = {
+      buttons: {
+        text: 'Escolha uma opção',
+        footer: 'Underchat',
+        header_type: 'EMPTY',
+        buttons: [
+          {
+            id: '1',
+            display_text: 'Atendimento',
+            type: 'RESPONSE',
+          },
+        ],
+      },
+    } as IChatMessage['content'];
+
+    const content = (consumer as any).buildMessageContent(
+      upsert
+    ) as IChatMessage['content'];
+
+    expect(content?.buttons).toEqual(
+      expect.objectContaining({
+        header_type: 1,
+        buttons: [
+          {
+            id: '1',
+            display_text: 'Atendimento',
+            type: 1,
+          },
+        ],
+      })
+    );
+  });
+
+  it('normalizes prebuilt quoted button metadata before indexing', () => {
+    const { consumer } = makeConsumer();
+    const upsert = makeTextUpsert('Atendimento');
+    upsert.content = {
+      quoted: {
+        key: {
+          id: 'quoted-buttons-id',
+          remote_jid: '556999715039@s.whatsapp.net',
+          remote_jid_alt: null,
+          from_me: true,
+          participant: null,
+          participant_alt: null,
+          addressing_mode: null,
+          is_view_once: false,
+        },
+        type: EMessageType.text,
+        message: 'Escolha uma opção',
+        buttons: {
+          text: 'Escolha uma opção',
+          header_type: 'EMPTY',
+          buttons: [
+            {
+              id: '1',
+              display_text: 'Atendimento',
+              type: 'RESPONSE',
+            },
+          ],
+        },
+      },
+    } as IChatMessage['content'];
+
+    const content = (consumer as any).buildMessageContent(
+      upsert
+    ) as IChatMessage['content'];
+
+    expect(content?.quoted?.buttons).toEqual(
+      expect.objectContaining({
+        header_type: 1,
+        buttons: [
+          {
+            id: '1',
+            display_text: 'Atendimento',
+            type: 1,
+          },
+        ],
+      })
+    );
+  });
+
   it('maps provider button response messages to selected text', () => {
     const { consumer } = makeConsumer();
     const content = (consumer as any).buildMessageContent(
@@ -891,6 +976,41 @@ describe('MessageUpsertConsume edit fallback', () => {
           ]),
         }),
       ])
+    );
+  });
+
+  it('normalizes prebuilt list metadata before indexing', () => {
+    const { consumer } = makeConsumer();
+    const upsert = makeTextUpsert('Escolha uma opção');
+    upsert.content = {
+      list: {
+        text: 'Escolha uma opção',
+        button_text: 'Selecionar',
+        list_type: 'SINGLE_SELECT',
+        sections: [
+          {
+            id: 'section-1',
+            title: null,
+            rows: [
+              {
+                id: '1',
+                title: 'Atendimento',
+                description: null,
+              },
+            ],
+          },
+        ],
+      },
+    } as IChatMessage['content'];
+
+    const content = (consumer as any).buildMessageContent(
+      upsert
+    ) as IChatMessage['content'];
+
+    expect(content?.list).toEqual(
+      expect.objectContaining({
+        list_type: 1,
+      })
     );
   });
 

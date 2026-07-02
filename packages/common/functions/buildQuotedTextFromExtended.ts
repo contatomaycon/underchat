@@ -42,12 +42,31 @@ function extractText(quotedMessage: any): string {
   );
 }
 
-function normalizeButtonType(value: unknown): string | number | null {
+function normalizeInteractiveEnum(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'string') return null;
 
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  if (!trimmed) return null;
+
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric)) return numeric;
+
+  const knownValues: Record<string, number> = {
+    UNKNOWN: 0,
+    EMPTY: 1,
+    RESPONSE: 1,
+    SINGLE_SELECT: 1,
+    TEXT: 2,
+    NATIVE_FLOW: 2,
+    PRODUCT_LIST: 2,
+    DOCUMENT: 3,
+    IMAGE: 4,
+    VIDEO: 5,
+    LOCATION: 6,
+  };
+
+  return knownValues[trimmed.toUpperCase()] ?? null;
 }
 
 function normalizeButtonId(value: unknown): string | null {
@@ -89,7 +108,7 @@ function buildButtonsContent(quotedMessage: any): IButtonMessage | null {
           button?.buttonId ?? button?.buttonID ?? button?.id
         ),
         display_text: displayText,
-        type: normalizeButtonType(button?.type),
+        type: normalizeInteractiveEnum(button?.type),
       };
     })
     .filter(
@@ -114,7 +133,7 @@ function buildButtonsContent(quotedMessage: any): IButtonMessage | null {
     text: buttonsMessage.contentText ?? buttonsMessage.text ?? null,
     footer: buttonsMessage.footerText ?? buttonsMessage.footer ?? null,
     header: buttonsMessage.headerText ?? buttonsMessage.header ?? null,
-    header_type: normalizeButtonType(buttonsMessage.headerType),
+    header_type: normalizeInteractiveEnum(buttonsMessage.headerType),
     buttons,
   };
 }
@@ -216,7 +235,7 @@ function buildListContent(quotedMessage: any): IListMessage | null {
   return {
     text: listMessage.description ?? listMessage.text ?? null,
     button_text: listMessage.buttonText ?? listMessage.button_text ?? null,
-    list_type: normalizeButtonType(listMessage.listType),
+    list_type: normalizeInteractiveEnum(listMessage.listType),
     sections,
   };
 }

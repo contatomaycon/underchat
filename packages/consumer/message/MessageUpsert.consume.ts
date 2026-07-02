@@ -654,9 +654,30 @@ export class MessageUpsertConsume {
     return undefined;
   }
 
-  private normalizeButtonType(value: unknown): string | number | null {
+  private normalizeInteractiveEnum(value: unknown): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
-    return this.toNonEmptyString(value) ?? null;
+
+    const text = this.toNonEmptyString(value);
+    if (!text) return null;
+
+    const numeric = Number(text);
+    if (Number.isFinite(numeric)) return numeric;
+
+    const knownValues: Record<string, number> = {
+      UNKNOWN: 0,
+      EMPTY: 1,
+      RESPONSE: 1,
+      SINGLE_SELECT: 1,
+      TEXT: 2,
+      NATIVE_FLOW: 2,
+      PRODUCT_LIST: 2,
+      DOCUMENT: 3,
+      IMAGE: 4,
+      VIDEO: 5,
+      LOCATION: 6,
+    };
+
+    return knownValues[text.toUpperCase()] ?? null;
   }
 
   private getButtonDisplayText(
@@ -667,6 +688,38 @@ export class MessageUpsertConsume {
       this.firstStringField(buttonText, ['displayText', 'text']) ??
       this.firstStringField(button, ['displayText', 'text', 'title'])
     );
+  }
+
+  private normalizeButtonsContent(buttons: IButtonMessage): IButtonMessage {
+    return {
+      ...buttons,
+      header_type: this.normalizeInteractiveEnum(buttons.header_type),
+      buttons: buttons.buttons.map((button) => ({
+        ...button,
+        type: this.normalizeInteractiveEnum(button.type),
+      })),
+    };
+  }
+
+  private normalizeListContent(list: IListMessage): IListMessage {
+    return {
+      ...list,
+      list_type: this.normalizeInteractiveEnum(list.list_type),
+    };
+  }
+
+  private normalizeQuotedContent(
+    quoted: IQuotedMessage | null
+  ): IQuotedMessage | null {
+    if (!quoted) return null;
+
+    return {
+      ...quoted,
+      buttons: quoted.buttons
+        ? this.normalizeButtonsContent(quoted.buttons)
+        : quoted.buttons,
+      list: quoted.list ? this.normalizeListContent(quoted.list) : quoted.list,
+    };
   }
 
   private getButtonsResponseText(data: IUpsertMessage): string | undefined {
@@ -686,7 +739,7 @@ export class MessageUpsertConsume {
 
   private buildButtonsContent(data: IUpsertMessage): IButtonMessage | null {
     if (data.content?.buttons) {
-      return data.content.buttons;
+      return this.normalizeButtonsContent(data.content.buttons);
     }
 
     const msg = this.getInnerMessage(data);
@@ -710,7 +763,7 @@ export class MessageUpsertConsume {
             this.firstStringField(button, ['buttonId', 'buttonID', 'id']) ??
             null,
           display_text: displayText,
-          type: this.normalizeButtonType(button.type),
+          type: this.normalizeInteractiveEnum(button.type),
         };
       })
       .filter(
@@ -719,7 +772,7 @@ export class MessageUpsertConsume {
         ): button is {
           id: string | null;
           display_text: string;
-          type: string | number | null;
+          type: number | null;
         } => Boolean(button)
       );
 
@@ -743,7 +796,7 @@ export class MessageUpsertConsume {
           'title',
           'header',
         ]) ?? null,
-      header_type: this.normalizeButtonType(buttonsMessage.headerType),
+      header_type: this.normalizeInteractiveEnum(buttonsMessage.headerType),
       buttons,
     };
   }
@@ -762,7 +815,7 @@ export class MessageUpsertConsume {
 
   private buildListContent(data: IUpsertMessage): IListMessage | null {
     if (data.content?.list) {
-      return data.content.list;
+      return this.normalizeListContent(data.content.list);
     }
 
     const msg = this.getInnerMessage(data);
@@ -831,7 +884,7 @@ export class MessageUpsertConsume {
           'button_text',
           'button',
         ]) ?? null,
-      list_type: this.normalizeButtonType(listMessage.listType),
+      list_type: this.normalizeInteractiveEnum(listMessage.listType),
       sections,
     };
   }
@@ -4664,8 +4717,10 @@ export class MessageUpsertConsume {
       message: messageText,
       link_preview: linkPreview,
       quoted: baseMessage
-        ? buildQuotedTextFromExtended(
-            baseMessage as Parameters<typeof buildQuotedTextFromExtended>[0]
+        ? this.normalizeQuotedContent(
+            buildQuotedTextFromExtended(
+              baseMessage as Parameters<typeof buildQuotedTextFromExtended>[0]
+            )
           )
         : null,
       context_info: baseMessage
@@ -4680,7 +4735,7 @@ export class MessageUpsertConsume {
     }
 
     if (data.content?.quoted) {
-      content.quoted = data.content.quoted;
+      content.quoted = this.normalizeQuotedContent(data.content.quoted);
     }
 
     if (data.content?.context_info && !content.context_info) {

@@ -819,7 +819,7 @@ func incomingButtonsContent(buttons *waE2E.ButtonsMessage) map[string]any {
 		options = append(options, map[string]any{
 			"id":           emptyStringAsNil(button.GetButtonID()),
 			"display_text": button.GetButtonText().GetDisplayText(),
-			"type":         button.GetType().String(),
+			"type":         int(button.GetType()),
 		})
 	}
 
@@ -830,7 +830,7 @@ func incomingButtonsContent(buttons *waE2E.ButtonsMessage) map[string]any {
 			"text":        emptyStringAsNil(buttons.GetContentText()),
 			"footer":      emptyStringAsNil(buttons.GetFooterText()),
 			"header":      emptyStringAsNil(buttons.GetText()),
-			"header_type": buttons.GetHeaderType().String(),
+			"header_type": int(buttons.GetHeaderType()),
 			"buttons":     options,
 		},
 	}
@@ -878,7 +878,7 @@ func listContentPayload(list *waE2E.ListMessage) map[string]any {
 	return map[string]any{
 		"text":        emptyStringAsNil(list.GetDescription()),
 		"button_text": emptyStringAsNil(list.GetButtonText()),
-		"list_type":   list.GetListType().String(),
+		"list_type":   int(list.GetListType()),
 		"sections":    sections,
 	}
 }
