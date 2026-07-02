@@ -72,6 +72,68 @@ interface MetaBusinessProfileResponse extends MetaGraphErrorResponse {
   data?: MetaBusinessProfile[];
 }
 
+interface MetaWhatsappHealthStatus {
+  [key: string]: unknown;
+}
+
+interface MetaWhatsappThroughput {
+  level?: string;
+}
+
+interface MetaWhatsappDetailedPhoneNumber extends MetaGraphErrorResponse {
+  id?: string;
+  display_phone_number?: string;
+  verified_name?: string;
+  quality_rating?: string;
+  status?: string;
+  throughput?: MetaWhatsappThroughput | string;
+  account_mode?: string;
+  code_verification_status?: string;
+  messaging_limit_tier?: string;
+  is_official_business_account?: boolean;
+  last_onboarded_time?: string;
+  is_on_biz_app?: boolean;
+  is_pin_enabled?: boolean;
+  is_preverified_number?: boolean;
+  platform_type?: string;
+  name_status?: string;
+  quality_score?: Record<string, unknown>;
+  webhook_configuration?: Record<string, unknown>;
+  health_status?: MetaWhatsappHealthStatus;
+}
+
+interface MetaDetailedPhoneNumbersResponse extends MetaGraphErrorResponse {
+  data?: MetaWhatsappDetailedPhoneNumber[];
+}
+
+interface MetaWabaHealthResponse extends MetaGraphErrorResponse {
+  id?: string;
+  name?: string;
+  currency?: string;
+  timezone_id?: string;
+  business_verification_status?: string;
+  country?: string;
+  is_enabled_for_insights?: boolean;
+  marketing_messages_lite_api_status?: string;
+  marketing_messages_onboarding_status?: string;
+  health_status?: MetaWhatsappHealthStatus;
+}
+
+interface MetaWabaAnalyticsResponse extends MetaGraphErrorResponse {
+  analytics?: {
+    data_points?: Record<string, unknown>[];
+  };
+}
+
+interface MetaConversationAnalyticsResponse extends MetaGraphErrorResponse {
+  conversation_analytics?: {
+    data?: Array<{
+      data_points?: Record<string, unknown>[];
+    }>;
+    data_points?: Record<string, unknown>[];
+  };
+}
+
 interface MetaSuccessResponse extends MetaGraphErrorResponse {
   success?: boolean;
 }
@@ -233,6 +295,76 @@ export interface MetaWhatsappPhoneNumber {
   verified_name: string | null;
 }
 
+export interface MetaWhatsappOfficialPhoneNumberSummary extends MetaWhatsappPhoneNumber {
+  quality_rating: string | null;
+  status: string | null;
+  throughput_level: string | null;
+  account_mode: string | null;
+  code_verification_status: string | null;
+  messaging_limit_tier: string | null;
+  is_official_business_account: boolean | null;
+  last_onboarded_time: string | null;
+}
+
+export interface MetaWhatsappOfficialPhoneNumberHealth extends MetaWhatsappOfficialPhoneNumberSummary {
+  is_on_biz_app: boolean | null;
+  is_pin_enabled: boolean | null;
+  is_preverified_number: boolean | null;
+  platform_type: string | null;
+  name_status: string | null;
+  quality_score: Record<string, unknown> | null;
+  webhook_configuration: Record<string, unknown> | null;
+  health_status: MetaWhatsappHealthStatus | null;
+}
+
+export interface MetaWhatsappOfficialWabaHealth {
+  id: string;
+  name: string | null;
+  currency: string | null;
+  timezone_id: string | null;
+  business_verification_status: string | null;
+  country: string | null;
+  is_enabled_for_insights: boolean | null;
+  marketing_messages_lite_api_status: string | null;
+  marketing_messages_onboarding_status: string | null;
+  health_status: MetaWhatsappHealthStatus | null;
+}
+
+export interface MetaWhatsappMessageAnalyticsDataPoint {
+  start: string | null;
+  end: string | null;
+  sent: number;
+  delivered: number;
+  raw: Record<string, unknown>;
+}
+
+export interface MetaWhatsappMessageAnalytics {
+  data_points: MetaWhatsappMessageAnalyticsDataPoint[];
+  totals: {
+    sent: number;
+    delivered: number;
+  };
+}
+
+export interface MetaWhatsappConversationAnalyticsDataPoint {
+  start: string | null;
+  end: string | null;
+  conversations: number;
+  cost: number;
+  conversation_type: string | null;
+  conversation_direction: string | null;
+  pricing_type: string | null;
+  raw: Record<string, unknown>;
+}
+
+export interface MetaWhatsappConversationAnalytics {
+  data_points: MetaWhatsappConversationAnalyticsDataPoint[];
+  totals: {
+    conversations: number;
+    cost: number;
+  };
+}
+
 export interface MetaWhatsappBusinessProfile {
   about: string | null;
   address: string | null;
@@ -257,6 +389,105 @@ export interface UpdateMetaWhatsappBusinessProfile {
 export class MetaWhatsappEmbeddedService {
   private graphUrl(apiVersion: string, path: string): string {
     return `https://graph.facebook.com/${apiVersion}/${path.replace(/^\/+/u, '')}`;
+  }
+
+  private authorizationHeader(accessToken: string): { Authorization: string } {
+    return {
+      Authorization: `Bearer ${accessToken}`,
+    };
+  }
+
+  private nullableString(value: unknown): string | null {
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+
+    return null;
+  }
+
+  private nullableBoolean(value: unknown): boolean | null {
+    return typeof value === 'boolean' ? value : null;
+  }
+
+  private nullableRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    return value as Record<string, unknown>;
+  }
+
+  private numberFromUnknown(value: unknown): number {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
+  }
+
+  private throughputLevel(
+    throughput: MetaWhatsappDetailedPhoneNumber['throughput']
+  ): string | null {
+    if (!throughput) {
+      return null;
+    }
+
+    if (typeof throughput === 'string') {
+      return throughput;
+    }
+
+    return this.nullableString(throughput.level);
+  }
+
+  private normalizeDetailedPhoneNumber(
+    phone: MetaWhatsappDetailedPhoneNumber,
+    fallbackId: string
+  ): MetaWhatsappOfficialPhoneNumberSummary {
+    return {
+      id: phone.id ?? fallbackId,
+      display_phone_number: this.nullableString(phone.display_phone_number),
+      verified_name: this.nullableString(phone.verified_name),
+      quality_rating: this.nullableString(phone.quality_rating),
+      status: this.nullableString(phone.status),
+      throughput_level: this.throughputLevel(phone.throughput),
+      account_mode: this.nullableString(phone.account_mode),
+      code_verification_status: this.nullableString(
+        phone.code_verification_status
+      ),
+      messaging_limit_tier: this.nullableString(phone.messaging_limit_tier),
+      is_official_business_account: this.nullableBoolean(
+        phone.is_official_business_account
+      ),
+      last_onboarded_time: this.nullableString(phone.last_onboarded_time),
+    };
+  }
+
+  private extractConversationAnalyticsDataPoints(
+    payload: MetaConversationAnalyticsResponse
+  ): Record<string, unknown>[] {
+    const analytics = payload.conversation_analytics;
+    if (!analytics) {
+      return [];
+    }
+
+    if (Array.isArray(analytics.data_points)) {
+      return analytics.data_points;
+    }
+
+    return (
+      analytics.data?.flatMap((item) =>
+        Array.isArray(item.data_points) ? item.data_points : []
+      ) ?? []
+    );
   }
 
   private async parseGraphResponse<T extends MetaGraphErrorResponse>(
@@ -352,6 +583,236 @@ export class MetaWhatsappEmbeddedService {
         verified_name: phone.verified_name ?? null,
       })) ?? []
     );
+  }
+
+  async listDetailedPhoneNumbers(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+  }): Promise<MetaWhatsappOfficialPhoneNumberSummary[]> {
+    const url = new URL(
+      this.graphUrl(input.apiVersion, `${input.wabaId}/phone_numbers`)
+    );
+    url.searchParams.set(
+      'fields',
+      [
+        'id',
+        'display_phone_number',
+        'verified_name',
+        'quality_rating',
+        'status',
+        'throughput',
+        'account_mode',
+        'code_verification_status',
+        'messaging_limit_tier',
+        'is_official_business_account',
+        'last_onboarded_time',
+      ].join(',')
+    );
+    url.searchParams.set('limit', '100');
+
+    const response = await fetch(url, {
+      headers: this.authorizationHeader(input.accessToken),
+    });
+    const payload =
+      await this.parseGraphResponse<MetaDetailedPhoneNumbersResponse>(response);
+
+    return (
+      payload.data?.map((phone) =>
+        this.normalizeDetailedPhoneNumber(phone, phone.id ?? '')
+      ) ?? []
+    );
+  }
+
+  async viewPhoneNumberHealth(input: {
+    apiVersion: string;
+    accessToken: string;
+    phoneNumberId: string;
+  }): Promise<MetaWhatsappOfficialPhoneNumberHealth> {
+    const url = new URL(this.graphUrl(input.apiVersion, input.phoneNumberId));
+    url.searchParams.set(
+      'fields',
+      [
+        'id',
+        'display_phone_number',
+        'verified_name',
+        'quality_rating',
+        'status',
+        'throughput',
+        'account_mode',
+        'code_verification_status',
+        'messaging_limit_tier',
+        'is_official_business_account',
+        'last_onboarded_time',
+        'health_status',
+        'is_on_biz_app',
+        'is_pin_enabled',
+        'is_preverified_number',
+        'platform_type',
+        'name_status',
+        'quality_score',
+        'webhook_configuration',
+      ].join(',')
+    );
+
+    const response = await fetch(url, {
+      headers: this.authorizationHeader(input.accessToken),
+    });
+    const payload =
+      await this.parseGraphResponse<MetaWhatsappDetailedPhoneNumber>(response);
+    const summary = this.normalizeDetailedPhoneNumber(
+      payload,
+      input.phoneNumberId
+    );
+
+    return {
+      ...summary,
+      is_on_biz_app: this.nullableBoolean(payload.is_on_biz_app),
+      is_pin_enabled: this.nullableBoolean(payload.is_pin_enabled),
+      is_preverified_number: this.nullableBoolean(
+        payload.is_preverified_number
+      ),
+      platform_type: this.nullableString(payload.platform_type),
+      name_status: this.nullableString(payload.name_status),
+      quality_score: this.nullableRecord(payload.quality_score),
+      webhook_configuration: this.nullableRecord(payload.webhook_configuration),
+      health_status: this.nullableRecord(payload.health_status),
+    };
+  }
+
+  async viewWabaHealth(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+  }): Promise<MetaWhatsappOfficialWabaHealth> {
+    const url = new URL(this.graphUrl(input.apiVersion, input.wabaId));
+    url.searchParams.set(
+      'fields',
+      [
+        'id',
+        'name',
+        'currency',
+        'timezone_id',
+        'business_verification_status',
+        'country',
+        'health_status',
+        'is_enabled_for_insights',
+        'marketing_messages_lite_api_status',
+        'marketing_messages_onboarding_status',
+      ].join(',')
+    );
+
+    const response = await fetch(url, {
+      headers: this.authorizationHeader(input.accessToken),
+    });
+    const payload =
+      await this.parseGraphResponse<MetaWabaHealthResponse>(response);
+
+    return {
+      id: payload.id ?? input.wabaId,
+      name: this.nullableString(payload.name),
+      currency: this.nullableString(payload.currency),
+      timezone_id: this.nullableString(payload.timezone_id),
+      business_verification_status: this.nullableString(
+        payload.business_verification_status
+      ),
+      country: this.nullableString(payload.country),
+      is_enabled_for_insights: this.nullableBoolean(
+        payload.is_enabled_for_insights
+      ),
+      marketing_messages_lite_api_status: this.nullableString(
+        payload.marketing_messages_lite_api_status
+      ),
+      marketing_messages_onboarding_status: this.nullableString(
+        payload.marketing_messages_onboarding_status
+      ),
+      health_status: this.nullableRecord(payload.health_status),
+    };
+  }
+
+  async viewMessageAnalytics(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+    start: number;
+    end: number;
+  }): Promise<MetaWhatsappMessageAnalytics> {
+    const url = new URL(this.graphUrl(input.apiVersion, input.wabaId));
+    url.searchParams.set(
+      'fields',
+      `analytics.start(${input.start}).end(${input.end}).granularity(DAY).phone_numbers([])`
+    );
+
+    const response = await fetch(url, {
+      headers: this.authorizationHeader(input.accessToken),
+    });
+    const payload =
+      await this.parseGraphResponse<MetaWabaAnalyticsResponse>(response);
+    const dataPoints =
+      payload.analytics?.data_points?.map((point) => ({
+        start: this.nullableString(point.start),
+        end: this.nullableString(point.end),
+        sent: this.numberFromUnknown(point.sent),
+        delivered: this.numberFromUnknown(point.delivered),
+        raw: point,
+      })) ?? [];
+
+    return {
+      data_points: dataPoints,
+      totals: dataPoints.reduce(
+        (totals, point) => ({
+          sent: totals.sent + point.sent,
+          delivered: totals.delivered + point.delivered,
+        }),
+        { sent: 0, delivered: 0 }
+      ),
+    };
+  }
+
+  async viewConversationAnalytics(input: {
+    apiVersion: string;
+    accessToken: string;
+    wabaId: string;
+    start: number;
+    end: number;
+  }): Promise<MetaWhatsappConversationAnalytics> {
+    const url = new URL(this.graphUrl(input.apiVersion, input.wabaId));
+    url.searchParams.set(
+      'fields',
+      `conversation_analytics.start(${input.start}).end(${input.end}).granularity(DAILY).conversation_directions(["business_initiated","user_initiated"]).dimensions(["conversation_type","conversation_direction"])`
+    );
+
+    const response = await fetch(url, {
+      headers: this.authorizationHeader(input.accessToken),
+    });
+    const payload =
+      await this.parseGraphResponse<MetaConversationAnalyticsResponse>(
+        response
+      );
+    const rawDataPoints = this.extractConversationAnalyticsDataPoints(payload);
+    const dataPoints = rawDataPoints.map((point) => ({
+      start: this.nullableString(point.start),
+      end: this.nullableString(point.end),
+      conversations: this.numberFromUnknown(
+        point.conversations ?? point.conversation
+      ),
+      cost: this.numberFromUnknown(point.cost),
+      conversation_type: this.nullableString(point.conversation_type),
+      conversation_direction: this.nullableString(point.conversation_direction),
+      pricing_type: this.nullableString(point.pricing_type),
+      raw: point,
+    }));
+
+    return {
+      data_points: dataPoints,
+      totals: dataPoints.reduce(
+        (totals, point) => ({
+          conversations: totals.conversations + point.conversations,
+          cost: totals.cost + point.cost,
+        }),
+        { conversations: 0, cost: 0 }
+      ),
+    };
   }
 
   async listApprovedMessageTemplates(input: {

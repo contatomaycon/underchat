@@ -69,6 +69,7 @@ import { connectWhatsappEmbeddedSchema } from '@core/schema/worker/connectWhatsa
 import { disconnectWhatsappOfficialSchema } from '@core/schema/worker/disconnectWhatsappOfficial';
 import { connectWhatsappOfficialSchema } from '@core/schema/worker/connectWhatsappOfficial';
 import { ensureWhatsappOfficialWebhookSubscriptionSchema } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription';
+import { whatsappOfficialHealthSchema } from '@core/schema/worker/whatsappOfficialHealth';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -187,6 +188,17 @@ export default function workerRoutes(server: FastifyInstance) {
       ],
     }
   );
+
+  server.get('/worker/:worker_id/whatsapp-official/health', {
+    schema: whatsappOfficialHealthSchema,
+    handler: workerController.viewWhatsappOfficialHealth,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerViewPermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
 
   server.get('/worker', {
     schema: listWorkerSchema,

@@ -55,6 +55,7 @@ import { connectWhatsappEmbedded } from './methods/connectWhatsappEmbedded';
 import { disconnectWhatsappOfficial } from './methods/disconnectWhatsappOfficial';
 import { connectWhatsappOfficial } from './methods/connectWhatsappOfficial';
 import { ensureWhatsappOfficialWebhookSubscription } from './methods/ensureWhatsappOfficialWebhookSubscription';
+import { viewWhatsappOfficialHealth } from './methods/viewWhatsappOfficialHealth';
 
 @injectable()
 class WorkerController {
@@ -118,6 +119,7 @@ class WorkerController {
   public connectWhatsappOfficial = connectWhatsappOfficial;
   public ensureWhatsappOfficialWebhookSubscription =
     ensureWhatsappOfficialWebhookSubscription;
+  public viewWhatsappOfficialHealth = viewWhatsappOfficialHealth;
 }
 
 export default WorkerController;

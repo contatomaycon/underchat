@@ -371,4 +371,161 @@ describe('MetaWhatsappEmbeddedService', () => {
     });
     expect(request?.body).toBeInstanceOf(FormData);
   });
+
+  it('loads WABA health with official account fields and bearer token', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () =>
+        JSON.stringify({
+          id: 'waba-1',
+          name: 'Underchat',
+          currency: 'USD',
+          business_verification_status: 'not_verified',
+          health_status: { can_send_message: 'LIMITED' },
+        })
+      ),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await expect(
+      service.viewWabaHealth({
+        apiVersion: 'v25.0',
+        accessToken: 'token-1',
+        wabaId: 'waba-1',
+      })
+    ).resolves.toMatchObject({
+      id: 'waba-1',
+      name: 'Underchat',
+      currency: 'USD',
+      business_verification_status: 'not_verified',
+      health_status: { can_send_message: 'LIMITED' },
+    });
+
+    const url = fetchMock.mock.calls[0]?.[0] as URL;
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(url.toString()).toContain(
+      'https://graph.facebook.com/v25.0/waba-1?'
+    );
+    expect(url.searchParams.get('fields')).toContain('health_status');
+    expect(url.searchParams.get('fields')).toContain(
+      'business_verification_status'
+    );
+    expect(request?.headers).toEqual({
+      Authorization: 'Bearer token-1',
+    });
+  });
+
+  it('loads phone number health and normalizes throughput level', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () =>
+        JSON.stringify({
+          id: 'phone-1',
+          display_phone_number: '+55 61 9203-7138',
+          verified_name: 'Underchat',
+          status: 'CONNECTED',
+          quality_rating: 'GREEN',
+          throughput: { level: 'STANDARD' },
+          messaging_limit_tier: 'TIER_250',
+          is_on_biz_app: true,
+          health_status: { can_send_message: 'LIMITED' },
+        })
+      ),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await expect(
+      service.viewPhoneNumberHealth({
+        apiVersion: 'v25.0',
+        accessToken: 'token-1',
+        phoneNumberId: 'phone-1',
+      })
+    ).resolves.toMatchObject({
+      id: 'phone-1',
+      display_phone_number: '+55 61 9203-7138',
+      quality_rating: 'GREEN',
+      throughput_level: 'STANDARD',
+      messaging_limit_tier: 'TIER_250',
+      is_on_biz_app: true,
+      health_status: { can_send_message: 'LIMITED' },
+    });
+
+    const url = fetchMock.mock.calls[0]?.[0] as URL;
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(url.toString()).toContain(
+      'https://graph.facebook.com/v25.0/phone-1?'
+    );
+    expect(url.searchParams.get('fields')).toContain('messaging_limit_tier');
+    expect(url.searchParams.get('fields')).toContain('is_on_biz_app');
+    expect(request?.headers).toEqual({
+      Authorization: 'Bearer token-1',
+    });
+  });
+
+  it('loads message analytics totals for the requested period', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () =>
+        JSON.stringify({
+          analytics: {
+            data_points: [
+              { start: 10, end: 20, sent: 2, delivered: 1 },
+              { start: 20, end: 30, sent: 3, delivered: 3 },
+            ],
+          },
+        })
+      ),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await expect(
+      service.viewMessageAnalytics({
+        apiVersion: 'v25.0',
+        accessToken: 'token-1',
+        wabaId: 'waba-1',
+        start: 10,
+        end: 30,
+      })
+    ).resolves.toMatchObject({
+      totals: {
+        sent: 5,
+        delivered: 4,
+      },
+    });
+
+    const url = fetchMock.mock.calls[0]?.[0] as URL;
+    expect(url.searchParams.get('fields')).toBe(
+      'analytics.start(10).end(30).granularity(DAY).phone_numbers([])'
+    );
+  });
+
+  it('keeps conversation analytics empty when Meta returns no data points', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: jest.fn(async () =>
+        JSON.stringify({
+          conversation_analytics: {
+            data: [],
+          },
+        })
+      ),
+    } as never);
+    const service = new MetaWhatsappEmbeddedService();
+
+    await expect(
+      service.viewConversationAnalytics({
+        apiVersion: 'v25.0',
+        accessToken: 'token-1',
+        wabaId: 'waba-1',
+        start: 10,
+        end: 30,
+      })
+    ).resolves.toEqual({
+      data_points: [],
+      totals: {
+        conversations: 0,
+        cost: 0,
+      },
+    });
+  });
 });

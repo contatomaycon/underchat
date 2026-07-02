@@ -56,6 +56,7 @@ import { DisconnectWhatsappOfficialResponse } from '@core/schema/worker/disconne
 import { ConnectWhatsappOfficialRequest } from '@core/schema/worker/connectWhatsappOfficial/request.schema';
 import { ConnectWhatsappOfficialResponse } from '@core/schema/worker/connectWhatsappOfficial/response.schema';
 import { EnsureWhatsappOfficialWebhookSubscriptionResponse } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription/response.schema';
+import { WhatsappOfficialHealthResponse } from '@core/schema/worker/whatsappOfficialHealth/response.schema';
 import { WhatsappBusinessProfileVertical } from '@core/common/enums/EWhatsappBusinessProfileVertical';
 import {
   connectionLifecycleDebugHeaders,
@@ -711,6 +712,38 @@ export const useChannelsStore = defineStore('channels', {
         this.showSnackbar(errorMessage, EColor.error);
 
         this.loading = false;
+
+        return null;
+      }
+    },
+
+    async viewWhatsappOfficialHealth(
+      workerId: string
+    ): Promise<WhatsappOfficialHealthResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<WhatsappOfficialHealthResponse>
+        >(`/worker/${workerId}/whatsapp-official/health`);
+
+        const data = response?.data;
+
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ?? this.i18n.global.t('meta_health_load_error');
+
+          this.showSnackbar(message, EColor.error);
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('meta_health_load_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
 
         return null;
       }

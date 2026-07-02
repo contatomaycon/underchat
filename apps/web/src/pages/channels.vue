@@ -25,6 +25,8 @@ import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnect
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
+import { WhatsappOfficialHealthResponse } from '@core/schema/worker/whatsappOfficialHealth/response.schema';
+import ChannelOfficialHealthDialog from '@/components/channel/ChannelOfficialHealthDialog.vue';
 import { useChannelRecreateCooldown } from '@/composables/useChannelRecreateCooldown';
 import {
   isSilentWhatsappEmbeddedSignupError,
@@ -208,6 +210,10 @@ const isDialogConnectionLogsShow = ref(false);
 
 const channelConfig = ref<string | null>(null);
 const isDialogConfigChannelShow = ref(false);
+const isOfficialHealthDialogOpen = ref(false);
+const officialHealthChannel = ref<ListWorkerResponse | null>(null);
+const officialHealthData = ref<WhatsappOfficialHealthResponse | null>(null);
+const isOfficialHealthLoading = ref(false);
 
 const resolveStatusVariant = (s: string | undefined | null) => {
   if (s === EWorkerStatus.disponible)
@@ -376,6 +382,38 @@ const openMetaWhatsappMessageModelManager = () => {
     '_blank',
     'noopener,noreferrer'
   );
+};
+
+const loadWhatsappOfficialHealth = async (
+  channel: ListWorkerResponse | null = officialHealthChannel.value
+) => {
+  if (!channel || isOfficialHealthLoading.value) {
+    return;
+  }
+
+  isOfficialHealthLoading.value = true;
+
+  try {
+    const result = await channelsStore.viewWhatsappOfficialHealth(channel.id);
+
+    if (result) {
+      officialHealthData.value = result;
+    }
+  } finally {
+    isOfficialHealthLoading.value = false;
+  }
+};
+
+const openWhatsappOfficialHealth = async (channel: ListWorkerResponse) => {
+  officialHealthChannel.value = channel;
+  officialHealthData.value = null;
+  isOfficialHealthDialogOpen.value = true;
+
+  await loadWhatsappOfficialHealth(channel);
+};
+
+const refreshWhatsappOfficialHealth = () => {
+  void loadWhatsappOfficialHealth();
 };
 
 const isWhatsappOfficialChannel = (channel: ListWorkerResponse) =>
@@ -1103,6 +1141,40 @@ onUnmounted(async () => {
                     isWhatsappOfficialChannel(item) &&
                     $canPermission(permissionsManageOfficialTemplates)
                   "
+                  :disabled="
+                    isOfficialHealthLoading &&
+                    officialHealthChannel?.id === item.id
+                  "
+                  @click="openWhatsappOfficialHealth(item)"
+                >
+                  <VTooltip
+                    location="top"
+                    transition="scale-transition"
+                    activator="parent"
+                  >
+                    <span>{{ $t('view_meta_health') }}</span>
+                  </VTooltip>
+                  <VProgressCircular
+                    v-if="
+                      isOfficialHealthLoading &&
+                      officialHealthChannel?.id === item.id
+                    "
+                    indeterminate
+                    size="18"
+                    width="2"
+                  />
+                  <VIcon
+                    v-else
+                    icon="tabler-shield-heart"
+                    :data-testid="`channel-meta-health-${item.id}`"
+                  />
+                </IconBtn>
+
+                <IconBtn
+                  v-if="
+                    isWhatsappOfficialChannel(item) &&
+                    $canPermission(permissionsManageOfficialTemplates)
+                  "
                   :data-testid="`channel-meta-whatsapp-template-manager-${item.id}`"
                   @click.stop="openMetaWhatsappMessageModelManager"
                   ><VTooltip
@@ -1227,6 +1299,14 @@ onUnmounted(async () => {
         :title="$t('disconnect_whatsapp_official')"
         :message="$t('disconnect_whatsapp_official_confirmation')"
         @confirm="handleDisconnectWhatsappOfficial"
+      />
+
+      <ChannelOfficialHealthDialog
+        v-model="isOfficialHealthDialogOpen"
+        :channel="officialHealthChannel"
+        :health="officialHealthData"
+        :loading="isOfficialHealthLoading"
+        @refresh="refreshWhatsappOfficialHealth"
       />
 
       <VDialog
