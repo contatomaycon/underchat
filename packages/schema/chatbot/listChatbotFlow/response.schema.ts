@@ -60,6 +60,7 @@ const nodeDataSchema = Type.Object({
   longitudeText: Type.Optional(Type.String()),
   name: Type.Optional(Type.String()),
   address: Type.Optional(Type.String()),
+  addressCountry: Type.Optional(Type.String()),
   templateName: Type.Optional(Type.String()),
   templateLanguage: Type.Optional(Type.String()),
   templateVariables: Type.Optional(Type.Any()),

@@ -742,15 +742,27 @@ export class ChatbotFlowRunnerService {
   private getNextFlowIdByOption(
     chatbotFlow: ListChatbotFlowResponse,
     currentFlowId: string,
-    optionId: string
+    optionId: string,
+    optionText?: string | null
   ): string | null {
-    const expectedSourceHandle = `option-${optionId}-source`;
+    const normalizedOptionId = this.normalizeOptionHandleValue(optionId);
+    const normalizedOptionText = this.normalizeOptionHandleValue(optionText);
 
-    const edge = chatbotFlow.edges.find(
-      (currentEdge) =>
-        currentEdge.source === currentFlowId &&
-        currentEdge.sourceHandle === expectedSourceHandle
-    );
+    const edge = chatbotFlow.edges.find((currentEdge) => {
+      if (currentEdge.source !== currentFlowId) {
+        return false;
+      }
+
+      const normalizedSourceHandle = this.normalizeOptionHandleValue(
+        currentEdge.sourceHandle
+      );
+
+      return (
+        normalizedSourceHandle === normalizedOptionId ||
+        (normalizedOptionText &&
+          normalizedSourceHandle === normalizedOptionText)
+      );
+    });
 
     return edge?.target ?? null;
   }
@@ -1943,6 +1955,20 @@ export class ChatbotFlowRunnerService {
     return '';
   }
 
+  private normalizeOptionHandleValue(value: unknown): string | null {
+    const text = this.getTextFromUnknown(value);
+    if (!text) {
+      return null;
+    }
+
+    const normalized = text
+      .replace(/^option-/i, '')
+      .replace(/-source$/i, '')
+      .trim();
+
+    return normalized || null;
+  }
+
   private getProductRetailerId(product: unknown): string {
     if (typeof product === 'string') return product.trim();
     if (!product || typeof product !== 'object') return '';
@@ -2117,6 +2143,29 @@ export class ChatbotFlowRunnerService {
         country,
       },
     };
+  }
+
+  private isNativeOfficialAddressCountrySupported(country: string): boolean {
+    return ['IN', 'SG'].includes(country.trim().toUpperCase());
+  }
+
+  private getOfficialAddressCountry(
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): string {
+    const action =
+      this.getNodeDataValue<Record<string, unknown>>(node, 'action') ?? {};
+    const parameters =
+      action.parameters &&
+      typeof action.parameters === 'object' &&
+      !Array.isArray(action.parameters)
+        ? (action.parameters as Record<string, unknown>)
+        : {};
+
+    return (
+      this.getNodeTextValue(node, 'addressCountry') ||
+      this.getTextFromUnknown(parameters.country) ||
+      'BR'
+    );
   }
 
   private withOfficialHeaderFooter(
@@ -2498,6 +2547,37 @@ export class ChatbotFlowRunnerService {
     });
   }
 
+  private async sendOfficialAddressNode(
+    t: TFunction<'translation', undefined>,
+    createChat: IChat,
+    node: ListChatbotFlowResponse['nodes'][number]
+  ): Promise<boolean> {
+    const country = this.getOfficialAddressCountry(node);
+    if (this.isNativeOfficialAddressCountrySupported(country)) {
+      return this.sendOfficialInteractiveNode(t, createChat, node);
+    }
+
+    const rawMessage =
+      this.getNodeTextValue(node, 'message') ||
+      this.getNodeTextValue(node, 'text') ||
+      'Informe seu endereço';
+    const message = await this.replaceVariables(
+      t,
+      rawMessage,
+      createChat,
+      createChat.user,
+      createChat.sector
+    );
+
+    return this.sendMessageWithStatusGuard(t, {
+      chat: createChat,
+      accountId: createChat.account.id,
+      type: EMessageType.text,
+      message,
+      typeUser: ETypeUserChat.bot,
+    });
+  }
+
   private buildPreparedOfficialMessage(
     createChat: IChat,
     type: EMessageType,
@@ -2656,6 +2736,10 @@ export class ChatbotFlowRunnerService {
     createChat: IChat,
     node: ListChatbotFlowResponse['nodes'][number]
   ): Promise<boolean> {
+    if (node.type === 'officialAddress') {
+      return this.sendOfficialAddressNode(t, createChat, node);
+    }
+
     if (
       node.type === 'officialReplyButtons' ||
       node.type === 'officialList' ||
@@ -2665,8 +2749,7 @@ export class ChatbotFlowRunnerService {
       node.type === 'officialSingleProduct' ||
       node.type === 'officialMultiProduct' ||
       node.type === 'officialCatalog' ||
-      node.type === 'officialMediaCarousel' ||
-      node.type === 'officialAddress'
+      node.type === 'officialMediaCarousel'
     ) {
       return this.sendOfficialInteractiveNode(t, createChat, node);
     }
@@ -2870,7 +2953,8 @@ export class ChatbotFlowRunnerService {
     const nextFlowId = this.getNextFlowIdByOption(
       chatbotFlow,
       currentFlowId,
-      selectedOption.id
+      selectedOption.id,
+      selectedOption.text
     );
 
     if (!nextFlowId) {
