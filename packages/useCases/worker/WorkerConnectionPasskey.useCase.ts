@@ -106,14 +106,67 @@ export class WorkerConnectionPasskeyUseCase {
     if (typeof passkeyResponse === 'string') {
       const trimmed = passkeyResponse.trim();
       if (trimmed) {
+        this.assertValidPasskeyResponse(
+          t,
+          this.parsePasskeyResponse(t, trimmed)
+        );
         return trimmed;
       }
     }
 
     if (passkeyResponse && typeof passkeyResponse === 'object') {
+      this.assertValidPasskeyResponse(t, passkeyResponse);
       return JSON.stringify(passkeyResponse);
     }
 
     throw new Error(t('worker_passkey_response_invalid'));
+  }
+
+  private parsePasskeyResponse(
+    t: TFunction<'translation', undefined>,
+    passkeyResponse: string
+  ): unknown {
+    try {
+      return JSON.parse(passkeyResponse);
+    } catch {
+      throw new Error(t('worker_passkey_response_invalid'));
+    }
+  }
+
+  private assertValidPasskeyResponse(
+    t: TFunction<'translation', undefined>,
+    passkeyResponse: unknown
+  ): void {
+    if (!passkeyResponse || typeof passkeyResponse !== 'object') {
+      throw new Error(t('worker_passkey_response_invalid'));
+    }
+
+    const response = passkeyResponse as {
+      id?: unknown;
+      rawId?: unknown;
+      type?: unknown;
+      response?: {
+        clientDataJSON?: unknown;
+        authenticatorData?: unknown;
+        signature?: unknown;
+      };
+    };
+
+    if (
+      !this.isNonEmptyString(response.id) ||
+      !this.isNonEmptyString(response.rawId) ||
+      !this.isNonEmptyString(response.type) ||
+      !response.response ||
+      typeof response.response !== 'object' ||
+      !this.isNonEmptyString(response.response.clientDataJSON) ||
+      !this.isNonEmptyString(response.response.authenticatorData) ||
+      !this.isNonEmptyString(response.response.signature)
+    ) {
+      throw new Error(t('worker_passkey_response_invalid'));
+    }
+  }
+
+  private isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
   }
 }

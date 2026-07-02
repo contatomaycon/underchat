@@ -440,6 +440,22 @@ function base64UrlToArrayBuffer(value: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  return globalThis
+    .btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
 function parsePasskeyRequestOptions(
   publicKeyJson: string
 ): PublicKeyCredentialRequestOptions {
@@ -476,6 +492,38 @@ function parsePasskeyRequestOptions(
       ...credential,
       id: base64UrlToArrayBuffer(credential.id),
     })),
+  };
+}
+
+function serializePasskeyCredential(
+  credential: PublicKeyCredential & { toJSON?: () => unknown }
+): unknown {
+  if (typeof credential.toJSON === 'function') {
+    return credential.toJSON();
+  }
+
+  const response = credential.response as AuthenticatorResponse & {
+    authenticatorData?: ArrayBuffer;
+    signature?: ArrayBuffer;
+    userHandle?: ArrayBuffer | null;
+  };
+
+  if (!response.authenticatorData || !response.signature) {
+    throw new Error('Invalid passkey credential response');
+  }
+
+  return {
+    id: credential.id,
+    rawId: arrayBufferToBase64Url(credential.rawId),
+    type: credential.type,
+    response: {
+      clientDataJSON: arrayBufferToBase64Url(response.clientDataJSON),
+      authenticatorData: arrayBufferToBase64Url(response.authenticatorData),
+      signature: arrayBufferToBase64Url(response.signature),
+      userHandle: response.userHandle
+        ? arrayBufferToBase64Url(response.userHandle)
+        : null,
+    },
   };
 }
 
@@ -1052,10 +1100,7 @@ async function continuePasskeyPairing() {
       return;
     }
 
-    const passkeyResponse =
-      typeof credential.toJSON === 'function'
-        ? credential.toJSON()
-        : JSON.parse(JSON.stringify(credential));
+    const passkeyResponse = serializePasskeyCredential(credential);
 
     const state = await channelStore.sendConnectionPasskeyResponse(
       channelId.value,
