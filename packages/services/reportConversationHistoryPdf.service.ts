@@ -31,6 +31,13 @@ import {
 } from '@core/common/functions/closureAnnotation';
 import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 
+type OfficialDisplayMetadata = NonNullable<
+  NonNullable<ContentMessageChat['official']>['display']
+>;
+type OfficialDisplayAction = NonNullable<
+  OfficialDisplayMetadata['actions']
+>[number];
+
 @injectable()
 export class ReportConversationHistoryPdfService {
   private readonly contactPhoneCache: Map<string, string | null> = new Map();
@@ -525,13 +532,17 @@ export class ReportConversationHistoryPdfService {
             t('forwarded')
           )}</span></div>`
         : '';
+    const quotedHtml =
+      msg.content?.official?.display?.kind === 'reply'
+        ? ''
+        : this.formatQuoted(msg, clientName, t);
 
     return `
         <div class="msg-row ${alignmentClass}">
           ${avatarHtml}
           <div class="bubble ${alignmentClass} ${bubbleClasses}" style="${bubbleStyle}">
             ${forwardedHtml}
-            ${this.formatQuoted(msg, clientName, t)}
+            ${quotedHtml}
             <div class="content">
               <div class="message-text" style="word-break: break-word; overflow-wrap: break-word; hyphens: none;">${content}</div>
               ${isDeleted ? `<div class="message-deleted-badge">${t('removed')}</div>` : ''}
@@ -710,6 +721,22 @@ export class ReportConversationHistoryPdfService {
             .msg-row.right .bubble { order: 2; background: rgb(217, 253, 211); color: #111b21; }
             .content { font-size: 14.2px; word-break: break-word; overflow-wrap: break-word; hyphens: none; margin-bottom: 4px; }
             .content:has(+ .meta .message-deleted-badge) { margin-bottom: 0; }
+            .official-display { width: min(100%, 336px); color: #111b21; }
+            .official-display-surface { overflow: hidden; border: 1px solid rgba(17, 27, 33, 0.08); border-radius: 7.5px; background: #ffffff; box-shadow: 0 1px 1px rgba(11, 20, 26, 0.08); }
+            .official-reply-surface { min-width: 188px; background: transparent; }
+            .official-display-message { background: #ffffff; }
+            .official-display-title { padding: 10px 12px 3px; color: #111b21; font-size: 14px; font-weight: 700; line-height: 1.3; }
+            .official-display-body { padding: 9px 12px 10px; color: #111b21; font-size: 14px; line-height: 1.38; white-space: normal; }
+            .official-display-footer { padding: 7px 12px 9px; border-top: 1px solid #e9edef; color: #667781; font-size: 12px; line-height: 1.25; }
+            .official-display-action { display: flex; min-height: 40px; align-items: center; justify-content: center; gap: 6px; padding: 9px 12px; border-top: 1px solid #e9edef; background: #ffffff; color: #008069; font-size: 14px; font-weight: 500; line-height: 1.18; text-align: center; }
+            .official-display-action--list { color: #008069; }
+            .official-display-list-icon { font-size: 16px; line-height: 1; }
+            .official-reply-context { margin: 0 0 6px; padding: 7px 9px; border-left: 4px solid #53bdeb; border-radius: 6px; background: #e9f0f6; }
+            .msg-row.right .official-reply-context { border-left-color: #ff8f2f; background: rgba(255, 255, 255, 0.48); }
+            .official-reply-context-text { overflow: hidden; color: #3b4a54; font-size: 13px; line-height: 1.32; }
+            .official-reply-answer { padding: 1px 2px 2px; }
+            .official-reply-title { color: #111b21; font-size: 14px; font-weight: 650; line-height: 1.28; }
+            .official-reply-description { margin-top: 3px; color: #3b4a54; font-size: 13px; line-height: 1.3; }
             .message-current-version { margin-bottom: 8px; }
             .message-version { font-size: 13px; color: rgba(17, 27, 33, 0.7); margin-bottom: 4px; }
             .content img { max-width: 200px; max-height: 200px; width: auto; height: auto; border-radius: 8px; margin-bottom: 8px; object-fit: contain; }
@@ -1408,6 +1435,179 @@ export class ReportConversationHistoryPdfService {
     return '';
   }
 
+  private officialDisplayActionTitle(action: OfficialDisplayAction): string {
+    return (
+      action.title ||
+      action.description ||
+      action.url ||
+      action.phone_number ||
+      action.id ||
+      'Continuar'
+    );
+  }
+
+  private formatOfficialDisplayTextBlock(
+    display: OfficialDisplayMetadata,
+    fallbackText?: string | null
+  ): string {
+    const title = display.title?.trim();
+    const body = display.body?.trim() || fallbackText?.trim();
+    const footer = display.footer?.trim();
+    const parts: string[] = [];
+
+    if (title) {
+      parts.push(
+        `<div class="official-display-title">${this.escapeHtml(title)}</div>`
+      );
+    }
+
+    if (body && body !== title) {
+      parts.push(
+        `<div class="official-display-body">${this.escapeHtml(body).replaceAll('\n', '<br>')}</div>`
+      );
+    }
+
+    if (footer) {
+      parts.push(
+        `<div class="official-display-footer">${this.escapeHtml(footer)}</div>`
+      );
+    }
+
+    if (parts.length === 0) {
+      parts.push(
+        `<div class="official-display-body">${this.escapeHtml(
+          fallbackText || ''
+        )}</div>`
+      );
+    }
+
+    return `<div class="official-display-message">${parts.join('')}</div>`;
+  }
+
+  private formatOfficialButtonDisplay(
+    display: OfficialDisplayMetadata,
+    fallbackText?: string | null
+  ): string {
+    const actions = (display.actions ?? []).filter(
+      (action) => action.title || action.description || action.url || action.id
+    );
+
+    const actionsHtml = actions
+      .map(
+        (action) => `
+          <div class="official-display-action">
+            ${this.escapeHtml(this.officialDisplayActionTitle(action))}
+          </div>
+        `
+      )
+      .join('');
+
+    return `
+      <div class="official-display official-display--button">
+        <div class="official-display-surface">
+          ${this.formatOfficialDisplayTextBlock(display, fallbackText)}
+          ${actionsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  private formatOfficialListDisplay(
+    display: OfficialDisplayMetadata,
+    fallbackText?: string | null
+  ): string {
+    const actionLabel = display.action_label || 'Selecionar';
+
+    return `
+      <div class="official-display official-display--list">
+        <div class="official-display-surface">
+          ${this.formatOfficialDisplayTextBlock(display, fallbackText)}
+          <div class="official-display-action official-display-action--list">
+            <span class="official-display-list-icon">&#9779;</span>
+            <span>${this.escapeHtml(actionLabel)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private formatOfficialReplyDisplay(
+    display: OfficialDisplayMetadata,
+    content: ContentMessageChat
+  ): string {
+    const action = display.actions?.[0];
+    const title =
+      action?.title ||
+      display.title ||
+      content.message ||
+      action?.id ||
+      'Resposta';
+    const description =
+      action?.description && action.description !== title
+        ? action.description
+        : display.body && display.body !== title
+          ? display.body
+          : null;
+    const quotedText =
+      content.quoted?.message && content.quoted.message !== title
+        ? content.quoted.message
+        : null;
+
+    return `
+      <div class="official-display official-display--reply">
+        <div class="official-reply-surface">
+          ${
+            quotedText
+              ? `<div class="official-reply-context">
+                  <div class="official-reply-context-text">${this.escapeHtml(
+                    quotedText
+                  )}</div>
+                </div>`
+              : ''
+          }
+          <div class="official-reply-answer">
+            <div class="official-reply-title">${this.escapeHtml(title)}</div>
+            ${
+              description
+                ? `<div class="official-reply-description">${this.escapeHtml(
+                    description
+                  )}</div>`
+                : ''
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private formatOfficialDisplayMessage(
+    content: ContentMessageChat,
+    t: TFunction<'translation', undefined>
+  ): string {
+    const display = content.official?.display;
+    if (!display) {
+      return '';
+    }
+
+    if (display.kind === 'button') {
+      return this.formatOfficialButtonDisplay(display, content.message);
+    }
+
+    if (display.kind === 'list') {
+      return this.formatOfficialListDisplay(display, content.message);
+    }
+
+    if (display.kind === 'reply') {
+      return this.formatOfficialReplyDisplay(display, content);
+    }
+
+    if (display.kind === 'unsupported') {
+      return `[${this.escapeHtml(t('unsupported_message'))}]`;
+    }
+
+    return '';
+  }
+
   private formatMessageContent(
     content: ContentMessageChat,
     msg: ListMessageResult,
@@ -1416,6 +1616,12 @@ export class ReportConversationHistoryPdfService {
     if (!content) {
       return '';
     }
+
+    const officialDisplayMessage = this.formatOfficialDisplayMessage(
+      content,
+      t
+    );
+    if (officialDisplayMessage) return officialDisplayMessage;
 
     const systemMessage = this.formatSystemMessage(content, t);
     if (systemMessage) return systemMessage;

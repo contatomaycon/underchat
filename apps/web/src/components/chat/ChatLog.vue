@@ -2242,7 +2242,11 @@ const resolveQuotedPayload = (
   return source ? buildQuotedPayloadFromLoadedMessage(source) : null;
 };
 
-const showQuoted = (m: ListMessageResult) => !!resolveQuotedPayload(m);
+const isOfficialReplyDisplay = (m: ListMessageResult): boolean =>
+  getOfficialMetadata(m)?.display?.kind === 'reply';
+
+const showQuoted = (m: ListMessageResult) =>
+  !!resolveQuotedPayload(m) && !isOfficialReplyDisplay(m);
 
 const resolveQuotedName = (m: ListMessageResult): string => {
   const fromMe = resolveQuotedPayload(m)?.key?.from_me ?? null;
@@ -3825,6 +3829,9 @@ onUnmounted(() => {
                       item.message.content?.type ===
                         EMessageType.contact_card ||
                       item.message.content?.type === EMessageType.contacts,
+                    'has-official-display': shouldShowOfficialDisplayCard(
+                      item.message
+                    ),
                     'has-official-unsupported': isUnsupportedProviderMessage(
                       item.message
                     ),
@@ -6358,6 +6365,11 @@ onUnmounted(() => {
         padding-bottom: 8px !important;
         box-shadow: none !important;
         background: transparent !important;
+      }
+
+      &.has-official-display {
+        min-width: 224px;
+        padding: 8px 8px 1.45rem !important;
       }
 
       &.has-official-unsupported {

@@ -9,7 +9,10 @@ import {
   nextTick,
   onErrorCaptured,
 } from 'vue';
-import { ListMessageResult } from '@core/schema/chat/listMessageChats/response.schema';
+import {
+  ContentMessageChat,
+  ListMessageResult,
+} from '@core/schema/chat/listMessageChats/response.schema';
 import { isTypeUser } from '@core/common/functions/isTypeUser';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { formatDate } from '@/@webcore/utils/formatters';
@@ -23,6 +26,7 @@ import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 import { resolveClosureAnnotationKind } from '@core/common/functions/closureAnnotation';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
+import ChatOfficialMessageCard from '@/components/chat/official/ChatOfficialMessageCard.vue';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
 import {
@@ -520,6 +524,28 @@ const getLatestMessageText = (message: ListMessageResult): string => {
   return message.content.message || '';
 };
 
+type OfficialMessageMetadata = NonNullable<ContentMessageChat['official']>;
+
+const getOfficialMetadata = (
+  message: ListMessageResult
+): OfficialMessageMetadata | null => message.content?.official ?? null;
+
+const shouldShowOfficialDisplayCard = (message: ListMessageResult): boolean =>
+  Boolean(getOfficialMetadata(message)?.display);
+
+const shouldSuppressOfficialTextMessage = (
+  message: ListMessageResult
+): boolean => {
+  const display = getOfficialMetadata(message)?.display;
+  if (!display || display.kind === 'referral') return false;
+
+  return (
+    display.kind !== 'system' ||
+    message.content?.type === EMessageType.official_interactive ||
+    message.content?.type === EMessageType.official_template
+  );
+};
+
 const hasMessageVersions = (message: ListMessageResult): boolean => {
   return !!(message.content?.version && message.content.version.length > 0);
 };
@@ -931,7 +957,11 @@ const resolveQuotedName = (m: ListMessageResult): string => {
   return '';
 };
 
-const showQuoted = (m: ListMessageResult) => !!m.content?.quoted;
+const isOfficialReplyDisplay = (m: ListMessageResult): boolean =>
+  getOfficialMetadata(m)?.display?.kind === 'reply';
+
+const showQuoted = (m: ListMessageResult) =>
+  !!m.content?.quoted && !isOfficialReplyDisplay(m);
 
 const resolveQuotedText = (m: ListMessageResult): string => {
   if (!m.content?.quoted) {
@@ -1824,6 +1854,9 @@ const handleContactClick = (message: ListMessageResult) => {
                       item.message.content?.type ===
                         EMessageType.contact_card ||
                       item.message.content?.type === EMessageType.contacts,
+                    'has-official-display': shouldShowOfficialDisplayCard(
+                      item.message
+                    ),
                     'has-reactions':
                       item.message.content?.reactions &&
                       item.message.content.reactions.length > 0 &&
@@ -2329,6 +2362,12 @@ const handleContactClick = (message: ListMessageResult) => {
                     </a>
                   </div>
 
+                  <ChatOfficialMessageCard
+                    v-if="shouldShowOfficialDisplayCard(item.message)"
+                    :message="item.message"
+                    :is-outgoing="!isTypeUser(item.message)"
+                  />
+
                   <div
                     v-if="item.message.content?.type === EMessageType.view_once"
                     class="view-once-message"
@@ -2805,6 +2844,7 @@ const handleContactClick = (message: ListMessageResult) => {
                   <div
                     v-if="
                       getLatestMessageText(item.message) &&
+                      !shouldSuppressOfficialTextMessage(item.message) &&
                       item.message.content?.type !== EMessageType.image &&
                       (item.message.content?.type !== EMessageType.video_note ||
                         !item.message.content?.video?.url) &&
@@ -3525,6 +3565,11 @@ const handleContactClick = (message: ListMessageResult) => {
       padding-bottom: 8px !important;
       box-shadow: none !important;
       background: transparent !important;
+    }
+
+    &.has-official-display {
+      min-width: 224px;
+      padding: 8px 8px 1.45rem !important;
     }
 
     &.is-deleted {
