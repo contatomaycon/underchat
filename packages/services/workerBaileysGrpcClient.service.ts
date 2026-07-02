@@ -43,6 +43,21 @@ if (!WorkerConnectionClient) {
 const GRPC_DEADLINE_MS = 10_000;
 const GRPC_READY_DEADLINE_MS = 10_000;
 
+export interface WorkerPasskeyResponseProtoPayload {
+  worker_id: string;
+  account_id: string;
+  connection_attempt_id?: string;
+  passkey_response: string;
+  debug_trace_id?: string;
+}
+
+export interface WorkerPasskeyConfirmationProtoPayload {
+  worker_id: string;
+  account_id: string;
+  connection_attempt_id?: string;
+  debug_trace_id?: string;
+}
+
 @injectable()
 export class WorkerBaileysGrpcClientService {
   constructor(
@@ -280,6 +295,82 @@ export class WorkerBaileysGrpcClientService {
     });
   }
 
+  private async sendPasskeyResponseByAddress(
+    address: string,
+    payload: WorkerPasskeyResponseProtoPayload
+  ): Promise<IBaileysConnectionState> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const metadata = new Metadata();
+
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_connection_grpc.passkey_response_call',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        passkey_response_len: payload.passkey_response.length,
+        method: 'SendPasskeyResponse',
+        grpc_address: address,
+      }
+    );
+
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      (client as any).SendPasskeyResponse(
+        payload,
+        metadata,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerConnectionStateProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(protoToConnectionState(response ?? {}));
+        }
+      );
+    });
+  }
+
+  private async confirmPasskeyByAddress(
+    address: string,
+    payload: WorkerPasskeyConfirmationProtoPayload
+  ): Promise<IBaileysConnectionState> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const metadata = new Metadata();
+
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      (client as any).ConfirmPasskey(
+        payload,
+        metadata,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerConnectionStateProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(protoToConnectionState(response ?? {}));
+        }
+      );
+    });
+  }
+
   private async waitForReadyByAddress(
     address: string,
     timeoutMs: number
@@ -460,6 +551,26 @@ export class WorkerBaileysGrpcClientService {
   ): Promise<IPhoneValidationResponse> {
     return this.callWithFallback(workerId, workerType, (address) =>
       this.validatePhoneByAddress(address, payload)
+    );
+  }
+
+  async sendPasskeyResponse(
+    workerId: string,
+    payload: WorkerPasskeyResponseProtoPayload,
+    workerType?: EWorkerType
+  ): Promise<IBaileysConnectionState> {
+    return this.callWithFallback(workerId, workerType, (address) =>
+      this.sendPasskeyResponseByAddress(address, payload)
+    );
+  }
+
+  async confirmPasskey(
+    workerId: string,
+    payload: WorkerPasskeyConfirmationProtoPayload,
+    workerType?: EWorkerType
+  ): Promise<IBaileysConnectionState> {
+    return this.callWithFallback(workerId, workerType, (address) =>
+      this.confirmPasskeyByAddress(address, payload)
     );
   }
 }

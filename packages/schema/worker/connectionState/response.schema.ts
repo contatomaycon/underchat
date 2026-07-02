@@ -22,6 +22,10 @@ export const workerConnectionStateResponseSchema = Type.Object({
   phone: Type.Optional(Type.String()),
   disconnected_user: Type.Optional(Type.Boolean()),
   pairing_code: Type.Optional(Type.String()),
+  passkey_public_key: Type.Optional(Type.String()),
+  passkey_pending: Type.Optional(Type.Boolean()),
+  passkey_confirmation_code: Type.Optional(Type.String()),
+  passkey_skip_handoff_ux: Type.Optional(Type.Boolean()),
   seconds_until_next_attempt: Type.Optional(Type.Number()),
   worker_status_id: Type.Optional(
     Type.String({ enum: Object.values(EWorkerStatus) })

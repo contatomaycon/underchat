@@ -4,6 +4,8 @@ package worker_connection;
 
 service WorkerConnection {
   rpc RequestConnection(StatusConnectionRequest) returns (WorkerConnectionResponse);
+  rpc SendPasskeyResponse(PasskeyResponseRequest) returns (WorkerConnectionResponse);
+  rpc ConfirmPasskey(PasskeyConfirmationRequest) returns (WorkerConnectionResponse);
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
   rpc ActivateRuntime(WorkerRuntimeActivationRequest) returns (WorkerRuntimeActivationResponse);
   rpc RuntimeHealth(WorkerRuntimeHealthRequest) returns (WorkerRuntimeHealthResponse);
@@ -64,6 +66,25 @@ message WorkerConnectionResponse {
   string degraded_reason = 37;
   string last_probe_at = 38;
   int32 probe_latency_ms = 39;
+  string passkey_public_key = 40;
+  bool passkey_pending = 41;
+  string passkey_confirmation_code = 42;
+  bool passkey_skip_handoff_ux = 43;
+}
+
+message PasskeyResponseRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string connection_attempt_id = 3;
+  string passkey_response = 4;
+  string debug_trace_id = 5;
+}
+
+message PasskeyConfirmationRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string connection_attempt_id = 3;
+  string debug_trace_id = 4;
 }
 
 message PhoneValidationRequest {

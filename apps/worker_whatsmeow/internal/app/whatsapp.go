@@ -62,14 +62,17 @@ type WhatsAppManager struct {
 	degradedReason          string
 	lastOutboundReconnectAt time.Time
 
-	pendingFreshLogin   *freshLoginRequest
-	currentQRCode       string
-	currentPairingCode  string
-	connectionAttemptID string
-	debugTraceID        string
-	qrGenerationCount   int
-	qrReadSessionLocked bool
-	qrHash              string
+	pendingFreshLogin              *freshLoginRequest
+	currentQRCode                  string
+	currentPairingCode             string
+	currentPasskeyPublicKey        string
+	currentPasskeyConfirmationCode string
+	currentPasskeySkipHandoffUX    bool
+	connectionAttemptID            string
+	debugTraceID                   string
+	qrGenerationCount              int
+	qrReadSessionLocked            bool
+	qrHash                         string
 }
 
 const (
@@ -557,18 +560,22 @@ func (m *WhatsAppManager) triggerConnectionReset(ctx context.Context, reason str
 func (m *WhatsAppManager) currentConnectionState() ConnectionState {
 	m.mu.RLock()
 	state := ConnectionState{
-		Code:                m.code,
-		Status:              m.status,
-		WorkerID:            m.cfg.WorkerID,
-		AccountID:           m.cfg.AccountID,
-		WorkerTypeID:        WorkerTypeWhatsmeow,
-		QRCode:              m.currentQRCode,
-		PairingCode:         m.currentPairingCode,
-		ConnectionAttemptID: m.connectionAttemptID,
-		DebugTraceID:        m.debugTraceID,
-		RuntimeGeneration:   m.cfg.RuntimeGeneration,
-		WarmPoolID:          m.cfg.WarmPoolID,
-		Time:                time.Now().Unix(),
+		Code:                    m.code,
+		Status:                  m.status,
+		WorkerID:                m.cfg.WorkerID,
+		AccountID:               m.cfg.AccountID,
+		WorkerTypeID:            WorkerTypeWhatsmeow,
+		QRCode:                  m.currentQRCode,
+		PairingCode:             m.currentPairingCode,
+		PasskeyPublicKey:        m.currentPasskeyPublicKey,
+		PasskeyPending:          m.currentPasskeyPublicKey != "",
+		PasskeyConfirmationCode: m.currentPasskeyConfirmationCode,
+		PasskeySkipHandoffUX:    m.currentPasskeySkipHandoffUX,
+		ConnectionAttemptID:     m.connectionAttemptID,
+		DebugTraceID:            m.debugTraceID,
+		RuntimeGeneration:       m.cfg.RuntimeGeneration,
+		WarmPoolID:              m.cfg.WarmPoolID,
+		Time:                    time.Now().Unix(),
 	}
 	m.mu.RUnlock()
 	m.enrichReadiness(&state)
@@ -840,6 +847,94 @@ func (m *WhatsAppManager) RequestConnection(ctx context.Context, req StatusConne
 	default:
 		return ConnectionState{}, fmt.Errorf("unsupported connection type %q", req.Type)
 	}
+}
+
+func (m *WhatsAppManager) validatePasskeyRequest(reqWorkerID, reqAccountID, reqAttemptID string) error {
+	if reqWorkerID != "" && reqWorkerID != m.cfg.WorkerID {
+		return fmt.Errorf("request worker_id %s does not match %s", reqWorkerID, m.cfg.WorkerID)
+	}
+	if reqAccountID != "" && reqAccountID != m.cfg.AccountID {
+		return fmt.Errorf("request account_id %s does not match %s", reqAccountID, m.cfg.AccountID)
+	}
+	currentAttemptID := m.getConnectionAttemptID()
+	if reqAttemptID != "" && currentAttemptID != "" && reqAttemptID != currentAttemptID {
+		return fmt.Errorf("connection attempt %s does not match active attempt %s", reqAttemptID, currentAttemptID)
+	}
+	return nil
+}
+
+func (m *WhatsAppManager) SendPasskeyResponse(ctx context.Context, req PasskeyResponseRequest) (ConnectionState, error) {
+	if req.DebugTraceID != "" {
+		m.setDebugTraceID(req.DebugTraceID)
+	}
+	if err := m.validatePasskeyRequest(req.WorkerID, req.AccountID, req.ConnectionAttemptID); err != nil {
+		return ConnectionState{}, err
+	}
+	if strings.TrimSpace(req.PasskeyResponse) == "" {
+		return ConnectionState{}, fmt.Errorf("passkey response is required")
+	}
+
+	var response types.WebAuthnResponse
+	if err := json.Unmarshal([]byte(req.PasskeyResponse), &response); err != nil {
+		return ConnectionState{}, fmt.Errorf("failed to decode passkey response: %w", err)
+	}
+
+	client := m.getClient()
+	if client == nil {
+		return ConnectionState{}, fmt.Errorf("whatsmeow client is not initialized")
+	}
+	if err := client.SendPasskeyResponse(ctx, &response); err != nil {
+		return ConnectionState{}, fmt.Errorf("failed to send passkey response: %w", err)
+	}
+
+	m.clearCurrentPasskeyRequest()
+	m.mu.Lock()
+	m.connected = false
+	m.status = "connecting"
+	m.code = CodePairingInProgress
+	m.mu.Unlock()
+	m.publishState(ctx, "connecting", CodePairingInProgress, WorkerStatusDisponible, "", "", true)
+
+	state := m.currentConnectionState()
+	state.Code = CodePairingInProgress
+	state.Status = "connecting"
+	state.WorkerStatusID = WorkerStatusDisponible
+	state.IsNewLogin = true
+	state.PasskeyPending = false
+	state.PasskeyPublicKey = ""
+	return state, nil
+}
+
+func (m *WhatsAppManager) ConfirmPasskey(ctx context.Context, req PasskeyConfirmationRequest) (ConnectionState, error) {
+	if req.DebugTraceID != "" {
+		m.setDebugTraceID(req.DebugTraceID)
+	}
+	if err := m.validatePasskeyRequest(req.WorkerID, req.AccountID, req.ConnectionAttemptID); err != nil {
+		return ConnectionState{}, err
+	}
+
+	client := m.getClient()
+	if client == nil {
+		return ConnectionState{}, fmt.Errorf("whatsmeow client is not initialized")
+	}
+	if err := client.SendPasskeyConfirmation(ctx); err != nil {
+		return ConnectionState{}, fmt.Errorf("failed to confirm passkey pairing: %w", err)
+	}
+
+	m.clearLoginArtifacts()
+	m.mu.Lock()
+	m.connected = false
+	m.status = "connecting"
+	m.code = CodePairingInProgress
+	m.mu.Unlock()
+	m.publishState(ctx, "connecting", CodePairingInProgress, WorkerStatusDisponible, "", "", true)
+
+	state := m.currentConnectionState()
+	state.Code = CodePairingInProgress
+	state.Status = "connecting"
+	state.WorkerStatusID = WorkerStatusDisponible
+	state.IsNewLogin = true
+	return state, nil
 }
 
 func (m *WhatsAppManager) ValidatePhone(ctx context.Context, req PhoneValidationRequest) (PhoneValidationResponse, error) {
@@ -1135,6 +1230,9 @@ func (m *WhatsAppManager) recordQRCodeGeneration(raw string) (int, bool, bool) {
 		m.qrReadSessionLocked = true
 		m.currentQRCode = ""
 		m.currentPairingCode = ""
+		m.currentPasskeyPublicKey = ""
+		m.currentPasskeyConfirmationCode = ""
+		m.currentPasskeySkipHandoffUX = false
 		m.qrHash = ""
 		m.qrGenerationCount = maxQRCodeGenerations + 1
 		m.connected = false
@@ -1166,10 +1264,45 @@ func (m *WhatsAppManager) getCurrentPairingCode() string {
 	return m.currentPairingCode
 }
 
+func (m *WhatsAppManager) setCurrentPasskeyRequest(publicKey string) {
+	m.mu.Lock()
+	m.connected = false
+	m.status = "connecting"
+	m.code = CodeAwaitingPasskey
+	m.currentQRCode = ""
+	m.currentPairingCode = ""
+	m.currentPasskeyPublicKey = publicKey
+	m.currentPasskeyConfirmationCode = ""
+	m.currentPasskeySkipHandoffUX = false
+	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) setCurrentPasskeyConfirmation(code string, skipHandoffUX bool) {
+	m.mu.Lock()
+	m.connected = false
+	m.status = "connecting"
+	m.code = CodeAwaitingPasskeyConfirmation
+	m.currentQRCode = ""
+	m.currentPairingCode = ""
+	m.currentPasskeyPublicKey = ""
+	m.currentPasskeyConfirmationCode = code
+	m.currentPasskeySkipHandoffUX = skipHandoffUX
+	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) clearCurrentPasskeyRequest() {
+	m.mu.Lock()
+	m.currentPasskeyPublicKey = ""
+	m.mu.Unlock()
+}
+
 func (m *WhatsAppManager) clearLoginArtifacts() {
 	m.mu.Lock()
 	m.currentQRCode = ""
 	m.currentPairingCode = ""
+	m.currentPasskeyPublicKey = ""
+	m.currentPasskeyConfirmationCode = ""
+	m.currentPasskeySkipHandoffUX = false
 	m.mu.Unlock()
 }
 
@@ -1474,6 +1607,96 @@ func (m *WhatsAppManager) connectWithQRCodeInternal(ctx context.Context, allowDe
 					DebugTraceID:      traceID,
 					RuntimeGeneration: m.cfg.RuntimeGeneration,
 					WarmPoolID:        m.cfg.WarmPoolID,
+				})
+			case whatsmeow.QRChannelEventPasskeyRequest:
+				if evt.PasskeyRequest == nil || evt.PasskeyRequest.PublicKey == nil {
+					m.debug.Log(context.Background(), "whatsmeow.provider.passkey.request_missing", map[string]any{
+						"trace_id":              traceID,
+						"layer":                 "worker_whatsmeow.provider",
+						"worker_id":             m.cfg.WorkerID,
+						"account_id":            m.cfg.AccountID,
+						"worker_type_id":        WorkerTypeWhatsmeow,
+						"connection_attempt_id": m.getConnectionAttemptID(),
+						"runtime_generation":    m.cfg.RuntimeGeneration,
+					})
+					continue
+				}
+				publicKeyJSON, err := json.Marshal(evt.PasskeyRequest.PublicKey)
+				if err != nil {
+					m.debug.Log(context.Background(), "whatsmeow.provider.passkey.marshal_error", map[string]any{
+						"trace_id":              traceID,
+						"layer":                 "worker_whatsmeow.provider",
+						"worker_id":             m.cfg.WorkerID,
+						"account_id":            m.cfg.AccountID,
+						"worker_type_id":        WorkerTypeWhatsmeow,
+						"connection_attempt_id": m.getConnectionAttemptID(),
+						"runtime_generation":    m.cfg.RuntimeGeneration,
+						"error":                 err.Error(),
+					})
+					continue
+				}
+				passkeyPublicKey := string(publicKeyJSON)
+				m.setCurrentPasskeyRequest(passkeyPublicKey)
+				m.debug.Log(context.Background(), "whatsmeow.provider.passkey.request", map[string]any{
+					"trace_id":               traceID,
+					"layer":                  "worker_whatsmeow.provider",
+					"worker_id":              m.cfg.WorkerID,
+					"account_id":             m.cfg.AccountID,
+					"worker_type_id":         WorkerTypeWhatsmeow,
+					"connection_attempt_id":  m.getConnectionAttemptID(),
+					"runtime_generation":     m.cfg.RuntimeGeneration,
+					"passkey_public_key_len": len(passkeyPublicKey),
+				})
+				m.publishState(context.Background(), "connecting", CodeAwaitingPasskey, WorkerStatusDisponible, "", passkeyPublicKey, true)
+				sendResult(ConnectionState{
+					Code:                CodeAwaitingPasskey,
+					Status:              "connecting",
+					WorkerID:            m.cfg.WorkerID,
+					AccountID:           m.cfg.AccountID,
+					WorkerTypeID:        WorkerTypeWhatsmeow,
+					IsNewLogin:          true,
+					Time:                time.Now().Unix(),
+					WorkerStatusID:      WorkerStatusDisponible,
+					PasskeyPublicKey:    passkeyPublicKey,
+					PasskeyPending:      true,
+					ConnectionAttemptID: m.getConnectionAttemptID(),
+					DebugTraceID:        traceID,
+					RuntimeGeneration:   m.cfg.RuntimeGeneration,
+					WarmPoolID:          m.cfg.WarmPoolID,
+				})
+			case whatsmeow.QRChannelEventPasskeyResponse:
+				if evt.PasskeyConfirmation == nil {
+					continue
+				}
+				confirmationCode := evt.PasskeyConfirmation.Code
+				m.setCurrentPasskeyConfirmation(confirmationCode, evt.PasskeyConfirmation.SkipHandoffUX)
+				m.debug.Log(context.Background(), "whatsmeow.provider.passkey.confirmation", map[string]any{
+					"trace_id":                      traceID,
+					"layer":                         "worker_whatsmeow.provider",
+					"worker_id":                     m.cfg.WorkerID,
+					"account_id":                    m.cfg.AccountID,
+					"worker_type_id":                WorkerTypeWhatsmeow,
+					"connection_attempt_id":         m.getConnectionAttemptID(),
+					"runtime_generation":            m.cfg.RuntimeGeneration,
+					"has_passkey_confirmation_code": confirmationCode != "",
+					"passkey_skip_handoff_ux":       evt.PasskeyConfirmation.SkipHandoffUX,
+				})
+				m.publishState(context.Background(), "connecting", CodeAwaitingPasskeyConfirmation, WorkerStatusDisponible, "", confirmationCode, true)
+				sendResult(ConnectionState{
+					Code:                    CodeAwaitingPasskeyConfirmation,
+					Status:                  "connecting",
+					WorkerID:                m.cfg.WorkerID,
+					AccountID:               m.cfg.AccountID,
+					WorkerTypeID:            WorkerTypeWhatsmeow,
+					IsNewLogin:              true,
+					Time:                    time.Now().Unix(),
+					WorkerStatusID:          WorkerStatusDisponible,
+					PasskeyConfirmationCode: confirmationCode,
+					PasskeySkipHandoffUX:    evt.PasskeyConfirmation.SkipHandoffUX,
+					ConnectionAttemptID:     m.getConnectionAttemptID(),
+					DebugTraceID:            traceID,
+					RuntimeGeneration:       m.cfg.RuntimeGeneration,
+					WarmPoolID:              m.cfg.WarmPoolID,
 				})
 			case "success":
 				m.clearLoginArtifacts()
@@ -2067,42 +2290,56 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 	if code == CodeAwaitingPairingCode {
 		state.PairingCode = qrOrPair
 	}
+	if code == CodeAwaitingPasskey {
+		state.PasskeyPublicKey = qrOrPair
+		state.PasskeyPending = qrOrPair != ""
+	}
+	if code == CodeAwaitingPasskeyConfirmation {
+		state.PasskeyConfirmationCode = qrOrPair
+		state.PasskeyPending = false
+	}
 	m.enrichReadiness(&state)
 	localConnectionStatusLog("whatsmeow.provider.publish_state", map[string]any{
-		"layer":                 "worker_whatsmeow.provider",
-		"provider":              "whatsmeow",
-		"worker_id":             state.WorkerID,
-		"account_id":            state.AccountID,
-		"worker_type_id":        state.WorkerTypeID,
-		"worker_status_id":      state.WorkerStatusID,
-		"status":                state.Status,
-		"code":                  state.Code,
-		"session_ready":         state.SessionReady,
-		"can_send":              state.CanSend,
-		"can_receive_runtime":   state.CanReceiveRuntime,
-		"authenticated":         state.Authenticated,
-		"provider_state":        state.ProviderState,
-		"degraded_reason":       state.DegradedReason,
-		"reason":                state.Reason,
-		"phone":                 state.Phone,
-		"connection_attempt_id": state.ConnectionAttemptID,
-		"runtime_generation":    state.RuntimeGeneration,
-		"has_qr":                state.QRCode != "",
-		"qr_length":             len(state.QRCode),
-		"has_pairing_code":      state.PairingCode != "",
-		"pairing_code_length":   len(state.PairingCode),
-		"is_new_login":          isNewLogin,
-		"attempt":               state.Attempt,
-		"max_attempts":          state.MaxAttempts,
+		"layer":                         "worker_whatsmeow.provider",
+		"provider":                      "whatsmeow",
+		"worker_id":                     state.WorkerID,
+		"account_id":                    state.AccountID,
+		"worker_type_id":                state.WorkerTypeID,
+		"worker_status_id":              state.WorkerStatusID,
+		"status":                        state.Status,
+		"code":                          state.Code,
+		"session_ready":                 state.SessionReady,
+		"can_send":                      state.CanSend,
+		"can_receive_runtime":           state.CanReceiveRuntime,
+		"authenticated":                 state.Authenticated,
+		"provider_state":                state.ProviderState,
+		"degraded_reason":               state.DegradedReason,
+		"reason":                        state.Reason,
+		"phone":                         state.Phone,
+		"connection_attempt_id":         state.ConnectionAttemptID,
+		"runtime_generation":            state.RuntimeGeneration,
+		"has_qr":                        state.QRCode != "",
+		"qr_length":                     len(state.QRCode),
+		"has_pairing_code":              state.PairingCode != "",
+		"pairing_code_length":           len(state.PairingCode),
+		"has_passkey_public_key":        state.PasskeyPublicKey != "",
+		"passkey_public_key_len":        len(state.PasskeyPublicKey),
+		"has_passkey_confirmation_code": state.PasskeyConfirmationCode != "",
+		"passkey_skip_handoff_ux":       state.PasskeySkipHandoffUX,
+		"is_new_login":                  isNewLogin,
+		"attempt":                       state.Attempt,
+		"max_attempts":                  state.MaxAttempts,
 	})
 	log.Printf(
-		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t is_new_login=%t attempt=%d max_attempts=%d connection_attempt_id=%s",
+		"publishing connection state worker_id=%s status=%s code=%d worker_status_id=%s has_qr=%t has_pairing_code=%t has_passkey_public_key=%t has_passkey_confirmation_code=%t is_new_login=%t attempt=%d max_attempts=%d connection_attempt_id=%s",
 		m.cfg.WorkerID,
 		state.Status,
 		state.Code,
 		state.WorkerStatusID,
 		state.QRCode != "",
 		state.PairingCode != "",
+		state.PasskeyPublicKey != "",
+		state.PasskeyConfirmationCode != "",
 		isNewLogin,
 		state.Attempt,
 		state.MaxAttempts,
@@ -2124,18 +2361,20 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 			"reason":                err.Error(),
 		})
 		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.error", map[string]any{
-			"trace_id":              state.DebugTraceID,
-			"layer":                 "worker_whatsmeow.provider",
-			"worker_id":             state.WorkerID,
-			"account_id":            state.AccountID,
-			"worker_type_id":        state.WorkerTypeID,
-			"connection_attempt_id": state.ConnectionAttemptID,
-			"runtime_generation":    state.RuntimeGeneration,
-			"status":                state.Status,
-			"code":                  state.Code,
-			"qrcode":                state.QRCode,
-			"pairing_code":          state.PairingCode,
-			"error":                 err.Error(),
+			"trace_id":                      state.DebugTraceID,
+			"layer":                         "worker_whatsmeow.provider",
+			"worker_id":                     state.WorkerID,
+			"account_id":                    state.AccountID,
+			"worker_type_id":                state.WorkerTypeID,
+			"connection_attempt_id":         state.ConnectionAttemptID,
+			"runtime_generation":            state.RuntimeGeneration,
+			"status":                        state.Status,
+			"code":                          state.Code,
+			"qrcode":                        state.QRCode,
+			"pairing_code":                  state.PairingCode,
+			"has_passkey_public_key":        state.PasskeyPublicKey != "",
+			"has_passkey_confirmation_code": state.PasskeyConfirmationCode != "",
+			"error":                         err.Error(),
 		})
 		log.Printf("centrifugo publish connection state failed worker_id=%s status=%s code=%d error=%v", m.cfg.WorkerID, status, code, err)
 	} else {
@@ -2154,17 +2393,19 @@ func (m *WhatsAppManager) publishStateWithAttemptMetadata(ctx context.Context, s
 			"runtime_generation":    state.RuntimeGeneration,
 		})
 		m.debug.Log(ctx, "whatsmeow.provider.centrifugo_publish.ok", map[string]any{
-			"trace_id":              state.DebugTraceID,
-			"layer":                 "worker_whatsmeow.provider",
-			"worker_id":             state.WorkerID,
-			"account_id":            state.AccountID,
-			"worker_type_id":        state.WorkerTypeID,
-			"connection_attempt_id": state.ConnectionAttemptID,
-			"runtime_generation":    state.RuntimeGeneration,
-			"status":                state.Status,
-			"code":                  state.Code,
-			"qrcode":                state.QRCode,
-			"pairing_code":          state.PairingCode,
+			"trace_id":                      state.DebugTraceID,
+			"layer":                         "worker_whatsmeow.provider",
+			"worker_id":                     state.WorkerID,
+			"account_id":                    state.AccountID,
+			"worker_type_id":                state.WorkerTypeID,
+			"connection_attempt_id":         state.ConnectionAttemptID,
+			"runtime_generation":            state.RuntimeGeneration,
+			"status":                        state.Status,
+			"code":                          state.Code,
+			"qrcode":                        state.QRCode,
+			"pairing_code":                  state.PairingCode,
+			"has_passkey_public_key":        state.PasskeyPublicKey != "",
+			"has_passkey_confirmation_code": state.PasskeyConfirmationCode != "",
 		})
 	}
 	if state.WorkerStatusID == WorkerStatusOnline || state.WorkerStatusID == WorkerStatusOffline || state.WorkerStatusID == WorkerStatusDisponible || state.WorkerStatusID == WorkerStatusMismatched {

@@ -6,6 +6,8 @@ export enum ECodeMessage {
   awaitingPairingCode = 204,
   logoutInProgress = 205,
   pairingInProgress = 206,
+  awaitingPasskey = 207,
+  awaitingPasskeyConfirmation = 208,
   loggedOut = 401,
   forbidden = 403,
   connectionLost = 408,

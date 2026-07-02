@@ -14,7 +14,9 @@ export type WorkerConnectionModalState =
   | 'disconnected'
   | 'phoneUnavailable'
   | 'phoneInput'
-  | 'pairing';
+  | 'pairing'
+  | 'passkeyRequired'
+  | 'passkeyConfirmation';
 
 export interface NormalizeWorkerConnectionModalStateContext {
   isResetting?: boolean;
@@ -82,6 +84,17 @@ export function normalizeWorkerConnectionModalState(
 
   if (code === ECodeMessage.awaitingPairingCode) {
     return 'pairing';
+  }
+
+  if (code === ECodeMessage.awaitingPasskey || state.passkey_public_key) {
+    return 'passkeyRequired';
+  }
+
+  if (
+    code === ECodeMessage.awaitingPasskeyConfirmation ||
+    state.passkey_confirmation_code
+  ) {
+    return 'passkeyConfirmation';
   }
 
   if (

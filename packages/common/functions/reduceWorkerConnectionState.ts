@@ -11,6 +11,8 @@ export interface WorkerConnectionReducerResult {
 const userActionCodes = new Set<ECodeMessage>([
   ECodeMessage.awaitingReadQrCode,
   ECodeMessage.awaitingPairingCode,
+  ECodeMessage.awaitingPasskey,
+  ECodeMessage.awaitingPasskeyConfirmation,
   ECodeMessage.pairingInProgress,
   ECodeMessage.newLoginAttempt,
 ]);
@@ -43,6 +45,15 @@ function shouldClearQr(state: Partial<IBaileysConnectionState>): boolean {
   );
 }
 
+function hasUserCredential(state: Partial<IBaileysConnectionState>): boolean {
+  return Boolean(
+    state.qrcode ||
+    state.pairing_code ||
+    state.passkey_public_key ||
+    state.passkey_confirmation_code
+  );
+}
+
 function isSuccessfulTerminal(
   state: Partial<IBaileysConnectionState>
 ): boolean {
@@ -56,7 +67,7 @@ function protectsUserAction(
   current: Partial<IBaileysConnectionState>
 ): boolean {
   return (
-    Boolean(current.qrcode) ||
+    hasUserCredential(current) ||
     current.status === EBaileysConnectionStatus.connected ||
     (current.code !== undefined && userActionCodes.has(current.code))
   );
@@ -83,8 +94,8 @@ export function reduceWorkerConnectionState(
 
   if (
     attemptMismatch &&
-    Boolean(current.qrcode) &&
-    !incoming.qrcode &&
+    hasUserCredential(current) &&
+    !hasUserCredential(incoming) &&
     !isSuccessfulTerminal(incoming)
   ) {
     return {
@@ -133,6 +144,40 @@ export function reduceWorkerConnectionState(
     delete next.qrcode;
   } else if (current.qrcode) {
     next.qrcode = current.qrcode;
+  }
+
+  if (incoming.passkey_public_key) {
+    next.passkey_public_key = incoming.passkey_public_key;
+    next.passkey_pending = incoming.passkey_pending ?? true;
+    delete next.qrcode;
+    delete next.pairing_code;
+    delete next.passkey_confirmation_code;
+  } else if (incoming.passkey_confirmation_code) {
+    next.passkey_confirmation_code = incoming.passkey_confirmation_code;
+    next.passkey_skip_handoff_ux = incoming.passkey_skip_handoff_ux;
+    next.passkey_pending = false;
+    delete next.qrcode;
+    delete next.pairing_code;
+    delete next.passkey_public_key;
+  } else if (incoming.pairing_code) {
+    delete next.passkey_public_key;
+    delete next.passkey_confirmation_code;
+    delete next.passkey_pending;
+    delete next.passkey_skip_handoff_ux;
+  } else if (shouldClearQr(incoming)) {
+    delete next.passkey_public_key;
+    delete next.passkey_confirmation_code;
+    delete next.passkey_pending;
+    delete next.passkey_skip_handoff_ux;
+  } else {
+    if (current.passkey_public_key) {
+      next.passkey_public_key = current.passkey_public_key;
+      next.passkey_pending = current.passkey_pending;
+    }
+    if (current.passkey_confirmation_code) {
+      next.passkey_confirmation_code = current.passkey_confirmation_code;
+      next.passkey_skip_handoff_ux = current.passkey_skip_handoff_ux;
+    }
   }
 
   return {

@@ -846,6 +846,116 @@ export const useChannelsStore = defineStore('channels', {
       }
     },
 
+    async sendConnectionPasskeyResponse(
+      workerId: string,
+      input: {
+        connection_attempt_id?: string;
+        passkey_response: unknown;
+      },
+      options: {
+        silent?: boolean;
+        timeoutMs?: number;
+        debugTraceId?: string;
+      } = {}
+    ): Promise<IBaileysConnectionState | null> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_passkey_response');
+      try {
+        const config = buildConnectionLifecycleDebugConfig(
+          debugTraceId,
+          options.timeoutMs ? { timeout: options.timeoutMs } : {}
+        );
+
+        logConnectionLifecycleDebug('web.passkey_response.submit', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+          connection_attempt_id: input.connection_attempt_id,
+          has_passkey_response: input.passkey_response !== null,
+        });
+
+        const response = await axios.post<
+          IApiResponse<IBaileysConnectionState>
+        >(`/worker/${workerId}/connection/passkey-response`, input, config);
+
+        const result = response?.data?.status
+          ? (response.data.data ?? null)
+          : null;
+
+        logConnectionLifecycleDebug('web.passkey_response.response', {
+          trace_id: result?.debug_trace_id ?? debugTraceId,
+          layer: 'web',
+          worker_id: result?.worker_id ?? workerId,
+          account_id: result?.account_id,
+          connection_attempt_id: result?.connection_attempt_id,
+          status: result?.status,
+          code: result?.code,
+          has_passkey_confirmation_code: Boolean(
+            result?.passkey_confirmation_code
+          ),
+        });
+
+        return result
+          ? {
+              ...result,
+              debug_trace_id: result.debug_trace_id ?? debugTraceId,
+            }
+          : null;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_status_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        if (!options.silent) {
+          this.showSnackbar(errorMessage, EColor.error);
+        }
+        logConnectionLifecycleDebug('web.passkey_response.error', {
+          trace_id: debugTraceId,
+          layer: 'web',
+          worker_id: workerId,
+          connection_attempt_id: input.connection_attempt_id,
+          reason: errorMessage,
+        });
+        return null;
+      }
+    },
+
+    async confirmConnectionPasskey(
+      workerId: string,
+      input: { connection_attempt_id?: string },
+      options: {
+        silent?: boolean;
+        timeoutMs?: number;
+        debugTraceId?: string;
+      } = {}
+    ): Promise<IBaileysConnectionState | null> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_passkey_confirm');
+      try {
+        const response = await axios.post<
+          IApiResponse<IBaileysConnectionState>
+        >(
+          `/worker/${workerId}/connection/passkey-confirmation`,
+          input,
+          buildConnectionLifecycleDebugConfig(
+            debugTraceId,
+            options.timeoutMs ? { timeout: options.timeoutMs } : {}
+          )
+        );
+
+        return response?.data?.status ? (response.data.data ?? null) : null;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('worker_status_update_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+        if (!options.silent) {
+          this.showSnackbar(errorMessage, EColor.error);
+        }
+        return null;
+      }
+    },
+
     async resetConnectionChannel(
       workerId: string,
       options: ConnectionLifecycleDebugRequestOptions = {}
@@ -987,6 +1097,57 @@ export const useChannelsStore = defineStore('channels', {
         >(
           `/worker/external-connection/${encodeURIComponent(token)}/qrcode`,
           {},
+          config
+        );
+
+        return response?.data?.status ? (response.data.data ?? null) : null;
+      } catch {
+        return null;
+      }
+    },
+
+    async sendExternalConnectionPasskeyResponse(
+      token: string,
+      input: {
+        connection_attempt_id?: string;
+        passkey_response: unknown;
+      },
+      options: { timeoutMs?: number } = {}
+    ): Promise<IBaileysConnectionState | null> {
+      try {
+        const config: AxiosRequestConfig | undefined = options.timeoutMs
+          ? { timeout: options.timeoutMs }
+          : undefined;
+
+        const response = await axios.post<
+          IApiResponse<IBaileysConnectionState>
+        >(
+          `/worker/external-connection/${encodeURIComponent(token)}/passkey-response`,
+          input,
+          config
+        );
+
+        return response?.data?.status ? (response.data.data ?? null) : null;
+      } catch {
+        return null;
+      }
+    },
+
+    async confirmExternalConnectionPasskey(
+      token: string,
+      input: { connection_attempt_id?: string },
+      options: { timeoutMs?: number } = {}
+    ): Promise<IBaileysConnectionState | null> {
+      try {
+        const config: AxiosRequestConfig | undefined = options.timeoutMs
+          ? { timeout: options.timeoutMs }
+          : undefined;
+
+        const response = await axios.post<
+          IApiResponse<IBaileysConnectionState>
+        >(
+          `/worker/external-connection/${encodeURIComponent(token)}/passkey-confirmation`,
+          input,
           config
         );
 

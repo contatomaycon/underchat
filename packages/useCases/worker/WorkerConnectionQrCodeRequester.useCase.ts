@@ -204,7 +204,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       workerStatusId,
       runtimeGeneration
     );
-    if (cachedQr?.qrcode) {
+    if (cachedQr && this.hasConnectionCredential(cachedQr)) {
       const response = {
         ...this.hydrateCachedQrResponse(cachedQr, existing),
         debug_trace_id: debugTraceId,
@@ -221,7 +221,11 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           worker_type_id: workerTypeId,
           runtime_generation: runtimeGeneration,
           connection_attempt_id: response.connection_attempt_id,
-          has_qr: true,
+          has_qr: Boolean(response.qrcode),
+          has_passkey_public_key: Boolean(response.passkey_public_key),
+          has_passkey_confirmation_code: Boolean(
+            response.passkey_confirmation_code
+          ),
           qr_generated_at: response.qr_generated_at,
           reason: response.reason,
         }
@@ -244,6 +248,9 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           qr_pending: true,
           qrcode: undefined,
           pairing_code: undefined,
+          passkey_public_key: undefined,
+          passkey_confirmation_code: undefined,
+          passkey_pending: undefined,
           runtime_generation:
             existing.ack.runtime_generation ?? runtimeGeneration,
         };
@@ -323,6 +330,9 @@ export class WorkerConnectionQrCodeRequesterUseCase {
           qr_pending: true,
           qrcode: undefined,
           pairing_code: undefined,
+          passkey_public_key: undefined,
+          passkey_confirmation_code: undefined,
+          passkey_pending: undefined,
           runtime_generation:
             current.ack.runtime_generation ?? runtimeGeneration,
         };
@@ -573,7 +583,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
         return null;
       }
 
-      if (!parsed.qrcode) {
+      if (!this.hasConnectionCredential(parsed)) {
         return null;
       }
 
@@ -601,7 +611,7 @@ export class WorkerConnectionQrCodeRequesterUseCase {
 
       return {
         ...parsed,
-        code: ECodeMessage.awaitingReadQrCode,
+        code: this.codeForCachedCredential(parsed),
         status: EBaileysConnectionStatus.connecting,
         worker_id: workerId,
         account_id: accountId,
@@ -618,6 +628,10 @@ export class WorkerConnectionQrCodeRequesterUseCase {
   }
 
   private isCachedQrExpired(state: Partial<IBaileysConnectionState>): boolean {
+    if (state.passkey_public_key || state.passkey_confirmation_code) {
+      return false;
+    }
+
     if (!state.qrcode) {
       return true;
     }
@@ -651,6 +665,32 @@ export class WorkerConnectionQrCodeRequesterUseCase {
       qr_pending: false,
       reason: cached.reason ?? 'cached_qr_available',
     };
+  }
+
+  private hasConnectionCredential(
+    state: Partial<IBaileysConnectionState>
+  ): boolean {
+    return Boolean(
+      state.qrcode ||
+      state.pairing_code ||
+      state.passkey_public_key ||
+      state.passkey_confirmation_code
+    );
+  }
+
+  private codeForCachedCredential(
+    state: Partial<IBaileysConnectionState>
+  ): ECodeMessage {
+    if (state.passkey_public_key) {
+      return ECodeMessage.awaitingPasskey;
+    }
+    if (state.passkey_confirmation_code) {
+      return ECodeMessage.awaitingPasskeyConfirmation;
+    }
+    if (state.pairing_code) {
+      return ECodeMessage.awaitingPairingCode;
+    }
+    return ECodeMessage.awaitingReadQrCode;
   }
 
   private async claimActiveAttempt(

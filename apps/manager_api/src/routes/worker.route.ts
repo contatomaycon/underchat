@@ -18,7 +18,11 @@ import { createWorkerSchema } from '@core/schema/worker/createWorker';
 import { editWorkerSchema } from '@core/schema/worker/editWorker';
 import { viewWorkerSchema } from '@core/schema/worker/viewWorker';
 import { deleteWorkerSchema } from '@core/schema/worker/deleteWorker';
-import { workerConnectionQrCodeSchema } from '@core/schema/worker/connectionQrCode';
+import {
+  workerConnectionPasskeyConfirmationSchema,
+  workerConnectionPasskeyResponseSchema,
+  workerConnectionQrCodeSchema,
+} from '@core/schema/worker/connectionQrCode';
 import { workerConnectionLogsSchema } from '@core/schema/worker/workerConnectionLogs';
 import { recreateWorkerSchema } from '@core/schema/worker/recreateWorker';
 import { resetWorkerConnectionSchema } from '@core/schema/worker/resetWorkerConnection';
@@ -61,6 +65,8 @@ import { updateOperatorReplyPendingAlertSchema } from '@core/schema/worker/updat
 import { checkWorkerOpenConversationsSchema } from '@core/schema/worker/checkWorkerOpenConversations';
 import { workerExternalConnectionLinkSchema } from '@core/schema/worker/externalConnectionLink';
 import {
+  requestWorkerExternalConnectionPasskeyConfirmationSchema,
+  requestWorkerExternalConnectionPasskeyResponseSchema,
   requestWorkerExternalConnectionQrCodeSchema,
   viewWorkerExternalConnectionSchema,
 } from '@core/schema/worker/externalConnection';
@@ -112,6 +118,28 @@ export default function workerRoutes(server: FastifyInstance) {
   server.post('/worker/:worker_id/connection/qrcode', {
     schema: workerConnectionQrCodeSchema,
     handler: workerController.requestConnectionQrCode,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/connection/passkey-response', {
+    schema: workerConnectionPasskeyResponseSchema,
+    handler: workerController.sendConnectionPasskeyResponse,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/connection/passkey-confirmation', {
+    schema: workerConnectionPasskeyConfirmationSchema,
+    handler: workerController.confirmConnectionPasskey,
     preHandler: [
       (request, reply) =>
         server.authenticateJwt(request, reply, workerCreatePermissions),
@@ -230,6 +258,16 @@ export default function workerRoutes(server: FastifyInstance) {
   server.post('/worker/external-connection/:token/qrcode', {
     schema: requestWorkerExternalConnectionQrCodeSchema,
     handler: workerController.requestExternalConnectionQrCode,
+  });
+
+  server.post('/worker/external-connection/:token/passkey-response', {
+    schema: requestWorkerExternalConnectionPasskeyResponseSchema,
+    handler: workerController.sendExternalConnectionPasskeyResponse,
+  });
+
+  server.post('/worker/external-connection/:token/passkey-confirmation', {
+    schema: requestWorkerExternalConnectionPasskeyConfirmationSchema,
+    handler: workerController.confirmExternalConnectionPasskey,
   });
 
   server.get('/worker/:worker_id', {

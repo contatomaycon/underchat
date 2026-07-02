@@ -16,6 +16,10 @@ export interface IBaileysConnectionState {
   phone?: string;
   disconnected_user?: boolean;
   pairing_code?: string;
+  passkey_public_key?: string;
+  passkey_pending?: boolean;
+  passkey_confirmation_code?: string;
+  passkey_skip_handoff_ux?: boolean;
   seconds_until_next_attempt?: number;
   worker_status_id?: EWorkerStatus;
   attempt?: number;

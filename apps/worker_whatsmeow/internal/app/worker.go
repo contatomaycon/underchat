@@ -244,6 +244,22 @@ func (w *Worker) RequestConnection(ctx context.Context, req StatusConnectionRequ
 	return manager.RequestConnection(ctx, req)
 }
 
+func (w *Worker) SendPasskeyResponse(ctx context.Context, req PasskeyResponseRequest) (ConnectionState, error) {
+	manager := w.currentWhatsApp()
+	if manager == nil {
+		return ConnectionState{}, fmt.Errorf("whatsmeow runtime is not initialized")
+	}
+	return manager.SendPasskeyResponse(ctx, req)
+}
+
+func (w *Worker) ConfirmPasskey(ctx context.Context, req PasskeyConfirmationRequest) (ConnectionState, error) {
+	manager := w.currentWhatsApp()
+	if manager == nil {
+		return ConnectionState{}, fmt.Errorf("whatsmeow runtime is not initialized")
+	}
+	return manager.ConfirmPasskey(ctx, req)
+}
+
 func (w *Worker) ValidatePhone(ctx context.Context, req PhoneValidationRequest) (PhoneValidationResponse, error) {
 	manager := w.currentWhatsApp()
 	if manager == nil {
@@ -789,7 +805,7 @@ func (w *Worker) handleConnectionQRCodeRedisMessage(ctx context.Context, streamK
 }
 
 func connectionQRCodeRequestComplete(state ConnectionState) bool {
-	if state.QRCode != "" || state.PairingCode != "" {
+	if state.QRCode != "" || state.PairingCode != "" || state.PasskeyPublicKey != "" || state.PasskeyConfirmationCode != "" {
 		return true
 	}
 	if state.Status == "connected" {
@@ -973,7 +989,7 @@ func (w *Worker) isActiveConnectionQRCodeAttempt(ctx context.Context, data Worke
 }
 
 func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state ConnectionState, data WorkerConnectionQRCodeQueueMessage) {
-	if w.redis == nil || (state.QRCode == "" && state.PairingCode == "") {
+	if w.redis == nil || (state.QRCode == "" && state.PairingCode == "" && state.PasskeyPublicKey == "" && state.PasskeyConfirmationCode == "") {
 		return
 	}
 
@@ -1026,18 +1042,21 @@ func (w *Worker) cacheConnectionQRCodeAttemptState(ctx context.Context, state Co
 		return
 	}
 	w.debug.Log(ctx, "whatsmeow.redis_qr.cache_state.saved", map[string]any{
-		"trace_id":              normalized.DebugTraceID,
-		"layer":                 "worker_whatsmeow.redis_qr",
-		"worker_id":             normalized.WorkerID,
-		"account_id":            normalized.AccountID,
-		"worker_type_id":        normalized.WorkerTypeID,
-		"connection_attempt_id": normalized.ConnectionAttemptID,
-		"runtime_generation":    normalized.RuntimeGeneration,
-		"status":                normalized.Status,
-		"code":                  normalized.Code,
-		"ttl_ms":                ttl.Milliseconds(),
-		"qrcode":                normalized.QRCode,
-		"pairing_code":          normalized.PairingCode,
+		"trace_id":                      normalized.DebugTraceID,
+		"layer":                         "worker_whatsmeow.redis_qr",
+		"worker_id":                     normalized.WorkerID,
+		"account_id":                    normalized.AccountID,
+		"worker_type_id":                normalized.WorkerTypeID,
+		"connection_attempt_id":         normalized.ConnectionAttemptID,
+		"runtime_generation":            normalized.RuntimeGeneration,
+		"status":                        normalized.Status,
+		"code":                          normalized.Code,
+		"ttl_ms":                        ttl.Milliseconds(),
+		"qrcode":                        normalized.QRCode,
+		"pairing_code":                  normalized.PairingCode,
+		"has_passkey_public_key":        normalized.PasskeyPublicKey != "",
+		"passkey_public_key_len":        len(normalized.PasskeyPublicKey),
+		"has_passkey_confirmation_code": normalized.PasskeyConfirmationCode != "",
 	})
 
 }

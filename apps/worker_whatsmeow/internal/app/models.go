@@ -11,18 +11,20 @@ const (
 	WorkerStatusError      = "019a930d-c6f6-766d-9c84-48cb970a9f21"
 	WorkerStatusMismatched = "019a930d-c6f6-766d-9c84-5056ccf66633"
 
-	CodeConnectionEstablished = 200
-	CodeAwaitingReadQRCode    = 202
-	CodeAwaitConnection       = 203
-	CodeAwaitingPairingCode   = 204
-	CodeLogoutInProgress      = 205
-	CodePairingInProgress     = 206
-	CodeLoggedOut             = 401
-	CodeConnectionLost        = 408
-	CodeConnectionClosed      = 428
-	CodeConnectionReplaced    = 440
-	CodeUnavailableService    = 503
-	CodeInfo                  = 1000
+	CodeConnectionEstablished       = 200
+	CodeAwaitingReadQRCode          = 202
+	CodeAwaitConnection             = 203
+	CodeAwaitingPairingCode         = 204
+	CodeLogoutInProgress            = 205
+	CodePairingInProgress           = 206
+	CodeAwaitingPasskey             = 207
+	CodeAwaitingPasskeyConfirmation = 208
+	CodeLoggedOut                   = 401
+	CodeConnectionLost              = 408
+	CodeConnectionClosed            = 428
+	CodeConnectionReplaced          = 440
+	CodeUnavailableService          = 503
+	CodeInfo                        = 1000
 )
 
 const (
@@ -64,6 +66,10 @@ type ConnectionState struct {
 	Phone                   string `json:"phone,omitempty"`
 	DisconnectedUser        bool   `json:"disconnected_user,omitempty"`
 	PairingCode             string `json:"pairing_code,omitempty"`
+	PasskeyPublicKey        string `json:"passkey_public_key,omitempty"`
+	PasskeyPending          bool   `json:"passkey_pending,omitempty"`
+	PasskeyConfirmationCode string `json:"passkey_confirmation_code,omitempty"`
+	PasskeySkipHandoffUX    bool   `json:"passkey_skip_handoff_ux,omitempty"`
 	SecondsUntilNextAttempt int    `json:"seconds_until_next_attempt,omitempty"`
 	WorkerStatusID          string `json:"worker_status_id,omitempty"`
 	Attempt                 int    `json:"attempt,omitempty"`
@@ -102,6 +108,21 @@ type StatusConnectionRequest struct {
 	ConnectionAttemptID string `json:"connection_attempt_id"`
 	RuntimeGeneration   int    `json:"runtime_generation"`
 	WarmPoolID          string `json:"warm_pool_id"`
+	DebugTraceID        string `json:"debug_trace_id"`
+}
+
+type PasskeyResponseRequest struct {
+	WorkerID            string `json:"worker_id"`
+	AccountID           string `json:"account_id"`
+	ConnectionAttemptID string `json:"connection_attempt_id"`
+	PasskeyResponse     string `json:"passkey_response"`
+	DebugTraceID        string `json:"debug_trace_id"`
+}
+
+type PasskeyConfirmationRequest struct {
+	WorkerID            string `json:"worker_id"`
+	AccountID           string `json:"account_id"`
+	ConnectionAttemptID string `json:"connection_attempt_id"`
 	DebugTraceID        string `json:"debug_trace_id"`
 }
 

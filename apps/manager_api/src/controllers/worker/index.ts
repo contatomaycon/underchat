@@ -50,6 +50,10 @@ import { createExternalConnectionLink } from './methods/createExternalConnection
 import { viewExternalConnection } from './methods/viewExternalConnection';
 import { requestExternalConnectionQrCode } from './methods/requestExternalConnectionQrCode';
 import { requestConnectionQrCode } from './methods/requestConnectionQrCode';
+import { sendConnectionPasskeyResponse } from './methods/sendConnectionPasskeyResponse';
+import { confirmConnectionPasskey } from './methods/confirmConnectionPasskey';
+import { sendExternalConnectionPasskeyResponse } from './methods/sendExternalConnectionPasskeyResponse';
+import { confirmExternalConnectionPasskey } from './methods/confirmExternalConnectionPasskey';
 import { viewWhatsappEmbeddedConfig } from './methods/viewWhatsappEmbeddedConfig';
 import { connectWhatsappEmbedded } from './methods/connectWhatsappEmbedded';
 import { disconnectWhatsappOfficial } from './methods/disconnectWhatsappOfficial';
@@ -113,6 +117,11 @@ class WorkerController {
   public viewExternalConnection = viewExternalConnection;
   public requestExternalConnectionQrCode = requestExternalConnectionQrCode;
   public requestConnectionQrCode = requestConnectionQrCode;
+  public sendConnectionPasskeyResponse = sendConnectionPasskeyResponse;
+  public confirmConnectionPasskey = confirmConnectionPasskey;
+  public sendExternalConnectionPasskeyResponse =
+    sendExternalConnectionPasskeyResponse;
+  public confirmExternalConnectionPasskey = confirmExternalConnectionPasskey;
   public viewWhatsappEmbeddedConfig = viewWhatsappEmbeddedConfig;
   public connectWhatsappEmbedded = connectWhatsappEmbedded;
   public disconnectWhatsappOfficial = disconnectWhatsappOfficial;

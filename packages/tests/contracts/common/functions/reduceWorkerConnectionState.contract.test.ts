@@ -128,4 +128,48 @@ describe('reduceWorkerConnectionState', () => {
     expect(result.state.qrcode).toBe(current.qrcode);
     expect(result.state.connection_attempt_id).toBe('attempt-1');
   });
+
+  it('preserves passkey request against delayed startup without credentials', () => {
+    const current = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingPasskey,
+      passkey_public_key: '{"challenge":"abc"}',
+      passkey_pending: true,
+      connection_attempt_id: 'attempt-1',
+    };
+
+    const result = reduceWorkerConnectionState(current, {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitConnection,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      connection_attempt_id: 'attempt-1',
+    });
+
+    expect(result.ignored).toBe(true);
+    expect(result.state.passkey_public_key).toBe(current.passkey_public_key);
+  });
+
+  it('switches passkey request to manual passkey confirmation', () => {
+    const result = reduceWorkerConnectionState(
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingPasskey,
+        passkey_public_key: '{"challenge":"abc"}',
+        passkey_pending: true,
+        connection_attempt_id: 'attempt-1',
+      },
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingPasskeyConfirmation,
+        passkey_confirmation_code: 'ABCD-EFGH',
+        connection_attempt_id: 'attempt-1',
+      }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.state.passkey_public_key).toBeUndefined();
+    expect(result.state.passkey_pending).toBe(false);
+    expect(result.state.passkey_confirmation_code).toBe('ABCD-EFGH');
+  });
 });

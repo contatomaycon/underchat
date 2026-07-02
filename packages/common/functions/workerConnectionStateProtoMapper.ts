@@ -40,6 +40,18 @@ export function protoToConnectionState(
     state.disconnected_user = proto.disconnected_user;
   }
   if (proto.pairing_code) state.pairing_code = proto.pairing_code;
+  if (proto.passkey_public_key) {
+    state.passkey_public_key = proto.passkey_public_key;
+  }
+  if (proto.passkey_pending === true) {
+    state.passkey_pending = true;
+  }
+  if (proto.passkey_confirmation_code) {
+    state.passkey_confirmation_code = proto.passkey_confirmation_code;
+  }
+  if (proto.passkey_skip_handoff_ux === true) {
+    state.passkey_skip_handoff_ux = true;
+  }
   if (proto.worker_status_id) {
     state.worker_status_id = proto.worker_status_id as EWorkerStatus;
   }
@@ -150,6 +162,10 @@ export function connectionStateToProto(
     phone: state.phone ?? '',
     disconnected_user: state.disconnected_user ?? false,
     pairing_code: state.pairing_code ?? '',
+    passkey_public_key: state.passkey_public_key ?? '',
+    passkey_pending: state.passkey_pending ?? false,
+    passkey_confirmation_code: state.passkey_confirmation_code ?? '',
+    passkey_skip_handoff_ux: state.passkey_skip_handoff_ux ?? false,
     seconds_until_next_attempt: state.seconds_until_next_attempt ?? 0,
     worker_status_id: state.worker_status_id ?? '',
     attempt: state.attempt ?? 0,

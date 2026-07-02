@@ -15,6 +15,8 @@ type dynamicDescriptors struct {
 	workerConnectionService           protoreflect.ServiceDescriptor
 	statusConnectionRequest           protoreflect.MessageDescriptor
 	workerConnectionResponse          protoreflect.MessageDescriptor
+	passkeyResponseRequest            protoreflect.MessageDescriptor
+	passkeyConfirmationRequest        protoreflect.MessageDescriptor
 	connectionPhoneValidationRequest  protoreflect.MessageDescriptor
 	connectionPhoneValidationResponse protoreflect.MessageDescriptor
 	workerRuntimeActivationRequest    protoreflect.MessageDescriptor
@@ -101,6 +103,23 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("degraded_reason", 37),
 				stringField("last_probe_at", 38),
 				int32Field("probe_latency_ms", 39),
+				stringField("passkey_public_key", 40),
+				boolField("passkey_pending", 41),
+				stringField("passkey_confirmation_code", 42),
+				boolField("passkey_skip_handoff_ux", 43),
+			),
+			message("PasskeyResponseRequest",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				stringField("connection_attempt_id", 3),
+				stringField("passkey_response", 4),
+				stringField("debug_trace_id", 5),
+			),
+			message("PasskeyConfirmationRequest",
+				stringField("worker_id", 1),
+				stringField("account_id", 2),
+				stringField("connection_attempt_id", 3),
+				stringField("debug_trace_id", 4),
 			),
 			message("PhoneValidationRequest",
 				stringField("request_id", 1),
@@ -169,6 +188,8 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 			Name: proto.String("WorkerConnection"),
 			Method: []*descriptorpb.MethodDescriptorProto{
 				method("RequestConnection", ".worker_connection.StatusConnectionRequest", ".worker_connection.WorkerConnectionResponse"),
+				method("SendPasskeyResponse", ".worker_connection.PasskeyResponseRequest", ".worker_connection.WorkerConnectionResponse"),
+				method("ConfirmPasskey", ".worker_connection.PasskeyConfirmationRequest", ".worker_connection.WorkerConnectionResponse"),
 				method("ValidatePhone", ".worker_connection.PhoneValidationRequest", ".worker_connection.PhoneValidationResponse"),
 				method("ActivateRuntime", ".worker_connection.WorkerRuntimeActivationRequest", ".worker_connection.WorkerRuntimeActivationResponse"),
 				method("RuntimeHealth", ".worker_connection.WorkerRuntimeHealthRequest", ".worker_connection.WorkerRuntimeHealthResponse"),
@@ -223,6 +244,10 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 				stringField("last_probe_at", 36),
 				int32Field("probe_latency_ms", 37),
 				stringField("worker_type_id", 38),
+				stringField("passkey_public_key", 39),
+				boolField("passkey_pending", 40),
+				stringField("passkey_confirmation_code", 41),
+				boolField("passkey_skip_handoff_ux", 42),
 			),
 			message("WorkerSelfHealingRequest",
 				stringField("worker_id", 1),
@@ -305,6 +330,8 @@ func buildDynamicDescriptors() (dynamicDescriptors, error) {
 		workerConnectionService:           connectionFile.Services().ByName("WorkerConnection"),
 		statusConnectionRequest:           connectionFile.Messages().ByName("StatusConnectionRequest"),
 		workerConnectionResponse:          connectionFile.Messages().ByName("WorkerConnectionResponse"),
+		passkeyResponseRequest:            connectionFile.Messages().ByName("PasskeyResponseRequest"),
+		passkeyConfirmationRequest:        connectionFile.Messages().ByName("PasskeyConfirmationRequest"),
 		connectionPhoneValidationRequest:  connectionFile.Messages().ByName("PhoneValidationRequest"),
 		connectionPhoneValidationResponse: connectionFile.Messages().ByName("PhoneValidationResponse"),
 		workerRuntimeActivationRequest:    connectionFile.Messages().ByName("WorkerRuntimeActivationRequest"),

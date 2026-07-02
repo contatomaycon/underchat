@@ -19,6 +19,8 @@ export const handleExternalConnectionError = (
     [t('worker_external_connection_expired')]: EHTTPStatusCode.gone,
     [t('worker_not_found')]: EHTTPStatusCode.not_found,
     [t('worker_qrcode_not_ready')]: EHTTPStatusCode.service_unavailable,
+    [t('worker_type_invalid')]: EHTTPStatusCode.bad_request,
+    [t('worker_passkey_response_invalid')]: EHTTPStatusCode.bad_request,
   };
 
   const httpStatusCode = statusCodeByMessage[error.message];

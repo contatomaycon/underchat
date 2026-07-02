@@ -306,6 +306,50 @@ describe('WorkerConnectionQrCodeRequesterUseCase', () => {
     );
   });
 
+  it('returns a cached passkey request without duplicating the Redis stream message', async () => {
+    const cachedPasskey = {
+      code: ECodeMessage.awaitingPasskey,
+      status: EBaileysConnectionStatus.connecting,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.whatsmeow,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: 'attempt-passkey',
+      passkey_public_key: '{"challenge":"abc"}',
+      passkey_pending: true,
+      qr_pending: false,
+      reason: 'cached_passkey_available',
+    };
+    const deps = makeUseCase({
+      workerTypeId: EWorkerType.whatsmeow,
+      redisInitial: {
+        [`connection:qrcode:${EWorkerType.whatsmeow}:worker-1:attempt`]:
+          JSON.stringify(cachedPasskey),
+      },
+    });
+
+    const response = await deps.useCase.execute(t, 'account-1', 'worker-1');
+
+    expect(response).toMatchObject({
+      code: ECodeMessage.awaitingPasskey,
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      connection_attempt_id: 'attempt-passkey',
+      passkey_public_key: '{"challenge":"abc"}',
+      passkey_pending: true,
+      qr_pending: false,
+    });
+    expect(deps.redisQueueService.enqueue).not.toHaveBeenCalled();
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        worker_type_id: EWorkerType.whatsmeow,
+        passkey_public_key: '{"challenge":"abc"}',
+        qr_pending: false,
+      })
+    );
+  });
+
   it('does not reuse cached QR from a previous worker type', async () => {
     const cachedQr = {
       code: ECodeMessage.awaitingReadQrCode,

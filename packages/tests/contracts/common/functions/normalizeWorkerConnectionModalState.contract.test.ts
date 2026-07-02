@@ -114,6 +114,20 @@ describe('normalizeWorkerConnectionModalState', () => {
 
     expect(
       normalizeWorkerConnectionModalState({
+        code: ECodeMessage.awaitingPasskey,
+        passkey_public_key: '{"challenge":"abc"}',
+      })
+    ).toBe('passkeyRequired');
+
+    expect(
+      normalizeWorkerConnectionModalState({
+        code: ECodeMessage.awaitingPasskeyConfirmation,
+        passkey_confirmation_code: 'ABCD-EFGH',
+      })
+    ).toBe('passkeyConfirmation');
+
+    expect(
+      normalizeWorkerConnectionModalState({
         code: ECodeMessage.phoneNotAvailable,
       })
     ).toBe('phoneUnavailable');

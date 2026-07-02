@@ -14,6 +14,8 @@ import (
 
 type WorkerConnectionHandler interface {
 	RequestConnection(context.Context, StatusConnectionRequest) (ConnectionState, error)
+	SendPasskeyResponse(context.Context, PasskeyResponseRequest) (ConnectionState, error)
+	ConfirmPasskey(context.Context, PasskeyConfirmationRequest) (ConnectionState, error)
 	ValidatePhone(context.Context, PhoneValidationRequest) (PhoneValidationResponse, error)
 	ActivateRuntime(context.Context, WorkerRuntimeActivationRequest) (WorkerRuntimeActivationResponse, error)
 	RuntimeHealth(context.Context, WorkerRuntimeHealthRequest) (WorkerRuntimeHealthResponse, error)
@@ -129,18 +131,20 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		resp.DebugTraceID = req.DebugTraceID
 	}
 	s.debug.Log(ctx, "whatsmeow.grpc.request_connection.completed", map[string]any{
-		"trace_id":              resp.DebugTraceID,
-		"layer":                 "worker_whatsmeow.grpc",
-		"worker_id":             resp.WorkerID,
-		"account_id":            resp.AccountID,
-		"worker_type_id":        WorkerTypeWhatsmeow,
-		"connection_attempt_id": resp.ConnectionAttemptID,
-		"runtime_generation":    resp.RuntimeGeneration,
-		"status":                resp.Status,
-		"code":                  resp.Code,
-		"duration_ms":           time.Since(startedAt).Milliseconds(),
-		"qrcode":                resp.QRCode,
-		"pairing_code":          resp.PairingCode,
+		"trace_id":                      resp.DebugTraceID,
+		"layer":                         "worker_whatsmeow.grpc",
+		"worker_id":                     resp.WorkerID,
+		"account_id":                    resp.AccountID,
+		"worker_type_id":                WorkerTypeWhatsmeow,
+		"connection_attempt_id":         resp.ConnectionAttemptID,
+		"runtime_generation":            resp.RuntimeGeneration,
+		"status":                        resp.Status,
+		"code":                          resp.Code,
+		"duration_ms":                   time.Since(startedAt).Milliseconds(),
+		"qrcode":                        resp.QRCode,
+		"pairing_code":                  resp.PairingCode,
+		"has_passkey_public_key":        resp.PasskeyPublicKey != "",
+		"has_passkey_confirmation_code": resp.PasskeyConfirmationCode != "",
 	})
 	log.Printf("grpc RequestConnection completed worker_id=%s type=%s has_qr=%t", req.WorkerID, req.Type, resp.QRCode != "")
 	out := newDynamicMessage(descs.workerConnectionResponse)
@@ -160,6 +164,10 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "phone", state.Phone)
 	setDynamicBool(out, "disconnected_user", state.DisconnectedUser)
 	setDynamicString(out, "pairing_code", state.PairingCode)
+	setDynamicString(out, "passkey_public_key", state.PasskeyPublicKey)
+	setDynamicBool(out, "passkey_pending", state.PasskeyPending)
+	setDynamicString(out, "passkey_confirmation_code", state.PasskeyConfirmationCode)
+	setDynamicBool(out, "passkey_skip_handoff_ux", state.PasskeySkipHandoffUX)
 	setDynamicInt32(out, "seconds_until_next_attempt", int32(state.SecondsUntilNextAttempt))
 	setDynamicString(out, "worker_status_id", state.WorkerStatusID)
 	setDynamicInt32(out, "attempt", int32(state.Attempt))
@@ -187,6 +195,100 @@ func setConnectionStateMessage(out *dynamicpb.Message, state ConnectionState) {
 	setDynamicString(out, "degraded_reason", state.DegradedReason)
 	setDynamicString(out, "last_probe_at", state.LastProbeAt)
 	setDynamicInt32(out, "probe_latency_ms", int32(state.ProbeLatencyMS))
+}
+
+func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	req := PasskeyResponseRequest{
+		WorkerID:            dynamicString(msg, "worker_id"),
+		AccountID:           dynamicString(msg, "account_id"),
+		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
+		PasskeyResponse:     dynamicString(msg, "passkey_response"),
+		DebugTraceID:        dynamicString(msg, "debug_trace_id"),
+	}
+	startedAt := time.Now()
+	s.debug.Log(ctx, "whatsmeow.grpc.passkey_response.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             req.WorkerID,
+		"account_id":            req.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"grpc_method":           "SendPasskeyResponse",
+		"passkey_response_len":  len(req.PasskeyResponse),
+	})
+	resp, err := s.handler.SendPasskeyResponse(ctx, req)
+	if err != nil {
+		s.debug.Log(ctx, "whatsmeow.grpc.passkey_response.error", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.grpc",
+			"worker_id":             req.WorkerID,
+			"account_id":            req.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
+		return nil, err
+	}
+	if resp.ConnectionAttemptID == "" {
+		resp.ConnectionAttemptID = req.ConnectionAttemptID
+	}
+	if resp.DebugTraceID == "" {
+		resp.DebugTraceID = req.DebugTraceID
+	}
+	out := newDynamicMessage(descs.workerConnectionResponse)
+	setConnectionStateMessage(out, resp)
+	return out, nil
+}
+
+func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	req := PasskeyConfirmationRequest{
+		WorkerID:            dynamicString(msg, "worker_id"),
+		AccountID:           dynamicString(msg, "account_id"),
+		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
+		DebugTraceID:        dynamicString(msg, "debug_trace_id"),
+	}
+	startedAt := time.Now()
+	s.debug.Log(ctx, "whatsmeow.grpc.passkey_confirmation.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             req.WorkerID,
+		"account_id":            req.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"grpc_method":           "ConfirmPasskey",
+	})
+	resp, err := s.handler.ConfirmPasskey(ctx, req)
+	if err != nil {
+		s.debug.Log(ctx, "whatsmeow.grpc.passkey_confirmation.error", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.grpc",
+			"worker_id":             req.WorkerID,
+			"account_id":            req.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"error":                 err.Error(),
+		})
+		return nil, err
+	}
+	if resp.ConnectionAttemptID == "" {
+		resp.ConnectionAttemptID = req.ConnectionAttemptID
+	}
+	if resp.DebugTraceID == "" {
+		resp.DebugTraceID = req.DebugTraceID
+	}
+	out := newDynamicMessage(descs.workerConnectionResponse)
+	setConnectionStateMessage(out, resp)
+	return out, nil
 }
 
 func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
@@ -292,6 +394,8 @@ func (s *WorkerConnectionGRPCServer) RuntimeHealth(ctx context.Context, msg *dyn
 
 type dynamicWorkerConnectionService interface {
 	RequestConnection(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
+	SendPasskeyResponse(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
+	ConfirmPasskey(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	ValidatePhone(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	ActivateRuntime(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	RuntimeHealth(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
@@ -305,6 +409,14 @@ func RegisterWorkerConnectionService(server *grpc.Server, service dynamicWorkerC
 			{
 				MethodName: "RequestConnection",
 				Handler:    requestConnectionHandler,
+			},
+			{
+				MethodName: "SendPasskeyResponse",
+				Handler:    sendPasskeyResponseHandler,
+			},
+			{
+				MethodName: "ConfirmPasskey",
+				Handler:    confirmPasskeyHandler,
 			},
 			{
 				MethodName: "ValidatePhone",
@@ -342,6 +454,50 @@ func requestConnectionHandler(srv any, ctx context.Context, dec func(any) error,
 	}
 	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(dynamicWorkerConnectionService).RequestConnection(ctx, req.(*dynamicpb.Message))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func sendPasskeyResponseHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	in := newDynamicMessage(descs.passkeyResponseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(dynamicWorkerConnectionService).SendPasskeyResponse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker_connection.WorkerConnection/SendPasskeyResponse",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(dynamicWorkerConnectionService).SendPasskeyResponse(ctx, req.(*dynamicpb.Message))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func confirmPasskeyHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	in := newDynamicMessage(descs.passkeyConfirmationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(dynamicWorkerConnectionService).ConfirmPasskey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker_connection.WorkerConnection/ConfirmPasskey",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(dynamicWorkerConnectionService).ConfirmPasskey(ctx, req.(*dynamicpb.Message))
 	}
 	return interceptor(ctx, in, info, handler)
 }

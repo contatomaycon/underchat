@@ -81,6 +81,10 @@ const statusConnection = shallowRef<EBaileysConnectionStatus>(
 );
 const statusCode = shallowRef<ECodeMessage>(ECodeMessage.awaitConnection);
 const qrcode = shallowRef<string | undefined>();
+const passkeyPublicKey = shallowRef<string | undefined>();
+const passkeyConfirmationPrimary = shallowRef('');
+const passkeyConfirmationSecondary = shallowRef('');
+const passkeyError = shallowRef<string | null>(null);
 const connectionAttemptId = shallowRef<string | undefined>();
 const connectionRuntimeGeneration = shallowRef<number | undefined>();
 const qrPending = shallowRef(false);
@@ -88,6 +92,8 @@ const qrAttempt = shallowRef(0);
 const qrMaxAttempts = shallowRef(0);
 const workerStatusId = shallowRef<string | null>(props.initialStatusId ?? null);
 const isRequestingQr = shallowRef(false);
+const isPasskeyRunning = shallowRef(false);
+const isPasskeyConfirming = shallowRef(false);
 const phoneNumber = shallowRef<string | null>(null);
 const sessionReady = shallowRef(props.initialStatusId === EWorkerStatus.online);
 const disconnectedByUser = shallowRef(false);
@@ -111,6 +117,12 @@ const connectionState = computed<Partial<IBaileysConnectionState>>(() => ({
   worker_id: channelId.value ?? '',
   account_id: accountId.value ?? '',
   qrcode: qrcode.value,
+  passkey_public_key: passkeyPublicKey.value,
+  passkey_pending: Boolean(passkeyPublicKey.value),
+  passkey_confirmation_code:
+    passkeyConfirmationPrimary.value || passkeyConfirmationSecondary.value
+      ? `${passkeyConfirmationPrimary.value}${passkeyConfirmationSecondary.value}`
+      : undefined,
   worker_type_id: activeWorkerTypeId.value
     ? (activeWorkerTypeId.value as EWorkerType)
     : undefined,
@@ -156,7 +168,10 @@ const hasActiveConnectionCode = computed(
   () =>
     Boolean(qrcode.value) ||
     Boolean(pairingCodePrimary.value) ||
-    Boolean(pairingCodeSecondary.value)
+    Boolean(pairingCodeSecondary.value) ||
+    Boolean(passkeyPublicKey.value) ||
+    Boolean(passkeyConfirmationPrimary.value) ||
+    Boolean(passkeyConfirmationSecondary.value)
 );
 const isActionLocked = computed(
   () =>
@@ -264,6 +279,20 @@ const stageMeta = computed(() => {
       color: 'primary',
       loading: !pairingCodePrimary.value || !pairingCodeSecondary.value,
     },
+    passkeyRequired: {
+      title: 'passkey_required_title',
+      description: 'passkey_required_description',
+      icon: 'tabler-key',
+      color: 'primary',
+      loading: isPasskeyRunning.value,
+    },
+    passkeyConfirmation: {
+      title: 'passkey_confirmation_title',
+      description: 'passkey_confirmation_description',
+      icon: 'tabler-shield-check',
+      color: 'primary',
+      loading: isPasskeyConfirming.value,
+    },
   };
 
   return meta[modalState.value];
@@ -282,7 +311,9 @@ const showReconnectAction = computed(
     isWorkerReadyForQr.value &&
     !showQrRetryOnly.value &&
     !isBlockingOperation.value &&
-    modalState.value !== 'pairing'
+    modalState.value !== 'pairing' &&
+    modalState.value !== 'passkeyRequired' &&
+    modalState.value !== 'passkeyConfirmation'
 );
 
 const externalConnectionExpiresAtFormatted = computed(() => {
@@ -345,6 +376,15 @@ function resetPairingCodes() {
   pairingCodeSecondary.value = '';
 }
 
+function resetPasskeyState() {
+  passkeyPublicKey.value = undefined;
+  passkeyConfirmationPrimary.value = '';
+  passkeyConfirmationSecondary.value = '';
+  passkeyError.value = null;
+  isPasskeyRunning.value = false;
+  isPasskeyConfirming.value = false;
+}
+
 function resetQrAttempts() {
   qrAttempt.value = 0;
   qrMaxAttempts.value = 0;
@@ -383,7 +423,60 @@ function applyQrAttempts(data: Partial<IBaileysConnectionState>) {
 }
 
 function splitCode(code: string): [string, string] {
-  return [code.slice(0, 4), code.slice(4)];
+  const normalized = code.replace(/[^A-Za-z0-9]/g, '');
+  return [normalized.slice(0, 4), normalized.slice(4)];
+}
+
+function base64UrlToArrayBuffer(value: string): ArrayBuffer {
+  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+  const binary = globalThis.atob(padded);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes.buffer;
+}
+
+function parsePasskeyRequestOptions(
+  publicKeyJson: string
+): PublicKeyCredentialRequestOptions {
+  type PublicKeyCredentialRequestOptionsJSON = Omit<
+    PublicKeyCredentialRequestOptions,
+    'allowCredentials' | 'challenge'
+  > & {
+    challenge: string;
+    allowCredentials?: Array<{
+      id: string;
+      type: PublicKeyCredentialType;
+      transports?: AuthenticatorTransport[];
+    }>;
+  };
+  const parsed = JSON.parse(
+    publicKeyJson
+  ) as PublicKeyCredentialRequestOptionsJSON;
+  const credentialConstructor = globalThis.PublicKeyCredential as
+    | (typeof PublicKeyCredential & {
+        parseRequestOptionsFromJSON?: (
+          options: unknown
+        ) => PublicKeyCredentialRequestOptions;
+      })
+    | undefined;
+
+  if (credentialConstructor?.parseRequestOptionsFromJSON) {
+    return credentialConstructor.parseRequestOptionsFromJSON(parsed);
+  }
+
+  return {
+    ...parsed,
+    challenge: base64UrlToArrayBuffer(parsed.challenge),
+    allowCredentials: parsed.allowCredentials?.map((credential) => ({
+      ...credential,
+      id: base64UrlToArrayBuffer(credential.id),
+    })),
+  };
 }
 
 function clearNextAttemptCountdown() {
@@ -443,7 +536,12 @@ function shouldIgnoreConnectionPayloadIdentity(
   options: { directResponse?: boolean } = {}
 ): boolean {
   let expectedWorkerTypeId = activeWorkerTypeId.value ?? channelType.value;
-  const hasConnectionCredential = Boolean(data.qrcode || data.pairing_code);
+  const hasConnectionCredential = Boolean(
+    data.qrcode ||
+    data.pairing_code ||
+    data.passkey_public_key ||
+    data.passkey_confirmation_code
+  );
 
   if (
     options.directResponse &&
@@ -699,10 +797,12 @@ async function recoverQrFromCachedRequest(reason: string): Promise<boolean> {
       duration_ms: Date.now() - startedAt,
       qrcode: state?.qrcode,
       pairing_code: state?.pairing_code,
+      has_passkey_public_key: Boolean(state?.passkey_public_key),
+      has_passkey_confirmation_code: Boolean(state?.passkey_confirmation_code),
       qr_pending: state?.qr_pending === true,
     });
 
-    return Boolean(qrcode.value);
+    return hasActiveConnectionCode.value;
   } catch (error) {
     logConnectionLifecycleDebug('web.qr_cache_recovery.error', {
       trace_id: activeDebugTraceId.value,
@@ -811,6 +911,7 @@ function prepareConnectionStart(options: { preserveQr?: boolean } = {}) {
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
   resetPairingCodes();
+  resetPasskeyState();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
 }
@@ -839,6 +940,7 @@ function prepareInitialModalState() {
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
   resetPairingCodes();
+  resetPasskeyState();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
 }
@@ -916,6 +1018,97 @@ async function restartQrCodeAttempt() {
   await reconnectChannel();
 }
 
+async function continuePasskeyPairing() {
+  if (!channelId.value || !passkeyPublicKey.value) {
+    return;
+  }
+
+  passkeyError.value = null;
+
+  if (!globalThis.isSecureContext) {
+    passkeyError.value = 'passkey_secure_context_required';
+    return;
+  }
+
+  if (
+    !globalThis.navigator?.credentials?.get ||
+    typeof globalThis.PublicKeyCredential === 'undefined'
+  ) {
+    passkeyError.value = 'passkey_browser_unsupported';
+    return;
+  }
+
+  isPasskeyRunning.value = true;
+  const debugTraceId = ensureDebugTraceId('web_passkey_modal');
+
+  try {
+    const publicKey = parsePasskeyRequestOptions(passkeyPublicKey.value);
+    const credential = (await navigator.credentials.get({
+      publicKey,
+    })) as (PublicKeyCredential & { toJSON?: () => unknown }) | null;
+
+    if (!credential) {
+      passkeyError.value = 'passkey_cancelled';
+      return;
+    }
+
+    const passkeyResponse =
+      typeof credential.toJSON === 'function'
+        ? credential.toJSON()
+        : JSON.parse(JSON.stringify(credential));
+
+    const state = await channelStore.sendConnectionPasskeyResponse(
+      channelId.value,
+      {
+        connection_attempt_id: connectionAttemptId.value,
+        passkey_response: passkeyResponse,
+      },
+      {
+        silent: true,
+        debugTraceId,
+      }
+    );
+
+    if (!state) {
+      passkeyError.value = 'passkey_failed';
+      return;
+    }
+
+    applyDirectConnectionResponse(state);
+  } catch (error) {
+    passkeyError.value =
+      error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'passkey_cancelled'
+        : 'passkey_failed';
+  } finally {
+    isPasskeyRunning.value = false;
+  }
+}
+
+async function confirmPasskeyPairing() {
+  if (!channelId.value) {
+    return;
+  }
+
+  isPasskeyConfirming.value = true;
+  const state = await channelStore.confirmConnectionPasskey(
+    channelId.value,
+    {
+      connection_attempt_id: connectionAttemptId.value,
+    },
+    {
+      silent: true,
+      debugTraceId: activeDebugTraceId.value,
+    }
+  );
+
+  if (state) {
+    applyDirectConnectionResponse(state);
+  }
+
+  isPasskeyConfirming.value = false;
+}
+
 async function recreateChannelWithFullCleanup() {
   if (!channelId.value) return;
 
@@ -929,6 +1122,7 @@ async function recreateChannelWithFullCleanup() {
   clearQrHistoryRecovery();
   resetQrAttempts();
   resetPairingCodes();
+  resetPasskeyState();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
   pairingStartedAt.value = null;
@@ -1020,6 +1214,7 @@ function applyConnectedState(data: IBaileysConnectionState) {
   secondsNextAttempt.value = 0;
   pairingStartedAt.value = null;
   resetPairingCodes();
+  resetPasskeyState();
   clearQrHistoryRecovery();
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
@@ -1061,6 +1256,8 @@ function applyReducedConnectionState(
       reason: data.reason,
       qrcode: data.qrcode,
       pairing_code: data.pairing_code,
+      has_passkey_public_key: Boolean(data.passkey_public_key),
+      has_passkey_confirmation_code: Boolean(data.passkey_confirmation_code),
     });
     return;
   }
@@ -1136,6 +1333,7 @@ function applyReducedConnectionState(
     incomingCode === ECodeMessage.newLoginAttempt
   ) {
     pairingStartedAt.value = Date.now();
+    resetPasskeyState();
   }
 
   if (next.connection_attempt_id) {
@@ -1162,12 +1360,35 @@ function applyReducedConnectionState(
 
   if (hasExceededQrAttempts(next)) {
     qrcode.value = undefined;
+    resetPasskeyState();
+    qrPending.value = false;
+    isRequestingQr.value = false;
+    clearQrHistoryRecovery();
+  } else if (next.passkey_public_key) {
+    qrcode.value = undefined;
+    resetPairingCodes();
+    passkeyPublicKey.value = next.passkey_public_key;
+    passkeyConfirmationPrimary.value = '';
+    passkeyConfirmationSecondary.value = '';
+    passkeyError.value = null;
+    qrPending.value = false;
+    isRequestingQr.value = false;
+    clearQrHistoryRecovery();
+  } else if (next.passkey_confirmation_code) {
+    qrcode.value = undefined;
+    resetPairingCodes();
+    passkeyPublicKey.value = undefined;
+    const [primary, secondary] = splitCode(next.passkey_confirmation_code);
+    passkeyConfirmationPrimary.value = primary;
+    passkeyConfirmationSecondary.value = secondary;
+    passkeyError.value = null;
     qrPending.value = false;
     isRequestingQr.value = false;
     clearQrHistoryRecovery();
   } else if (next.qrcode) {
     const hadRecoveryScheduled = qrHistoryRecoveryTimeouts.size > 0;
     qrcode.value = next.qrcode;
+    resetPasskeyState();
     isRequestingQr.value = false;
     clearQrHistoryRecovery();
   } else {
@@ -1179,6 +1400,7 @@ function applyReducedConnectionState(
 
   if (incomingStatus === EBaileysConnectionStatus.disconnected) {
     isRequestingQr.value = false;
+    resetPasskeyState();
     clearQrHistoryRecovery();
   }
 
@@ -1204,6 +1426,10 @@ function applyReducedConnectionState(
     const [primary, secondary] = splitCode(next.pairing_code);
     pairingCodePrimary.value = primary;
     pairingCodeSecondary.value = secondary;
+    passkeyPublicKey.value = undefined;
+    passkeyConfirmationPrimary.value = '';
+    passkeyConfirmationSecondary.value = '';
+    passkeyError.value = null;
   }
 
   if (next.seconds_until_next_attempt) {
@@ -1224,6 +1450,8 @@ function applyReducedConnectionState(
     reason: data.reason,
     qrcode: data.qrcode,
     pairing_code: data.pairing_code,
+    has_passkey_public_key: Boolean(data.passkey_public_key),
+    has_passkey_confirmation_code: Boolean(data.passkey_confirmation_code),
     qr_pending: qrPending.value,
     modal_state: modalState.value,
   });
@@ -1306,6 +1534,8 @@ function handleWorkerConnectionMessage(
     reason: data.reason,
     qrcode: data.qrcode,
     pairing_code: data.pairing_code,
+    has_passkey_public_key: Boolean(data.passkey_public_key),
+    has_passkey_confirmation_code: Boolean(data.passkey_confirmation_code),
     offset: ctx?.offset,
   });
 
@@ -1350,6 +1580,7 @@ function handleWorkerConnectionMessage(
     connectionRuntimeGeneration.value = data.runtime_generation;
     pairingStartedAt.value = null;
     resetPairingCodes();
+    resetPasskeyState();
     clearQrHistoryRecovery();
     clearConnectedStateDelay();
     return;
@@ -1578,6 +1809,45 @@ onUnmounted(() => {
               <VProgressLinear v-else indeterminate color="primary" />
             </div>
 
+            <div
+              v-if="modalState === 'passkeyConfirmation'"
+              class="pairing-code"
+            >
+              <template
+                v-if="
+                  passkeyConfirmationPrimary && passkeyConfirmationSecondary
+                "
+              >
+                <VOtpInput
+                  v-model="passkeyConfirmationPrimary"
+                  disabled
+                  length="4"
+                  type="text"
+                  class="pa-0"
+                  :focused="false"
+                />
+                <VOtpInput
+                  v-model="passkeyConfirmationSecondary"
+                  disabled
+                  length="4"
+                  type="text"
+                  class="pa-0"
+                  :focused="false"
+                />
+              </template>
+              <VProgressLinear v-else indeterminate color="primary" />
+            </div>
+
+            <VAlert
+              v-if="passkeyError"
+              type="error"
+              variant="tonal"
+              density="compact"
+              class="mt-4"
+            >
+              {{ $t(passkeyError) }}
+            </VAlert>
+
             <VProgressLinear
               v-if="modalState === 'qrReady'"
               indeterminate
@@ -1589,7 +1859,29 @@ onUnmounted(() => {
           <VCardText v-if="showPrimaryActions" class="d-flex justify-center">
             <div class="d-flex gap-2">
               <VBtn
-                v-if="showQrRetryOnly"
+                v-if="modalState === 'passkeyRequired'"
+                color="primary"
+                :disabled="isPasskeyRunning || !passkeyPublicKey"
+                :loading="isPasskeyRunning"
+                @click="continuePasskeyPairing"
+              >
+                <VIcon icon="tabler-key" start />
+                {{ $t('passkey_continue') }}
+              </VBtn>
+
+              <VBtn
+                v-else-if="modalState === 'passkeyConfirmation'"
+                color="primary"
+                :disabled="isPasskeyConfirming"
+                :loading="isPasskeyConfirming"
+                @click="confirmPasskeyPairing"
+              >
+                <VIcon icon="tabler-shield-check" start />
+                {{ $t('confirm') }}
+              </VBtn>
+
+              <VBtn
+                v-else-if="showQrRetryOnly"
                 color="primary"
                 :disabled="isActionLocked"
                 :loading="channelStore.loading"

@@ -95,6 +95,10 @@ message NotifyWorkerStatusRequest {
   string last_probe_at = 36;
   int32 probe_latency_ms = 37;
   string worker_type_id = 38;
+  string passkey_public_key = 39;
+  bool passkey_pending = 40;
+  string passkey_confirmation_code = 41;
+  bool passkey_skip_handoff_ux = 42;
 }
 
 message WorkerSelfHealingRequest {
