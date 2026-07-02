@@ -671,6 +671,10 @@ const hasDetectedTemplateVariables = computed(
   () => (selectedTemplateFromList.value?.variables.length ?? 0) > 0
 );
 
+const formatTemplateVariableLabel = (
+  variable: Pick<OfficialTemplateVariable, 'component_type' | 'index'>
+) => `${variable.component_type} {{${variable.index}}}`;
+
 const officialTemplatePreview = computed(() =>
   buildOfficialTemplatePreview(
     selectedOfficialTemplate.value,
@@ -1542,9 +1546,25 @@ watch(
                 hide-details
                 @update:model-value="syncTemplateVariableKey(variableIndex)"
               />
+              <div
+                v-if="hasDetectedTemplateVariables"
+                class="template-variable-field"
+              >
+                <span class="template-variable-label">
+                  {{ formatTemplateVariableLabel(variable) }}
+                </span>
+                <VTextField
+                  v-model="variable.value"
+                  placeholder="Valor"
+                  variant="outlined"
+                  density="compact"
+                  hide-details
+                  @update:model-value="syncTemplateVariables"
+                />
+              </div>
               <VTextField
+                v-else
                 v-model="variable.value"
-                :label="`${variable.component_type} {{${variable.index}}}`"
                 placeholder="Valor"
                 variant="outlined"
                 density="compact"
@@ -1944,6 +1964,18 @@ watch(
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+}
+
+.template-variable-field {
+  display: grid;
+  gap: 4px;
+}
+
+.template-variable-label {
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .official-option {
