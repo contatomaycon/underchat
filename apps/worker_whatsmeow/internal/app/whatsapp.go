@@ -3636,6 +3636,19 @@ func incomingMessageKinds(evt *events.Message) []string {
 	if msg.GetExtendedTextMessage() != nil {
 		kinds = append(kinds, "extended_text")
 	}
+	if msg.GetTemplateMessage() != nil {
+		kinds = append(kinds, "template")
+	}
+	if hsm := msg.GetHighlyStructuredMessage(); hsm != nil {
+		if hsm.GetHydratedHsm() != nil {
+			kinds = append(kinds, "hsm:hydrated")
+		} else {
+			kinds = append(kinds, "hsm")
+		}
+	}
+	if msg.GetInteractiveMessage() != nil {
+		kinds = append(kinds, "interactive")
+	}
 	if protocolMsg := msg.GetProtocolMessage(); protocolMsg != nil {
 		if protocolMsg.Type == nil {
 			kinds = append(kinds, "protocol:unknown")
@@ -3725,6 +3738,27 @@ func incomingTextPreview(evt *events.Message) string {
 	}
 	if ext := msg.GetExtendedTextMessage(); ext != nil {
 		candidates = append(candidates, ext.GetText())
+	}
+	if template := msg.GetTemplateMessage(); template != nil {
+		if hydrated := template.GetHydratedTemplate(); hydrated != nil {
+			candidates = append(candidates, hydrated.GetHydratedContentText())
+		}
+		if hydrated := template.GetHydratedFourRowTemplate(); hydrated != nil {
+			candidates = append(candidates, hydrated.GetHydratedContentText())
+		}
+	}
+	if hsm := msg.GetHighlyStructuredMessage(); hsm != nil {
+		if template := hsm.GetHydratedHsm(); template != nil {
+			if hydrated := template.GetHydratedTemplate(); hydrated != nil {
+				candidates = append(candidates, hydrated.GetHydratedContentText())
+			}
+			if hydrated := template.GetHydratedFourRowTemplate(); hydrated != nil {
+				candidates = append(candidates, hydrated.GetHydratedContentText())
+			}
+		}
+	}
+	if interactive := msg.GetInteractiveMessage(); interactive != nil {
+		candidates = append(candidates, interactive.GetBody().GetText())
 	}
 	if reaction := msg.GetReactionMessage(); reaction != nil {
 		candidates = append(candidates, reaction.GetText())

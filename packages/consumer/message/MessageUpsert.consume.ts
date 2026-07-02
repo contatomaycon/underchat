@@ -4622,6 +4622,29 @@ export class MessageUpsertConsume {
     return this.getDiscardUpsertReason(data) !== null;
   }
 
+  private hasHydratedTemplateContent(data: IUpsertMessage): boolean {
+    const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
+    const templateMessage = this.toRecord(msg?.templateMessage);
+    const hydratedTemplate = this.toRecord(templateMessage?.hydratedTemplate);
+
+    if (!hydratedTemplate) {
+      return false;
+    }
+
+    if (
+      this.toNonEmptyString(hydratedTemplate.hydratedTitleText) ||
+      this.toNonEmptyString(hydratedTemplate.hydratedContentText) ||
+      this.toNonEmptyString(hydratedTemplate.hydratedFooterText)
+    ) {
+      return true;
+    }
+
+    return (
+      Array.isArray(hydratedTemplate.hydratedButtons) &&
+      hydratedTemplate.hydratedButtons.length > 0
+    );
+  }
+
   private getDiscardUpsertReason(data: IUpsertMessage): string | null {
     if (this.shouldDiscardByMessageKeyJid(data)) {
       return 'message_key_jid_filtered';
@@ -4672,6 +4695,10 @@ export class MessageUpsertConsume {
     }
 
     if (this.getListResponsePayload(data)) {
+      return false;
+    }
+
+    if (this.hasHydratedTemplateContent(data)) {
       return false;
     }
 

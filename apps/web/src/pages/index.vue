@@ -8,6 +8,7 @@ import BarChart from '@/@webcore/libs/chartjs/components/BarChart';
 import LineChart from '@/@webcore/libs/chartjs/components/LineChart';
 import DoughnutChart from '@/@webcore/libs/chartjs/components/DoughnutChart';
 import CardStatisticsVertical from '@/@webcore/components/cards/CardStatisticsVertical.vue';
+import MetaPartnerMark from '@/components/brand/MetaPartnerMark.vue';
 import { useAbility } from '@/plugins/0.casl/composables/useAbility';
 import { useChannelsStore } from '@/@webcore/stores/channels';
 import { useDashboardStore } from '@/@webcore/stores/dashboard';
@@ -662,7 +663,8 @@ onMounted(async () => {
       :color="dashboardReleaseBannerColor"
       class="mb-4 dashboard-unread-release-banner cursor-pointer"
       :class="{
-        'dashboard-unread-release-banner--attention': dashboardUnreadBannerAttention,
+        'dashboard-unread-release-banner--attention':
+          dashboardUnreadBannerAttention,
       }"
       @click="openLatestUnreadRelease"
     >
@@ -683,7 +685,11 @@ onMounted(async () => {
             {{ latestUnreadRelease.title }}
           </p>
         </div>
-        <VIcon icon="tabler-chevron-right" size="20" class="text-medium-emphasis" />
+        <VIcon
+          icon="tabler-chevron-right"
+          size="20"
+          class="text-medium-emphasis"
+        />
       </VCardText>
     </VCard>
 
@@ -759,9 +765,9 @@ onMounted(async () => {
     </VRow>
 
     <VRow class="mb-4 dashboard-row">
-      <VCol cols="12" class="d-flex">
-        <VCard class="flex-grow-1 mobile-apps-card">
-          <VCardText>
+      <VCol cols="12" lg="8" class="d-flex">
+        <VCard class="flex-grow-1 mobile-apps-card d-flex flex-column">
+          <VCardText class="mobile-apps-card__body">
             <div class="mobile-apps-header">
               <div>
                 <p class="text-h6 font-weight-bold mb-1">
@@ -776,7 +782,7 @@ onMounted(async () => {
               </VChip>
             </div>
 
-            <VRow class="mt-1">
+            <VRow class="mt-1 mobile-apps-links-row">
               <VCol
                 v-for="app in mobileAppLinks"
                 :key="app.key"
@@ -819,6 +825,9 @@ onMounted(async () => {
             </VRow>
           </VCardText>
         </VCard>
+      </VCol>
+      <VCol cols="12" lg="4" class="d-flex">
+        <MetaPartnerMark variant="dashboard" />
       </VCol>
     </VRow>
 
@@ -881,10 +890,7 @@ onMounted(async () => {
                   :height="300"
                 />
               </div>
-              <div
-                class="mt-4 d-flex flex-column gap-2"
-                style="flex-shrink: 0"
-              >
+              <div class="mt-4 d-flex flex-column gap-2" style="flex-shrink: 0">
                 <div class="d-flex align-center justify-space-between">
                   <div class="d-flex align-center gap-2">
                     <VIcon icon="tabler-circle" size="12" color="success" />
@@ -1001,302 +1007,302 @@ onMounted(async () => {
       </VRow>
 
       <VRow class="mb-4 dashboard-row">
-      <VCol cols="12" md="6" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>{{ t('dashboard_sectors_distribution') }}</VCardTitle>
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <div
-              v-if="dashboardStore.loadingAdditional"
-              class="flex-grow-1"
-              style="min-height: 300px"
-            >
-              <VSkeletonLoader type="image" height="300" />
-            </div>
-            <div v-else class="flex-grow-1" style="min-height: 300px">
-              <DoughnutChart
-                :chart-data="sectorsDistributionData"
-                :chart-options="sectorsDistributionOptions"
-                :height="300"
-              />
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-      <VCol cols="12" md="6" class="d-flex">
-        <VCard class="flex-grow-1 d-flex flex-column">
-          <VCardTitle>{{ t('dashboard_attendance_metrics') }}</VCardTitle>
-          <VCardText class="flex-grow-1">
-            <VRow class="h-100">
-              <VCol cols="12" sm="6">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="h-100 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text" />
-                </VCard>
-                <VCard v-else variant="tonal" color="primary" class="h-100">
-                  <VCardText>
-                    <div class="d-flex align-center gap-3">
-                      <VAvatar color="primary" size="48" variant="tonal">
-                        <VIcon icon="tabler-clock" size="24" />
-                      </VAvatar>
-                      <div>
-                        <p class="text-body-2 text-medium-emphasis mb-1">
-                          {{ t('dashboard_avg_response_time') }}
-                        </p>
-                        <h4 class="text-h5 font-weight-bold">
-                          {{ avgResponseTime }}
-                        </h4>
+        <VCol cols="12" md="6" class="d-flex">
+          <VCard class="flex-grow-1 d-flex flex-column">
+            <VCardTitle>{{ t('dashboard_sectors_distribution') }}</VCardTitle>
+            <VCardText class="flex-grow-1 d-flex flex-column">
+              <div
+                v-if="dashboardStore.loadingAdditional"
+                class="flex-grow-1"
+                style="min-height: 300px"
+              >
+                <VSkeletonLoader type="image" height="300" />
+              </div>
+              <div v-else class="flex-grow-1" style="min-height: 300px">
+                <DoughnutChart
+                  :chart-data="sectorsDistributionData"
+                  :chart-options="sectorsDistributionOptions"
+                  :height="300"
+                />
+              </div>
+            </VCardText>
+          </VCard>
+        </VCol>
+        <VCol cols="12" md="6" class="d-flex">
+          <VCard class="flex-grow-1 d-flex flex-column">
+            <VCardTitle>{{ t('dashboard_attendance_metrics') }}</VCardTitle>
+            <VCardText class="flex-grow-1">
+              <VRow class="h-100">
+                <VCol cols="12" sm="6">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="h-100 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text" />
+                  </VCard>
+                  <VCard v-else variant="tonal" color="primary" class="h-100">
+                    <VCardText>
+                      <div class="d-flex align-center gap-3">
+                        <VAvatar color="primary" size="48" variant="tonal">
+                          <VIcon icon="tabler-clock" size="24" />
+                        </VAvatar>
+                        <div>
+                          <p class="text-body-2 text-medium-emphasis mb-1">
+                            {{ t('dashboard_avg_response_time') }}
+                          </p>
+                          <h4 class="text-h5 font-weight-bold">
+                            {{ avgResponseTime }}
+                          </h4>
+                        </div>
                       </div>
-                    </div>
-                  </VCardText>
-                </VCard>
-              </VCol>
-              <VCol cols="12" sm="6">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="h-100 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text" />
-                </VCard>
-                <VCard v-else variant="tonal" color="success" class="h-100">
-                  <VCardText>
-                    <div class="d-flex align-center gap-3">
-                      <VAvatar color="success" size="48" variant="tonal">
-                        <VIcon icon="tabler-check" size="24" />
-                      </VAvatar>
-                      <div>
-                        <p class="text-body-2 text-medium-emphasis mb-1">
-                          {{ t('dashboard_avg_resolution_time') }}
-                        </p>
-                        <h4 class="text-h5 font-weight-bold">
-                          {{ avgResolutionTime }}
-                        </h4>
+                    </VCardText>
+                  </VCard>
+                </VCol>
+                <VCol cols="12" sm="6">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="h-100 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text" />
+                  </VCard>
+                  <VCard v-else variant="tonal" color="success" class="h-100">
+                    <VCardText>
+                      <div class="d-flex align-center gap-3">
+                        <VAvatar color="success" size="48" variant="tonal">
+                          <VIcon icon="tabler-check" size="24" />
+                        </VAvatar>
+                        <div>
+                          <p class="text-body-2 text-medium-emphasis mb-1">
+                            {{ t('dashboard_avg_resolution_time') }}
+                          </p>
+                          <h4 class="text-h5 font-weight-bold">
+                            {{ avgResolutionTime }}
+                          </h4>
+                        </div>
                       </div>
-                    </div>
-                  </VCardText>
-                </VCard>
-              </VCol>
-              <VCol cols="12" sm="6">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="h-100 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text" />
-                </VCard>
-                <VCard v-else variant="tonal" color="warning" class="h-100">
-                  <VCardText>
-                    <div class="d-flex align-center gap-3">
-                      <VAvatar color="warning" size="48" variant="tonal">
-                        <VIcon icon="tabler-chart-bar" size="24" />
-                      </VAvatar>
-                      <div>
-                        <p class="text-body-2 text-medium-emphasis mb-1">
-                          {{ t('dashboard_total_attendances') }}
-                        </p>
-                        <h4 class="text-h5 font-weight-bold">
-                          {{ totalAttendances }}
-                        </h4>
+                    </VCardText>
+                  </VCard>
+                </VCol>
+                <VCol cols="12" sm="6">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="h-100 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text" />
+                  </VCard>
+                  <VCard v-else variant="tonal" color="warning" class="h-100">
+                    <VCardText>
+                      <div class="d-flex align-center gap-3">
+                        <VAvatar color="warning" size="48" variant="tonal">
+                          <VIcon icon="tabler-chart-bar" size="24" />
+                        </VAvatar>
+                        <div>
+                          <p class="text-body-2 text-medium-emphasis mb-1">
+                            {{ t('dashboard_total_attendances') }}
+                          </p>
+                          <h4 class="text-h5 font-weight-bold">
+                            {{ totalAttendances }}
+                          </h4>
+                        </div>
                       </div>
-                    </div>
-                  </VCardText>
-                </VCard>
-              </VCol>
-              <VCol cols="12" sm="6">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="h-100 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text" />
-                </VCard>
-                <VCard v-else variant="tonal" color="info" class="h-100">
-                  <VCardText>
-                    <div class="d-flex align-center gap-3">
-                      <VAvatar color="info" size="48" variant="tonal">
-                        <VIcon icon="tabler-trending-up" size="24" />
-                      </VAvatar>
-                      <div>
-                        <p class="text-body-2 text-medium-emphasis mb-1">
-                          {{ t('dashboard_productivity') }}
-                        </p>
-                        <h4 class="text-h5 font-weight-bold">
-                          {{ productivity }}%
-                        </h4>
+                    </VCardText>
+                  </VCard>
+                </VCol>
+                <VCol cols="12" sm="6">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="h-100 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text" />
+                  </VCard>
+                  <VCard v-else variant="tonal" color="info" class="h-100">
+                    <VCardText>
+                      <div class="d-flex align-center gap-3">
+                        <VAvatar color="info" size="48" variant="tonal">
+                          <VIcon icon="tabler-trending-up" size="24" />
+                        </VAvatar>
+                        <div>
+                          <p class="text-body-2 text-medium-emphasis mb-1">
+                            {{ t('dashboard_productivity') }}
+                          </p>
+                          <h4 class="text-h5 font-weight-bold">
+                            {{ productivity }}%
+                          </h4>
+                        </div>
                       </div>
-                    </div>
-                  </VCardText>
-                </VCard>
-              </VCol>
-            </VRow>
-          </VCardText>
-        </VCard>
-      </VCol>
-    </VRow>
+                    </VCardText>
+                  </VCard>
+                </VCol>
+              </VRow>
+            </VCardText>
+          </VCard>
+        </VCol>
+      </VRow>
 
-    <VRow class="dashboard-row">
-      <VCol cols="12" md="3" class="d-flex" style="align-self: stretch">
-        <VCard
-          class="flex-grow-1 d-flex flex-column w-100"
-          style="min-height: 100%"
-        >
-          <VCardText class="flex-grow-1 d-flex flex-column">
-            <VCard
-              v-if="dashboardStore.loadingAdditional"
-              flat
-              class="flex-grow-1 d-flex align-center justify-center"
-            >
-              <VSkeletonLoader type="text, text, avatar" />
-            </VCard>
-            <div v-else class="d-flex flex-column flex-grow-1">
-              <div class="d-flex align-center justify-space-between mb-2">
-                <div>
-                  <p class="text-body-2 text-medium-emphasis mb-1">
-                    {{ t('dashboard_schedules') }}
-                  </p>
-                  <h3 class="text-h4 font-weight-bold">
-                    {{ schedulesDisplay }}
-                  </h3>
-                </div>
-                <VAvatar color="info" variant="tonal" size="56">
-                  <VIcon icon="tabler-calendar" size="28" />
-                </VAvatar>
-              </div>
-              <div v-if="schedulesRenewalDay" class="mt-auto">
-                <p class="text-caption text-medium-emphasis">
-                  {{ t('dashboard_renewal_day') }}: {{ schedulesRenewalDay }}
-                </p>
-              </div>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-      <VCol cols="12" md="9" class="dashboard-additional-stack">
-        <VRow class="dashboard-additional-subrow">
-          <VCol cols="12" sm="6" class="d-flex">
-            <VCard class="flex-grow-1 d-flex flex-column w-100">
-              <VCardText class="flex-grow-1 d-flex flex-column">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="flex-grow-1 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text, avatar" />
-                </VCard>
-                <div
-                  v-else
-                  class="d-flex align-center justify-space-between flex-grow-1"
-                >
+      <VRow class="dashboard-row">
+        <VCol cols="12" md="3" class="d-flex" style="align-self: stretch">
+          <VCard
+            class="flex-grow-1 d-flex flex-column w-100"
+            style="min-height: 100%"
+          >
+            <VCardText class="flex-grow-1 d-flex flex-column">
+              <VCard
+                v-if="dashboardStore.loadingAdditional"
+                flat
+                class="flex-grow-1 d-flex align-center justify-center"
+              >
+                <VSkeletonLoader type="text, text, avatar" />
+              </VCard>
+              <div v-else class="d-flex flex-column flex-grow-1">
+                <div class="d-flex align-center justify-space-between mb-2">
                   <div>
                     <p class="text-body-2 text-medium-emphasis mb-1">
-                      {{ t('dashboard_active_chatbots') }}
+                      {{ t('dashboard_schedules') }}
                     </p>
                     <h3 class="text-h4 font-weight-bold">
-                      {{ chatbotsDisplay }}
-                    </h3>
-                  </div>
-                  <VAvatar color="success" variant="tonal" size="56">
-                    <VIcon icon="tabler-robot" size="28" />
-                  </VAvatar>
-                </div>
-              </VCardText>
-            </VCard>
-          </VCol>
-          <VCol cols="12" sm="6" class="d-flex">
-            <VCard class="flex-grow-1 d-flex flex-column w-100">
-              <VCardText class="flex-grow-1 d-flex flex-column">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="flex-grow-1 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text, avatar" />
-                </VCard>
-                <div
-                  v-else
-                  class="d-flex align-center justify-space-between flex-grow-1"
-                >
-                  <div>
-                    <p class="text-body-2 text-medium-emphasis mb-1">
-                      {{ t('dashboard_contact_groups') }}
-                    </p>
-                    <h3 class="text-h4 font-weight-bold">
-                      {{ contactGroupsTotal }}
+                      {{ schedulesDisplay }}
                     </h3>
                   </div>
                   <VAvatar color="info" variant="tonal" size="56">
-                    <VIcon icon="tabler-users-group" size="28" />
+                    <VIcon icon="tabler-calendar" size="28" />
                   </VAvatar>
                 </div>
-              </VCardText>
-            </VCard>
-          </VCol>
-        </VRow>
-        <VRow class="dashboard-additional-subrow">
-          <VCol cols="12" sm="6" class="d-flex">
-            <VCard class="flex-grow-1 d-flex flex-column w-100">
-              <VCardText class="flex-grow-1 d-flex flex-column">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="flex-grow-1 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text, avatar" />
-                </VCard>
-                <div
-                  v-else
-                  class="d-flex align-center justify-space-between flex-grow-1"
-                >
-                  <div>
-                    <p class="text-body-2 text-medium-emphasis mb-1">
-                      {{ t('dashboard_message_templates') }}
-                    </p>
-                    <h3 class="text-h4 font-weight-bold">
-                      {{ messageTemplatesTotal }}
-                    </h3>
+                <div v-if="schedulesRenewalDay" class="mt-auto">
+                  <p class="text-caption text-medium-emphasis">
+                    {{ t('dashboard_renewal_day') }}: {{ schedulesRenewalDay }}
+                  </p>
+                </div>
+              </div>
+            </VCardText>
+          </VCard>
+        </VCol>
+        <VCol cols="12" md="9" class="dashboard-additional-stack">
+          <VRow class="dashboard-additional-subrow">
+            <VCol cols="12" sm="6" class="d-flex">
+              <VCard class="flex-grow-1 d-flex flex-column w-100">
+                <VCardText class="flex-grow-1 d-flex flex-column">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="flex-grow-1 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text, avatar" />
+                  </VCard>
+                  <div
+                    v-else
+                    class="d-flex align-center justify-space-between flex-grow-1"
+                  >
+                    <div>
+                      <p class="text-body-2 text-medium-emphasis mb-1">
+                        {{ t('dashboard_active_chatbots') }}
+                      </p>
+                      <h3 class="text-h4 font-weight-bold">
+                        {{ chatbotsDisplay }}
+                      </h3>
+                    </div>
+                    <VAvatar color="success" variant="tonal" size="56">
+                      <VIcon icon="tabler-robot" size="28" />
+                    </VAvatar>
                   </div>
-                  <VAvatar color="warning" variant="tonal" size="56">
-                    <VIcon icon="tabler-message" size="28" />
-                  </VAvatar>
-                </div>
-              </VCardText>
-            </VCard>
-          </VCol>
-          <VCol cols="12" sm="6" class="d-flex">
-            <VCard class="flex-grow-1 d-flex flex-column w-100">
-              <VCardText class="flex-grow-1 d-flex flex-column">
-                <VCard
-                  v-if="dashboardStore.loadingAdditional"
-                  flat
-                  class="flex-grow-1 d-flex align-center justify-center"
-                >
-                  <VSkeletonLoader type="text, text, avatar" />
-                </VCard>
-                <div
-                  v-else
-                  class="d-flex align-center justify-space-between flex-grow-1"
-                >
-                  <div>
-                    <p class="text-body-2 text-medium-emphasis mb-1">
-                      {{ t('dashboard_label_templates') }}
-                    </p>
-                    <h3 class="text-h4 font-weight-bold">
-                      {{ labelTemplatesTotal }}
-                    </h3>
+                </VCardText>
+              </VCard>
+            </VCol>
+            <VCol cols="12" sm="6" class="d-flex">
+              <VCard class="flex-grow-1 d-flex flex-column w-100">
+                <VCardText class="flex-grow-1 d-flex flex-column">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="flex-grow-1 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text, avatar" />
+                  </VCard>
+                  <div
+                    v-else
+                    class="d-flex align-center justify-space-between flex-grow-1"
+                  >
+                    <div>
+                      <p class="text-body-2 text-medium-emphasis mb-1">
+                        {{ t('dashboard_contact_groups') }}
+                      </p>
+                      <h3 class="text-h4 font-weight-bold">
+                        {{ contactGroupsTotal }}
+                      </h3>
+                    </div>
+                    <VAvatar color="info" variant="tonal" size="56">
+                      <VIcon icon="tabler-users-group" size="28" />
+                    </VAvatar>
                   </div>
-                  <VAvatar color="purple" variant="tonal" size="56">
-                    <VIcon icon="tabler-label" size="28" />
-                  </VAvatar>
-                </div>
-              </VCardText>
-            </VCard>
-          </VCol>
-        </VRow>
-      </VCol>
-    </VRow>
+                </VCardText>
+              </VCard>
+            </VCol>
+          </VRow>
+          <VRow class="dashboard-additional-subrow">
+            <VCol cols="12" sm="6" class="d-flex">
+              <VCard class="flex-grow-1 d-flex flex-column w-100">
+                <VCardText class="flex-grow-1 d-flex flex-column">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="flex-grow-1 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text, avatar" />
+                  </VCard>
+                  <div
+                    v-else
+                    class="d-flex align-center justify-space-between flex-grow-1"
+                  >
+                    <div>
+                      <p class="text-body-2 text-medium-emphasis mb-1">
+                        {{ t('dashboard_message_templates') }}
+                      </p>
+                      <h3 class="text-h4 font-weight-bold">
+                        {{ messageTemplatesTotal }}
+                      </h3>
+                    </div>
+                    <VAvatar color="warning" variant="tonal" size="56">
+                      <VIcon icon="tabler-message" size="28" />
+                    </VAvatar>
+                  </div>
+                </VCardText>
+              </VCard>
+            </VCol>
+            <VCol cols="12" sm="6" class="d-flex">
+              <VCard class="flex-grow-1 d-flex flex-column w-100">
+                <VCardText class="flex-grow-1 d-flex flex-column">
+                  <VCard
+                    v-if="dashboardStore.loadingAdditional"
+                    flat
+                    class="flex-grow-1 d-flex align-center justify-center"
+                  >
+                    <VSkeletonLoader type="text, text, avatar" />
+                  </VCard>
+                  <div
+                    v-else
+                    class="d-flex align-center justify-space-between flex-grow-1"
+                  >
+                    <div>
+                      <p class="text-body-2 text-medium-emphasis mb-1">
+                        {{ t('dashboard_label_templates') }}
+                      </p>
+                      <h3 class="text-h4 font-weight-bold">
+                        {{ labelTemplatesTotal }}
+                      </h3>
+                    </div>
+                    <VAvatar color="purple" variant="tonal" size="56">
+                      <VIcon icon="tabler-label" size="28" />
+                    </VAvatar>
+                  </div>
+                </VCardText>
+              </VCard>
+            </VCol>
+          </VRow>
+        </VCol>
+      </VRow>
     </template>
 
     <VSnackbar
@@ -1414,6 +1420,12 @@ onMounted(async () => {
     );
 }
 
+.mobile-apps-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
 .mobile-apps-header {
   display: flex;
   align-items: flex-start;
@@ -1421,12 +1433,19 @@ onMounted(async () => {
   gap: 16px;
 }
 
+.mobile-apps-links-row {
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
 .mobile-link-card {
+  display: flex;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .mobile-link-content {
-  min-height: 110px;
+  flex: 1 1 auto;
+  min-height: clamp(126px, 11vw, 176px);
 }
 
 .mobile-store-link {
@@ -1475,6 +1494,7 @@ onMounted(async () => {
   .mobile-link-content {
     flex-direction: column;
     align-items: flex-start !important;
+    min-height: 136px;
   }
 
   .mobile-store-badge--ios {

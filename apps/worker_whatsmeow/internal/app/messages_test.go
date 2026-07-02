@@ -122,6 +122,74 @@ func TestIncomingInteractiveCtaURLContent(t *testing.T) {
 	}
 }
 
+func TestIncomingHydratedTemplateContent(t *testing.T) {
+	manager := &WhatsAppManager{}
+	template := &waE2E.TemplateMessage{
+		TemplateID: proto.String("pedido_brasil"),
+		HydratedTemplate: &waE2E.TemplateMessage_HydratedFourRowTemplate{
+			HydratedContentText: proto.String("O seu pedido Brasil está registado."),
+			HydratedButtons: []*waE2E.HydratedTemplateButton{
+				{
+					HydratedButton: &waE2E.HydratedTemplateButton_UrlButton{
+						UrlButton: &waE2E.HydratedTemplateButton_HydratedURLButton{
+							DisplayText: proto.String("Acompanhar pedido"),
+							URL:         proto.String("https://underchat.com.br/pedido"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	messageType, content := manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{TemplateMessage: template},
+	})
+	if messageType != MessageTypeText {
+		t.Fatalf("unexpected message type %q", messageType)
+	}
+	if got := content["message"]; got != "O seu pedido Brasil está registado." {
+		t.Fatalf("unexpected message %#v", got)
+	}
+
+	officialTemplate := content["official_template"].(map[string]any)
+	if got := officialTemplate["name"]; got != "pedido_brasil" {
+		t.Fatalf("unexpected template name %#v", got)
+	}
+
+	official := content["official"].(map[string]any)
+	display := official["display"].(map[string]any)
+	if got := display["kind"]; got != "template" {
+		t.Fatalf("unexpected display kind %#v", got)
+	}
+	if got := display["body"]; got != "O seu pedido Brasil está registado." {
+		t.Fatalf("unexpected display body %#v", got)
+	}
+	actions := display["actions"].([]map[string]any)
+	if len(actions) != 1 {
+		t.Fatalf("expected one action, got %#v", actions)
+	}
+	if got := actions[0]["title"]; got != "Acompanhar pedido" {
+		t.Fatalf("unexpected action title %#v", got)
+	}
+	if got := actions[0]["url"]; got != "https://underchat.com.br/pedido" {
+		t.Fatalf("unexpected action url %#v", got)
+	}
+
+	messageType, content = manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			HighlyStructuredMessage: &waE2E.HighlyStructuredMessage{
+				HydratedHsm: template,
+			},
+		},
+	})
+	if messageType != MessageTypeText {
+		t.Fatalf("unexpected hsm message type %q", messageType)
+	}
+	if got := content["message"]; got != "O seu pedido Brasil está registado." {
+		t.Fatalf("unexpected hsm message %#v", got)
+	}
+}
+
 func TestBuildOutgoingTextWithQuotedMessageAndMentions(t *testing.T) {
 	manager := &WhatsAppManager{}
 	target := types.NewJID("5511999999999", types.DefaultUserServer)

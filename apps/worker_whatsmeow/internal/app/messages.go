@@ -755,9 +755,15 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 			return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
 		}
 	}
-	if template := msg.GetTemplateMessage(); template != nil && template.GetHydratedTemplate() != nil {
-		text := template.GetHydratedTemplate().GetHydratedContentText()
-		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
+	if template := msg.GetTemplateMessage(); template != nil {
+		if content := incomingTemplateContent(template); content != nil {
+			return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+		}
+	}
+	if hsm := msg.GetHighlyStructuredMessage(); hsm != nil {
+		if content := incomingTemplateContent(hsm.GetHydratedHsm()); content != nil {
+			return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+		}
 	}
 	if buttons := msg.GetButtonsMessage(); buttons != nil {
 		content := incomingButtonsContent(buttons)
@@ -1009,6 +1015,158 @@ func incomingInteractiveCtaURLContent(interactive *waE2E.InteractiveMessage) map
 	}
 
 	return nil
+}
+
+func incomingTemplateButton(button *waE2E.HydratedTemplateButton) map[string]any {
+	if button == nil {
+		return nil
+	}
+	if quickReply := button.GetQuickReplyButton(); quickReply != nil {
+		text := strings.TrimSpace(quickReply.GetDisplayText())
+		if text == "" {
+			return nil
+		}
+		return map[string]any{
+			"type": "QUICK_REPLY",
+			"text": text,
+		}
+	}
+	if urlButton := button.GetUrlButton(); urlButton != nil {
+		text := strings.TrimSpace(urlButton.GetDisplayText())
+		url := strings.TrimSpace(urlButton.GetURL())
+		if text == "" && url == "" {
+			return nil
+		}
+		return map[string]any{
+			"type": "URL",
+			"text": emptyStringAsNil(text),
+			"url":  emptyStringAsNil(url),
+		}
+	}
+	if callButton := button.GetCallButton(); callButton != nil {
+		text := strings.TrimSpace(callButton.GetDisplayText())
+		phoneNumber := strings.TrimSpace(callButton.GetPhoneNumber())
+		if text == "" && phoneNumber == "" {
+			return nil
+		}
+		return map[string]any{
+			"type":         "PHONE_NUMBER",
+			"text":         emptyStringAsNil(text),
+			"phone_number": emptyStringAsNil(phoneNumber),
+		}
+	}
+	return nil
+}
+
+func incomingTemplateButtons(buttons []*waE2E.HydratedTemplateButton) []map[string]any {
+	result := make([]map[string]any, 0, len(buttons))
+	for _, button := range buttons {
+		if mapped := incomingTemplateButton(button); mapped != nil {
+			result = append(result, mapped)
+		}
+	}
+	return result
+}
+
+func incomingTemplateActions(buttons []map[string]any) []map[string]any {
+	actions := make([]map[string]any, 0, len(buttons))
+	for index, button := range buttons {
+		title := firstNonEmpty(stringValue(button["text"]), stringValue(button["type"]))
+		if title == "" {
+			continue
+		}
+		action := map[string]any{
+			"id":    strconv.Itoa(index),
+			"type":  emptyStringAsNil(stringValue(button["type"])),
+			"title": title,
+		}
+		if url := stringValue(button["url"]); url != "" {
+			action["url"] = url
+		}
+		if phoneNumber := stringValue(button["phone_number"]); phoneNumber != "" {
+			action["phone_number"] = phoneNumber
+		}
+		actions = append(actions, action)
+	}
+	return actions
+}
+
+func incomingTemplateContent(template *waE2E.TemplateMessage) map[string]any {
+	if template == nil {
+		return nil
+	}
+	hydrated := template.GetHydratedTemplate()
+	if hydrated == nil {
+		hydrated = template.GetHydratedFourRowTemplate()
+	}
+	if hydrated == nil {
+		return nil
+	}
+
+	header := strings.TrimSpace(hydrated.GetHydratedTitleText())
+	body := strings.TrimSpace(hydrated.GetHydratedContentText())
+	footer := strings.TrimSpace(hydrated.GetHydratedFooterText())
+	buttons := incomingTemplateButtons(hydrated.GetHydratedButtons())
+	if header == "" && body == "" && footer == "" && len(buttons) == 0 {
+		return nil
+	}
+
+	templateName := firstNonEmpty(template.GetTemplateID(), hydrated.GetTemplateID(), "template")
+	components := make([]map[string]any, 0, 4)
+	if header != "" {
+		components = append(components, map[string]any{"type": "HEADER", "text": header})
+	}
+	if body != "" {
+		components = append(components, map[string]any{"type": "BODY", "text": body})
+	}
+	if footer != "" {
+		components = append(components, map[string]any{"type": "FOOTER", "text": footer})
+	}
+	if len(buttons) > 0 {
+		components = append(components, map[string]any{"type": "BUTTONS", "buttons": buttons})
+	}
+
+	previewButtons := make([]string, 0, len(buttons))
+	for _, button := range buttons {
+		if text := stringValue(button["text"]); text != "" {
+			previewButtons = append(previewButtons, text)
+		}
+	}
+
+	officialTemplate := map[string]any{
+		"name":       templateName,
+		"language":   "",
+		"components": components,
+		"variables":  []map[string]any{},
+		"preview": map[string]any{
+			"header":  emptyStringAsNil(header),
+			"body":    emptyStringAsNil(body),
+			"footer":  emptyStringAsNil(footer),
+			"buttons": previewButtons,
+		},
+	}
+
+	return map[string]any{
+		"type":              MessageTypeText,
+		"message":           firstNonEmpty(body, header, footer),
+		"official_template": officialTemplate,
+		"official": map[string]any{
+			"provider": "meta_whatsapp",
+			"type":     "template",
+			"display": map[string]any{
+				"kind":     "template",
+				"raw_type": "template",
+				"title":    emptyStringAsNil(header),
+				"body":     emptyStringAsNil(body),
+				"footer":   emptyStringAsNil(footer),
+				"actions":  incomingTemplateActions(buttons),
+			},
+			"raw": map[string]any{
+				"type":     "template",
+				"template": officialTemplate,
+			},
+		},
+	}
 }
 
 func emptyStringAsNil(value string) any {

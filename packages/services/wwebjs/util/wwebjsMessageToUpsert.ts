@@ -112,6 +112,12 @@ type WwebjsCtaUrlPayload = {
 
 type WwebjsContent = NonNullable<IUpsertMessage['content']>;
 
+type WwebjsTemplatePayload = {
+  body: string;
+  templateId: string;
+  rawTemplate: Record<string, unknown>;
+};
+
 interface WwebjsInteractiveResolutionInput {
   id: string;
   rawType: string;
@@ -130,6 +136,34 @@ interface WwebjsInteractiveResolution {
   listResponse?: WwebjsListResponsePayload;
   ctaUrlContent?: WwebjsContent;
   ctaUrlPayload?: WwebjsCtaUrlPayload;
+}
+
+interface WwebjsUpsertContentResolutionInput {
+  unsupportedFallback: boolean;
+  body: string;
+  ctaUrlContent?: WwebjsContent;
+  buttonsContent?: WwebjsContent;
+  buttonsResponseText?: string;
+  listContent?: WwebjsContent;
+  listResponse?: WwebjsListResponsePayload;
+  templateContent?: WwebjsContent;
+}
+
+interface WwebjsTemplateEchoResolutionInput {
+  id: string;
+  rawType: string;
+  rawSubType?: string | null;
+  rawData?: Record<string, unknown>;
+  fromMe: boolean;
+  body: string;
+  messageType: EMessageType | null;
+  interactiveResolution: WwebjsInteractiveResolution;
+}
+
+interface WwebjsTemplateEchoResolution {
+  body: string;
+  messageType: EMessageType | null;
+  templateContent?: WwebjsContent;
 }
 
 function getMessageId(msg: Message): string | undefined {
@@ -789,6 +823,79 @@ function buildListResponseProtoMessage(
   };
 }
 
+function getTemplatePayload(
+  body: string,
+  rawData?: Record<string, unknown>
+): WwebjsTemplatePayload | null {
+  if (!rawData) {
+    return null;
+  }
+
+  const isFromTemplate = getBoolean(rawData.isFromTemplate) === true;
+  const templateId =
+    getNonEmptyString(rawData.templateId) ??
+    getNonEmptyString(rawData.templateID) ??
+    getNonEmptyString(rawData.hsmTag) ??
+    getNonEmptyString(rawData.hsmCategory);
+  const templateBody =
+    getNonEmptyString(body) ??
+    getNonEmptyString(rawData.body) ??
+    getNonEmptyString(rawData.caption);
+
+  if (!templateBody || (!isFromTemplate && !templateId)) {
+    return null;
+  }
+
+  return {
+    body: templateBody,
+    templateId: templateId ?? 'template',
+    rawTemplate: rawData,
+  };
+}
+
+function buildTemplateContent(payload: WwebjsTemplatePayload): WwebjsContent {
+  const officialTemplate = {
+    name: payload.templateId,
+    language: '',
+    components: [
+      {
+        type: 'BODY',
+        text: payload.body,
+      },
+    ],
+    variables: [],
+    preview: {
+      header: null,
+      body: payload.body,
+      footer: null,
+      buttons: [],
+    },
+  };
+
+  return {
+    type: EMessageType.text,
+    message: payload.body,
+    official_template: officialTemplate,
+    official: {
+      provider: 'meta_whatsapp',
+      type: 'template',
+      display: {
+        kind: 'template',
+        raw_type: 'template',
+        title: null,
+        body: payload.body,
+        footer: null,
+        actions: [],
+      },
+      raw: {
+        type: 'template',
+        template: officialTemplate,
+        raw_data: payload.rawTemplate,
+      },
+    },
+  };
+}
+
 function safeStringify(value: unknown, maxLength = 4000): string {
   try {
     const seen = new WeakSet<object>();
@@ -828,6 +935,87 @@ function hasRawDataRecord(
 
 function logWwebjsIncomingSummary(payload: Record<string, unknown>): void {
   console.info('[WWEBJS_INCOMING_SUMMARY]', safeStringify(payload));
+}
+
+function resolveWwebjsUpsertContent({
+  unsupportedFallback,
+  body,
+  ctaUrlContent,
+  buttonsContent,
+  buttonsResponseText,
+  listContent,
+  listResponse,
+  templateContent,
+}: WwebjsUpsertContentResolutionInput): WwebjsContent | undefined {
+  if (unsupportedFallback) {
+    return {
+      type: EMessageType.system,
+      message: body || UNSUPPORTED_INCOMING_MESSAGE_TEXT,
+    };
+  }
+
+  if (ctaUrlContent) return ctaUrlContent;
+  if (buttonsContent) return buttonsContent;
+  if (buttonsResponseText) {
+    return {
+      type: EMessageType.text,
+      message: buttonsResponseText,
+    };
+  }
+  if (listContent) return listContent;
+  if (listResponse) {
+    return {
+      type: EMessageType.text,
+      message: listResponse.title,
+    };
+  }
+  return templateContent;
+}
+
+function resolveWwebjsTemplateEcho({
+  id,
+  rawType,
+  rawSubType,
+  rawData,
+  fromMe,
+  body,
+  messageType,
+  interactiveResolution,
+}: WwebjsTemplateEchoResolutionInput): WwebjsTemplateEchoResolution {
+  if (
+    interactiveResolution.ctaUrlContent ||
+    interactiveResolution.buttonsContent ||
+    interactiveResolution.buttonsResponseText ||
+    interactiveResolution.listContent ||
+    interactiveResolution.listResponse
+  ) {
+    return { body, messageType };
+  }
+
+  const templatePayload = getTemplatePayload(body, rawData);
+  if (!templatePayload) {
+    return { body, messageType };
+  }
+
+  const templateContent = buildTemplateContent(templatePayload);
+  const nextBody = templateContent.message ?? body;
+  logWwebjsIncomingDebug({
+    stage: 'wwebjs.message_to_upsert.template',
+    id,
+    raw_type: rawType,
+    raw_subtype: rawSubType ?? null,
+    from_me: fromMe,
+    mapped_type: EMessageType.text,
+    body: nextBody,
+    template_id: templatePayload.templateId,
+    raw_data: rawData,
+  });
+
+  return {
+    body: nextBody,
+    messageType: EMessageType.text,
+    templateContent,
+  };
 }
 
 function resolveMessageBody(
@@ -2142,6 +2330,11 @@ export async function wwebjsMessageToUpsert(
       rawData,
       'buttonsResponseMessage'
     ),
+    is_from_template: getBoolean(rawData?.isFromTemplate) ?? null,
+    template_id:
+      getNonEmptyString(rawData?.templateId) ??
+      getNonEmptyString(rawData?.templateID) ??
+      null,
   });
   if (shouldLogWwebjsIncomingRawDebug()) {
     logWwebjsIncomingDebug({
@@ -2176,6 +2369,19 @@ export async function wwebjsMessageToUpsert(
     ctaUrlContent,
     ctaUrlPayload,
   } = interactiveResolution;
+  const templateResolution = resolveWwebjsTemplateEcho({
+    id,
+    rawType,
+    rawSubType,
+    rawData,
+    fromMe: msg.fromMe,
+    body,
+    messageType,
+    interactiveResolution,
+  });
+  body = templateResolution.body;
+  messageType = templateResolution.messageType;
+  const templateContent = templateResolution.templateContent;
   const pinInChatMessage = buildPinInChatMessage(
     rawType,
     rawData,
@@ -2368,28 +2574,16 @@ export async function wwebjsMessageToUpsert(
     account_id: wwebjsEnvironment.wwebjsAccountId,
     type: messageType,
     message: envelope,
-    content: unsupportedFallback
-      ? {
-          type: EMessageType.system,
-          message: body || UNSUPPORTED_INCOMING_MESSAGE_TEXT,
-        }
-      : ctaUrlContent
-        ? ctaUrlContent
-        : buttonsContent
-          ? buttonsContent
-          : buttonsResponseText
-            ? {
-                type: EMessageType.text,
-                message: buttonsResponseText,
-              }
-            : listContent
-              ? listContent
-              : listResponse
-                ? {
-                    type: EMessageType.text,
-                    message: listResponse.title,
-                  }
-                : undefined,
+    content: resolveWwebjsUpsertContent({
+      unsupportedFallback,
+      body,
+      ctaUrlContent,
+      buttonsContent,
+      buttonsResponseText,
+      listContent,
+      listResponse,
+      templateContent,
+    }),
     has_quoted: (msg.hasQuotedMsg ?? false) || !!quotedContextInfo,
   };
 }

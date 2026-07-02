@@ -174,6 +174,58 @@ describe('wwebjsMessageToUpsert', () => {
     });
   });
 
+  it('converts WWebJS template chat echoes into official template display metadata', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const body =
+      'O seu pedido Brasil está registado. Entraremos em contato com você dentro de 48 horas.';
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      id: {
+        ...baseMessage.id,
+        fromMe: true,
+        id: 'CEC299B0592B74D4AA3D',
+        _serialized: 'true_158733669765176@lid_CEC299B0592B74D4AA3D',
+      },
+      type: 'chat',
+      body,
+      fromMe: true,
+      from: '556192037138@c.us',
+      to: '158733669765176@lid',
+      _data: {
+        body,
+        isFromTemplate: true,
+        templateId: 'pedido_brasil',
+        hsmCategory: 'utility',
+      },
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.text);
+    expect(innerMessage.conversation).toBe(body);
+    expect(upsert?.content).toMatchObject({
+      type: EMessageType.text,
+      message: body,
+      official_template: {
+        name: 'pedido_brasil',
+        language: '',
+      },
+      official: {
+        provider: 'meta_whatsapp',
+        type: 'template',
+        display: {
+          kind: 'template',
+          raw_type: 'template',
+          title: null,
+          body,
+          footer: null,
+          actions: [],
+        },
+      },
+    });
+  });
+
   it('converts ciphertext into a visible system fallback message', async () => {
     const fallbackText =
       'Você recebeu uma mensagem, mas ela não pôde ser descriptografada neste dispositivo.\nIsso pode ocorrer por ser uma mensagem de anúncio ou por estar em processo de sincronização. Verifique no dispositivo principal.';

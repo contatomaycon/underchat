@@ -1097,6 +1097,14 @@ describe('MessageUpsertConsume edit fallback', () => {
     });
   });
 
+  it('does not discard hydrated template messages as empty text', () => {
+    const { consumer } = makeConsumer();
+
+    expect((consumer as any).getDiscardUpsertReason(makeTemplateUpsert())).toBe(
+      null
+    );
+  });
+
   it('normalizes prebuilt list metadata before indexing', () => {
     const { consumer } = makeConsumer();
     const upsert = makeTextUpsert('Escolha uma opção');

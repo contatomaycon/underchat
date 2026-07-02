@@ -1,8 +1,14 @@
+<script setup lang="ts">
+import MetaPartnerMark from '@/components/brand/MetaPartnerMark.vue';
+</script>
+
 <template>
   <div
-    class="h-100 d-flex align-center justify-md-space-between justify-center"
+    class="footer-content h-100 d-flex align-center justify-md-space-between justify-center flex-wrap"
   >
-    <span class="d-flex align-center text-medium-emphasis">
+    <span
+      class="footer-content__brand d-flex align-center text-medium-emphasis"
+    >
       &copy;
       {{ new Date().getFullYear() }}
       <span class="mx-2">
@@ -31,5 +37,18 @@
         >Underchat</a
       >
     </span>
+
+    <MetaPartnerMark variant="footer" />
   </div>
 </template>
+
+<style scoped lang="scss">
+.footer-content {
+  gap: 12px 18px;
+  padding-block: 8px;
+}
+
+.footer-content__brand {
+  min-inline-size: 0;
+}
+</style>
