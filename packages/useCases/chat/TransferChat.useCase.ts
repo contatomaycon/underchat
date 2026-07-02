@@ -32,6 +32,7 @@ import { EChatPermissions } from '@core/common/enums/EPermissions/chat';
 import { IJwtGroupHierarchy } from '@core/common/interfaces/IJwtGroupHierarchy';
 import { PushNotificationService } from '@core/services/pushNotification.service';
 import { IUpsertMessageEnvelope } from '@core/common/interfaces/IUpsertMessage';
+import { isChatbotStatus } from '@core/common/functions/chatStatus';
 
 type ChatbotTransferTarget = {
   chatbotId: string;
@@ -465,7 +466,10 @@ export class TransferChatUseCase {
       chatbotTarget
     );
 
-    const saved = await this.chatService.saveChat(updatedChat);
+    const saved = await this.chatService.saveChat(updatedChat, {
+      allowHumanToAutomation: true,
+      refresh: true,
+    });
     if (!saved) {
       throw new Error(t('chat_transfer_failed'));
     }
@@ -836,18 +840,57 @@ export class TransferChatUseCase {
       secondaryUsers
     );
 
-    const saved = await this.chatService.saveChat(updatedChat);
+    let persistedChat = updatedChat;
+    let saved = false;
+
+    if (isChatbotStatus(chat.status)) {
+      const handoff = await this.chatService.transferAutomationChatToQueue({
+        accountId,
+        chat,
+        worker: targetWorker,
+        user: updatedChat.user ?? null,
+        sector: updatedChat.sector ?? null,
+        secondaryUsers: [],
+      });
+
+      saved = handoff.chat !== null;
+      persistedChat = handoff.chat ?? updatedChat;
+    } else {
+      saved = await this.chatService.saveChat(updatedChat, {
+        refresh: true,
+      });
+
+      if (saved) {
+        persistedChat =
+          (await this.chatService.findChatByChatId(
+            accountId,
+            params.chat_id
+          )) ?? updatedChat;
+      }
+    }
 
     if (!saved) {
       throw new Error(t('chat_transfer_failed'));
     }
 
+    if (isChatbotStatus(chat.status)) {
+      await Promise.all(
+        Array.from(new Set([chat.worker.id, targetWorker.id])).map((workerId) =>
+          this.chatbotFlowRunnerService.clearFlowCacheForChat(
+            accountId,
+            workerId,
+            chat.chat_id
+          )
+        )
+      );
+    }
+
     await this.chatService.clearChatSummary(params.chat_id, accountId);
 
-    await this.invalidateTransferCache(accountId, chat, updatedChat);
+    await this.invalidateTransferCache(accountId, chat, persistedChat);
 
     const chatWithProtocol = await this.buildChatWithProtocol(
-      updatedChat,
+      persistedChat,
       workerConfigFields,
       shouldSendMessageOnTransfer,
       t,

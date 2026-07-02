@@ -37,12 +37,34 @@ import {
   normalizeChatIdentity,
   type ChatIdentityInput,
 } from '@core/common/functions/chatIdentity';
+import {
+  CHATBOT_STATUSES,
+  HUMAN_ATTENDANCE_STATUSES,
+  isChatbotStatus,
+  isHumanAttendanceStatus,
+} from '@core/common/functions/chatStatus';
 
 type ElasticHit<T> = {
   _source?: T;
 };
 
 type ChatProtocolType = 'protocol_ura' | 'protocol_start' | 'protocol_transfer';
+
+interface TransferAutomationChatToQueueInput {
+  accountId: string;
+  chat: IChat;
+  worker?: IChat['worker'] | null;
+  user?: IChat['user'] | null;
+  sector?: IChat['sector'] | null;
+  secondaryUsers?: IChat['secondary_users'] | null;
+}
+
+export interface TransferAutomationChatToQueueResult {
+  chat: IChat | null;
+  previousChat: IChat | null;
+  applied: boolean;
+  alreadyHuman: boolean;
+}
 
 const OPEN_CHAT_STATUSES = [
   EChatStatus.in_chat,
@@ -523,7 +545,10 @@ export class ChatService {
 
   saveChat = async (
     chat: IChat,
-    options?: { refresh?: boolean }
+    options?: Pick<
+      ChatPatchOptions,
+      'refresh' | 'expectedCurrentStatuses' | 'allowHumanToAutomation'
+    >
   ): Promise<boolean> => {
     if (!chat) return false;
 
@@ -566,6 +591,8 @@ export class ChatService {
     return this.applyChatPatch(chat.chat_id, patch, {
       allowCreate: true,
       refresh: options?.refresh,
+      expectedCurrentStatuses: options?.expectedCurrentStatuses,
+      allowHumanToAutomation: options?.allowHumanToAutomation,
     });
   };
 
@@ -595,6 +622,34 @@ export class ChatService {
       def hasStatusAndUserUpdate = hasStatusUpdate && hasUserUpdate;
       
       def shouldApplyPatch = true;
+
+      def expectedCurrentStatuses = params.expected_current_statuses;
+      if (expectedCurrentStatuses != null && expectedCurrentStatuses.size() > 0) {
+        def currentStatus = ctx._source.status;
+        if (!expectedCurrentStatuses.contains(currentStatus)) {
+          ctx.op = 'noop';
+          return;
+        }
+      }
+
+      if (hasStatusUpdate) {
+        def currentStatus = ctx._source.status;
+        def newStatus = patch.status;
+        def chatbotStatuses = params.chatbot_statuses;
+        def humanAttendanceStatuses = params.human_attendance_statuses;
+        def allowHumanToAutomation = params.allow_human_to_automation == true;
+
+        if (
+          !allowHumanToAutomation &&
+          chatbotStatuses != null &&
+          humanAttendanceStatuses != null &&
+          chatbotStatuses.contains(newStatus) &&
+          humanAttendanceStatuses.contains(currentStatus)
+        ) {
+          ctx.op = 'noop';
+          return;
+        }
+      }
       
       if (eventEpochMillis != null) {
         def domain = params.domain;
@@ -846,7 +901,17 @@ export class ChatService {
   ): Record<string, unknown> {
     const params: Record<string, unknown> = {
       patch,
+      chatbot_statuses: CHATBOT_STATUSES,
+      human_attendance_statuses: HUMAN_ATTENDANCE_STATUSES,
+      allow_human_to_automation: options?.allowHumanToAutomation === true,
     };
+
+    if (
+      options?.expectedCurrentStatuses !== null &&
+      options?.expectedCurrentStatuses !== undefined
+    ) {
+      params.expected_current_statuses = options.expectedCurrentStatuses;
+    }
 
     const hasStatusUpdate = patch.status !== null && patch.status !== undefined;
     const hasUserUpdate = patch.user !== null && patch.user !== undefined;
@@ -1017,6 +1082,19 @@ export class ChatService {
     accountId: string,
     chatId: string
   ): Promise<IChat | null> => {
+    const directChat = await this.elasticDatabaseService.getById<IChat>(
+      EElasticIndex.chat,
+      chatId
+    );
+
+    if (directChat) {
+      if (directChat.account?.id !== accountId) {
+        return null;
+      }
+
+      return this.normalizeChatData(directChat);
+    }
+
     const queryElastic = {
       size: 1,
       _source: true,
@@ -1139,6 +1217,71 @@ export class ChatService {
       forward_to_output_chatbot: forwardToOutputChatbot,
     };
     return this.applyChatPatch(chatId, patch, { allowCreate: false });
+  };
+
+  transferAutomationChatToQueue = async (
+    input: TransferAutomationChatToQueueInput
+  ): Promise<TransferAutomationChatToQueueResult> => {
+    const currentChat =
+      (await this.findChatByChatId(input.accountId, input.chat.chat_id)) ??
+      input.chat;
+
+    if (!currentChat) {
+      return {
+        chat: null,
+        previousChat: null,
+        applied: false,
+        alreadyHuman: false,
+      };
+    }
+
+    if (!isChatbotStatus(currentChat.status)) {
+      return {
+        chat: currentChat,
+        previousChat: currentChat,
+        applied: false,
+        alreadyHuman: isHumanAttendanceStatus(currentChat.status),
+      };
+    }
+
+    const patch: ChatPatch = {
+      worker: input.worker ?? currentChat.worker,
+      user: input.user ?? null,
+      sector: input.sector ?? null,
+      secondary_users: input.secondaryUsers ?? [],
+      status: EChatStatus.queue,
+      forward_to_output_chatbot: true,
+      chatbot_transfer_id: null,
+      chatbot_schedule_id: null,
+      chatbot_webhook_id: null,
+    };
+
+    const updated = await this.applyChatPatch(currentChat.chat_id, patch, {
+      allowCreate: false,
+      expectedCurrentStatuses: [...CHATBOT_STATUSES],
+      refresh: true,
+    });
+
+    if (!updated) {
+      return {
+        chat: currentChat,
+        previousChat: currentChat,
+        applied: false,
+        alreadyHuman: false,
+      };
+    }
+
+    const freshChat = await this.findChatByChatId(
+      input.accountId,
+      currentChat.chat_id
+    );
+
+    return {
+      chat: freshChat,
+      previousChat: currentChat,
+      applied: freshChat?.status === EChatStatus.queue,
+      alreadyHuman: isHumanAttendanceStatus(freshChat?.status),
+    };
   };
 
   updateChatProtocol = async (

@@ -1165,7 +1165,7 @@ onUnmounted(async () => {
                   />
                   <VIcon
                     v-else
-                    icon="tabler-shield-heart"
+                    icon="tabler-shield-check"
                     :data-testid="`channel-meta-health-${item.id}`"
                   />
                 </IconBtn>

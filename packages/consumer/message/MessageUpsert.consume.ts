@@ -107,6 +107,7 @@ import {
   IOfficialWhatsappDisplayAction,
   IOfficialWhatsappDisplayMetadata,
 } from '@core/common/interfaces/IOfficialWhatsappContentMetadata';
+import { isChatbotStatus } from '@core/common/functions/chatStatus';
 import type {
   IOfficialTemplateButton,
   IOfficialTemplateComponent,
@@ -5551,22 +5552,23 @@ export class MessageUpsertConsume {
         }
       }
 
-      await this.processTransferIfNeeded(t, createChat, data);
+      const transferredChat =
+        (await this.processTransferIfNeeded(t, createChat, data)) ?? createChat;
 
       const shouldDiscardEmptyText = this.shouldDiscardEmptyText(data);
       const shouldSkipMessageCreation =
         shouldDiscardEmptyText && data.webhook_message_type === 'message';
 
       if (shouldSkipMessageCreation) {
-        await this.saveChatWithCaches(createChat);
-        await this.centrifugoChatQueuePublish(createChat);
-        await this.notifyChatStatusChangeIfNeeded(null, createChat, data);
+        await this.saveChatWithCaches(transferredChat);
+        await this.centrifugoChatQueuePublish(transferredChat);
+        await this.notifyChatStatusChangeIfNeeded(null, transferredChat, data);
         this.logLifecycle(data, {
           stage: 'message_upsert.queue.empty_webhook',
           decision: 'empty_message_filter',
           outcome: 'chat_saved_without_message',
           reason: 'empty_webhook_message',
-          chat_id: createChat.chat_id,
+          chat_id: transferredChat.chat_id,
         });
         return;
       }
@@ -5575,9 +5577,9 @@ export class MessageUpsertConsume {
         stage: 'message_upsert.queue.new_chat_message',
         decision: 'create_message_for_new_chat',
         outcome: 'started',
-        chat_id: createChat.chat_id,
+        chat_id: transferredChat.chat_id,
       });
-      return this.handleNewChatMessageAndPublish(createChat, data);
+      return this.handleNewChatMessageAndPublish(transferredChat, data);
     }
 
     this.logLifecycle(data, {
@@ -5600,24 +5602,32 @@ export class MessageUpsertConsume {
     const hasTransfer =
       Boolean(data.transfer_sector_id) || Boolean(data.transfer_user_id);
 
-    await this.processTransferIfNeeded(t, getChat, data);
+    const transferredChat = await this.processTransferIfNeeded(
+      t,
+      getChat,
+      data
+    );
+    const effectiveChat = transferredChat ?? getChat;
     if (hasTransfer) {
       this.logLifecycle(data, {
         stage: 'message_upsert.queue.transfer',
         decision: 'transfer_route',
         outcome: 'processed',
-        chat_id: getChat.chat_id,
+        chat_id: effectiveChat.chat_id,
         transfer_sector_id: data.transfer_sector_id,
         transfer_user_id: data.transfer_user_id,
       });
     }
 
-    let currentStatusAfterTransfer: IChat['status'] | null = getChat.status;
+    let currentStatusAfterTransfer: IChat['status'] | null =
+      effectiveChat.status;
     if (wasInChat && hasTransfer) {
-      const currentChat = await this.chatService.findChatByChatId(
-        data.account_id,
-        getChat.chat_id
-      );
+      const currentChat =
+        transferredChat ??
+        (await this.chatService.findChatByChatId(
+          data.account_id,
+          getChat.chat_id
+        ));
       currentStatusAfterTransfer = currentChat?.status ?? null;
 
       if (currentStatusAfterTransfer !== EChatStatus.in_chat) {
@@ -5629,7 +5639,7 @@ export class MessageUpsertConsume {
 
     let createMessageResult: ICreateChatMessageResult | null = null;
     if (!shouldSkipMessageCreation) {
-      createMessageResult = await this.createChatMessage(getChat, data);
+      createMessageResult = await this.createChatMessage(effectiveChat, data);
     } else {
       this.logLifecycle(data, {
         stage: 'message_upsert.queue.empty_webhook',
@@ -5726,7 +5736,7 @@ export class MessageUpsertConsume {
     t: TFunction<'translation', undefined>,
     chat: IChat,
     data: IUpsertMessage
-  ): Promise<void> {
+  ): Promise<IChat | null> {
     if (data.transfer_sector_id) {
       this.logLifecycle(data, {
         stage: 'message_upsert.transfer.sector_start',
@@ -5736,8 +5746,7 @@ export class MessageUpsertConsume {
         transfer_sector_id: data.transfer_sector_id,
         transfer_user_id: data.transfer_sector_user_id,
       });
-      await this.transferToSector(t, chat, data);
-      return;
+      return this.transferToSector(t, chat, data);
     }
 
     if (data.transfer_user_id) {
@@ -5748,8 +5757,10 @@ export class MessageUpsertConsume {
         chat_id: chat.chat_id,
         transfer_user_id: data.transfer_user_id,
       });
-      await this.transferToUser(t, chat, data);
+      return this.transferToUser(t, chat, data);
     }
+
+    return null;
   }
 
   private async listTransferNotificationCandidateUserIds(input: {
@@ -5813,9 +5824,9 @@ export class MessageUpsertConsume {
     t: TFunction<'translation', undefined>,
     chat: IChat,
     data: IUpsertMessage
-  ): Promise<void> {
+  ): Promise<IChat | null> {
     if (!data.transfer_sector_id) {
-      return;
+      return null;
     }
 
     const sectorData = await this.sectorService.viewSectorById(
@@ -5832,7 +5843,7 @@ export class MessageUpsertConsume {
         chat_id: chat.chat_id,
         transfer_sector_id: data.transfer_sector_id,
       });
-      return;
+      return null;
     }
 
     const sector: IChat['sector'] = {
@@ -5857,13 +5868,40 @@ export class MessageUpsertConsume {
       }
     }
 
-    await this.chatService.updateChatUserAndSector(chat.chat_id, user, sector);
-    await this.notifyChatTransfer({
-      chat: {
-        ...chat,
+    let notificationChat: IChat = {
+      ...chat,
+      user,
+      sector,
+    };
+
+    if (isChatbotStatus(chat.status)) {
+      const handoff = await this.chatService.transferAutomationChatToQueue({
+        accountId: chat.account.id,
+        chat,
         user,
         sector,
-      },
+        secondaryUsers: [],
+      });
+
+      if (handoff.chat) {
+        notificationChat = handoff.chat;
+      }
+
+      await this.chatbotFlowRunnerService.clearFlowCacheForChat(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
+    } else {
+      await this.chatService.updateChatUserAndSector(
+        chat.chat_id,
+        user,
+        sector
+      );
+    }
+
+    await this.notifyChatTransfer({
+      chat: notificationChat,
       user,
       sector,
     }).catch(() => {});
@@ -5875,15 +5913,17 @@ export class MessageUpsertConsume {
       transfer_sector_id: data.transfer_sector_id,
       transfer_user_id: data.transfer_sector_user_id,
     });
+
+    return notificationChat;
   }
 
   private async transferToUser(
     t: TFunction<'translation', undefined>,
     chat: IChat,
     data: IUpsertMessage
-  ): Promise<void> {
+  ): Promise<IChat | null> {
     if (!data.transfer_user_id) {
-      return;
+      return null;
     }
 
     const userData = await this.userService.viewUserNamePhoto(
@@ -5899,7 +5939,7 @@ export class MessageUpsertConsume {
         chat_id: chat.chat_id,
         transfer_user_id: data.transfer_user_id,
       });
-      return;
+      return null;
     }
 
     const user: IChat['user'] = {
@@ -5908,13 +5948,36 @@ export class MessageUpsertConsume {
       photo: userData.photo ?? null,
     };
 
-    await this.chatService.updateChatUserAndSector(chat.chat_id, user, null);
-    await this.notifyChatTransfer({
-      chat: {
-        ...chat,
+    let notificationChat: IChat = {
+      ...chat,
+      user,
+      sector: null,
+    };
+
+    if (isChatbotStatus(chat.status)) {
+      const handoff = await this.chatService.transferAutomationChatToQueue({
+        accountId: chat.account.id,
+        chat,
         user,
         sector: null,
-      },
+        secondaryUsers: [],
+      });
+
+      if (handoff.chat) {
+        notificationChat = handoff.chat;
+      }
+
+      await this.chatbotFlowRunnerService.clearFlowCacheForChat(
+        chat.account.id,
+        chat.worker.id,
+        chat.chat_id
+      );
+    } else {
+      await this.chatService.updateChatUserAndSector(chat.chat_id, user, null);
+    }
+
+    await this.notifyChatTransfer({
+      chat: notificationChat,
       user,
       sector: null,
     }).catch(() => {});
@@ -5925,6 +5988,8 @@ export class MessageUpsertConsume {
       chat_id: chat.chat_id,
       transfer_user_id: data.transfer_user_id,
     });
+
+    return notificationChat;
   }
 
   private getEffectiveInputChatbotId(

@@ -47,29 +47,55 @@ import { TransferChatUseCase } from '@core/useCases/chat/TransferChat.useCase';
 describe('TransferChatUseCase chatbot transfer', () => {
   const t = jest.fn((key: string) => key) as never;
 
-  const makeChat = (): IChat => ({
-    chat_id: 'chat-1',
-    message_key: {
-      remote_jid: '5511999999999@s.whatsapp.net',
-      remote_jid_alt: null,
-    },
-    account: { id: 'account-1', name: 'Account' },
-    worker: { id: 'worker-1', name: 'Channel' },
-    user: { id: 'user-1', name: 'Agent', photo: null },
-    secondary_users: [{ id: 'user-3', name: 'Secondary', photo: null }],
-    sector: { id: 'sector-1', name: 'Support', color: '#1976D2' },
-    contact: null,
-    name: 'Contact',
-    phone: '5511999999999',
-    status: EChatStatus.in_chat,
-    date: '2026-06-17T10:00:00.000Z',
-    forward_to_output_chatbot: true,
-  });
+  const makeChat = (overrides: Partial<IChat> = {}): IChat =>
+    ({
+      chat_id: 'chat-1',
+      message_key: {
+        remote_jid: '5511999999999@s.whatsapp.net',
+        remote_jid_alt: null,
+      },
+      account: { id: 'account-1', name: 'Account' },
+      worker: { id: 'worker-1', name: 'Channel' },
+      user: { id: 'user-1', name: 'Agent', photo: null },
+      secondary_users: [{ id: 'user-3', name: 'Secondary', photo: null }],
+      sector: { id: 'sector-1', name: 'Support', color: '#1976D2' },
+      contact: null,
+      name: 'Contact',
+      phone: '5511999999999',
+      status: EChatStatus.in_chat,
+      date: '2026-06-17T10:00:00.000Z',
+      forward_to_output_chatbot: true,
+      ...overrides,
+    }) as IChat;
 
   const makeUseCase = (chat: IChat = makeChat()) => {
     const chatService = {
       findChatByChatId: jest.fn(async () => chat),
       saveChat: jest.fn(async () => true),
+      transferAutomationChatToQueue: jest.fn(
+        async (input: {
+          worker?: IChat['worker'] | null;
+          user?: IChat['user'] | null;
+          sector?: IChat['sector'] | null;
+          secondaryUsers?: IChat['secondary_users'] | null;
+        }) => ({
+          chat: {
+            ...chat,
+            worker: input.worker ?? chat.worker,
+            user: input.user ?? null,
+            sector: input.sector ?? null,
+            secondary_users: input.secondaryUsers ?? [],
+            status: EChatStatus.queue,
+            forward_to_output_chatbot: true,
+            chatbot_transfer_id: null,
+            chatbot_schedule_id: null,
+            chatbot_webhook_id: null,
+          },
+          previousChat: chat,
+          applied: true,
+          alreadyHuman: true,
+        })
+      ),
       clearChatSummary: jest.fn(async () => undefined),
       invalidateChatCache: jest.fn(async () => undefined),
       viewWorkerConfigForChat: jest.fn(async () => ({
@@ -87,9 +113,15 @@ describe('TransferChatUseCase chatbot transfer', () => {
     };
     const userService = {
       listUserIdsWithAccessToChannel: jest.fn(async () => ['user-2']),
+      viewUserNamePhoto: jest.fn(async (userId: string) => ({
+        id: userId,
+        name: userId === 'user-2' ? 'Gisele' : 'Agent',
+        photo: null,
+      })),
     };
     const sectorService = {
       listSectorUsersForTransfer: jest.fn(async () => []),
+      viewSectorById: jest.fn(async () => null),
     };
     const chatMessageService = {
       sendMessage: jest.fn(async () => undefined),
@@ -102,6 +134,7 @@ describe('TransferChatUseCase chatbot transfer', () => {
         id: 'worker-2',
         name: 'Target Channel',
       })),
+      viewWorkerConfigFieldsByWorkerId: jest.fn(async () => null),
     };
     const chatbotFlowRunnerService = {
       clearFlowCacheForChat: jest.fn(async () => undefined),
@@ -175,7 +208,11 @@ describe('TransferChatUseCase chatbot transfer', () => {
         chatbot_transfer_id: 'chatbot-input-1',
         chatbot_schedule_id: null,
         chatbot_webhook_id: null,
-      })
+      }),
+      {
+        allowHumanToAutomation: true,
+        refresh: true,
+      }
     );
     expect(chatbotFlowRunnerService.clearFlowCacheForChat).toHaveBeenCalledWith(
       'account-1',
@@ -304,7 +341,11 @@ describe('TransferChatUseCase chatbot transfer', () => {
         chatbot_transfer_id: null,
         chatbot_schedule_id: null,
         chatbot_webhook_id: null,
-      })
+      }),
+      {
+        allowHumanToAutomation: true,
+        refresh: true,
+      }
     );
     expect(chatbotFlowRunnerService.execute).toHaveBeenCalledWith(
       t,
@@ -317,6 +358,50 @@ describe('TransferChatUseCase chatbot transfer', () => {
         chatbot_transfer_id: null,
       }),
       'chatbot-output-1'
+    );
+  });
+
+  it('uses atomic handoff instead of saveChat when transferring chatbot chat to a user', async () => {
+    const chatbotChat = makeChat({
+      status: EChatStatus.ura,
+      chatbot_transfer_id: 'chatbot-input-1',
+      chatbot_schedule_id: 'schedule-1',
+      chatbot_webhook_id: 'webhook-1',
+      forward_to_output_chatbot: false,
+    });
+    const { useCase, chatService, chatbotFlowRunnerService } =
+      makeUseCase(chatbotChat);
+
+    await expect(
+      useCase.execute(
+        t,
+        'account-1',
+        { chat_id: 'chat-1' },
+        { user_id: 'user-2' },
+        'user-1',
+        null,
+        []
+      )
+    ).resolves.toEqual({ chat_id: 'chat-1', status: true });
+
+    expect(chatService.transferAutomationChatToQueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'account-1',
+        chat: chatbotChat,
+        worker: chatbotChat.worker,
+        user: expect.objectContaining({
+          id: 'user-2',
+          name: 'Gisele',
+        }),
+        sector: null,
+        secondaryUsers: [],
+      })
+    );
+    expect(chatService.saveChat).not.toHaveBeenCalled();
+    expect(chatbotFlowRunnerService.clearFlowCacheForChat).toHaveBeenCalledWith(
+      'account-1',
+      'worker-1',
+      'chat-1'
     );
   });
 });

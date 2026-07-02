@@ -75,4 +75,6 @@ export interface ChatPatchOptions {
   eventId?: string;
   allowCreate?: boolean;
   refresh?: boolean;
+  expectedCurrentStatuses?: EChatStatus[];
+  allowHumanToAutomation?: boolean;
 }

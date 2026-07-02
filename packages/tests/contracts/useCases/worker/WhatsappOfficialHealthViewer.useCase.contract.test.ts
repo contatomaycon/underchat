@@ -181,9 +181,7 @@ describe('WhatsappOfficialHealthViewerUseCase', () => {
         },
       },
     });
-    expect(result.warnings).toContain(
-      'whatsapp_official_health_conversation_analytics_empty'
-    );
+    expect(result.warnings).toEqual([]);
     expect(deps.passwordEncryptorService.decrypt).toHaveBeenCalledWith(
       'enc:token-1'
     );
@@ -249,7 +247,7 @@ describe('WhatsappOfficialHealthViewerUseCase', () => {
     expect(deps.passwordEncryptorService.decrypt).not.toHaveBeenCalled();
   });
 
-  it('keeps the response available with section errors when one Meta call fails', async () => {
+  it('keeps the response available and silent when one optional Meta call fails', async () => {
     const { useCase } = buildUseCase({
       metaWhatsappEmbeddedService: {
         ...buildUseCase().deps.metaWhatsappEmbeddedService,
@@ -271,6 +269,6 @@ describe('WhatsappOfficialHealthViewerUseCase', () => {
         error_subcode: null,
       },
     });
-    expect(result.warnings).toContain('Meta analytics failed');
+    expect(result.warnings).toEqual([]);
   });
 });

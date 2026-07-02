@@ -155,6 +155,31 @@ export class ElasticDatabaseService {
     }
   };
 
+  getById = async <TDoc = unknown>(
+    index: string,
+    id: string
+  ): Promise<TDoc | null> => {
+    try {
+      const result = await this.client.get<TDoc>({
+        index,
+        id,
+      });
+
+      return result._source ?? null;
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'statusCode' in error &&
+        error.statusCode === 404
+      ) {
+        return null;
+      }
+
+      throw new Error(`Failed to retrieve document with ID: ${error}`);
+    }
+  };
+
   getDocumentMeta = async (
     index: string,
     id: string

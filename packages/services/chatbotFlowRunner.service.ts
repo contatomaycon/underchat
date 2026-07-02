@@ -91,6 +91,8 @@ import {
 import { HolidayService } from './holiday.service';
 import { isOfficialChatbotNodeType } from '@core/common/functions/chatbotOfficialNodes';
 import { buildOfficialWhatsappDisplayFromTemplate } from '@core/common/functions/officialWhatsappDisplay';
+import { withLock } from '@core/common/functions/withLock';
+import { CHATBOT_STATUSES } from '@core/common/functions/chatStatus';
 
 @injectable()
 export class ChatbotFlowRunnerService {
@@ -117,12 +119,7 @@ export class ChatbotFlowRunnerService {
   private readonly HOLIDAY_IS_OPTION_ID = 'is-holiday';
   private readonly HOLIDAY_NOT_OPTION_ID = 'not-holiday';
   private readonly AUTOMATION_CHAT_STATUSES: ReadonlySet<EChatStatus> =
-    new Set<EChatStatus>([
-      EChatStatus.ura,
-      EChatStatus.ura_output,
-      EChatStatus.ura_schedule,
-      EChatStatus.ura_webhook,
-    ]);
+    new Set<EChatStatus>(CHATBOT_STATUSES);
   private readonly securityKeyScopesByChatId = new Map<
     string,
     TSecurityKeyScope[]
@@ -234,6 +231,26 @@ export class ChatbotFlowRunnerService {
     chatId: string
   ): string {
     return `chatbot:ai-agent:user-selection:${accountId}:${workerId}:${chatId}`;
+  }
+
+  private getAutomationLockKey(accountId: string, chatId: string): string {
+    return `chatbot-flow:${accountId}:${chatId}`;
+  }
+
+  private async withAutomationLock<T>(
+    createChat: IChat,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    return withLock(
+      this.redis,
+      this.getAutomationLockKey(createChat.account.id, createChat.chat_id),
+      fn,
+      {
+        ttlMs: 30000,
+        retryMs: 100,
+        maxWaitMs: 45000,
+      }
+    );
   }
 
   private isAutomationChatStatus(
@@ -616,46 +633,48 @@ export class ChatbotFlowRunnerService {
   ): void {
     setTimeout(
       async () => {
-        const debounceData = await this.getAiAgentDebounce(createChat);
-
-        if (!debounceData) {
-          return;
-        }
-
-        const now = Date.now();
-        if (now < debounceData.expiresAt) {
-          return;
-        }
-
-        if (!(await this.canRunAutomation(createChat))) {
-          return;
-        }
-
-        await this.deleteAiAgentDebounce(createChat);
-
-        const combinedText = debounceData.messages
-          .map((msg) => msg.trim())
-          .filter(Boolean)
-          .join('\n');
-
-        if (!combinedText) {
-          return;
-        }
-
         try {
-          await this.processAiAgentUserText(
-            t,
-            createChat,
-            currentNode,
-            aiAgent,
-            debounceData.flowId || currentFlowId,
-            combinedText,
-            bootstrapSummaryKey,
-            conversationSummaryKey,
-            chatbotFlow,
-            customMessages,
-            debounceData.lastMessageType
-          );
+          await this.withAutomationLock(createChat, async () => {
+            const debounceData = await this.getAiAgentDebounce(createChat);
+
+            if (!debounceData) {
+              return;
+            }
+
+            const now = Date.now();
+            if (now < debounceData.expiresAt) {
+              return;
+            }
+
+            if (!(await this.canRunAutomation(createChat))) {
+              return;
+            }
+
+            await this.deleteAiAgentDebounce(createChat);
+
+            const combinedText = debounceData.messages
+              .map((msg) => msg.trim())
+              .filter(Boolean)
+              .join('\n');
+
+            if (!combinedText) {
+              return;
+            }
+
+            await this.processAiAgentUserText(
+              t,
+              createChat,
+              currentNode,
+              aiAgent,
+              debounceData.flowId || currentFlowId,
+              combinedText,
+              bootstrapSummaryKey,
+              conversationSummaryKey,
+              chatbotFlow,
+              customMessages,
+              debounceData.lastMessageType
+            );
+          });
         } catch (error) {
           console.error(
             '[ChatbotFlow] processAiAgentUserText debounce failed',
@@ -674,48 +693,54 @@ export class ChatbotFlowRunnerService {
   ): void {
     setTimeout(
       async () => {
-        const debounceData = await this.getMenuDebounce(createChat);
+        try {
+          await this.withAutomationLock(createChat, async () => {
+            const debounceData = await this.getMenuDebounce(createChat);
 
-        if (!debounceData) {
-          return;
+            if (!debounceData) {
+              return;
+            }
+
+            const now = Date.now();
+            if (now < debounceData.expiresAt) {
+              return;
+            }
+
+            if (!(await this.canRunAutomation(createChat))) {
+              return;
+            }
+
+            await this.deleteMenuDebounce(createChat);
+
+            const rawBaseMessage = nodeData.message;
+            const baseMessage = await this.replaceVariables(
+              t,
+              rawBaseMessage,
+              createChat,
+              createChat.user,
+              createChat.sector
+            );
+
+            const lines = nodeData.options.map(
+              (option: { text: string }, index: number) => {
+                const number = index + 1;
+                return `*${number}.* ${option.text}`;
+              }
+            );
+
+            const menuMessage = [baseMessage, '', ...lines].join('\n');
+
+            await this.sendMessageWithStatusGuard(t, {
+              chat: createChat,
+              accountId: createChat.account.id,
+              type: EMessageType.text,
+              message: menuMessage,
+              typeUser: ETypeUserChat.bot,
+            });
+          });
+        } catch (error) {
+          console.error('[ChatbotFlow] scheduleMenuSend failed', error);
         }
-
-        const now = Date.now();
-        if (now < debounceData.expiresAt) {
-          return;
-        }
-
-        if (!(await this.canRunAutomation(createChat))) {
-          return;
-        }
-
-        await this.deleteMenuDebounce(createChat);
-
-        const rawBaseMessage = nodeData.message;
-        const baseMessage = await this.replaceVariables(
-          t,
-          rawBaseMessage,
-          createChat,
-          createChat.user,
-          createChat.sector
-        );
-
-        const lines = nodeData.options.map(
-          (option: { text: string }, index: number) => {
-            const number = index + 1;
-            return `*${number}.* ${option.text}`;
-          }
-        );
-
-        const menuMessage = [baseMessage, '', ...lines].join('\n');
-
-        await this.sendMessageWithStatusGuard(t, {
-          chat: createChat,
-          accountId: createChat.account.id,
-          type: EMessageType.text,
-          message: menuMessage,
-          typeUser: ETypeUserChat.bot,
-        });
       },
       (this.MENU_DEBOUNCE_SECONDS + 0.5) * 1000
     );
@@ -3889,12 +3914,13 @@ export class ChatbotFlowRunnerService {
       throw new Error(t('chat_label_update_failed'));
     }
 
-    const updatedChat: IChat = {
+    const updatedChat = (await this.chatService.findChatByChatId(
+      createChat.account.id,
+      createChat.chat_id
+    )) ?? {
       ...createChat,
       label,
     };
-
-    await this.chatService.saveChat(updatedChat);
 
     const channelAccountId = updatedChat.account?.id ?? createChat.account.id;
 
@@ -4171,21 +4197,25 @@ export class ChatbotFlowRunnerService {
 
     const targetWorker = worker ?? activeChat.worker;
 
-    const updatedChat: IChat = {
-      ...activeChat,
+    const handoff = await this.chatService.transferAutomationChatToQueue({
+      accountId: activeChat.account.id,
+      chat: activeChat,
       worker: targetWorker,
-      user,
-      sector,
-      status: EChatStatus.queue,
-    };
+      user: user ?? null,
+      sector: sector ?? null,
+      secondaryUsers: [],
+    });
 
-    const saved = await this.chatService.saveChat(updatedChat);
-    if (!saved) {
+    if (!handoff.chat) {
       throw new Error(t('chat_update_failed'));
     }
 
+    const updatedChat = handoff.chat;
+    const previousChat = handoff.previousChat ?? activeChat;
     const workerIdsToClear = new Set<string>([
       activeChat.worker.id,
+      previousChat.worker.id,
+      targetWorker.id,
       updatedChat.worker.id,
     ]);
     const shouldInvalidateTargetWorkerCache =
@@ -4292,7 +4322,7 @@ export class ChatbotFlowRunnerService {
         });
       }
 
-      const updatedChat = await this.updateAndPublishChat(
+      await this.updateAndPublishChat(
         t,
         createChat,
         user,
@@ -4300,19 +4330,7 @@ export class ChatbotFlowRunnerService {
         targetWorker
       );
 
-      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-
-      if (!nextFlowId) {
-        return true;
-      }
-
-      return this.processNextNode(
-        t,
-        updatedChat,
-        chatbotFlow,
-        nextFlowId,
-        customMessages
-      );
+      return true;
     }
 
     const redirectType = currentNode.data?.redirectType;
@@ -4391,27 +4409,9 @@ export class ChatbotFlowRunnerService {
       });
     }
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      user,
-      sector,
-      targetWorker
-    );
+    await this.updateAndPublishChat(t, createChat, user, sector, targetWorker);
 
-    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-
-    if (!nextFlowId) {
-      return true;
-    }
-
-    return this.processNextNode(
-      t,
-      updatedChat,
-      chatbotFlow,
-      nextFlowId,
-      customMessages
-    );
+    return true;
   }
 
   private async processNextNodeAfterValidation(
@@ -5817,17 +5817,6 @@ export class ChatbotFlowRunnerService {
         continue;
       }
 
-      if (
-        createChat.status !== EChatStatus.ura &&
-        createChat.status !== EChatStatus.ura_output &&
-        createChat.status !== EChatStatus.ura_schedule &&
-        createChat.status !== EChatStatus.ura_webhook
-      ) {
-        await this.cancelInactivityCheck(createChat);
-
-        continue;
-      }
-
       const customInactivityMessage =
         configurations?.configurations?.messages?.inactivity_message;
       const customServiceFinishedMessage =
@@ -5860,24 +5849,41 @@ export class ChatbotFlowRunnerService {
         configurations?.configurations?.messages
           ?.transfer_message_sector_user_enabled !== false;
 
-      await this.processInactivityAlert(
-        t,
-        inactivityCacheKey,
-        inactivityData,
-        inactivityAlert,
-        createChat,
-        customInactivityMessage,
-        customServiceFinishedMessage,
-        customMessages,
-        {
-          inactivity_message_enabled: inactivityMessageEnabled,
-          service_finished_message_enabled: serviceFinishedMessageEnabled,
-          transfer_message_user_enabled: transferMessageUserEnabled,
-          transfer_message_sector_enabled: transferMessageSectorEnabled,
-          transfer_message_sector_user_enabled:
-            transferMessageSectorUserEnabled,
-        }
-      );
+      try {
+        await this.withAutomationLock(createChat, async () => {
+          const activeChat = await this.getAutomationChatIfAllowed(createChat);
+          if (!activeChat) {
+            await this.cancelInactivityCheck(createChat);
+            return;
+          }
+
+          await this.processInactivityAlert(
+            t,
+            inactivityCacheKey,
+            inactivityData,
+            inactivityAlert,
+            activeChat,
+            customInactivityMessage,
+            customServiceFinishedMessage,
+            customMessages,
+            {
+              inactivity_message_enabled: inactivityMessageEnabled,
+              service_finished_message_enabled: serviceFinishedMessageEnabled,
+              transfer_message_user_enabled: transferMessageUserEnabled,
+              transfer_message_sector_enabled: transferMessageSectorEnabled,
+              transfer_message_sector_user_enabled:
+                transferMessageSectorUserEnabled,
+            }
+          );
+        });
+      } catch (error) {
+        console.error('[ChatbotFlow] processScheduledInactivityChecks failed', {
+          error: error instanceof Error ? error.message : String(error),
+          accountId: inactivityData.accountId,
+          workerId: inactivityData.workerId,
+          chatId: inactivityData.chatId,
+        });
+      }
     }
   }
 
@@ -7280,30 +7286,7 @@ Retorne APENAS o número (ex: 1, 2, 3...) ou 0.`;
       }
     }
 
-    const updatedChat = await this.updateAndPublishChat(
-      t,
-      createChat,
-      chatUser,
-      chatSector
-    );
-
-    const nextFlowId = this.getNextFlowIdByHumanSupportHandle(
-      chatbotFlow,
-      currentFlowId
-    );
-
-    if (nextFlowId) {
-      const nextNode = this.getFlowNodeById(chatbotFlow, nextFlowId);
-      if (nextNode && nextNode.type !== 'redirect') {
-        return this.processNextNode(
-          t,
-          updatedChat,
-          chatbotFlow,
-          nextFlowId,
-          customMessages
-        );
-      }
-    }
+    await this.updateAndPublishChat(t, createChat, chatUser, chatSector);
 
     return true;
   }
@@ -11205,26 +11188,9 @@ Retorne APENAS JSON válido (sem markdown):
           });
         }
 
-        const updatedChat = await this.updateAndPublishChat(
-          t,
-          createChat,
-          user,
-          undefined
-        );
+        await this.updateAndPublishChat(t, createChat, user, undefined);
 
-        const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-
-        if (!nextFlowId) {
-          return true;
-        }
-
-        return this.processNextNode(
-          t,
-          updatedChat,
-          chatbotFlow,
-          nextFlowId,
-          customMessages
-        );
+        return true;
       }
     }
 
@@ -11305,19 +11271,7 @@ Retorne APENAS JSON válido (sem markdown):
 
       await this.cancelInactivityCheck(updatedChat);
 
-      const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-      if (!nextFlowId) {
-        return true;
-      }
-
-      await this.updateCache(updatedChat, nextFlowId);
-      return this.processNextNode(
-        t,
-        updatedChat,
-        chatbotFlow,
-        nextFlowId,
-        customMessages
-      );
+      return true;
     }
 
     let rawTransferMessage: string | undefined = undefined;
@@ -11358,26 +11312,14 @@ Retorne APENAS JSON válido (sem markdown):
       });
     }
 
-    const updatedChat = await this.updateAndPublishChat(
+    await this.updateAndPublishChat(
       t,
       createChat,
       selectedUser,
       selectedSector
     );
 
-    const nextFlowId = this.getNextFlowId(chatbotFlow, currentFlowId);
-
-    if (!nextFlowId) {
-      return true;
-    }
-
-    return this.processNextNode(
-      t,
-      updatedChat,
-      chatbotFlow,
-      nextFlowId,
-      customMessages
-    );
+    return true;
   }
 
   private isNonTriggerableSystemEvent(data: IUpsertMessage): boolean {
@@ -11440,132 +11382,137 @@ Retorne APENAS JSON válido (sem markdown):
     chatbotId: string,
     securityKeyScopes?: TSecurityKeyScope[]
   ): Promise<string | null> => {
-    const activeChat = await this.getAutomationChatIfAllowed(createChat);
-    if (!activeChat) {
-      return null;
-    }
-
-    if (activeChat.contact?.ignore === EContactIgnore.ignore_automation) {
-      return null;
-    }
-
-    this.securityKeyScopesByChatId.set(
-      activeChat.chat_id,
-      this.normalizeSecurityKeyScopes(securityKeyScopes)
-    );
-
-    try {
-      const configurations =
-        await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
-          activeChat.account.id,
-          chatbotId
-        );
-
-      const canTrigger = await this.canTriggerChatbotEvent(
-        data,
-        activeChat.account.id,
-        chatbotId,
-        configurations
-      );
-      if (!canTrigger) {
+    return this.withAutomationLock(createChat, async () => {
+      const activeChat = await this.getAutomationChatIfAllowed(createChat);
+      if (!activeChat) {
         return null;
       }
 
-      const userText = this.getTextFromUpsertMessage(data)?.trim();
+      if (activeChat.contact?.ignore === EContactIgnore.ignore_automation) {
+        return null;
+      }
 
-      if (userText) {
-        const finishTriggers =
-          configurations?.configurations?.finish_triggers || [];
-        const userTextLower = userText.toLowerCase();
-        const userWords = userTextLower.split(/\s+/);
+      this.securityKeyScopesByChatId.set(
+        activeChat.chat_id,
+        this.normalizeSecurityKeyScopes(securityKeyScopes)
+      );
 
-        const hasFinishTrigger = finishTriggers.some((trigger) => {
-          const triggerLower = trigger.toLowerCase();
-          return userWords.includes(triggerLower);
-        });
-
-        if (hasFinishTrigger) {
-          const customServiceFinishedMessage =
-            configurations?.configurations?.messages?.service_finished_message;
-          const serviceFinishedMessageEnabled =
-            configurations?.configurations?.messages
-              ?.service_finished_message_enabled !== false;
-
-          await this.sendFinishMessage(
-            t,
-            activeChat,
-            customServiceFinishedMessage,
-            serviceFinishedMessageEnabled
+      try {
+        const configurations =
+          await this.chatbotService.findChatbotFlowConfigurationsByChatbotId(
+            activeChat.account.id,
+            chatbotId
           );
 
+        const canTrigger = await this.canTriggerChatbotEvent(
+          data,
+          activeChat.account.id,
+          chatbotId,
+          configurations
+        );
+        if (!canTrigger) {
           return null;
         }
-      }
 
-      const chatbotFlow = await this.chatbotService.findChatbotFlowByChatbotId(
-        activeChat.account.id,
-        chatbotId
-      );
+        const userText = this.getTextFromUpsertMessage(data)?.trim();
 
-      if (!chatbotFlow) {
-        throw new Error(t('chatbot_flow_not_found'));
-      }
+        if (userText) {
+          const finishTriggers =
+            configurations?.configurations?.finish_triggers || [];
+          const userTextLower = userText.toLowerCase();
+          const userWords = userTextLower.split(/\s+/);
 
-      const messagesConfig = configurations?.configurations?.messages;
-      const customMessages = messagesConfig
-        ? {
-            ...messagesConfig,
-            invalid_menu_option_message_enabled:
-              messagesConfig.invalid_menu_option_message_enabled !== false,
-            invalid_satisfaction_option_message_enabled:
-              messagesConfig.invalid_satisfaction_option_message_enabled !==
-              false,
-            invalid_email_message_enabled:
-              messagesConfig.invalid_email_message_enabled !== false,
-            invalid_cpf_message_enabled:
-              messagesConfig.invalid_cpf_message_enabled !== false,
-            invalid_cnpj_message_enabled:
-              messagesConfig.invalid_cnpj_message_enabled !== false,
-            service_finished_message_enabled:
-              messagesConfig.service_finished_message_enabled !== false,
-            transfer_message_user_enabled:
-              messagesConfig.transfer_message_user_enabled !== false,
-            transfer_message_sector_enabled:
-              messagesConfig.transfer_message_sector_enabled !== false,
-            transfer_message_sector_user_enabled:
-              messagesConfig.transfer_message_sector_user_enabled !== false,
+          const hasFinishTrigger = finishTriggers.some((trigger) => {
+            const triggerLower = trigger.toLowerCase();
+            return userWords.includes(triggerLower);
+          });
+
+          if (hasFinishTrigger) {
+            const customServiceFinishedMessage =
+              configurations?.configurations?.messages
+                ?.service_finished_message;
+            const serviceFinishedMessageEnabled =
+              configurations?.configurations?.messages
+                ?.service_finished_message_enabled !== false;
+
+            await this.sendFinishMessage(
+              t,
+              activeChat,
+              customServiceFinishedMessage,
+              serviceFinishedMessageEnabled
+            );
+
+            return null;
           }
-        : undefined;
-      const inactivityAlert = configurations?.configurations?.inactivity_alert;
-      const redirectFailedAttempts =
-        configurations?.configurations?.redirect_failed_attempts;
-
-      const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
-        chatbotFlow,
-        activeChat
-      );
-
-      if (!currentFlowId) {
-        throw new Error(t('chatbot_flow_not_found'));
-      }
-
-      await this.processFlowNode(
-        t,
-        data,
-        activeChat,
-        chatbotFlow,
-        currentFlowId,
-        chatbotId,
-        {
-          inactivityAlert,
-          redirectFailedAttempts,
-          customMessages,
         }
-      );
 
-      return currentFlowId;
-    } finally {
-      this.securityKeyScopesByChatId.delete(activeChat.chat_id);
-    }
+        const chatbotFlow =
+          await this.chatbotService.findChatbotFlowByChatbotId(
+            activeChat.account.id,
+            chatbotId
+          );
+
+        if (!chatbotFlow) {
+          throw new Error(t('chatbot_flow_not_found'));
+        }
+
+        const messagesConfig = configurations?.configurations?.messages;
+        const customMessages = messagesConfig
+          ? {
+              ...messagesConfig,
+              invalid_menu_option_message_enabled:
+                messagesConfig.invalid_menu_option_message_enabled !== false,
+              invalid_satisfaction_option_message_enabled:
+                messagesConfig.invalid_satisfaction_option_message_enabled !==
+                false,
+              invalid_email_message_enabled:
+                messagesConfig.invalid_email_message_enabled !== false,
+              invalid_cpf_message_enabled:
+                messagesConfig.invalid_cpf_message_enabled !== false,
+              invalid_cnpj_message_enabled:
+                messagesConfig.invalid_cnpj_message_enabled !== false,
+              service_finished_message_enabled:
+                messagesConfig.service_finished_message_enabled !== false,
+              transfer_message_user_enabled:
+                messagesConfig.transfer_message_user_enabled !== false,
+              transfer_message_sector_enabled:
+                messagesConfig.transfer_message_sector_enabled !== false,
+              transfer_message_sector_user_enabled:
+                messagesConfig.transfer_message_sector_user_enabled !== false,
+            }
+          : undefined;
+        const inactivityAlert =
+          configurations?.configurations?.inactivity_alert;
+        const redirectFailedAttempts =
+          configurations?.configurations?.redirect_failed_attempts;
+
+        const currentFlowId = await this.cacheFirstChatbotFlowNodeIfNeeded(
+          chatbotFlow,
+          activeChat
+        );
+
+        if (!currentFlowId) {
+          throw new Error(t('chatbot_flow_not_found'));
+        }
+
+        await this.processFlowNode(
+          t,
+          data,
+          activeChat,
+          chatbotFlow,
+          currentFlowId,
+          chatbotId,
+          {
+            inactivityAlert,
+            redirectFailedAttempts,
+            customMessages,
+          }
+        );
+
+        return currentFlowId;
+      } finally {
+        this.securityKeyScopesByChatId.delete(activeChat.chat_id);
+      }
+    });
   };
 }

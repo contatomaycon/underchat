@@ -5,30 +5,29 @@ import type { ListWorkerResponse } from '@core/schema/worker/listWorker/response
 import type { WhatsappOfficialHealthResponse } from '@core/schema/worker/whatsappOfficialHealth/response.schema';
 import { formatDateTime } from '@core/common/functions/formatDateTime';
 
+type Tone = 'success' | 'warning' | 'error' | 'info' | 'primary' | 'secondary';
+
 type MetricCard = {
   key: string;
   label: string;
   value: string;
   caption: string;
   icon: string;
-  color: string;
-  muted?: boolean;
+  tone: Tone;
 };
 
-type DiagnosticError = {
-  code: string | null;
-  title: string | null;
-  details: string | null;
-  solution: string | null;
-};
-
-type DiagnosticEntity = {
+type SummaryRow = {
   key: string;
-  source: string;
-  entityType: string;
-  canSend: string | null;
-  additionalInfo: string | null;
-  errors: DiagnosticError[];
+  label: string;
+  value: string;
+};
+
+type AttentionItem = {
+  key: string;
+  title: string;
+  description: string;
+  icon: string;
+  tone: Tone;
 };
 
 const props = defineProps<{
@@ -60,39 +59,55 @@ const conversationAnalytics = computed(
   () => props.health?.analytics.conversations.data ?? null
 );
 
-const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
+const metaValueTranslationKeys: Record<string, string> = {
+  AVAILABLE: 'meta_health_value_available',
+  LIMITED: 'meta_health_value_limited',
+  BLOCKED: 'meta_health_value_blocked',
+  CONNECTED: 'meta_health_value_connected',
+  DISCONNECTED: 'meta_health_value_disconnected',
+  GREEN: 'meta_health_value_green',
+  YELLOW: 'meta_health_value_yellow',
+  RED: 'meta_health_value_red',
+  VERIFIED: 'meta_health_value_verified',
+  NOT_VERIFIED: 'meta_health_value_not_verified',
+  PENDING: 'meta_health_value_pending',
+  ONBOARDED: 'meta_health_value_onboarded',
+  NOT_ONBOARDED: 'meta_health_value_not_onboarded',
+  STANDARD: 'meta_health_value_standard',
+  CLOUD_API: 'meta_health_value_cloud_api',
+  AVAILABLE_WITHOUT_REVIEW: 'meta_health_value_available_without_review',
+  TIER_250: 'meta_health_value_tier_250',
+  TIER_1K: 'meta_health_value_tier_1000',
+  TIER_1000: 'meta_health_value_tier_1000',
+  TIER_10K: 'meta_health_value_tier_10000',
+  TIER_10000: 'meta_health_value_tier_10000',
+  TIER_100K: 'meta_health_value_tier_100000',
+  TIER_100000: 'meta_health_value_tier_100000',
+  TIER_UNLIMITED: 'meta_health_value_tier_unlimited',
 };
 
-const asArray = (value: unknown): unknown[] =>
-  Array.isArray(value) ? value : [];
+const normalizeMetaKey = (value: string | null | undefined) =>
+  value?.trim().replaceAll(' ', '_').replaceAll('-', '_').toUpperCase() ?? '';
 
-const readString = (
-  record: Record<string, unknown> | null,
-  key: string
-): string | null => {
-  const value = record?.[key];
-  if (typeof value === 'string' && value.trim()) {
-    return value;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  return null;
-};
-
-const formatMetaValue = (
+const translateMetaValue = (
   value: string | number | boolean | null | undefined
-) =>
-  value === null || value === undefined || value === ''
-    ? '-'
-    : String(value).replaceAll('_', ' ');
+) => {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? t('yes') : t('no');
+  }
+
+  if (typeof value === 'number') {
+    return formatNumber(value);
+  }
+
+  const translationKey = metaValueTranslationKeys[normalizeMetaKey(value)];
+
+  return translationKey ? t(translationKey) : value;
+};
 
 const formatNumber = (value: number | null | undefined) =>
   new Intl.NumberFormat(String(locale.value)).format(value ?? 0);
@@ -108,265 +123,352 @@ const formatCurrency = (value: number | null | undefined) => {
 };
 
 const canSendStatus = computed(() => {
-  const phoneHealth = asRecord(phoneNumber.value?.health_status);
-  const wabaHealth = asRecord(waba.value?.health_status);
+  const phoneHealth = phoneNumber.value?.health_status as
+    Record<string, unknown> | null | undefined;
+  const wabaHealth = waba.value?.health_status as
+    Record<string, unknown> | null | undefined;
+  const phoneStatus =
+    typeof phoneHealth?.can_send_message === 'string'
+      ? phoneHealth.can_send_message
+      : null;
+  const wabaStatus =
+    typeof wabaHealth?.can_send_message === 'string'
+      ? wabaHealth.can_send_message
+      : null;
 
-  return (
-    readString(phoneHealth, 'can_send_message') ??
-    readString(wabaHealth, 'can_send_message') ??
-    phoneNumber.value?.status ??
-    null
-  );
+  return phoneStatus ?? wabaStatus ?? phoneNumber.value?.status ?? null;
 });
 
-const statusPresentation = computed(() => {
-  const status = canSendStatus.value?.toUpperCase();
+const normalizedCanSendStatus = computed(() =>
+  normalizeMetaKey(canSendStatus.value)
+);
 
-  if (status === 'AVAILABLE' || status === 'CONNECTED') {
+const statusPresentation = computed(() => {
+  if (
+    normalizedCanSendStatus.value === 'AVAILABLE' ||
+    normalizedCanSendStatus.value === 'CONNECTED'
+  ) {
     return {
-      color: 'success',
+      color: 'success' as const,
       icon: 'tabler-circle-check',
       label: t('meta_health_available'),
+      title: t('meta_health_status_available_title'),
+      description: t('meta_health_status_available_description'),
     };
   }
 
-  if (status === 'BLOCKED' || status === 'DISABLED') {
+  if (
+    normalizedCanSendStatus.value === 'BLOCKED' ||
+    normalizedCanSendStatus.value === 'DISABLED'
+  ) {
     return {
-      color: 'error',
+      color: 'error' as const,
       icon: 'tabler-ban',
       label: t('meta_health_blocked'),
+      title: t('meta_health_status_blocked_title'),
+      description: t('meta_health_status_blocked_description'),
     };
   }
 
-  if (status === 'LIMITED') {
+  if (normalizedCanSendStatus.value === 'LIMITED') {
     return {
-      color: 'warning',
+      color: 'warning' as const,
       icon: 'tabler-alert-triangle',
       label: t('meta_health_limited'),
+      title: t('meta_health_status_limited_title'),
+      description: t('meta_health_status_limited_description'),
     };
   }
 
   return {
-    color: 'secondary',
+    color: 'secondary' as const,
     icon: 'tabler-help-circle',
     label: t('unknown'),
+    title: t('meta_health_status_unknown_title'),
+    description: t('meta_health_status_unknown_description'),
   };
 });
+
+const hasMessageAnalyticsData = computed(
+  () => (messageAnalytics.value?.data_points.length ?? 0) > 0
+);
 
 const hasConversationBillingData = computed(
   () => (conversationAnalytics.value?.data_points.length ?? 0) > 0
 );
 
-const metricCards = computed<MetricCard[]>(() => [
-  {
-    key: 'open-conversations',
-    label: t('meta_health_open_conversations'),
-    value: formatNumber(props.health?.local.open_conversations),
-    caption: t('meta_health_open_conversations_caption'),
-    icon: 'tabler-messages',
-    color: 'primary',
-  },
-  {
-    key: 'sent',
-    label: t('meta_health_messages_sent'),
-    value: formatNumber(messageAnalytics.value?.totals.sent),
-    caption: t('meta_health_last_30_days'),
-    icon: 'tabler-send',
-    color: 'info',
-  },
-  {
-    key: 'delivered',
-    label: t('meta_health_messages_delivered'),
-    value: formatNumber(messageAnalytics.value?.totals.delivered),
-    caption: t('meta_health_last_30_days'),
-    icon: 'tabler-checks',
-    color: 'success',
-  },
-  {
-    key: 'billing',
-    label: t('meta_health_approximate_billing'),
-    value: hasConversationBillingData.value
-      ? formatCurrency(conversationAnalytics.value?.totals.cost)
-      : t('meta_health_no_data_short'),
-    caption: hasConversationBillingData.value
-      ? t('meta_health_conversation_analytics_caption')
-      : t('meta_health_no_billing_data'),
-    icon: 'tabler-receipt-2',
-    color: hasConversationBillingData.value ? 'warning' : 'secondary',
-    muted: !hasConversationBillingData.value,
-  },
-  {
-    key: 'quality',
-    label: t('meta_health_quality'),
-    value: formatMetaValue(phoneNumber.value?.quality_rating),
-    caption: t('meta_health_phone_quality_caption'),
-    icon: 'tabler-activity-heartbeat',
-    color: 'success',
-  },
-  {
-    key: 'limit',
-    label: t('meta_health_message_limit'),
-    value: formatMetaValue(phoneNumber.value?.messaging_limit_tier),
-    caption: t('meta_health_message_limit_caption'),
-    icon: 'tabler-gauge',
-    color: 'info',
-  },
-  {
-    key: 'coexistence',
-    label: t('meta_health_coexistence'),
-    value:
-      phoneNumber.value?.is_on_biz_app === true
-        ? t('meta_health_active')
-        : phoneNumber.value?.is_on_biz_app === false
-          ? t('meta_health_inactive')
-          : '-',
-    caption: t('meta_health_coexistence_caption'),
-    icon: 'tabler-brand-whatsapp',
-    color:
-      phoneNumber.value?.is_on_biz_app === true
-        ? 'success'
-        : phoneNumber.value?.is_on_biz_app === false
-          ? 'warning'
-          : 'secondary',
-  },
-  {
-    key: 'business',
-    label: t('meta_health_business_verification'),
-    value: formatMetaValue(waba.value?.business_verification_status),
-    caption: t('meta_health_business_verification_caption'),
-    icon: 'tabler-building-check',
-    color:
-      waba.value?.business_verification_status?.toLowerCase() === 'verified'
-        ? 'success'
-        : 'warning',
-  },
-]);
-
-const accountRows = computed(() => [
-  {
-    label: t('name'),
-    value: formatMetaValue(waba.value?.name ?? props.channel?.name),
-  },
-  {
-    label: t('number'),
-    value: formatMetaValue(phoneNumber.value?.display_phone_number),
-  },
-  {
-    label: 'WABA ID',
-    value: formatMetaValue(props.health?.connection.waba_id),
-  },
-  {
-    label: t('meta_health_phone_number_id'),
-    value: formatMetaValue(props.health?.connection.phone_number_id),
-  },
-  {
-    label: t('meta_health_currency'),
-    value: formatMetaValue(waba.value?.currency),
-  },
-  {
-    label: t('meta_health_phone_status'),
-    value: formatMetaValue(phoneNumber.value?.status),
-  },
-  {
-    label: t('meta_health_throughput'),
-    value: formatMetaValue(phoneNumber.value?.throughput_level),
-  },
-  {
-    label: t('meta_health_platform'),
-    value: formatMetaValue(phoneNumber.value?.platform_type),
-  },
-  {
-    label: t('meta_health_name_status'),
-    value: formatMetaValue(phoneNumber.value?.name_status),
-  },
-  {
-    label: t('meta_health_insights'),
-    value:
-      waba.value?.is_enabled_for_insights === true
-        ? t('yes')
-        : waba.value?.is_enabled_for_insights === false
-          ? t('no')
-          : '-',
-  },
-  {
-    label: t('meta_health_marketing_messages'),
-    value: formatMetaValue(waba.value?.marketing_messages_onboarding_status),
-  },
-  {
-    label: t('meta_health_phone_numbers_added'),
-    value: phoneNumbers.value ? formatNumber(phoneNumbers.value.total) : '-',
-  },
-]);
-
-const createDiagnosticError = (value: unknown): DiagnosticError => {
-  const record = asRecord(value);
-
-  return {
-    code:
-      readString(record, 'code') ??
-      readString(record, 'error_code') ??
-      readString(record, 'error_subcode'),
-    title:
-      readString(record, 'title') ??
-      readString(record, 'message') ??
-      readString(record, 'error_description'),
-    details:
-      readString(record, 'details') ??
-      readString(record, 'description') ??
-      readString(record, 'additional_info'),
-    solution:
-      readString(record, 'possible_solution') ?? readString(record, 'solution'),
-  };
-};
-
-const collectDiagnostics = (
-  source: string,
-  healthStatus: unknown
-): DiagnosticEntity[] => {
-  const healthRecord = asRecord(healthStatus);
-  const entities = asArray(healthRecord?.entities);
-
-  return entities.map((entity, index) => {
-    const record = asRecord(entity);
-    const entityType = readString(record, 'entity_type') ?? source;
-
-    return {
-      key: `${source}-${entityType}-${index}`,
-      source,
-      entityType,
-      canSend: readString(record, 'can_send_message'),
-      additionalInfo: readString(record, 'additional_info'),
-      errors: asArray(record?.errors).map(createDiagnosticError),
-    };
-  });
-};
-
-const diagnostics = computed<DiagnosticEntity[]>(() => [
-  ...collectDiagnostics(
-    t('meta_health_phone_number'),
-    phoneNumber.value?.health_status
-  ),
-  ...collectDiagnostics('WABA', waba.value?.health_status),
-]);
-
-const hasSectionErrors = computed(
+const isBusinessVerified = computed(
   () =>
-    props.health?.phone_number.error ||
-    props.health?.phone_numbers.error ||
-    props.health?.waba.error ||
-    props.health?.analytics.messages.error ||
-    props.health?.analytics.conversations.error
+    normalizeMetaKey(waba.value?.business_verification_status) === 'VERIFIED'
 );
 
-const sectionErrors = computed(() =>
-  [
-    props.health?.phone_numbers.error,
-    props.health?.phone_number.error,
-    props.health?.waba.error,
-    props.health?.analytics.messages.error,
-    props.health?.analytics.conversations.error,
-  ].filter(Boolean)
-);
+const qualityTone = computed<Tone>(() => {
+  const quality = normalizeMetaKey(phoneNumber.value?.quality_rating);
+
+  if (quality === 'GREEN') {
+    return 'success';
+  }
+
+  if (quality === 'YELLOW') {
+    return 'warning';
+  }
+
+  if (quality === 'RED') {
+    return 'error';
+  }
+
+  return 'secondary';
+});
+
+const metricCards = computed<MetricCard[]>(() => {
+  const cards: Array<MetricCard | null> = [
+    {
+      key: 'open-conversations',
+      label: t('meta_health_open_conversations'),
+      value: formatNumber(props.health?.local.open_conversations),
+      caption: t('meta_health_open_conversations_caption'),
+      icon: 'tabler-message-circle',
+      tone: 'primary',
+    },
+    hasMessageAnalyticsData.value
+      ? {
+          key: 'sent',
+          label: t('meta_health_messages_sent'),
+          value: formatNumber(messageAnalytics.value?.totals.sent),
+          caption: t('meta_health_last_30_days'),
+          icon: 'tabler-send',
+          tone: 'info',
+        }
+      : null,
+    hasMessageAnalyticsData.value
+      ? {
+          key: 'delivered',
+          label: t('meta_health_messages_delivered'),
+          value: formatNumber(messageAnalytics.value?.totals.delivered),
+          caption: t('meta_health_last_30_days'),
+          icon: 'tabler-checks',
+          tone: 'success',
+        }
+      : null,
+    hasConversationBillingData.value
+      ? {
+          key: 'billing',
+          label: t('meta_health_approximate_billing'),
+          value: formatCurrency(conversationAnalytics.value?.totals.cost),
+          caption: t('meta_health_conversation_analytics_caption'),
+          icon: 'tabler-receipt-2',
+          tone: 'warning',
+        }
+      : null,
+    phoneNumber.value?.quality_rating
+      ? {
+          key: 'quality',
+          label: t('meta_health_quality'),
+          value: translateMetaValue(phoneNumber.value.quality_rating),
+          caption: t('meta_health_phone_quality_caption'),
+          icon: 'tabler-heartbeat',
+          tone: qualityTone.value,
+        }
+      : null,
+    phoneNumber.value?.messaging_limit_tier
+      ? {
+          key: 'limit',
+          label: t('meta_health_message_limit'),
+          value: translateMetaValue(phoneNumber.value.messaging_limit_tier),
+          caption: t('meta_health_message_limit_caption'),
+          icon: 'tabler-gauge',
+          tone: 'info',
+        }
+      : null,
+    phoneNumber.value?.is_on_biz_app !== null &&
+    phoneNumber.value?.is_on_biz_app !== undefined
+      ? {
+          key: 'coexistence',
+          label: t('meta_health_coexistence'),
+          value: phoneNumber.value.is_on_biz_app
+            ? t('meta_health_active')
+            : t('meta_health_inactive'),
+          caption: t('meta_health_coexistence_caption'),
+          icon: 'tabler-brand-whatsapp',
+          tone: phoneNumber.value.is_on_biz_app ? 'success' : 'secondary',
+        }
+      : null,
+    waba.value?.business_verification_status
+      ? {
+          key: 'business',
+          label: t('meta_health_business_verification'),
+          value: translateMetaValue(waba.value.business_verification_status),
+          caption: t('meta_health_business_verification_caption'),
+          icon: 'tabler-building',
+          tone: isBusinessVerified.value ? 'success' : 'warning',
+        }
+      : null,
+  ];
+
+  return cards.filter((card): card is MetricCard => Boolean(card));
+});
+
+const metricGridClasses = computed(() => ({
+  'is-seven-cards': metricCards.value.length === 7,
+  'is-six-cards': metricCards.value.length === 6,
+  'is-five-cards': metricCards.value.length === 5,
+}));
+
+const addRow = (
+  rows: SummaryRow[],
+  key: string,
+  label: string,
+  value: string | null | undefined
+) => {
+  if (!value || value === '-') {
+    return;
+  }
+
+  rows.push({ key, label, value });
+};
+
+const summaryRows = computed<SummaryRow[]>(() => {
+  const rows: SummaryRow[] = [];
+
+  addRow(
+    rows,
+    'name',
+    t('meta_health_account_name'),
+    waba.value?.name ?? props.channel?.name ?? null
+  );
+  addRow(
+    rows,
+    'number',
+    t('meta_health_connected_number'),
+    phoneNumber.value?.display_phone_number ?? props.channel?.number ?? null
+  );
+  addRow(
+    rows,
+    'send',
+    t('meta_health_sending_capacity'),
+    translateMetaValue(canSendStatus.value)
+  );
+  addRow(
+    rows,
+    'phone-status',
+    t('meta_health_phone_status'),
+    translateMetaValue(phoneNumber.value?.status)
+  );
+  addRow(
+    rows,
+    'quality',
+    t('meta_health_quality'),
+    translateMetaValue(phoneNumber.value?.quality_rating)
+  );
+  addRow(
+    rows,
+    'limit',
+    t('meta_health_message_limit'),
+    translateMetaValue(phoneNumber.value?.messaging_limit_tier)
+  );
+  addRow(
+    rows,
+    'business',
+    t('meta_health_business_verification'),
+    translateMetaValue(waba.value?.business_verification_status)
+  );
+  addRow(
+    rows,
+    'name-status',
+    t('meta_health_display_name_status'),
+    translateMetaValue(phoneNumber.value?.name_status)
+  );
+  addRow(
+    rows,
+    'currency',
+    t('meta_health_currency'),
+    translateMetaValue(waba.value?.currency)
+  );
+  addRow(
+    rows,
+    'platform',
+    t('meta_health_platform'),
+    translateMetaValue(phoneNumber.value?.platform_type)
+  );
+  addRow(
+    rows,
+    'marketing',
+    t('meta_health_marketing_messages'),
+    translateMetaValue(waba.value?.marketing_messages_onboarding_status)
+  );
+
+  return rows;
+});
+
+const attentionItems = computed<AttentionItem[]>(() => {
+  const items: AttentionItem[] = [];
+
+  if (normalizedCanSendStatus.value === 'BLOCKED') {
+    items.push({
+      key: 'blocked',
+      title: t('meta_health_action_blocked_title'),
+      description: t('meta_health_action_blocked_description'),
+      icon: 'tabler-ban',
+      tone: 'error',
+    });
+  }
+
+  if (normalizedCanSendStatus.value === 'LIMITED') {
+    items.push({
+      key: 'limited',
+      title: t('meta_health_action_limited_title'),
+      description: t('meta_health_action_limited_description'),
+      icon: 'tabler-alert-triangle',
+      tone: 'warning',
+    });
+  }
+
+  if (waba.value?.business_verification_status && !isBusinessVerified.value) {
+    items.push({
+      key: 'business-verification',
+      title: t('meta_health_action_verify_business_title'),
+      description: t('meta_health_action_verify_business_description'),
+      icon: 'tabler-building',
+      tone: 'warning',
+    });
+  }
+
+  const nameStatus = normalizeMetaKey(phoneNumber.value?.name_status);
+  if (nameStatus && !['APPROVED', 'AVAILABLE'].includes(nameStatus)) {
+    items.push({
+      key: 'display-name',
+      title: t('meta_health_action_display_name_title'),
+      description: t('meta_health_action_display_name_description'),
+      icon: 'tabler-id',
+      tone: 'info',
+    });
+  }
+
+  const quality = normalizeMetaKey(phoneNumber.value?.quality_rating);
+  if (quality === 'YELLOW' || quality === 'RED') {
+    items.push({
+      key: 'quality',
+      title: t('meta_health_action_quality_title'),
+      description: t('meta_health_action_quality_description'),
+      icon: 'tabler-heartbeat',
+      tone: quality === 'RED' ? 'error' : 'warning',
+    });
+  }
+
+  if (!items.length && (phoneNumber.value || waba.value)) {
+    items.push({
+      key: 'ok',
+      title: t('meta_health_action_ok_title'),
+      description: t('meta_health_action_ok_description'),
+      icon: 'tabler-circle-check',
+      tone: 'success',
+    });
+  }
+
+  return items;
+});
+
+const visiblePhoneNumbers = computed(() => phoneNumbers.value?.results ?? []);
 
 const formattedPeriod = computed(() => {
   if (!props.health) {
@@ -380,12 +482,12 @@ const formattedPeriod = computed(() => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="1080" scrollable>
+  <VDialog v-model="isVisible" max-width="1040" scrollable>
     <VCard class="meta-health-dialog">
       <div class="meta-health-header">
         <div class="meta-health-title-group">
           <div class="meta-health-icon-shell">
-            <VIcon icon="tabler-shield-heart" size="30" />
+            <VIcon icon="tabler-shield-check" size="30" />
           </div>
           <div>
             <div class="meta-health-kicker">
@@ -395,7 +497,7 @@ const formattedPeriod = computed(() => {
               {{ channel?.name ?? $t('whatsapp_official') }}
             </h2>
             <p class="meta-health-subtitle">
-              {{ $t('meta_health_subtitle') }}
+              {{ statusPresentation.description }}
             </p>
           </div>
         </div>
@@ -449,7 +551,7 @@ const formattedPeriod = computed(() => {
         </VOverlay>
 
         <div v-if="loading && !health" class="meta-health-skeleton-grid">
-          <div v-for="index in 8" :key="index" class="meta-health-skeleton" />
+          <div v-for="index in 6" :key="index" class="meta-health-skeleton" />
         </div>
 
         <VAlert
@@ -462,33 +564,27 @@ const formattedPeriod = computed(() => {
         </VAlert>
 
         <template v-else>
-          <VAlert
-            v-if="health.warnings.length || hasSectionErrors"
-            type="warning"
-            variant="tonal"
-            class="mb-5"
+          <section
+            class="meta-health-hero"
+            :class="`is-${statusPresentation.color}`"
           >
-            <div class="meta-health-warning-list">
-              <span v-for="warning in health.warnings" :key="warning">
-                {{ warning }}
+            <div>
+              <span class="meta-health-hero-eyebrow">
+                {{ $t('meta_health_current_status') }}
               </span>
-              <span
-                v-for="error in sectionErrors"
-                :key="`${error?.type ?? 'meta'}-${error?.message}`"
-              >
-                {{ error?.message }}
-              </span>
+              <h3>{{ statusPresentation.title }}</h3>
+              <p>{{ statusPresentation.description }}</p>
             </div>
-          </VAlert>
+            <VIcon :icon="statusPresentation.icon" size="44" />
+          </section>
 
-          <div class="meta-health-metrics">
+          <div class="meta-health-metrics" :class="metricGridClasses">
             <div
               v-for="card in metricCards"
               :key="card.key"
               class="meta-health-metric"
-              :class="{ 'is-muted': card.muted }"
             >
-              <div class="meta-health-metric-icon" :class="`is-${card.color}`">
+              <div class="meta-health-metric-icon" :class="`is-${card.tone}`">
                 <VIcon :icon="card.icon" size="22" />
               </div>
               <span class="meta-health-metric-label">{{ card.label }}</span>
@@ -497,102 +593,73 @@ const formattedPeriod = computed(() => {
             </div>
           </div>
 
-          <div class="meta-health-content-grid">
-            <section class="meta-health-panel">
+          <div class="meta-health-main-grid">
+            <section class="meta-health-panel meta-health-attention-panel">
               <div class="meta-health-section-title">
-                <VIcon icon="tabler-id" size="20" />
-                <span>{{ $t('meta_health_account_snapshot') }}</span>
+                <VIcon icon="tabler-bulb" size="20" />
+                <div>
+                  <span>{{ $t('meta_health_attention_title') }}</span>
+                  <small>{{ $t('meta_health_attention_subtitle') }}</small>
+                </div>
               </div>
 
-              <div class="meta-health-account-grid">
+              <div class="meta-health-attention-list">
                 <div
-                  v-for="row in accountRows"
-                  :key="row.label"
-                  class="meta-health-account-row"
+                  v-for="item in attentionItems"
+                  :key="item.key"
+                  class="meta-health-attention-item"
+                  :class="`is-${item.tone}`"
+                >
+                  <div class="meta-health-attention-icon">
+                    <VIcon :icon="item.icon" size="22" />
+                  </div>
+                  <div>
+                    <strong>{{ item.title }}</strong>
+                    <p>{{ item.description }}</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="meta-health-panel">
+              <div class="meta-health-section-title">
+                <VIcon icon="tabler-list-details" size="20" />
+                <div>
+                  <span>{{ $t('meta_health_channel_summary') }}</span>
+                  <small>{{
+                    $t('meta_health_channel_summary_subtitle')
+                  }}</small>
+                </div>
+              </div>
+
+              <div class="meta-health-summary-grid">
+                <div
+                  v-for="row in summaryRows"
+                  :key="row.key"
+                  class="meta-health-summary-row"
                 >
                   <span>{{ row.label }}</span>
                   <strong>{{ row.value }}</strong>
                 </div>
               </div>
             </section>
-
-            <section class="meta-health-panel">
-              <div class="meta-health-section-title">
-                <VIcon icon="tabler-alert-circle" size="20" />
-                <span>{{ $t('meta_health_diagnostics') }}</span>
-              </div>
-
-              <div v-if="diagnostics.length" class="meta-health-diagnostics">
-                <div
-                  v-for="entity in diagnostics"
-                  :key="entity.key"
-                  class="meta-health-diagnostic"
-                >
-                  <div class="meta-health-diagnostic-heading">
-                    <div>
-                      <span class="meta-health-diagnostic-source">
-                        {{ entity.source }}
-                      </span>
-                      <strong>{{ formatMetaValue(entity.entityType) }}</strong>
-                    </div>
-                    <VChip size="small" variant="tonal" color="secondary">
-                      {{ formatMetaValue(entity.canSend) }}
-                    </VChip>
-                  </div>
-
-                  <p
-                    v-if="entity.additionalInfo"
-                    class="meta-health-diagnostic-note"
-                  >
-                    {{ entity.additionalInfo }}
-                  </p>
-
-                  <div
-                    v-if="entity.errors.length"
-                    class="meta-health-error-list"
-                  >
-                    <div
-                      v-for="(error, index) in entity.errors"
-                      :key="`${entity.key}-error-${index}`"
-                      class="meta-health-error"
-                    >
-                      <span v-if="error.code" class="meta-health-error-code">
-                        #{{ error.code }}
-                      </span>
-                      <strong>{{
-                        error.title ?? $t('meta_health_issue')
-                      }}</strong>
-                      <p v-if="error.details">{{ error.details }}</p>
-                      <p v-if="error.solution">{{ error.solution }}</p>
-                    </div>
-                  </div>
-
-                  <div v-else class="meta-health-diagnostic-ok">
-                    <VIcon icon="tabler-check" size="18" />
-                    {{ $t('meta_health_no_issues') }}
-                  </div>
-                </div>
-              </div>
-
-              <div v-else class="meta-health-diagnostic-ok">
-                <VIcon icon="tabler-check" size="18" />
-                {{ $t('meta_health_no_diagnostics') }}
-              </div>
-            </section>
           </div>
 
           <section
-            v-if="phoneNumbers?.results.length"
+            v-if="visiblePhoneNumbers.length"
             class="meta-health-panel meta-health-phone-list-panel"
           >
             <div class="meta-health-section-title">
               <VIcon icon="tabler-phone" size="20" />
-              <span>{{ $t('meta_health_phone_numbers') }}</span>
+              <div>
+                <span>{{ $t('meta_health_phone_numbers') }}</span>
+                <small>{{ $t('meta_health_phone_numbers_help') }}</small>
+              </div>
             </div>
 
             <div class="meta-health-phone-list">
               <div
-                v-for="phone in phoneNumbers.results"
+                v-for="phone in visiblePhoneNumbers"
                 :key="phone.id"
                 class="meta-health-phone-item"
                 :class="{
@@ -603,14 +670,36 @@ const formattedPeriod = computed(() => {
                   <strong>{{
                     phone.verified_name ?? $t('meta_health_without_name')
                   }}</strong>
-                  <span>{{ phone.display_phone_number ?? phone.id }}</span>
+                  <span>{{ phone.display_phone_number ?? '-' }}</span>
                 </div>
                 <div class="meta-health-phone-badges">
-                  <VChip size="small" variant="tonal" color="success">
-                    {{ formatMetaValue(phone.quality_rating) }}
+                  <VChip
+                    v-if="phone.id === health.connection.phone_number_id"
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                  >
+                    {{ $t('meta_health_current_number') }}
                   </VChip>
-                  <VChip size="small" variant="tonal" color="info">
-                    {{ formatMetaValue(phone.messaging_limit_tier) }}
+                  <VChip
+                    v-if="phone.quality_rating"
+                    size="small"
+                    variant="tonal"
+                    :color="
+                      normalizeMetaKey(phone.quality_rating) === 'GREEN'
+                        ? 'success'
+                        : 'warning'
+                    "
+                  >
+                    {{ translateMetaValue(phone.quality_rating) }}
+                  </VChip>
+                  <VChip
+                    v-if="phone.messaging_limit_tier"
+                    size="small"
+                    variant="tonal"
+                    color="info"
+                  >
+                    {{ translateMetaValue(phone.messaging_limit_tier) }}
                   </VChip>
                 </div>
               </div>
@@ -647,8 +736,16 @@ const formattedPeriod = computed(() => {
   gap: 20px;
   padding: 24px;
   background:
-    linear-gradient(135deg, rgba(13, 148, 136, 0.14), transparent 42%),
-    linear-gradient(145deg, rgba(37, 99, 235, 0.1), rgba(245, 158, 11, 0.08));
+    linear-gradient(
+      135deg,
+      rgba(var(--v-theme-primary), 0.13),
+      transparent 42%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(var(--v-theme-success), 0.09),
+      rgba(var(--v-theme-warning), 0.08)
+    );
   border-bottom: 1px solid rgba(var(--v-border-color), 0.14);
 }
 
@@ -666,16 +763,17 @@ const formattedPeriod = computed(() => {
   width: 54px;
   height: 54px;
   color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-surface), 0.84);
+  background: rgba(var(--v-theme-surface), 0.9);
   border: 1px solid rgba(var(--v-border-color), 0.18);
   border-radius: 8px;
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
 }
 
-.meta-health-kicker {
+.meta-health-kicker,
+.meta-health-hero-eyebrow {
   color: rgb(var(--v-theme-primary));
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -684,12 +782,12 @@ const formattedPeriod = computed(() => {
   margin: 2px 0;
   color: rgba(var(--v-theme-on-surface), 0.92);
   font-size: clamp(1.15rem, 2vw, 1.55rem);
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.2;
 }
 
 .meta-health-subtitle {
-  max-width: 600px;
+  max-width: 620px;
   margin: 0;
   color: rgba(var(--v-theme-on-surface), 0.62);
   font-size: 0.9rem;
@@ -720,7 +818,7 @@ const formattedPeriod = computed(() => {
   gap: 12px;
   padding: 16px 18px;
   color: rgba(var(--v-theme-on-surface), 0.78);
-  background: rgba(var(--v-theme-surface), 0.92);
+  background: rgba(var(--v-theme-surface), 0.94);
   border: 1px solid rgba(var(--v-border-color), 0.16);
   border-radius: 8px;
   box-shadow: 0 16px 45px rgba(15, 23, 42, 0.16);
@@ -729,8 +827,35 @@ const formattedPeriod = computed(() => {
 .meta-health-skeleton-grid,
 .meta-health-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 14px;
+}
+
+.meta-health-skeleton-grid {
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+}
+
+.meta-health-metrics {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.meta-health-metrics .meta-health-metric {
+  grid-column: span 3;
+}
+
+.meta-health-metrics.is-seven-cards .meta-health-metric:nth-last-child(-n + 3) {
+  grid-column: span 4;
+}
+
+.meta-health-metrics.is-six-cards .meta-health-metric {
+  grid-column: span 4;
+}
+
+.meta-health-metrics.is-five-cards .meta-health-metric {
+  grid-column: span 4;
+}
+
+.meta-health-metrics.is-five-cards .meta-health-metric:nth-last-child(-n + 2) {
+  grid-column: span 6;
 }
 
 .meta-health-skeleton {
@@ -750,56 +875,105 @@ const formattedPeriod = computed(() => {
   margin-block: 32px;
 }
 
-.meta-health-warning-list {
+.meta-health-hero {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid rgba(var(--v-border-color), 0.14);
+  border-radius: 8px;
+}
+
+.meta-health-hero.is-success {
+  color: rgb(var(--v-theme-success));
+  background: rgba(var(--v-theme-success), 0.08);
+}
+
+.meta-health-hero.is-warning {
+  color: rgb(var(--v-theme-warning));
+  background: rgba(var(--v-theme-warning), 0.1);
+}
+
+.meta-health-hero.is-error {
+  color: rgb(var(--v-theme-error));
+  background: rgba(var(--v-theme-error), 0.08);
+}
+
+.meta-health-hero.is-secondary {
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  background: rgba(var(--v-theme-surface-variant), 0.18);
+}
+
+.meta-health-hero h3 {
+  margin: 3px 0;
+  color: rgba(var(--v-theme-on-surface), 0.92);
+  font-size: 1.12rem;
+  font-weight: 800;
+}
+
+.meta-health-hero p {
+  max-width: 760px;
+  margin: 0;
+  color: rgba(var(--v-theme-on-surface), 0.66);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .meta-health-metric {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 150px;
+  min-height: 144px;
   padding: 16px;
   background: rgb(var(--v-theme-surface));
   border: 1px solid rgba(var(--v-border-color), 0.16);
   border-radius: 8px;
 }
 
-.meta-health-metric.is-muted {
-  background: rgba(var(--v-theme-surface-variant), 0.16);
-}
-
-.meta-health-metric-icon {
+.meta-health-metric-icon,
+.meta-health-attention-icon {
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
   width: 38px;
   height: 38px;
   border-radius: 8px;
 }
 
-.meta-health-metric-icon.is-primary {
+.meta-health-metric-icon.is-primary,
+.meta-health-attention-item.is-primary .meta-health-attention-icon {
   color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.12);
 }
 
-.meta-health-metric-icon.is-info {
+.meta-health-metric-icon.is-info,
+.meta-health-attention-item.is-info .meta-health-attention-icon {
   color: rgb(var(--v-theme-info));
   background: rgba(var(--v-theme-info), 0.12);
 }
 
-.meta-health-metric-icon.is-success {
+.meta-health-metric-icon.is-success,
+.meta-health-attention-item.is-success .meta-health-attention-icon {
   color: rgb(var(--v-theme-success));
   background: rgba(var(--v-theme-success), 0.12);
 }
 
-.meta-health-metric-icon.is-warning {
+.meta-health-metric-icon.is-warning,
+.meta-health-attention-item.is-warning .meta-health-attention-icon {
   color: rgb(var(--v-theme-warning));
   background: rgba(var(--v-theme-warning), 0.14);
 }
 
-.meta-health-metric-icon.is-secondary {
+.meta-health-metric-icon.is-error,
+.meta-health-attention-item.is-error .meta-health-attention-icon {
+  color: rgb(var(--v-theme-error));
+  background: rgba(var(--v-theme-error), 0.12);
+}
+
+.meta-health-metric-icon.is-secondary,
+.meta-health-attention-item.is-secondary .meta-health-attention-icon {
   color: rgba(var(--v-theme-on-surface), 0.58);
   background: rgba(var(--v-theme-surface-variant), 0.42);
 }
@@ -813,12 +987,13 @@ const formattedPeriod = computed(() => {
 
 .meta-health-metric-value {
   color: rgba(var(--v-theme-on-surface), 0.92);
-  font-size: 1.25rem;
+  font-size: 1.24rem;
+  font-weight: 800;
   line-height: 1.2;
   word-break: break-word;
 }
 
-.meta-health-content-grid {
+.meta-health-main-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   gap: 16px;
@@ -834,36 +1009,90 @@ const formattedPeriod = computed(() => {
 
 .meta-health-section-title {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 9px;
   margin-bottom: 14px;
   color: rgba(var(--v-theme-on-surface), 0.86);
-  font-weight: 700;
+  font-weight: 800;
 }
 
-.meta-health-account-grid {
+.meta-health-section-title span,
+.meta-health-section-title small {
+  display: block;
+}
+
+.meta-health-section-title small {
+  margin-top: 2px;
+  color: rgba(var(--v-theme-on-surface), 0.54);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.meta-health-attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.meta-health-attention-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(var(--v-theme-surface-variant), 0.13);
+  border: 1px solid rgba(var(--v-border-color), 0.12);
+  border-radius: 8px;
+}
+
+.meta-health-attention-item.is-warning {
+  border-color: rgba(var(--v-theme-warning), 0.24);
+}
+
+.meta-health-attention-item.is-error {
+  border-color: rgba(var(--v-theme-error), 0.24);
+}
+
+.meta-health-attention-item.is-success {
+  border-color: rgba(var(--v-theme-success), 0.22);
+}
+
+.meta-health-attention-item strong {
+  display: block;
+  color: rgba(var(--v-theme-on-surface), 0.9);
+  font-size: 0.94rem;
+  line-height: 1.3;
+}
+
+.meta-health-attention-item p {
+  margin: 4px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.meta-health-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
-.meta-health-account-row {
+.meta-health-summary-row {
   min-width: 0;
-  padding: 10px 12px;
-  background: rgba(var(--v-theme-surface-variant), 0.18);
+  padding: 11px 12px;
+  background: rgba(var(--v-theme-surface-variant), 0.16);
   border-radius: 8px;
 }
 
-.meta-health-account-row span,
-.meta-health-phone-item span,
-.meta-health-diagnostic-source {
+.meta-health-summary-row span,
+.meta-health-phone-item span {
   display: block;
   color: rgba(var(--v-theme-on-surface), 0.56);
   font-size: 0.76rem;
   line-height: 1.35;
 }
 
-.meta-health-account-row strong,
+.meta-health-summary-row strong,
 .meta-health-phone-item strong {
   display: block;
   margin-top: 2px;
@@ -873,85 +1102,13 @@ const formattedPeriod = computed(() => {
   line-height: 1.35;
 }
 
-.meta-health-diagnostics {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.meta-health-diagnostic {
-  padding: 14px;
-  background: rgba(var(--v-theme-surface-variant), 0.14);
-  border: 1px solid rgba(var(--v-border-color), 0.12);
-  border-radius: 8px;
-}
-
-.meta-health-diagnostic-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.meta-health-diagnostic-heading strong {
-  display: block;
-  color: rgba(var(--v-theme-on-surface), 0.9);
-  overflow-wrap: anywhere;
-}
-
-.meta-health-diagnostic-note {
-  margin: 10px 0 0;
-  color: rgba(var(--v-theme-on-surface), 0.68);
-  font-size: 0.84rem;
-  line-height: 1.45;
-}
-
-.meta-health-error-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.meta-health-error {
-  padding: 10px 12px;
-  background: rgba(var(--v-theme-warning), 0.1);
-  border: 1px solid rgba(var(--v-theme-warning), 0.18);
-  border-radius: 8px;
-}
-
-.meta-health-error-code {
-  display: inline-flex;
-  margin-bottom: 4px;
-  color: rgb(var(--v-theme-warning));
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.meta-health-error strong,
-.meta-health-error p {
-  display: block;
-  margin: 0;
-  color: rgba(var(--v-theme-on-surface), 0.82);
-  font-size: 0.84rem;
-  line-height: 1.45;
-}
-
-.meta-health-diagnostic-ok {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: rgba(var(--v-theme-on-surface), 0.62);
-  font-size: 0.86rem;
-}
-
 .meta-health-phone-list-panel {
   margin-top: 16px;
 }
 
 .meta-health-phone-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 10px;
 }
 
@@ -962,7 +1119,7 @@ const formattedPeriod = computed(() => {
   gap: 12px;
   min-width: 0;
   padding: 12px;
-  background: rgba(var(--v-theme-surface-variant), 0.14);
+  background: rgba(var(--v-theme-surface-variant), 0.13);
   border: 1px solid rgba(var(--v-border-color), 0.12);
   border-radius: 8px;
 }
@@ -1007,7 +1164,9 @@ const formattedPeriod = computed(() => {
     align-items: stretch;
   }
 
-  .meta-health-header {
+  .meta-health-header,
+  .meta-health-title-group,
+  .meta-health-hero {
     flex-direction: column;
   }
 
@@ -1015,9 +1174,19 @@ const formattedPeriod = computed(() => {
     justify-content: flex-start;
   }
 
-  .meta-health-content-grid,
-  .meta-health-account-grid {
+  .meta-health-main-grid,
+  .meta-health-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .meta-health-metrics .meta-health-metric,
+  .meta-health-metrics.is-seven-cards
+    .meta-health-metric:nth-last-child(-n + 3),
+  .meta-health-metrics.is-six-cards .meta-health-metric,
+  .meta-health-metrics.is-five-cards .meta-health-metric,
+  .meta-health-metrics.is-five-cards
+    .meta-health-metric:nth-last-child(-n + 2) {
+    grid-column: span 6;
   }
 }
 
@@ -1027,7 +1196,6 @@ const formattedPeriod = computed(() => {
     padding: 16px;
   }
 
-  .meta-health-title-group,
   .meta-health-phone-item {
     flex-direction: column;
     align-items: flex-start;
@@ -1037,6 +1205,16 @@ const formattedPeriod = computed(() => {
   .meta-health-skeleton-grid,
   .meta-health-phone-list {
     grid-template-columns: 1fr;
+  }
+
+  .meta-health-metrics .meta-health-metric,
+  .meta-health-metrics.is-seven-cards
+    .meta-health-metric:nth-last-child(-n + 3),
+  .meta-health-metrics.is-six-cards .meta-health-metric,
+  .meta-health-metrics.is-five-cards .meta-health-metric,
+  .meta-health-metrics.is-five-cards
+    .meta-health-metric:nth-last-child(-n + 2) {
+    grid-column: 1;
   }
 }
 </style>

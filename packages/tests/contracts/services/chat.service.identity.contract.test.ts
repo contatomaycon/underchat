@@ -42,6 +42,7 @@ describe('ChatService chat identity lookup', () => {
     };
     elasticDatabaseService: {
       indices: jest.Mock;
+      getById: jest.Mock;
       select: jest.Mock;
       updateWithScriptOCC: jest.Mock;
     };
@@ -53,6 +54,7 @@ describe('ChatService chat identity lookup', () => {
     };
     const elasticDatabaseService = {
       indices: jest.fn(async () => true),
+      getById: jest.fn(async () => null),
       select: jest.fn(async () => selectResult),
       updateWithScriptOCC: jest.fn(async () => 'updated'),
     };
@@ -235,5 +237,158 @@ describe('ChatService chat identity lookup', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it('prefers a direct Elasticsearch GET when finding chat by chat_id', async () => {
+    const chat = makeChat();
+    const { service, elasticDatabaseService } = makeService({
+      hits: { hits: [] },
+    });
+    elasticDatabaseService.getById.mockResolvedValueOnce(chat);
+
+    const result = await service.findChatByChatId('account-1', 'chat-1');
+
+    expect(result?.chat_id).toBe('chat-1');
+    expect(elasticDatabaseService.getById).toHaveBeenCalledWith(
+      EElasticIndex.chat,
+      'chat-1'
+    );
+    expect(elasticDatabaseService.select).not.toHaveBeenCalled();
+  });
+
+  it('passes human-to-automation guard params to chat patch updates', async () => {
+    const staleAutomationChat = makeChat({
+      status: EChatStatus.ura,
+      user: null,
+    });
+    const { service, elasticDatabaseService } = makeService({
+      hits: { hits: [] },
+    });
+
+    await expect(service.saveChat(staleAutomationChat)).resolves.toBe(true);
+
+    expect(elasticDatabaseService.updateWithScriptOCC).toHaveBeenCalledWith(
+      EElasticIndex.chat,
+      staleAutomationChat.chat_id,
+      expect.objectContaining({
+        source: expect.stringContaining(
+          'humanAttendanceStatuses.contains(currentStatus)'
+        ),
+        params: expect.objectContaining({
+          allow_human_to_automation: false,
+          chatbot_statuses: expect.arrayContaining([EChatStatus.ura]),
+          human_attendance_statuses: expect.arrayContaining([
+            EChatStatus.queue,
+            EChatStatus.in_chat,
+          ]),
+        }),
+      }),
+      expect.objectContaining({
+        refresh: undefined,
+      })
+    );
+  });
+
+  it('atomically transfers automation chats to queue and clears chatbot markers', async () => {
+    const targetUser = {
+      id: 'user-2',
+      name: 'Gisele',
+      photo: null,
+    };
+    const automationChat = makeChat({
+      status: EChatStatus.ura,
+      user: null,
+      sector: null,
+      chatbot_transfer_id: 'chatbot-1',
+      chatbot_schedule_id: 'schedule-1',
+      chatbot_webhook_id: 'webhook-1',
+      forward_to_output_chatbot: false,
+    });
+    const queuedChat = makeChat({
+      ...automationChat,
+      status: EChatStatus.queue,
+      user: targetUser,
+      sector: null,
+      chatbot_transfer_id: null,
+      chatbot_schedule_id: null,
+      chatbot_webhook_id: null,
+      forward_to_output_chatbot: true,
+    });
+    const { service, elasticDatabaseService } = makeService({
+      hits: { hits: [] },
+    });
+    elasticDatabaseService.getById
+      .mockResolvedValueOnce(automationChat)
+      .mockResolvedValueOnce(queuedChat);
+
+    await expect(
+      service.transferAutomationChatToQueue({
+        accountId: 'account-1',
+        chat: automationChat,
+        user: targetUser,
+        sector: null,
+      })
+    ).resolves.toEqual({
+      chat: queuedChat,
+      previousChat: automationChat,
+      applied: true,
+      alreadyHuman: true,
+    });
+
+    expect(elasticDatabaseService.updateWithScriptOCC).toHaveBeenCalledWith(
+      EElasticIndex.chat,
+      automationChat.chat_id,
+      expect.objectContaining({
+        params: expect.objectContaining({
+          expected_current_statuses: expect.arrayContaining([
+            EChatStatus.ura,
+            EChatStatus.ura_output,
+            EChatStatus.ura_schedule,
+            EChatStatus.ura_webhook,
+          ]),
+          patch: expect.objectContaining({
+            status: EChatStatus.queue,
+            user: targetUser,
+            sector: null,
+            secondary_users: [],
+            forward_to_output_chatbot: true,
+            chatbot_transfer_id: null,
+            chatbot_schedule_id: null,
+            chatbot_webhook_id: null,
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        upsert: false,
+        refresh: true,
+      })
+    );
+  });
+
+  it('does not downgrade chats that are already in human attendance', async () => {
+    const queuedChat = makeChat({
+      status: EChatStatus.queue,
+      user: { id: 'user-2', name: 'Gisele', photo: null },
+    });
+    const { service, elasticDatabaseService } = makeService({
+      hits: { hits: [] },
+    });
+    elasticDatabaseService.getById.mockResolvedValueOnce(queuedChat);
+
+    await expect(
+      service.transferAutomationChatToQueue({
+        accountId: 'account-1',
+        chat: makeChat({ status: EChatStatus.ura }),
+        user: null,
+        sector: null,
+      })
+    ).resolves.toEqual({
+      chat: queuedChat,
+      previousChat: queuedChat,
+      applied: false,
+      alreadyHuman: true,
+    });
+
+    expect(elasticDatabaseService.updateWithScriptOCC).not.toHaveBeenCalled();
   });
 });

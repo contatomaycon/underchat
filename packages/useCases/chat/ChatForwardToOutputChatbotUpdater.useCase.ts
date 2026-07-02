@@ -53,12 +53,13 @@ export class ChatForwardToOutputChatbotUpdaterUseCase {
       throw new Error(t('chat_forward_to_output_chatbot_update_failed'));
     }
 
-    const updatedChat: IChat = {
+    const updatedChat: IChat = (await this.chatService.findChatByChatId(
+      accountId,
+      params.chat_id
+    )) ?? {
       ...chat,
       forward_to_output_chatbot: body.forward_to_output_chatbot,
     };
-
-    await this.chatService.saveChat(updatedChat);
 
     const channelAccountId = updatedChat.account?.id ?? accountId;
 

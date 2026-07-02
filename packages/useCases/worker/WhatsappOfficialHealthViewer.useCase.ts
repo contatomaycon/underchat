@@ -119,14 +119,6 @@ export class WhatsappOfficialHealthViewerUseCase {
       ),
     ]);
 
-    const warnings = this.createWarnings(t, {
-      phoneNumbers,
-      phoneNumber,
-      waba,
-      messageAnalytics,
-      conversationAnalytics,
-    });
-
     return {
       worker_id: workerId,
       account_id: accountId,
@@ -151,7 +143,7 @@ export class WhatsappOfficialHealthViewerUseCase {
         messages: messageAnalytics,
         conversations: conversationAnalytics,
       },
-      warnings,
+      warnings: [],
     };
   }
 
@@ -212,50 +204,5 @@ export class WhatsappOfficialHealthViewerUseCase {
       code: null,
       error_subcode: null,
     };
-  }
-
-  private createWarnings(
-    t: TFunction<'translation', undefined>,
-    sections: {
-      phoneNumbers: MetaSection<unknown>;
-      phoneNumber: MetaSection<unknown>;
-      waba: MetaSection<unknown>;
-      messageAnalytics: MetaSection<{
-        data_points: unknown[];
-      }>;
-      conversationAnalytics: MetaSection<{
-        data_points: unknown[];
-      }>;
-    }
-  ): string[] {
-    const warnings: string[] = [];
-
-    for (const section of [
-      sections.phoneNumbers,
-      sections.phoneNumber,
-      sections.waba,
-      sections.messageAnalytics,
-      sections.conversationAnalytics,
-    ]) {
-      if (!section.available && section.error?.message) {
-        warnings.push(section.error.message);
-      }
-    }
-
-    if (
-      sections.conversationAnalytics.available &&
-      sections.conversationAnalytics.data?.data_points.length === 0
-    ) {
-      warnings.push(t('whatsapp_official_health_conversation_analytics_empty'));
-    }
-
-    if (
-      sections.messageAnalytics.available &&
-      sections.messageAnalytics.data?.data_points.length === 0
-    ) {
-      warnings.push(t('whatsapp_official_health_message_analytics_empty'));
-    }
-
-    return warnings;
   }
 }

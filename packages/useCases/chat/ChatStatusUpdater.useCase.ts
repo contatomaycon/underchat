@@ -37,6 +37,7 @@ import { PushNotificationService } from '@core/services/pushNotification.service
 import { ChatClosureCommentCreatorRepository } from '@core/repositories/chat/ChatClosureCommentCreator.repository';
 import { AttendanceInactivityService } from '@core/services/attendanceInactivity.service';
 import { ChatUserService } from '@core/services/chatUser.service';
+import { isChatbotStatus } from '@core/common/functions/chatStatus';
 
 interface IClosedStatusProtocolResult {
   protocol: string | null;
@@ -798,6 +799,9 @@ export class ChatStatusUpdaterUseCase {
 
     if (finalStatus === EChatStatus.in_chat) {
       updatedChat.forward_to_output_chatbot = true;
+      updatedChat.chatbot_transfer_id = null;
+      updatedChat.chatbot_schedule_id = null;
+      updatedChat.chatbot_webhook_id = null;
     } else if (
       finalStatus === EChatStatus.ura ||
       finalStatus === EChatStatus.ura_output
@@ -805,9 +809,24 @@ export class ChatStatusUpdaterUseCase {
       updatedChat.forward_to_output_chatbot = false;
     }
 
-    const updated = await this.chatService.saveChat(updatedChat);
+    const updated = await this.chatService.saveChat(updatedChat, {
+      allowHumanToAutomation:
+        finalStatus === EChatStatus.ura ||
+        finalStatus === EChatStatus.ura_output ||
+        finalStatus === EChatStatus.ura_schedule ||
+        finalStatus === EChatStatus.ura_webhook,
+      refresh: true,
+    });
     if (!updated) {
       throw new Error(t('chat_status_update_failed'));
+    }
+
+    if (finalStatus === EChatStatus.in_chat && isChatbotStatus(chat.status)) {
+      await this.chatbotFlowRunnerService.clearFlowCacheForChat(
+        accountId,
+        chat.worker.id,
+        chat.chat_id
+      );
     }
 
     if (
