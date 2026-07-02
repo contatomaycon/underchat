@@ -12,6 +12,10 @@ type OfficialAction = NonNullable<OfficialDisplay['actions']>[number];
 type OfficialSection = NonNullable<OfficialDisplay['sections']>[number];
 type OfficialCard = NonNullable<OfficialDisplay['cards']>[number];
 type VisibleOfficialAction = OfficialAction & { safe_url: string | null };
+type OfficialTemplate = NonNullable<ContentMessageChat['official_template']>;
+type OfficialTemplateVariable = NonNullable<
+  OfficialTemplate['variables']
+>[number];
 
 type OfficialListOptionSection = Omit<OfficialSection, 'rows'> & {
   rows: OfficialAction[];
@@ -30,7 +34,9 @@ const { t } = useI18n();
 const isOptionsDialogOpen = shallowRef(false);
 
 const display = computed<OfficialDisplay | null>(() =>
-  sanitizeTemplateDisplay(props.message.content?.official?.display ?? null)
+  sanitizeTemplateDisplay(
+    fillTemplateDisplay(props.message.content?.official?.display ?? null)
+  )
 );
 
 const isUnsupported = computed(() => display.value?.kind === 'unsupported');
@@ -209,6 +215,81 @@ function formatValue(value: unknown): string {
   } catch {
     return '';
   }
+}
+
+function templateVariableKey(
+  componentType: OfficialTemplateVariable['component_type'],
+  index: number,
+  buttonIndex?: number | null
+): string {
+  if (componentType === 'BUTTON') {
+    return `${componentType}:${buttonIndex ?? 0}:${index}`;
+  }
+
+  return `${componentType}:${index}`;
+}
+
+function buildTemplateVariableValueMap(
+  template: OfficialTemplate
+): Map<string, string> {
+  const valueMap = new Map<string, string>();
+
+  for (const variable of template.variables ?? []) {
+    const value = variable.value?.trim();
+    if (!value) {
+      continue;
+    }
+
+    valueMap.set(variable.key, value);
+    valueMap.set(
+      templateVariableKey(
+        variable.component_type,
+        variable.index,
+        variable.button_index ?? null
+      ),
+      value
+    );
+  }
+
+  return valueMap;
+}
+
+function fillTemplateText(
+  text: string | null | undefined,
+  componentType: OfficialTemplateVariable['component_type'],
+  buttonIndex?: number | null
+): string | null | undefined {
+  const template = props.message.content?.official_template;
+  if (!template || !text) {
+    return text;
+  }
+
+  const valueMap = buildTemplateVariableValueMap(template);
+
+  return text.replace(/\{\{\s*(\d+)\s*\}\}/gu, (match, index: string) => {
+    const key = templateVariableKey(componentType, Number(index), buttonIndex);
+    return valueMap.get(key) ?? match;
+  });
+}
+
+function fillTemplateDisplay(
+  displayValue: OfficialDisplay | null
+): OfficialDisplay | null {
+  if (!displayValue || displayValue.kind !== 'template') {
+    return displayValue;
+  }
+
+  return {
+    ...displayValue,
+    title: fillTemplateText(displayValue.title, 'HEADER') ?? null,
+    body: fillTemplateText(displayValue.body, 'BODY') ?? null,
+    footer: fillTemplateText(displayValue.footer, 'FOOTER') ?? null,
+    actions: displayValue.actions?.map((action, index) => ({
+      ...action,
+      title: fillTemplateText(action.title, 'BUTTON', index) ?? null,
+      url: fillTemplateText(action.url, 'BUTTON', index) ?? null,
+    })),
+  };
 }
 
 function normalizeTemplateMetaText(value: string | null | undefined): string {
@@ -621,7 +702,8 @@ function closeOptionsDialog(): void {
 
 <style scoped>
 .official-card {
-  width: min(100%, 336px);
+  width: fit-content;
+  max-width: min(100%, 336px);
   margin-block: 0;
   color: #111b21;
 }

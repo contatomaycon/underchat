@@ -116,6 +116,72 @@ describe('officialWhatsappDisplay', () => {
     );
   });
 
+  it('fills official template preview placeholders with variable values', () => {
+    const display = buildOfficialWhatsappDisplayFromTemplate(
+      {
+        name: 'abertura_conversa',
+        language: 'pt_BR',
+        preview: {
+          body: 'O seu pedido {{1}} está registrado. Retorno em {{2}} horas.',
+          buttons: ['Pedido {{1}}'],
+        },
+        components: [
+          {
+            type: 'BODY',
+            text: 'O seu pedido {{1}} está registrado. Retorno em {{2}} horas.',
+          },
+          {
+            type: 'BUTTONS',
+            buttons: [
+              {
+                type: 'URL',
+                text: 'Pedido {{1}}',
+                url: 'https://underchat.test/pedido/{{1}}',
+              },
+            ],
+          },
+        ],
+        variables: [
+          {
+            key: 'BODY:1',
+            component_type: 'BODY',
+            index: 1,
+            button_index: null,
+            value: 'Brasil',
+          },
+          {
+            key: 'BODY:2',
+            component_type: 'BODY',
+            index: 2,
+            button_index: null,
+            value: '48',
+          },
+          {
+            key: 'BUTTON:0:1',
+            component_type: 'BUTTON',
+            index: 1,
+            button_index: 0,
+            value: 'Brasil',
+          },
+        ],
+      },
+      null
+    );
+
+    expect(display).toEqual(
+      expect.objectContaining({
+        kind: 'template',
+        body: 'O seu pedido Brasil está registrado. Retorno em 48 horas.',
+        actions: [
+          expect.objectContaining({
+            title: 'Pedido Brasil',
+            url: 'https://underchat.test/pedido/Brasil',
+          }),
+        ],
+      })
+    );
+  });
+
   it('uses official display as text preview when regular message text is absent', () => {
     expect(
       extractMessageTextFromContent({

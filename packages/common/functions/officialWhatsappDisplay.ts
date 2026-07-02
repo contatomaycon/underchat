@@ -6,7 +6,10 @@ import type {
   IOfficialWhatsappDisplaySection,
   OfficialWhatsappDisplayKind,
 } from '@core/common/interfaces/IOfficialWhatsappContentMetadata';
-import type { IOfficialWhatsappTemplateMessage } from '@core/common/interfaces/IOfficialWhatsappTemplate';
+import type {
+  IOfficialWhatsappTemplateMessage,
+  OfficialTemplateVariableComponent,
+} from '@core/common/interfaces/IOfficialWhatsappTemplate';
 
 type MetaRecord = Record<string, unknown>;
 
@@ -581,6 +584,62 @@ const findTemplateComponentText = (
   return firstText(component?.text);
 };
 
+const buildTemplateVariableKey = (
+  componentType: OfficialTemplateVariableComponent,
+  index: number,
+  buttonIndex?: number | null
+): string =>
+  componentType === 'BUTTON'
+    ? `${componentType}:${buttonIndex ?? 0}:${index}`
+    : `${componentType}:${index}`;
+
+const buildTemplateVariableValueMap = (
+  template: IOfficialWhatsappTemplateMessage
+): Map<string, string> => {
+  const valueMap = new Map<string, string>();
+
+  for (const variable of template.variables ?? []) {
+    const value = variable.value?.trim();
+    if (!value) {
+      continue;
+    }
+
+    valueMap.set(variable.key, value);
+    valueMap.set(
+      buildTemplateVariableKey(
+        variable.component_type,
+        variable.index,
+        variable.button_index ?? null
+      ),
+      value
+    );
+  }
+
+  return valueMap;
+};
+
+const fillTemplateText = (
+  text: string | null,
+  template: IOfficialWhatsappTemplateMessage,
+  componentType: OfficialTemplateVariableComponent,
+  buttonIndex?: number | null
+): string | null => {
+  if (!text) {
+    return text;
+  }
+
+  const valueMap = buildTemplateVariableValueMap(template);
+
+  return text.replace(/\{\{\s*(\d+)\s*\}\}/gu, (match, index: string) => {
+    const key = buildTemplateVariableKey(
+      componentType,
+      Number(index),
+      buttonIndex
+    );
+    return valueMap.get(key) ?? match;
+  });
+};
+
 export const buildOfficialWhatsappDisplayFromTemplate = (
   template: IOfficialWhatsappTemplateMessage | null | undefined,
   fallbackText?: string | null
@@ -594,32 +653,49 @@ export const buildOfficialWhatsappDisplayFromTemplate = (
     buttonComponent?.buttons?.map((button, index) => ({
       id: String(index),
       type: firstText(button.type),
-      title: firstText(button.text, button.type),
-      url: firstText(button.url),
+      title: fillTemplateText(
+        firstText(button.text, button.type),
+        template,
+        'BUTTON',
+        index
+      ),
+      url: fillTemplateText(firstText(button.url), template, 'BUTTON', index),
       phone_number: firstText(button.phone_number),
     })) ?? [];
   const previewButtons =
     template.preview?.buttons?.map((button, index) => ({
       id: String(index),
       type: 'button',
-      title: button,
+      title: fillTemplateText(button, template, 'BUTTON', index),
     })) ?? [];
 
   return {
     kind: 'template',
     raw_type: 'template',
-    title: firstText(
-      template.preview?.header,
-      findTemplateComponentText(template, 'HEADER')
+    title: fillTemplateText(
+      firstText(
+        template.preview?.header,
+        findTemplateComponentText(template, 'HEADER')
+      ),
+      template,
+      'HEADER'
     ),
-    body: firstText(
-      template.preview?.body,
-      findTemplateComponentText(template, 'BODY'),
-      fallbackText
+    body: fillTemplateText(
+      firstText(
+        template.preview?.body,
+        findTemplateComponentText(template, 'BODY'),
+        fallbackText
+      ),
+      template,
+      'BODY'
     ),
-    footer: firstText(
-      template.preview?.footer,
-      findTemplateComponentText(template, 'FOOTER')
+    footer: fillTemplateText(
+      firstText(
+        template.preview?.footer,
+        findTemplateComponentText(template, 'FOOTER')
+      ),
+      template,
+      'FOOTER'
     ),
     actions: componentButtons.length > 0 ? componentButtons : previewButtons,
   };

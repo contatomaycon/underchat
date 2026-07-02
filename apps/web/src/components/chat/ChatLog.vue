@@ -3778,7 +3778,14 @@ onUnmounted(() => {
 
           <div
             class="chat-body d-inline-flex flex-column position-relative"
-            :class="getChatBodyAlignClass(item.message)"
+            :class="[
+              getChatBodyAlignClass(item.message),
+              {
+                'chat-body--official-display':
+                  shouldShowOfficialDisplayCard(item.message) ||
+                  shouldShowButtonMessageCard(item.message),
+              },
+            ]"
           >
             <div
               class="chat-content-wrapper"
@@ -6262,12 +6269,36 @@ onUnmounted(() => {
     max-inline-size: calc(100% - 6.75rem);
     overflow: visible !important;
 
+    &.chat-body--official-display {
+      inline-size: 100%;
+    }
+
+    &.chat-body--official-display.align-end {
+      align-items: flex-end;
+    }
+
+    &.chat-body--official-display.align-start {
+      align-items: flex-start;
+    }
+
     .chat-content-wrapper {
       position: relative;
       display: inline-flex;
       max-width: 100%;
       min-width: 0;
       overflow: visible !important;
+    }
+
+    &.chat-body--official-display .chat-content-wrapper {
+      inline-size: 100%;
+    }
+
+    &.chat-body--official-display .wrapper-operator {
+      justify-content: flex-end;
+    }
+
+    &.chat-body--official-display .wrapper-client {
+      justify-content: flex-start;
     }
 
     .skeleton-content {
@@ -6402,8 +6433,10 @@ onUnmounted(() => {
       }
 
       &.has-official-display {
-        min-width: 224px;
-        padding: 8px 8px 1.45rem !important;
+        width: fit-content;
+        max-width: min(100%, 360px);
+        min-width: 0;
+        padding: 4px 4px 1.35rem !important;
       }
 
       &.has-official-unsupported {

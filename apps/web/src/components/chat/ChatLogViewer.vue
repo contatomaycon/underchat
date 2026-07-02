@@ -1830,13 +1830,18 @@ const handleContactClick = (message: ListMessageResult) => {
 
           <div
             class="chat-body d-inline-flex flex-column position-relative"
-            :class="
+            :class="[
               item.message.content?.type === EMessageType.system
                 ? 'align-center'
                 : !isTypeUser(item.message)
                   ? 'align-end'
-                  : 'align-start'
-            "
+                  : 'align-start',
+              {
+                'chat-body--official-display': shouldShowOfficialDisplayCard(
+                  item.message
+                ),
+              },
+            ]"
           >
             <div
               class="chat-content-wrapper"
@@ -3561,12 +3566,36 @@ const handleContactClick = (message: ListMessageResult) => {
     overflow: visible !important;
   }
 
+  .chat-body--official-display {
+    inline-size: 100%;
+
+    &.align-end {
+      align-items: flex-end;
+    }
+
+    &.align-start {
+      align-items: flex-start;
+    }
+  }
+
   .chat-content-wrapper {
     position: relative;
     display: inline-flex;
     max-width: 100%;
     min-width: 0;
     overflow: visible !important;
+  }
+
+  .chat-body--official-display .chat-content-wrapper {
+    inline-size: 100%;
+  }
+
+  .chat-body--official-display .wrapper-operator {
+    justify-content: flex-end;
+  }
+
+  .chat-body--official-display .wrapper-client {
+    justify-content: flex-start;
   }
 
   .chat-content {
@@ -3592,8 +3621,10 @@ const handleContactClick = (message: ListMessageResult) => {
     }
 
     &.has-official-display {
-      min-width: 224px;
-      padding: 8px 8px 1.45rem !important;
+      width: fit-content;
+      max-width: min(100%, 360px);
+      min-width: 0;
+      padding: 4px 4px 1.35rem !important;
     }
 
     &.is-deleted {

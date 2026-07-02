@@ -121,6 +121,9 @@ const variableRows = computed<IOfficialTemplateVariable[]>(() =>
     ? detectedVariableRows.value
     : manualVariables.value
 );
+const formatVariableLabel = (
+  variable: Pick<IOfficialTemplateVariable, 'component_type' | 'index'>
+) => `${variable.component_type} {{${variable.index}}}`;
 const areVariablesValid = computed(() =>
   variableRows.value.every((variable) =>
     variableValues.value[variable.key]?.trim()
@@ -356,22 +359,11 @@ watch(
           <div
             v-for="variable in variableRows"
             :key="variable.key"
-            class="schedule-official-template__variable-row"
+            class="schedule-official-template__variable-field"
           >
-            <VTextField
-              :model-value="variable.component_type"
-              density="compact"
-              variant="outlined"
-              hide-details
-              readonly
-            />
-            <VTextField
-              :model-value="String(variable.index)"
-              density="compact"
-              variant="outlined"
-              hide-details
-              readonly
-            />
+            <span class="schedule-official-template__variable-label">
+              {{ formatVariableLabel(variable) }}
+            </span>
             <VTextField
               v-model="variableValues[variable.key]"
               :placeholder="variable.sample || t('template_variable_value')"
@@ -519,6 +511,18 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.schedule-official-template__variable-field {
+  display: grid;
+  gap: 4px;
+}
+
+.schedule-official-template__variable-label {
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .schedule-official-template__variable-row {

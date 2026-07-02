@@ -303,6 +303,10 @@ const hasOfficialTemplateDetectedVariables = computed(
   () => officialTemplateDetectedVariableRows.value.length > 0
 );
 
+const formatOfficialTemplateVariableLabel = (
+  variable: Pick<OfficialTemplateVariable, 'component_type' | 'index'>
+) => `${variable.component_type} {{${variable.index}}}`;
+
 const officialTemplateVariableRows = computed<OfficialTemplateVariable[]>(() =>
   hasOfficialTemplateDetectedVariables.value
     ? officialTemplateDetectedVariableRows.value
@@ -5573,18 +5577,24 @@ defineExpose({
                 v-if="hasOfficialTemplateDetectedVariables"
                 class="official-template-variables"
               >
-                <VTextField
+                <div
                   v-for="variable in officialTemplateVariableRows"
                   :key="variable.key"
-                  v-model="officialTemplateVariableValues[variable.key]"
-                  :label="`${variable.component_type} {{${variable.index}}}`"
-                  :placeholder="
-                    variable.sample || $t('template_variable_value')
-                  "
-                  density="compact"
-                  variant="outlined"
-                  hide-details="auto"
-                />
+                  class="official-template-variable-field"
+                >
+                  <span class="official-template-variable-label">
+                    {{ formatOfficialTemplateVariableLabel(variable) }}
+                  </span>
+                  <VTextField
+                    v-model="officialTemplateVariableValues[variable.key]"
+                    :placeholder="
+                      variable.sample || $t('template_variable_value')
+                    "
+                    density="compact"
+                    variant="outlined"
+                    hide-details="auto"
+                  />
+                </div>
               </div>
 
               <div v-else class="official-template-manual-variables">
@@ -6316,6 +6326,18 @@ defineExpose({
   display: grid;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.official-template-variable-field {
+  display: grid;
+  gap: 4px;
+}
+
+.official-template-variable-label {
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .official-template-manual-variables {
