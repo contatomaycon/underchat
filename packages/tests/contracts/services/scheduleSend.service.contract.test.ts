@@ -32,6 +32,7 @@ jest.mock('@core/common/functions/withLock', () => ({
 import { ScheduleSendService } from '@core/services/scheduleSend.service';
 import { EScheduleStatus } from '@core/common/enums/EScheduleStatus';
 import { withLock } from '@core/common/functions/withLock';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 describe('ScheduleSendService', () => {
   const makeService = () => {
@@ -67,6 +68,14 @@ describe('ScheduleSendService', () => {
     const encryptService = {
       sanitize: jest.fn((value: string) => value),
     };
+    const workerConfigService = {
+      viewSecurityKey: jest.fn(async () => ({
+        enabled: true,
+        schedule: true,
+        chatbot: false,
+        quick_message: false,
+      })),
+    };
     const redis = {
       set: jest.fn(async () => 'OK'),
       del: jest.fn(async () => 1),
@@ -86,7 +95,7 @@ describe('ScheduleSendService', () => {
       encryptService as never,
       {} as never,
       {} as never,
-      {} as never,
+      workerConfigService as never,
       redis as never
     );
 
@@ -100,6 +109,7 @@ describe('ScheduleSendService', () => {
       chatService,
       chatbotFlowRunnerService,
       encryptService,
+      workerConfigService,
       redis,
     };
   };
@@ -207,6 +217,107 @@ describe('ScheduleSendService', () => {
     );
   });
 
+  it('does not append security key for official schedules and skips config lookup', async () => {
+    const { service, workerConfigService } = makeService();
+
+    await expect(
+      (service as any).appendScheduleSecurityKey(
+        {
+          schedule_id: 'schedule-1',
+          worker_id: 'worker-1',
+          worker_type_id: EWorkerType.whatsapp,
+        },
+        'Mensagem agendada',
+        { allowSecurityKeyOnly: true }
+      )
+    ).resolves.toBe('Mensagem agendada');
+
+    await expect(
+      (service as any).appendScheduleSecurityKey(
+        {
+          schedule_id: 'schedule-1',
+          worker_id: 'worker-1',
+          worker_type_id: EWorkerType.whatsapp,
+        },
+        '',
+        { allowSecurityKeyOnly: true }
+      )
+    ).resolves.toBe('');
+
+    expect(workerConfigService.viewSecurityKey).not.toHaveBeenCalled();
+  });
+
+  it('keeps appending security key for non-official schedules when enabled', async () => {
+    const { service, workerConfigService } = makeService();
+
+    await expect(
+      (service as any).appendScheduleSecurityKey(
+        {
+          schedule_id: 'schedule-1',
+          worker_id: 'worker-1',
+          worker_type_id: EWorkerType.baileys,
+        },
+        'Mensagem agendada'
+      )
+    ).resolves.toMatch(
+      /^Mensagem agendada\n\n> ```Chave de segurança: [A-Z0-9]{10}```$/
+    );
+
+    expect(workerConfigService.viewSecurityKey).toHaveBeenCalledWith(
+      'worker-1'
+    );
+  });
+
+  it('propagates official worker metadata to schedule messages and chatbot chats', () => {
+    const { service } = makeService();
+    const schedule = {
+      schedule_id: 'schedule-1',
+      account_id: 'account-1',
+      account_name: 'Account',
+      worker_id: 'worker-1',
+      worker_name: 'Official WhatsApp',
+      worker_type_id: EWorkerType.whatsapp,
+      chatbot_id: 'chatbot-1',
+      type: 'chatbot',
+      message: null,
+      url: null,
+    };
+    const contact = {
+      contact_id: 'contact-1',
+      name: 'Contact',
+      phone: null,
+      phone_ddi: null,
+      phone_partial: null,
+      is_validated: true,
+    };
+
+    const message = (service as any).createBaseMessage(
+      schedule,
+      contact,
+      '5511999999999@s.whatsapp.net',
+      'message-1'
+    );
+    const chat = (service as any).buildScheduleChatbotChat(
+      schedule,
+      contact,
+      '5511999999999@s.whatsapp.net',
+      '2026-07-01T00:00:00.000Z'
+    );
+
+    expect(message.worker).toEqual({
+      id: 'worker-1',
+      name: 'Official WhatsApp',
+      type_id: EWorkerType.whatsapp,
+      is_official: true,
+    });
+    expect(chat.worker).toEqual({
+      id: 'worker-1',
+      name: 'Official WhatsApp',
+      type_id: EWorkerType.whatsapp,
+      is_official: true,
+    });
+  });
+
   it('rechecks chat identity inside the schedule chatbot lock before creating', async () => {
     const {
       service,
@@ -228,6 +339,7 @@ describe('ScheduleSendService', () => {
         account_name: 'Account',
         worker_id: 'worker-1',
         worker_name: 'Baileys',
+        worker_type_id: EWorkerType.baileys,
         chatbot_id: 'chatbot-1',
         chatbot_name: 'Bot',
         type: 'chatbot',

@@ -28,6 +28,9 @@ function getText(msg: proto.IMessage): string {
 
   if (base.conversation) return base.conversation;
   if (base.extendedTextMessage?.text) return base.extendedTextMessage.text;
+  if (base.buttonsMessage?.contentText) return base.buttonsMessage.contentText;
+  if ((base as any).buttonsResponseMessage?.selectedDisplayText)
+    return (base as any).buttonsResponseMessage.selectedDisplayText;
   if ((base as any).templateMessage?.hydratedTemplate?.hydratedContentText)
     return (base as any).templateMessage.hydratedTemplate.hydratedContentText;
 
@@ -68,6 +71,7 @@ function hasQuotedRecursive(msg: proto.IMessage): boolean {
     base.documentMessage,
     base.stickerMessage,
     base.buttonsMessage,
+    (base as any).buttonsResponseMessage,
     base.templateButtonReplyMessage,
     base.interactiveResponseMessage,
   ]
@@ -83,8 +87,7 @@ function getViewOnceInner(msg: proto.IMessage): proto.IMessage | undefined {
   const v1 = msg.viewOnceMessage?.message as proto.IMessage | undefined;
   const v2 = msg.viewOnceMessageV2?.message as proto.IMessage | undefined;
   const v3 = msg.viewOnceMessageV2Extension?.message as
-    | proto.IMessage
-    | undefined;
+    proto.IMessage | undefined;
 
   return v1 || v2 || v3;
 }
@@ -136,6 +139,15 @@ function detectTemplate({ msg }: IMapCtx): EMessageType | undefined {
   const unwrapped = unwrapMessage(msg) ?? msg;
   const unwrappedTemplate = (unwrapped as any).templateMessage;
   if (unwrappedTemplate?.hydratedTemplate) {
+    return EMessageType.text;
+  }
+
+  return undefined;
+}
+
+function detectButtons({ msg }: IMapCtx): EMessageType | undefined {
+  const base = unwrapMessage(msg) ?? msg;
+  if (base.buttonsMessage || (base as any).buttonsResponseMessage) {
     return EMessageType.text;
   }
 
@@ -194,6 +206,7 @@ export function mapIncomingToType(m: WAMessage): EMessageType | undefined {
     detectMedia,
     detectProtocol,
     detectTemplate,
+    detectButtons,
     detectText,
   ];
 

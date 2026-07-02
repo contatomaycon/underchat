@@ -240,6 +240,49 @@ describe('MessageUpsertConsume edit fallback', () => {
     },
   });
 
+  const makeButtonsUpsert = (): IUpsertMessage => ({
+    ...makeTextUpsert(''),
+    source_provider: 'baileys',
+    type: EMessageType.text,
+    message: {
+      ...makeTextUpsert('').message,
+      message: {
+        buttonsMessage: {
+          contentText: 'Escolha uma opção',
+          footerText: 'Underchat',
+          headerType: 1,
+          buttons: [
+            {
+              buttonId: '1',
+              buttonText: { displayText: 'Atendimento' },
+              type: 1,
+            },
+            {
+              buttonId: '2',
+              buttonText: { displayText: 'Financeiro' },
+              type: 1,
+            },
+          ],
+        },
+      },
+    },
+  });
+
+  const makeButtonsResponseUpsert = (): IUpsertMessage => ({
+    ...makeTextUpsert(''),
+    source_provider: 'baileys',
+    type: EMessageType.text,
+    message: {
+      ...makeTextUpsert('').message,
+      message: {
+        buttonsResponseMessage: {
+          selectedDisplayText: 'Financeiro',
+          selectedButtonId: '2',
+        },
+      },
+    },
+  });
+
   const makeReactionUpsert = (input: {
     phone?: string;
     name?: string;
@@ -665,6 +708,51 @@ describe('MessageUpsertConsume edit fallback', () => {
       fromPhone: '556999715039',
       messageText: validationText,
     });
+  });
+
+  it('preserves provider button messages as text content with button metadata', () => {
+    const { consumer } = makeConsumer();
+    const content = (consumer as any).buildMessageContent(
+      makeButtonsUpsert()
+    ) as IChatMessage['content'];
+
+    expect(content).toEqual(
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: 'Escolha uma opção',
+        buttons: expect.objectContaining({
+          text: 'Escolha uma opção',
+          footer: 'Underchat',
+          header_type: 1,
+          buttons: [
+            {
+              id: '1',
+              display_text: 'Atendimento',
+              type: 1,
+            },
+            {
+              id: '2',
+              display_text: 'Financeiro',
+              type: 1,
+            },
+          ],
+        }),
+      })
+    );
+  });
+
+  it('maps provider button response messages to selected text', () => {
+    const { consumer } = makeConsumer();
+    const content = (consumer as any).buildMessageContent(
+      makeButtonsResponseUpsert()
+    ) as IChatMessage['content'];
+
+    expect(content).toEqual(
+      expect.objectContaining({
+        type: EMessageType.text,
+        message: 'Financeiro',
+      })
+    );
   });
 
   it('ignores exact active WhatsApp validation messages sent by the operator', async () => {

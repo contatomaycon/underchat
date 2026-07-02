@@ -12,6 +12,28 @@ const CIPHERTEXT_FANOUT_NOTIFICATION_TEXT =
 const UNSUPPORTED_INCOMING_MESSAGE_TEXT =
   'Mensagem recebida não suportada pelo provedor. Verifique no WhatsApp.';
 const SYSTEM_MESSAGE_JID_ALIASES = new Set(['0@c.us', '0@s.whatsapp.net']);
+const WWEBJS_BUTTON_TYPES = new Set([
+  'button',
+  'buttons',
+  'buttons_message',
+  'buttons_response',
+  'button_response',
+  'template_button_reply',
+]);
+
+type WwebjsButtonPayloadButton = {
+  id?: string;
+  displayText: string;
+  type?: string | number;
+};
+
+type WwebjsButtonPayload = {
+  text?: string;
+  footer?: string;
+  header?: string;
+  headerType?: string | number;
+  buttons: WwebjsButtonPayloadButton[];
+};
 
 function getMessageId(msg: Message): string | undefined {
   if (!msg?.id) return undefined;
@@ -103,7 +125,8 @@ function mapWwebjsTypeToMessageType(
   if (
     t === 'automated_greeting_message' ||
     t === 'interactive' ||
-    t === 'native_flow'
+    t === 'native_flow' ||
+    isButtonPayload(t, rawData)
   ) {
     return EMessageType.text;
   }
@@ -187,11 +210,158 @@ function getObjectRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+function getButtonPayload(
+  rawData?: Record<string, unknown>
+): WwebjsButtonPayload | undefined {
+  const buttonsMessage = getObjectRecord(rawData?.buttonsMessage);
+  const interactiveMessage = getObjectRecord(rawData?.interactiveMessage);
+  const source = buttonsMessage ?? rawData;
+  if (!source) return undefined;
+
+  const buttonArrays = [
+    buttonsMessage?.buttons,
+    rawData?.buttons,
+    rawData?.dynamicReplyButtons,
+    rawData?.replyButtons,
+    rawData?.hydratedButtons,
+    interactiveMessage?.buttons,
+  ];
+  const rawButtons = buttonArrays.find(Array.isArray) as unknown[] | undefined;
+  if (!rawButtons?.length) return undefined;
+
+  const buttons = rawButtons
+    .map((item) => getObjectRecord(item))
+    .filter((button): button is Record<string, unknown> => button !== undefined)
+    .map((button): WwebjsButtonPayloadButton | null => {
+      const textObject =
+        getObjectRecord(button.buttonText) ??
+        getObjectRecord(button.text) ??
+        getObjectRecord(button.title);
+      const displayText =
+        getNonEmptyString(textObject?.displayText) ??
+        getNonEmptyString(textObject?.text) ??
+        getNonEmptyString(button.displayText) ??
+        getNonEmptyString(button.text) ??
+        getNonEmptyString(button.title);
+      if (!displayText) return null;
+
+      const payload: WwebjsButtonPayloadButton = { displayText };
+      const id =
+        getNonEmptyString(button.buttonId) ??
+        getNonEmptyString(button.buttonID) ??
+        getNonEmptyString(button.id);
+      const type =
+        getNonEmptyString(button.type) ??
+        (typeof button.type === 'number' ? button.type : undefined);
+
+      if (id) payload.id = id;
+      if (type !== undefined) payload.type = type;
+
+      return payload;
+    })
+    .filter((button): button is WwebjsButtonPayloadButton => button !== null);
+
+  if (!buttons.length) return undefined;
+
+  return {
+    text:
+      getNonEmptyString(source.contentText) ??
+      getNonEmptyString(source.body) ??
+      getNonEmptyString(source.text) ??
+      getNonEmptyString(rawData?.body),
+    footer:
+      getNonEmptyString(source.footerText) ?? getNonEmptyString(source.footer),
+    header:
+      getNonEmptyString(source.headerText) ??
+      getNonEmptyString(source.title) ??
+      getNonEmptyString(source.header),
+    headerType:
+      getNonEmptyString(source.headerType) ??
+      (typeof source.headerType === 'number' ? source.headerType : undefined),
+    buttons,
+  };
+}
+
+function isButtonPayload(
+  rawType: string,
+  rawData?: Record<string, unknown>
+): boolean {
+  return WWEBJS_BUTTON_TYPES.has(rawType) || Boolean(getButtonPayload(rawData));
+}
+
+function buildButtonContent(
+  rawType: string,
+  body: string,
+  rawData?: Record<string, unknown>
+): IUpsertMessage['content'] | undefined {
+  const payload = getButtonPayload(rawData);
+  if (!payload) return undefined;
+
+  const text = payload.text ?? body;
+  return {
+    type: EMessageType.text,
+    message: text,
+    buttons: {
+      text: text || null,
+      footer: payload.footer ?? null,
+      header: payload.header ?? null,
+      header_type: payload.headerType ?? rawType,
+      buttons: payload.buttons.map((button) => ({
+        id: button.id ?? null,
+        display_text: button.displayText,
+        type: button.type ?? null,
+      })),
+    },
+  };
+}
+
+function getButtonsResponseText(
+  rawData?: Record<string, unknown>
+): string | undefined {
+  const response = getObjectRecord(rawData?.buttonsResponseMessage) ?? rawData;
+  return (
+    getNonEmptyString(response?.selectedDisplayText) ??
+    getNonEmptyString(response?.selectedButtonId) ??
+    getNonEmptyString(response?.selectedButtonID) ??
+    getNonEmptyString(response?.displayText)
+  );
+}
+
+function safeStringify(value: unknown, maxLength = 4000): string {
+  try {
+    const seen = new WeakSet<object>();
+    const serialized = JSON.stringify(value, (_key, item) => {
+      if (typeof item === 'object' && item !== null) {
+        if (seen.has(item)) return '[Circular]';
+        seen.add(item);
+      }
+      if (typeof item === 'function') return '[Function]';
+      return item;
+    });
+    if (!serialized) return '';
+    return serialized.length > maxLength
+      ? `${serialized.slice(0, maxLength)}...`
+      : serialized;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+function logWwebjsIncomingDebug(payload: Record<string, unknown>): void {
+  console.warn('[WWEBJS_INCOMING_DEBUG]', safeStringify(payload));
+}
+
 function resolveMessageBody(
   rawType: string,
   body: string,
   rawData?: Record<string, unknown>
 ): string {
+  const buttonContentText =
+    getButtonPayload(rawData)?.text ?? getButtonsResponseText(rawData);
+  if (buttonContentText) {
+    return buttonContentText;
+  }
+
   const ctwaContext = getObjectRecord(rawData?.ctwaContext);
   const caption = getNonEmptyString(rawData?.caption);
   const greetingMessageBody =
@@ -1308,6 +1478,32 @@ export async function wwebjsMessageToUpsert(
   const rawBody = typeof msg.body === 'string' ? msg.body : '';
   let body = resolveMessageBody(rawType, rawBody, rawData);
   let messageType = mapWwebjsTypeToMessageType(rawType, rawData);
+  const isWwebjsButtonType = WWEBJS_BUTTON_TYPES.has(rawType);
+  const buttonsContent = buildButtonContent(rawType, body, rawData);
+  const buttonsResponseText = getButtonsResponseText(rawData);
+  if (buttonsContent || buttonsResponseText) {
+    messageType = EMessageType.text;
+    body = buttonsContent?.message ?? buttonsResponseText ?? body;
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.buttons',
+      id,
+      raw_type: rawType,
+      from_me: msg.fromMe,
+      mapped_type: messageType,
+      body,
+      raw_data: rawData,
+    });
+  } else if (isWwebjsButtonType) {
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.button_type_without_payload',
+      id,
+      raw_type: rawType,
+      from_me: msg.fromMe,
+      mapped_type: messageType,
+      body,
+      raw_data: rawData,
+    });
+  }
   const pinInChatMessage = buildPinInChatMessage(
     rawType,
     rawData,
@@ -1325,6 +1521,15 @@ export async function wwebjsMessageToUpsert(
   }
   const unsupportedFallback = !messageType;
   if (!messageType) {
+    logWwebjsIncomingDebug({
+      stage: 'wwebjs.message_to_upsert.unknown_message_type',
+      id,
+      raw_type: rawType,
+      raw_subtype: rawSubType,
+      from_me: msg.fromMe,
+      body,
+      raw_data: rawData,
+    });
     messageType = EMessageType.system;
     body = body || UNSUPPORTED_INCOMING_MESSAGE_TEXT;
   }
@@ -1391,6 +1596,24 @@ export async function wwebjsMessageToUpsert(
   if (disappearingProtocolMessage) {
     Object.assign(innerMessage, disappearingProtocolMessage);
   }
+  if (buttonsContent?.buttons) {
+    innerMessage.buttonsMessage = {
+      contentText: buttonsContent.buttons.text ?? body,
+      footerText: buttonsContent.buttons.footer ?? undefined,
+      headerText: buttonsContent.buttons.header ?? undefined,
+      headerType: buttonsContent.buttons.header_type ?? undefined,
+      buttons: buttonsContent.buttons.buttons.map((button) => ({
+        buttonId: button.id ?? undefined,
+        buttonText: { displayText: button.display_text },
+        type: button.type ?? undefined,
+      })),
+    };
+  }
+  if (buttonsResponseText) {
+    innerMessage.buttonsResponseMessage = {
+      selectedDisplayText: buttonsResponseText,
+    };
+  }
 
   const quotedContextInfo = await buildQuotedContextInfo(msg);
   const forwardedContextInfo = buildForwardedContextInfo(msg);
@@ -1444,7 +1667,14 @@ export async function wwebjsMessageToUpsert(
           type: EMessageType.system,
           message: body || UNSUPPORTED_INCOMING_MESSAGE_TEXT,
         }
-      : undefined,
+      : buttonsContent
+        ? buttonsContent
+        : buttonsResponseText
+          ? {
+              type: EMessageType.text,
+              message: buttonsResponseText,
+            }
+          : undefined,
     has_quoted: (msg.hasQuotedMsg ?? false) || !!quotedContextInfo,
   };
 }

@@ -4,6 +4,7 @@ export interface ISchedulePendingData {
   account_name: string;
   worker_id: string;
   worker_name: string;
+  worker_type_id: string | null;
   type: string;
   send_to: string;
   send_speed: string;

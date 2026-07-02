@@ -26,6 +26,7 @@ import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { formatWhatsAppTextToHtml } from '@core/common/functions/whatsAppTextFormat';
 import { resolveClosureAnnotationKind } from '@core/common/functions/closureAnnotation';
 import GroupContactMessageCard from '@/components/chat/GroupContactMessageCard.vue';
+import ChatButtonMessageCard from '@/components/chat/ChatButtonMessageCard.vue';
 import ChatOfficialMessageCard from '@/components/chat/official/ChatOfficialMessageCard.vue';
 import { CreateContactRequest } from '@core/schema/contact/createContact/request.schema';
 import LottieSticker from '@/components/chat/LottieSticker.vue';
@@ -532,6 +533,9 @@ const getOfficialMetadata = (
 
 const shouldShowOfficialDisplayCard = (message: ListMessageResult): boolean =>
   Boolean(getOfficialMetadata(message)?.display);
+
+const shouldShowButtonMessageCard = (message: ListMessageResult): boolean =>
+  Boolean(message.content?.buttons?.buttons?.length);
 
 const shouldSuppressOfficialTextMessage = (
   message: ListMessageResult
@@ -2368,6 +2372,12 @@ const handleContactClick = (message: ListMessageResult) => {
                     :is-outgoing="!isTypeUser(item.message)"
                   />
 
+                  <ChatButtonMessageCard
+                    v-if="shouldShowButtonMessageCard(item.message)"
+                    :buttons="item.message.content?.buttons ?? null"
+                    :is-outgoing="!isTypeUser(item.message)"
+                  />
+
                   <div
                     v-if="item.message.content?.type === EMessageType.view_once"
                     class="view-once-message"
@@ -2845,6 +2855,7 @@ const handleContactClick = (message: ListMessageResult) => {
                     v-if="
                       getLatestMessageText(item.message) &&
                       !shouldSuppressOfficialTextMessage(item.message) &&
+                      !shouldShowButtonMessageCard(item.message) &&
                       item.message.content?.type !== EMessageType.image &&
                       (item.message.content?.type !== EMessageType.video_note ||
                         !item.message.content?.video?.url) &&

@@ -818,6 +818,49 @@ export const mensageMappings = () => {
                 },
               },
             },
+            buttons: {
+              type: 'nested',
+              properties: {
+                text: {
+                  type: 'text',
+                  fields: {
+                    keyword: {
+                      type: 'keyword',
+                      ignore_above: 256,
+                    },
+                  },
+                },
+                footer: {
+                  type: 'text',
+                },
+                header: {
+                  type: 'text',
+                },
+                header_type: {
+                  type: 'keyword',
+                },
+                buttons: {
+                  type: 'nested',
+                  properties: {
+                    id: {
+                      type: 'keyword',
+                    },
+                    display_text: {
+                      type: 'text',
+                      fields: {
+                        keyword: {
+                          type: 'keyword',
+                          ignore_above: 256,
+                        },
+                      },
+                    },
+                    type: {
+                      type: 'keyword',
+                    },
+                  },
+                },
+              },
+            },
             official: {
               type: 'nested',
               properties: {

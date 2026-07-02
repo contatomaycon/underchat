@@ -277,6 +277,30 @@ export const officialTemplateMessageSchema = Type.Object(
   { additionalProperties: true }
 );
 
+export const buttonMessageOptionSchema = Type.Object(
+  {
+    id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    display_text: Type.String(),
+    type: Type.Optional(
+      Type.Union([Type.String(), Type.Number(), Type.Null()])
+    ),
+  },
+  { additionalProperties: true }
+);
+
+export const buttonMessageSchema = Type.Object(
+  {
+    text: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    footer: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    header: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    header_type: Type.Optional(
+      Type.Union([Type.String(), Type.Number(), Type.Null()])
+    ),
+    buttons: Type.Array(buttonMessageOptionSchema),
+  },
+  { additionalProperties: true }
+);
+
 const officialWhatsappDisplayActionSchema = Type.Object(
   {
     id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -507,6 +531,7 @@ export const contentSchema = Type.Object(
     ),
     context_info: Type.Optional(Type.Union([contextInfoSchema, Type.Null()])),
     template: Type.Optional(Type.Union([templateMessageSchema, Type.Null()])),
+    buttons: Type.Optional(Type.Union([buttonMessageSchema, Type.Null()])),
     official_template: Type.Optional(
       Type.Union([officialTemplateMessageSchema, Type.Null()])
     ),
@@ -554,6 +579,7 @@ export type ContentMessageChat = Static<typeof contentSchema>;
 export type MessageVersion = Static<typeof messageVersionSchema>;
 export type AlbumMessageChat = Static<typeof albumMessageSchema>;
 export type ForwardMessageChat = Static<typeof forwardMessageSchema>;
+export type ButtonMessageChat = Static<typeof buttonMessageSchema>;
 export type ImageMessageChat = Static<typeof imageSchema>;
 export type VideoMessageChat = Static<typeof videoSchema>;
 export type AudioMessageChat = Static<typeof audioSchema>;

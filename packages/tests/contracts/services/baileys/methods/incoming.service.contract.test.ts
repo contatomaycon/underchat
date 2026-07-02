@@ -73,6 +73,7 @@ jest.mock(
 );
 
 import { BaileysIncomingMessageService } from '@core/services/baileys/methods/incoming.service';
+import { mapIncomingToType } from '@core/common/functions/mapIncomingToType';
 
 describe('BaileysIncomingMessageService', () => {
   const createdServices: BaileysIncomingMessageService[] = [];
@@ -121,6 +122,30 @@ describe('BaileysIncomingMessageService', () => {
       createdServices.splice(0).map((service) => service.destroy())
     );
     jest.restoreAllMocks();
+  });
+
+  it('maps legacy button messages as text instead of unsupported fallback', () => {
+    expect(
+      mapIncomingToType({
+        key: {
+          id: 'button-message-1',
+          remoteJid: '5511999999999@s.whatsapp.net',
+          fromMe: true,
+        },
+        message: {
+          buttonsMessage: {
+            contentText: 'Escolha uma opção',
+            buttons: [
+              {
+                buttonId: '1',
+                buttonText: { displayText: 'Atendimento' },
+                type: 1,
+              },
+            ],
+          },
+        },
+      } as never)
+    ).toBe(EMessageType.text);
   });
 
   it('publishes message edit updates from Baileys messages.update as edit_text upserts', async () => {

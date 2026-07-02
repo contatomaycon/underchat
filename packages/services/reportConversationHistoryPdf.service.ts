@@ -1608,6 +1608,30 @@ export class ReportConversationHistoryPdfService {
     return '';
   }
 
+  private formatButtonMessageDisplay(content: ContentMessageChat): string {
+    const buttons = content.buttons;
+    if (!buttons?.buttons?.length) {
+      return '';
+    }
+
+    const display: OfficialDisplayMetadata = {
+      kind: 'button',
+      title: buttons.header ?? null,
+      body: buttons.text ?? content.message ?? null,
+      footer: buttons.footer ?? null,
+      actions: buttons.buttons.map((button) => ({
+        id: button.id ?? null,
+        type:
+          button.type === null || button.type === undefined
+            ? null
+            : String(button.type),
+        title: button.display_text,
+      })),
+    };
+
+    return this.formatOfficialButtonDisplay(display, content.message);
+  }
+
   private formatMessageContent(
     content: ContentMessageChat,
     msg: ListMessageResult,
@@ -1622,6 +1646,9 @@ export class ReportConversationHistoryPdfService {
       t
     );
     if (officialDisplayMessage) return officialDisplayMessage;
+
+    const buttonMessage = this.formatButtonMessageDisplay(content);
+    if (buttonMessage) return buttonMessage;
 
     const systemMessage = this.formatSystemMessage(content, t);
     if (systemMessage) return systemMessage;

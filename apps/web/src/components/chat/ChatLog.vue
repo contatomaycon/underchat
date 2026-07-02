@@ -45,6 +45,7 @@ import LottieSticker from '@/components/chat/LottieSticker.vue';
 import ChatMediaViewer from '@/components/chat/ChatMediaViewer.vue';
 import UploadProgressBadge from '@/components/chat/UploadProgressBadge.vue';
 import ChatInlineAttendanceHistoryMarker from '@/components/chat/ChatInlineAttendanceHistoryMarker.vue';
+import ChatButtonMessageCard from '@/components/chat/ChatButtonMessageCard.vue';
 import ChatOfficialMessageCard from '@/components/chat/official/ChatOfficialMessageCard.vue';
 import { useChatAttendanceHistory } from '@/composables/useChatAttendanceHistory';
 import {
@@ -1588,6 +1589,9 @@ const getOfficialMetadataDescription = (
 
 const shouldShowOfficialMetadata = (message: ListMessageResult): boolean =>
   Boolean(getOfficialMetadataTitle(message));
+
+const shouldShowButtonMessageCard = (message: ListMessageResult): boolean =>
+  Boolean(message.content?.buttons?.buttons?.length);
 
 const shouldShowOfficialDisplayCard = (message: ListMessageResult): boolean =>
   Boolean(getOfficialMetadata(message)?.display);
@@ -4511,6 +4515,12 @@ onUnmounted(() => {
                     </div>
                   </div>
 
+                  <ChatButtonMessageCard
+                    v-if="shouldShowButtonMessageCard(item.message)"
+                    :buttons="item.message.content?.buttons ?? null"
+                    :is-outgoing="!isTypeUser(item.message)"
+                  />
+
                   <div
                     v-if="item.message.content?.type === EMessageType.view_once"
                     class="view-once-message"
@@ -5337,6 +5347,7 @@ onUnmounted(() => {
                       item.message.content?.type !== EMessageType.system &&
                       !item.message.message_key?.is_view_once &&
                       !item.message.content?.template &&
+                      !shouldShowButtonMessageCard(item.message) &&
                       !shouldSuppressOfficialTextMessage(item.message) &&
                       !isUnsupportedProviderMessage(item.message)
                     "

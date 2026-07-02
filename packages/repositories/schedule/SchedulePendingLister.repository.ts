@@ -37,6 +37,7 @@ export class SchedulePendingListerRepository {
         account_name: account.name,
         worker_id: schedule.worker_id,
         worker_name: worker.name,
+        worker_type_id: worker.worker_type_id,
         type: schedule.type,
         send_to: schedule.send_to,
         send_speed: schedule.send_speed,
@@ -64,6 +65,7 @@ export class SchedulePendingListerRepository {
     account_name: string | null;
     worker_id: string;
     worker_name: string | null;
+    worker_type_id: string | null;
     type: string;
     send_to: string;
     send_speed: string | null;
@@ -83,6 +85,7 @@ export class SchedulePendingListerRepository {
       account_name: item.account_name ?? '',
       worker_id: item.worker_id,
       worker_name: item.worker_name ?? '',
+      worker_type_id: item.worker_type_id ?? null,
       type: item.type,
       send_to: item.send_to,
       send_speed: item.send_speed ?? 'low',
@@ -132,6 +135,7 @@ export class SchedulePendingListerRepository {
         account_name: account.name,
         worker_id: schedule.worker_id,
         worker_name: worker.name,
+        worker_type_id: worker.worker_type_id,
         type: schedule.type,
         send_to: schedule.send_to,
         send_speed: schedule.send_speed,

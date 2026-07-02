@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { ChatMessageService } from '@core/services/chatMessage.service';
 
 jest.mock('uuid', () => ({
@@ -51,7 +52,10 @@ jest.mock('@core/services/workerConfig.service', () => ({
   WorkerConfigService: class WorkerConfigService {},
 }));
 
-function buildService(securityKeyConfig: Record<string, boolean>) {
+function buildService(
+  securityKeyConfig: Record<string, boolean>,
+  options?: { workerTypeId?: string | null }
+) {
   const chatService = {
     saveMessageChat: jest.fn(async () => true),
     findChatByChatId: jest.fn(async () => ({
@@ -77,7 +81,7 @@ function buildService(securityKeyConfig: Record<string, boolean>) {
   const workerService = {
     viewWorkerConfigFieldsByWorkerId: jest.fn(async () => ({})),
     viewWorkerType: jest.fn(async () => ({
-      worker_type_id: 'non-official-worker-type',
+      worker_type_id: options?.workerTypeId ?? 'non-official-worker-type',
     })),
   };
   const workerConfigService = {
@@ -173,6 +177,75 @@ describe('ChatMessageService security key append', () => {
     );
   });
 
+  it('does not append security key to chatbot text messages sent through official channels', async () => {
+    const { service, streamProducerService, workerConfigService } =
+      buildService(
+        {
+          enabled: true,
+          chatbot: true,
+          schedule: false,
+          quick_message: false,
+        },
+        { workerTypeId: EWorkerType.whatsapp }
+      );
+
+    await expect(
+      service.sendMessage(((key: string) => key) as never, {
+        accountId: 'account-1',
+        chat: {
+          account: { id: 'account-1' },
+          chat_id: 'chat-1',
+          message_key: { remote_jid: '5511999999999@c.us' },
+          phone: null,
+          user: null,
+          worker: { id: 'worker-1' },
+        },
+        message: 'Menu Principal',
+        securityKeyScopes: ['chatbot'],
+        type: EMessageType.system,
+        typeUser: ETypeUserChat.bot,
+      })
+    ).resolves.toBe(true);
+
+    expect(workerConfigService.viewSecurityKey).not.toHaveBeenCalled();
+    expect(streamProducerService.send).toHaveBeenCalledWith(
+      'official.whatsapp.send.message',
+      expect.objectContaining({
+        content: expect.objectContaining({
+          message: 'Menu Principal',
+        }),
+      }),
+      'chat:account-1:chat-1'
+    );
+  });
+
+  it('does not read security key config when the chat already marks the worker as official', async () => {
+    const { service, workerConfigService, workerService } = buildService({
+      enabled: true,
+      chatbot: true,
+      schedule: true,
+      quick_message: true,
+    });
+
+    await expect(
+      service.appendSecurityKeyIfNeeded(
+        {
+          account: { id: 'account-1' },
+          worker: {
+            id: 'worker-1',
+            type_id: EWorkerType.whatsapp,
+            is_official: true,
+          },
+        },
+        'Mensagem',
+        ['chatbot']
+      )
+    ).resolves.toBe('Mensagem');
+
+    expect(workerService.viewWorkerType).not.toHaveBeenCalled();
+    expect(workerConfigService.viewSecurityKey).not.toHaveBeenCalled();
+  });
+
   it('does not append for disabled main flag, inactive scopes, or empty text', async () => {
     const { service } = buildService({
       enabled: false,
@@ -236,6 +309,31 @@ describe('ChatMessageService security key append', () => {
         { allowSecurityKeyOnly: true }
       )
     ).resolves.toMatch(/^> ```Chave de segurança: [A-Z0-9]{10}```$/);
+  });
+
+  it('does not use the security key as media caption for official channels', async () => {
+    const { service, workerConfigService } = buildService(
+      {
+        enabled: true,
+        chatbot: true,
+        schedule: false,
+        quick_message: true,
+      },
+      { workerTypeId: EWorkerType.whatsapp }
+    );
+
+    await expect(
+      service.appendSecurityKeyIfNeeded(
+        {
+          account: { id: 'account-1' },
+          worker: { id: 'worker-1' },
+        },
+        null,
+        ['quick_message'],
+        { allowSecurityKeyOnly: true }
+      )
+    ).resolves.toBeNull();
+    expect(workerConfigService.viewSecurityKey).not.toHaveBeenCalled();
   });
 
   it('does not duplicate an existing security key suffix', async () => {

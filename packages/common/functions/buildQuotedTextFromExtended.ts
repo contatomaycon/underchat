@@ -29,6 +29,7 @@ function extractText(quotedMessage: any): string {
     quotedMessage.conversation ??
     quotedMessage.extendedTextMessage?.text ??
     quotedMessage.buttonsMessage?.contentText ??
+    quotedMessage.buttonsResponseMessage?.selectedDisplayText ??
     quotedMessage.listMessage?.description ??
     quotedMessage.documentMessage?.caption ??
     quotedMessage.imageMessage?.caption ??
@@ -218,6 +219,7 @@ export function buildQuotedTextFromExtended(
     message.contactMessage?.contextInfo,
     (message as any).contactsArrayMessage?.contextInfo,
     (message as any).buttonsMessage?.contextInfo,
+    (message as any).buttonsResponseMessage?.contextInfo,
     (message as any).templateButtonReplyMessage?.contextInfo,
     (message as any).interactiveResponseMessage?.contextInfo,
   ];

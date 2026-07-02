@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { SchedulePendingListerRepository } from '@core/repositories/schedule/SchedulePendingLister.repository';
 import { createSelectDbMock } from '@core/tests/helpers/drizzleMock';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 describe('SchedulePendingListerRepository', () => {
   it('listPendingSchedules maps result and applies default send_speed', async () => {
@@ -11,6 +12,7 @@ describe('SchedulePendingListerRepository', () => {
         account_name: null,
         worker_id: 'wk-1',
         worker_name: null,
+        worker_type_id: EWorkerType.baileys,
         type: 'text',
         send_to: 'contacts',
         send_speed: null,
@@ -37,6 +39,7 @@ describe('SchedulePendingListerRepository', () => {
         account_name: '',
         worker_id: 'wk-1',
         worker_name: '',
+        worker_type_id: EWorkerType.baileys,
         type: 'text',
         send_to: 'contacts',
         send_speed: 'low',
@@ -83,6 +86,7 @@ describe('SchedulePendingListerRepository', () => {
         account_name: 'Account 1',
         worker_id: 'wk-1',
         worker_name: 'Worker 1',
+        worker_type_id: EWorkerType.whatsapp,
         type: 'text',
         send_to: 'contacts',
         send_speed: 'high',
@@ -108,6 +112,7 @@ describe('SchedulePendingListerRepository', () => {
       account_name: 'Account 1',
       worker_id: 'wk-1',
       worker_name: 'Worker 1',
+      worker_type_id: EWorkerType.whatsapp,
       type: 'text',
       send_to: 'contacts',
       send_speed: 'high',

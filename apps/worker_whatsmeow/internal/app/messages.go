@@ -735,6 +735,14 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		text := template.GetHydratedTemplate().GetHydratedContentText()
 		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
 	}
+	if buttons := msg.GetButtonsMessage(); buttons != nil {
+		content := incomingButtonsContent(buttons)
+		return m.withIncomingQuoted(evt, msg, MessageTypeText, content)
+	}
+	if response := msg.GetButtonsResponseMessage(); response != nil {
+		text := firstNonEmpty(response.GetSelectedDisplayText(), response.GetSelectedButtonID())
+		return m.withIncomingQuoted(evt, msg, MessageTypeText, map[string]any{"type": MessageTypeText, "message": text})
+	}
 	if image := msg.GetImageMessage(); image != nil {
 		base = mediaContent(ctx, m, image, MessageTypeImage, image.GetCaption(), image.GetMimetype(), viewOnce)
 		enrichIncomingAlbumContent(base, msg)
@@ -791,6 +799,40 @@ func (m *WhatsAppManager) incomingContent(ctx context.Context, evt *events.Messa
 		return m.withIncomingQuoted(evt, msg, MessageTypeContacts, map[string]any{"type": MessageTypeContacts, "contacts": items})
 	}
 	return m.unsupportedIncomingFallback(evt, msg, "incoming.unknown_message_type")
+}
+
+func incomingButtonsContent(buttons *waE2E.ButtonsMessage) map[string]any {
+	options := make([]map[string]any, 0, len(buttons.GetButtons()))
+	for _, button := range buttons.GetButtons() {
+		if button == nil || button.GetButtonText().GetDisplayText() == "" {
+			continue
+		}
+
+		options = append(options, map[string]any{
+			"id":           emptyStringAsNil(button.GetButtonID()),
+			"display_text": button.GetButtonText().GetDisplayText(),
+			"type":         button.GetType().String(),
+		})
+	}
+
+	return map[string]any{
+		"type":    MessageTypeText,
+		"message": buttons.GetContentText(),
+		"buttons": map[string]any{
+			"text":        emptyStringAsNil(buttons.GetContentText()),
+			"footer":      emptyStringAsNil(buttons.GetFooterText()),
+			"header":      emptyStringAsNil(buttons.GetText()),
+			"header_type": buttons.GetHeaderType().String(),
+			"buttons":     options,
+		},
+	}
+}
+
+func emptyStringAsNil(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return value
 }
 
 func (m *WhatsAppManager) incomingSecretEncryptedContent(ctx context.Context, evt *events.Message, msg *waE2E.Message) (string, map[string]any) {
@@ -1302,6 +1344,10 @@ func incomingMessageContextInfo(msg *waE2E.Message) *waE2E.ContextInfo {
 		return msg.GetContactMessage().GetContextInfo()
 	case msg.GetContactsArrayMessage() != nil:
 		return msg.GetContactsArrayMessage().GetContextInfo()
+	case msg.GetButtonsMessage() != nil:
+		return msg.GetButtonsMessage().GetContextInfo()
+	case msg.GetButtonsResponseMessage() != nil:
+		return msg.GetButtonsResponseMessage().GetContextInfo()
 	}
 	return nil
 }
@@ -1328,6 +1374,10 @@ func quotedMessageType(msg *waE2E.Message) string {
 		return MessageTypeContact
 	case msg.GetContactsArrayMessage() != nil:
 		return MessageTypeContacts
+	case msg.GetButtonsMessage() != nil:
+		return MessageTypeText
+	case msg.GetButtonsResponseMessage() != nil:
+		return MessageTypeText
 	default:
 		return MessageTypeText
 	}
@@ -1357,6 +1407,13 @@ func quotedMessageText(msg *waE2E.Message) string {
 		return msg.GetContactMessage().GetDisplayName()
 	case msg.GetContactsArrayMessage() != nil:
 		return msg.GetContactsArrayMessage().GetDisplayName()
+	case msg.GetButtonsMessage() != nil:
+		return msg.GetButtonsMessage().GetContentText()
+	case msg.GetButtonsResponseMessage() != nil:
+		return firstNonEmpty(
+			msg.GetButtonsResponseMessage().GetSelectedDisplayText(),
+			msg.GetButtonsResponseMessage().GetSelectedButtonID(),
+		)
 	default:
 		return ""
 	}

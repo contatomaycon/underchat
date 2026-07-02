@@ -58,6 +58,7 @@ import {
 import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
+import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class ChatMessageService {
@@ -194,6 +195,10 @@ export class ChatMessageService {
       !chat.worker?.id ||
       !scopes?.length
     ) {
+      return message;
+    }
+
+    if (await this.isOfficialWorkerContext(chat)) {
       return message;
     }
 
@@ -441,9 +446,24 @@ export class ChatMessageService {
     return quoted;
   }
 
-  private async isOfficialWorker(message: IChatMessage): Promise<boolean> {
-    const accountId = message.account?.id;
-    const workerId = message.worker?.id;
+  private async isOfficialWorkerContext(context: {
+    account?: { id?: string | null } | null;
+    worker?: {
+      id?: string | null;
+      type_id?: string | null;
+      is_official?: boolean | null;
+    } | null;
+  }): Promise<boolean> {
+    if (context.worker?.is_official === true) {
+      return true;
+    }
+
+    if (isOfficialWhatsappWorker(context.worker?.type_id)) {
+      return true;
+    }
+
+    const accountId = context.account?.id;
+    const workerId = context.worker?.id;
 
     if (!accountId || !workerId) {
       return false;
@@ -455,6 +475,10 @@ export class ChatMessageService {
     );
 
     return workerType?.worker_type_id === EWorkerType.whatsapp;
+  }
+
+  private async isOfficialWorker(message: IChatMessage): Promise<boolean> {
+    return this.isOfficialWorkerContext(message);
   }
 
   private async publishMessage(message: IChatMessage): Promise<boolean> {

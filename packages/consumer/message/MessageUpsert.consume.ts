@@ -18,6 +18,7 @@ import { WorkerService } from '@core/services/worker.service';
 import { EChatStatus } from '@core/common/enums/EChatStatus';
 import { ChatService } from '@core/services/chat.service';
 import {
+  IButtonMessage,
   IChatMessage,
   IContactMessage,
   IContent,
@@ -636,6 +637,98 @@ export class MessageUpsertConsume {
       if (value) return value;
     }
     return undefined;
+  }
+
+  private normalizeButtonType(value: unknown): string | number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    return this.toNonEmptyString(value) ?? null;
+  }
+
+  private getButtonDisplayText(
+    button: Record<string, unknown>
+  ): string | undefined {
+    const buttonText = this.toRecord(button.buttonText);
+    return (
+      this.firstStringField(buttonText, ['displayText', 'text']) ??
+      this.firstStringField(button, ['displayText', 'text', 'title'])
+    );
+  }
+
+  private getButtonsResponseText(data: IUpsertMessage): string | undefined {
+    const msg = this.getInnerMessage(data);
+    const response = this.toRecord(msg?.buttonsResponseMessage);
+    if (!response) return undefined;
+
+    return this.firstStringField(response, [
+      'selectedDisplayText',
+      'selectedButtonId',
+      'selectedButtonID',
+      'displayText',
+    ]);
+  }
+
+  private buildButtonsContent(data: IUpsertMessage): IButtonMessage | null {
+    if (data.content?.buttons) {
+      return data.content.buttons;
+    }
+
+    const msg = this.getInnerMessage(data);
+    const buttonsMessage = this.toRecord(msg?.buttonsMessage);
+    if (!buttonsMessage) {
+      return null;
+    }
+
+    const rawButtons = Array.isArray(buttonsMessage.buttons)
+      ? buttonsMessage.buttons
+      : [];
+    const buttons = rawButtons
+      .map((rawButton) => this.toRecord(rawButton))
+      .filter((button): button is Record<string, unknown> => Boolean(button))
+      .map((button) => {
+        const displayText = this.getButtonDisplayText(button);
+        if (!displayText) return null;
+
+        return {
+          id:
+            this.firstStringField(button, ['buttonId', 'buttonID', 'id']) ??
+            null,
+          display_text: displayText,
+          type: this.normalizeButtonType(button.type),
+        };
+      })
+      .filter(
+        (
+          button
+        ): button is {
+          id: string | null;
+          display_text: string;
+          type: string | number | null;
+        } => Boolean(button)
+      );
+
+    if (!buttons.length) {
+      return null;
+    }
+
+    return {
+      text:
+        this.firstStringField(buttonsMessage, [
+          'contentText',
+          'text',
+          'body',
+          'message',
+        ]) ?? null,
+      footer:
+        this.firstStringField(buttonsMessage, ['footerText', 'footer']) ?? null,
+      header:
+        this.firstStringField(buttonsMessage, [
+          'headerText',
+          'title',
+          'header',
+        ]) ?? null,
+      header_type: this.normalizeButtonType(buttonsMessage.headerType),
+      buttons,
+    };
   }
 
   private getProtocolMessagePayload(
@@ -4185,6 +4278,14 @@ export class MessageUpsertConsume {
       return false;
     }
 
+    if (data.content?.buttons || this.buildButtonsContent(data)) {
+      return false;
+    }
+
+    if (this.getButtonsResponseText(data)) {
+      return false;
+    }
+
     const msg = this.getInnerMessage(data) as Record<string, unknown> | null;
     const ext = msg?.extendedTextMessage as { text?: string } | undefined;
     const messageText = ext?.text ?? (msg?.conversation as string | undefined);
@@ -4230,6 +4331,7 @@ export class MessageUpsertConsume {
     const extText = msg?.extendedTextMessage as { text?: string } | undefined;
     let messageText: string | undefined =
       extText?.text ?? (msg?.conversation as string | undefined) ?? undefined;
+    const buttonsContent = this.buildButtonsContent(data);
 
     if (!messageText && data.type === EMessageType.document) {
       const documentMsg = this.getDocumentMessage(data) as {
@@ -4260,6 +4362,14 @@ export class MessageUpsertConsume {
       if (videoMsg?.caption) {
         messageText = videoMsg.caption;
       }
+    }
+
+    if (!messageText && buttonsContent?.text) {
+      messageText = buttonsContent.text;
+    }
+
+    if (!messageText) {
+      messageText = this.getButtonsResponseText(data);
     }
 
     let content: IContent = {
@@ -4304,6 +4414,14 @@ export class MessageUpsertConsume {
 
     if (data.content?.official) {
       content.official = data.content.official;
+    }
+
+    if (buttonsContent) {
+      content.buttons = buttonsContent;
+      content.type = EMessageType.text;
+      if (!content.message) {
+        content.message = buttonsContent.text ?? null;
+      }
     }
 
     if (data.type === EMessageType.set_disappearing_messages) {

@@ -28,6 +28,10 @@ const baseMessage = {
 };
 
 describe('wwebjsMessageToUpsert', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('converts automated greeting messages into readable text with ad context', async () => {
     const upsert = await wwebjsMessageToUpsert({
       ...baseMessage,
@@ -145,7 +149,84 @@ describe('wwebjsMessageToUpsert', () => {
     expect(innerMessage.conversation).toBe(fallbackText);
   });
 
+  it('converts WWebJS button payloads into text content with button metadata', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const upsert = await wwebjsMessageToUpsert({
+      ...baseMessage,
+      type: 'buttons',
+      body: '',
+      _data: {
+        buttonsMessage: {
+          contentText: 'Escolha uma opção',
+          footerText: 'Underchat',
+          headerType: 1,
+          buttons: [
+            {
+              buttonId: '1',
+              buttonText: { displayText: 'Atendimento' },
+              type: 1,
+            },
+            {
+              buttonId: '2',
+              buttonText: { displayText: 'Financeiro' },
+              type: 1,
+            },
+          ],
+        },
+      },
+    } as never);
+
+    const innerMessage = upsert?.message.message as Record<string, any>;
+
+    expect(upsert?.type).toBe(EMessageType.text);
+    expect(upsert?.content).toEqual(
+      expect.objectContaining({
+        message: 'Escolha uma opção',
+        buttons: expect.objectContaining({
+          text: 'Escolha uma opção',
+          footer: 'Underchat',
+          buttons: [
+            {
+              id: '1',
+              display_text: 'Atendimento',
+              type: 1,
+            },
+            {
+              id: '2',
+              display_text: 'Financeiro',
+              type: 1,
+            },
+          ],
+        }),
+      })
+    );
+    expect(innerMessage.buttonsMessage).toEqual(
+      expect.objectContaining({
+        contentText: 'Escolha uma opção',
+        buttons: [
+          {
+            buttonId: '1',
+            buttonText: { displayText: 'Atendimento' },
+            type: 1,
+          },
+          {
+            buttonId: '2',
+            buttonText: { displayText: 'Financeiro' },
+            type: 1,
+          },
+        ],
+      })
+    );
+    expect(warn).toHaveBeenCalledWith(
+      '[WWEBJS_INCOMING_DEBUG]',
+      expect.stringContaining('wwebjs.message_to_upsert.buttons')
+    );
+  });
+
   it('converts unknown WWebJS message types with body into system fallback', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
     const upsert = await wwebjsMessageToUpsert({
       ...baseMessage,
       type: 'unknown_reaction_status',

@@ -49,6 +49,14 @@ function getTextByMessageType(content: IContent): string | null {
     return content.official.order.text;
   }
 
+  if (content.buttons?.text) {
+    return content.buttons.text;
+  }
+
+  if (content.buttons?.buttons?.length) {
+    return '[Botões]';
+  }
+
   switch (content.type) {
     case EMessageType.image:
       return content.image?.caption ?? '[Imagem]';

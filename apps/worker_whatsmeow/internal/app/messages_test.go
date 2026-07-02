@@ -559,6 +559,77 @@ func TestBuildIncomingUpsertNormalizesEditedMessageWrapper(t *testing.T) {
 	}
 }
 
+func TestIncomingButtonsMessageMapsAsTextWithButtonsContent(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	messageType, content := manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			ButtonsMessage: &waE2E.ButtonsMessage{
+				ContentText: proto.String("Escolha uma opção"),
+				FooterText:  proto.String("Underchat"),
+				Buttons: []*waE2E.ButtonsMessage_Button{
+					{
+						ButtonID: proto.String("1"),
+						ButtonText: &waE2E.ButtonsMessage_Button_ButtonText{
+							DisplayText: proto.String("Atendimento"),
+						},
+						Type: waE2E.ButtonsMessage_Button_RESPONSE.Enum(),
+					},
+					{
+						ButtonID: proto.String("2"),
+						ButtonText: &waE2E.ButtonsMessage_Button_ButtonText{
+							DisplayText: proto.String("Financeiro"),
+						},
+						Type: waE2E.ButtonsMessage_Button_RESPONSE.Enum(),
+					},
+				},
+				HeaderType: waE2E.ButtonsMessage_EMPTY.Enum(),
+			},
+		},
+	})
+
+	if messageType != MessageTypeText {
+		t.Fatalf("unexpected type %q", messageType)
+	}
+	if got := content["message"]; got != "Escolha uma opção" {
+		t.Fatalf("unexpected content message %#v", content)
+	}
+
+	buttons := asMap(content["buttons"])
+	if got := buttons["text"]; got != "Escolha uma opção" {
+		t.Fatalf("unexpected buttons text %#v", buttons)
+	}
+	items, ok := buttons["buttons"].([]map[string]any)
+	if !ok {
+		t.Fatalf("unexpected buttons options type %#v", buttons["buttons"])
+	}
+	if len(items) != 2 || items[0]["display_text"] != "Atendimento" || items[1]["display_text"] != "Financeiro" {
+		t.Fatalf("unexpected buttons options %#v", items)
+	}
+}
+
+func TestIncomingButtonsResponseMessageMapsAsSelectedText(t *testing.T) {
+	manager := &WhatsAppManager{}
+
+	messageType, content := manager.incomingContent(context.Background(), &events.Message{
+		Message: &waE2E.Message{
+			ButtonsResponseMessage: &waE2E.ButtonsResponseMessage{
+				Response: &waE2E.ButtonsResponseMessage_SelectedDisplayText{
+					SelectedDisplayText: "Financeiro",
+				},
+				SelectedButtonID: proto.String("2"),
+			},
+		},
+	})
+
+	if messageType != MessageTypeText {
+		t.Fatalf("unexpected type %q", messageType)
+	}
+	if got := content["message"]; got != "Financeiro" {
+		t.Fatalf("unexpected selected response %#v", content)
+	}
+}
+
 func TestIncomingContentMapsQuotedText(t *testing.T) {
 	manager := &WhatsAppManager{cfg: Config{WorkerID: "worker-1"}}
 	lidChat := types.NewJID("158733669765176", types.HiddenUserServer)

@@ -91,6 +91,20 @@ export interface ITemplateMessage {
   verifiedBizName?: string | null;
 }
 
+export interface IButtonMessageOption {
+  id?: string | null;
+  display_text: string;
+  type?: string | number | null;
+}
+
+export interface IButtonMessage {
+  text?: string | null;
+  footer?: string | null;
+  header?: string | null;
+  header_type?: string | number | null;
+  buttons: IButtonMessageOption[];
+}
+
 export interface IPinMessage {
   pin_action?: string | null;
   pin_user_name?: string | null;
@@ -141,6 +155,7 @@ export interface IContent {
   media_download_failed?: boolean;
   context_info?: IMessageContextInfo | null;
   template?: ITemplateMessage | null;
+  buttons?: IButtonMessage | null;
   official_template?: IOfficialWhatsappTemplateMessage | null;
   official?: IOfficialWhatsappContentMetadata | null;
   pin?: IPinMessage | null;

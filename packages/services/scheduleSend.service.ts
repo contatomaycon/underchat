@@ -62,6 +62,7 @@ import { TSecurityKeyScope } from '@core/common/interfaces/ISecurityKeyConfig';
 import { WorkerConfigService } from './workerConfig.service';
 import { APP_TIMEZONE } from '@core/common/constants/timezone';
 import { buildChatIdentityLockKey } from '@core/common/functions/chatIdentity';
+import { isOfficialWhatsappWorker } from '@core/common/functions/workerOfficialCapabilities';
 
 @injectable()
 export class ScheduleSendService {
@@ -384,6 +385,10 @@ export class ScheduleSendService {
       return message;
     }
 
+    if (isOfficialWhatsappWorker(schedule.worker_type_id)) {
+      return message;
+    }
+
     const scopes: TSecurityKeyScope[] = ['schedule'];
     const securityKeyConfig = await this.workerConfigService.viewSecurityKey(
       schedule.worker_id
@@ -394,6 +399,17 @@ export class ScheduleSendService {
     }
 
     return appendSecurityKeyToText(message, options);
+  }
+
+  private buildScheduleWorker(schedule: ISchedulePendingData): IChat['worker'] {
+    const isOfficial = isOfficialWhatsappWorker(schedule.worker_type_id);
+
+    return {
+      id: schedule.worker_id,
+      name: schedule.worker_name,
+      type_id: schedule.worker_type_id ?? null,
+      is_official: isOfficial,
+    };
   }
 
   private async createTextMessage(
@@ -537,10 +553,7 @@ export class ScheduleSendService {
         id: schedule.account_id,
         name: schedule.account_name,
       },
-      worker: {
-        id: schedule.worker_id,
-        name: schedule.worker_name,
-      },
+      worker: this.buildScheduleWorker(schedule),
       user: null,
       phone: phone ?? '',
       phone_ddi: phoneDdi,
@@ -611,10 +624,7 @@ export class ScheduleSendService {
         id: schedule.account_id,
         name: schedule.account_name,
       },
-      worker: {
-        id: schedule.worker_id,
-        name: schedule.worker_name,
-      },
+      worker: this.buildScheduleWorker(schedule),
       user: null,
       phone: '',
       summary: {
@@ -1157,7 +1167,7 @@ export class ScheduleSendService {
       chat_id: uuidv7(),
       message_key: { remote_jid: jid, remote_jid_alt: null },
       account: { id: schedule.account_id, name: schedule.account_name },
-      worker: { id: schedule.worker_id, name: schedule.worker_name },
+      worker: this.buildScheduleWorker(schedule),
       contact: {
         id: contact.contact_id,
         name: contact.name,
@@ -1257,7 +1267,7 @@ export class ScheduleSendService {
       type_user: ETypeUserChat.system,
       sent_from_platform: true,
       account: { id: schedule.account_id, name: schedule.account_name },
-      worker: { id: schedule.worker_id, name: schedule.worker_name },
+      worker: this.buildScheduleWorker(schedule),
       user: null,
       phone,
       phone_ddi: phoneDdi,
