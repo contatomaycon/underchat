@@ -1,8 +1,10 @@
 import { Value } from '@sinclair/typebox/value';
+import fastJson from 'fast-json-stringify';
 import { ETypeUserChat } from '@core/common/enums/ETypeUserChat';
 import { EMessageType } from '@core/common/enums/EMessageType';
 import { mensageMappings } from '@core/mappings/mensage.mappings';
 import { listMessageResultSchema } from '@core/schema/chat/listMessageChats/response.schema';
+import { listMessageChatsSchema } from '@core/schema/chat/listMessageChats';
 
 describe('listMessageChats response contract', () => {
   it('exposes sent_from_platform as an optional nullable boolean', () => {
@@ -143,5 +145,55 @@ describe('listMessageChats response contract', () => {
         date: '2026-07-02T12:00:00.000Z',
       })
     ).toBe(true);
+  });
+
+  it('serializes received contact cards without a linked contact id', () => {
+    const result = {
+      message_id: 'message-contact-card-1',
+      chat_id: 'chat-1',
+      type_user: ETypeUserChat.client,
+      message_key: {
+        from_me: false,
+        is_view_once: false,
+      },
+      content: {
+        type: EMessageType.contact_card,
+        contact: {
+          name: 'Bradesco',
+          phone: '1133350237',
+          phone_partial: '1133350237',
+          phone_ddi: '55',
+        },
+      },
+      summary: {
+        is_sent: true,
+        is_delivered: true,
+        is_seen: true,
+        is_sent_to_internal: false,
+      },
+      date: '2026-07-03T12:00:00.000Z',
+    };
+
+    expect(Value.Check(listMessageResultSchema, result)).toBe(true);
+
+    const stringify = fastJson(listMessageChatsSchema.response[200] as never);
+
+    expect(() =>
+      stringify({
+        id: null,
+        status: true,
+        message: 'chat_list_success',
+        data: {
+          pagings: {
+            current_page: 1,
+            total_pages: 1,
+            per_page: 10,
+            count: 1,
+            total: 1,
+          },
+          results: [result],
+        },
+      })
+    ).not.toThrow();
   });
 });

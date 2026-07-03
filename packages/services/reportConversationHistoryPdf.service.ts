@@ -19,11 +19,6 @@ import { ChatContactService } from './chatContact.service';
 import { PasswordEncryptorService } from './passwordEncryptor.service';
 import { extractPhoneAndDdi } from '@core/common/functions/extractPhoneAndDdi';
 import { TFunction } from 'i18next';
-import {
-  IQuotedMessage,
-  IContactMessage,
-  QuotedMessageType,
-} from '@core/common/interfaces/IChatMessage';
 import { WAUrlInfo } from '@whiskeysockets/baileys';
 import {
   resolveClosureAnnotationKind,
@@ -37,6 +32,11 @@ type OfficialDisplayMetadata = NonNullable<
 type OfficialDisplayAction = NonNullable<
   OfficialDisplayMetadata['actions']
 >[number];
+type MessageContact = NonNullable<ContentMessageChat['contact']>;
+type MessageContacts = NonNullable<ContentMessageChat['contacts']>;
+type ReportQuotedMessage = NonNullable<ContentMessageChat['quoted']> & {
+  contacts?: MessageContacts | null;
+};
 
 @injectable()
 export class ReportConversationHistoryPdfService {
@@ -2005,7 +2005,7 @@ export class ReportConversationHistoryPdfService {
     `;
   }
 
-  private getContactPhoneDisplay(contact: IContactMessage): string {
+  private getContactPhoneDisplay(contact: MessageContact): string {
     if (contact.contact_id) {
       const phone = this.contactPhoneCache.get(contact.contact_id);
       if (phone) {
@@ -2121,7 +2121,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private formatContacts(
-    contacts: IContactMessage[],
+    contacts: MessageContact[],
     msg: ListMessageResult,
     message: string | null | undefined
   ): string {
@@ -2231,7 +2231,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private formatContactCard(
-    contact: IContactMessage,
+    contact: MessageContact,
     msg: ListMessageResult,
     message: string | null | undefined
   ): string {
@@ -2583,7 +2583,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateQuotedImageHtml(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     const imageSrc = this.resolveQuotedImageSrc(quoted);
@@ -2617,7 +2617,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateQuotedDocumentHtml(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     const docName = this.resolveQuotedDocumentName(quoted, t);
@@ -2638,7 +2638,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateQuotedStickerHtml(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     const stickerSrc = this.resolveQuotedStickerSrc(quoted);
@@ -2653,7 +2653,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateQuotedVideoHtml(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     const videoUrl = this.resolveQuotedVideoUrl(quoted);
@@ -2688,7 +2688,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateQuotedAudioHtml(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     const audioName = this.resolveQuotedAudioName(t);
@@ -2708,7 +2708,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private generateQuotedContactHtml(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     const isGroup = quoted?.type === EMessageType.contacts;
@@ -2843,7 +2843,7 @@ export class ReportConversationHistoryPdfService {
       parts.push(this.generateQuotedImageHtml(quoted, t));
     }
 
-    if (this.hasQuotedLocation(quoted as QuotedMessageType)) {
+    if (this.hasQuotedLocation(quoted)) {
       parts.push(this.generateQuotedLocationHtml(t));
     }
 
@@ -2881,7 +2881,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private resolveQuotedName(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     clientName: string,
     t: TFunction<'translation', undefined>
   ): string {
@@ -2892,7 +2892,7 @@ export class ReportConversationHistoryPdfService {
   }
 
   private resolveQuotedText(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     quotedType: string,
     t: TFunction<'translation', undefined>
   ): string {
@@ -2930,37 +2930,35 @@ export class ReportConversationHistoryPdfService {
     return quoted.message ?? '';
   }
 
-  private resolveQuotedImageSrc(quoted: QuotedMessageType): string {
+  private resolveQuotedImageSrc(quoted: ReportQuotedMessage): string {
     const image = quoted?.image;
     if (!image) return '';
     return image.url || image.thumbnail || '';
   }
 
-  private hasQuotedImage(quoted: QuotedMessageType): boolean {
+  private hasQuotedImage(quoted: ReportQuotedMessage): boolean {
     const image = quoted?.image;
     if (!image) return false;
     return !!(image.url || image.thumbnail);
   }
 
-  private hasQuotedVideo(quoted: QuotedMessageType): boolean {
+  private hasQuotedVideo(quoted: ReportQuotedMessage): boolean {
     return !!quoted?.video;
   }
 
-  private hasQuotedAudio(quoted: QuotedMessageType): boolean {
+  private hasQuotedAudio(quoted: ReportQuotedMessage): boolean {
     return !!quoted?.audio;
   }
 
-  private hasQuotedSticker(quoted: QuotedMessageType): boolean {
+  private hasQuotedSticker(quoted: ReportQuotedMessage): boolean {
     return !!quoted?.sticker;
   }
 
-  private hasQuotedLocation(
-    quoted: QuotedMessageType | IQuotedMessage
-  ): boolean {
+  private hasQuotedLocation(quoted: ReportQuotedMessage): boolean {
     return !!(quoted?.type === EMessageType.location && quoted.location);
   }
 
-  private hasQuotedContact(quoted: QuotedMessageType): boolean {
+  private hasQuotedContact(quoted: ReportQuotedMessage): boolean {
     if (!quoted) return false;
 
     if (quoted.type === EMessageType.contact_card && quoted.contact) {
@@ -2978,14 +2976,12 @@ export class ReportConversationHistoryPdfService {
     return false;
   }
 
-  private hasQuotedDocument(quoted: QuotedMessageType): boolean {
+  private hasQuotedDocument(quoted: ReportQuotedMessage): boolean {
     if (!quoted) return false;
     return quoted.type === EMessageType.document && !!quoted.document;
   }
 
-  private resolveQuotedDocumentIcon(
-    quoted: QuotedMessageType | IQuotedMessage
-  ): string {
+  private resolveQuotedDocumentIcon(quoted: ReportQuotedMessage): string {
     const ext = quoted?.document?.extension?.toLowerCase();
     const documentIconMap: Record<string, string> = {
       pdf: 'pdf',
@@ -3030,13 +3026,13 @@ export class ReportConversationHistoryPdfService {
   }
 
   private resolveQuotedDocumentName(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     return quoted?.document?.name ?? t('document');
   }
 
-  private resolveQuotedDocumentMeta(quoted: QuotedMessageType): string {
+  private resolveQuotedDocumentMeta(quoted: ReportQuotedMessage): string {
     const doc = quoted?.document;
     if (!doc) return '';
     const ext = doc.extension ? doc.extension.toUpperCase() : 'FILE';
@@ -3050,7 +3046,7 @@ export class ReportConversationHistoryPdfService {
     return t('photo');
   }
 
-  private resolveQuotedImageMeta(quoted: QuotedMessageType): string {
+  private resolveQuotedImageMeta(quoted: ReportQuotedMessage): string {
     const image = quoted?.image;
     if (!image) return '';
     const ext = image.extension ? image.extension.toUpperCase() : 'IMAGE';
@@ -3059,22 +3055,22 @@ export class ReportConversationHistoryPdfService {
   }
 
   private resolveQuotedVideoName(
-    quoted: QuotedMessageType,
+    quoted: ReportQuotedMessage,
     t: TFunction<'translation', undefined>
   ): string {
     if (quoted.type === EMessageType.video_note) return t('video_note');
     return t('video');
   }
 
-  private resolveQuotedVideoUrl(quoted: QuotedMessageType): string {
+  private resolveQuotedVideoUrl(quoted: ReportQuotedMessage): string {
     return quoted?.video?.url ?? '';
   }
 
-  private resolveQuotedVideoPoster(quoted: QuotedMessageType): string {
+  private resolveQuotedVideoPoster(quoted: ReportQuotedMessage): string {
     return quoted?.video?.thumbnail ?? '';
   }
 
-  private resolveQuotedVideoMeta(quoted: QuotedMessageType): string {
+  private resolveQuotedVideoMeta(quoted: ReportQuotedMessage): string {
     const video = quoted?.video;
     if (!video) return '';
     const ext = video.extension ? video.extension.toUpperCase() : 'VIDEO';
@@ -3089,7 +3085,7 @@ export class ReportConversationHistoryPdfService {
     return t('audio');
   }
 
-  private resolveQuotedAudioMeta(quoted: QuotedMessageType): string {
+  private resolveQuotedAudioMeta(quoted: ReportQuotedMessage): string {
     const audio = quoted?.audio;
     if (!audio) return '';
     const size = audio.size ? this.formatDocumentSize(audio.size) : null;
@@ -3097,7 +3093,7 @@ export class ReportConversationHistoryPdfService {
     return [size, duration].filter(Boolean).join(' • ');
   }
 
-  private resolveQuotedStickerSrc(quoted: QuotedMessageType): string {
+  private resolveQuotedStickerSrc(quoted: ReportQuotedMessage): string {
     return quoted?.sticker?.url || '';
   }
 }

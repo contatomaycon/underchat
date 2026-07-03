@@ -91,7 +91,7 @@ export const locationSchema = Type.Object({
 });
 
 export const contactSchema = Type.Object({
-  contact_id: Type.Union([Type.String(), Type.Null()]),
+  contact_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   name: Type.String(),
   last_name: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   phone: Type.Optional(Type.Union([Type.String(), Type.Null()])),
