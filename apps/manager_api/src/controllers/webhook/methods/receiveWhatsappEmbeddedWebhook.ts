@@ -8,10 +8,6 @@ import {
   WhatsappEmbeddedWebhookUseCase,
 } from '@core/useCases/webhook/WhatsappEmbeddedWebhook.useCase';
 
-type RawBodyRequest = FastifyRequest & {
-  rawBody?: Buffer;
-};
-
 export const receiveWhatsappEmbeddedWebhook = async (
   request: FastifyRequest,
   reply: FastifyReply
@@ -20,7 +16,7 @@ export const receiveWhatsappEmbeddedWebhook = async (
     WhatsappEmbeddedWebhookUseCase
   );
   const { t } = request;
-  const rawBody = (request as RawBodyRequest).rawBody;
+  const rawBody = request.rawBody;
 
   if (!rawBody) {
     return sendResponse(reply, {

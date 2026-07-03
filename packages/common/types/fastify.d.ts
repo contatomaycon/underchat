@@ -16,6 +16,7 @@ import type { Pool } from 'pg';
 declare module 'fastify' {
   export interface FastifyRequest {
     module: ERouteModule;
+    rawBody?: Buffer;
   }
 
   export interface FastifyInstance {

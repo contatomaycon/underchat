@@ -3,6 +3,7 @@ import { container } from 'tsyringe';
 import WebhookController from '@/controllers/webhook';
 import { asaasInvoiceWebhookSchema } from '@core/schema/payment/Webhook';
 import { asaasNfseWebhookSchema } from '@core/schema/nfse/Webhook';
+import { captureRawBodyPreParsingHook } from '@core/common/functions/captureRawBodyPreParsingHook';
 import {
   whatsappEmbeddedWebhookReceiveSchema,
   whatsappEmbeddedWebhookVerificationSchema,
@@ -28,6 +29,7 @@ export default function webhookRoutes(server: FastifyInstance) {
 
   server.post('/webhook/whatsapp/embedded', {
     schema: whatsappEmbeddedWebhookReceiveSchema,
+    preParsing: captureRawBodyPreParsingHook,
     handler: webhookController.receiveWhatsappEmbeddedWebhook,
   });
 }
