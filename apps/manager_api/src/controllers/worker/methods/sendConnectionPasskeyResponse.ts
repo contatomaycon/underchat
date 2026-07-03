@@ -6,6 +6,7 @@ import { container } from 'tsyringe';
 import { WorkerConnectionPasskeyUseCase } from '@core/useCases/worker/WorkerConnectionPasskey.useCase';
 import { WorkerConnectionQrCodeRequest } from '@core/schema/worker/connectionQrCode/request.schema';
 import { extractConnectionLifecycleDebugTraceIdFromHeaders } from '@core/services/connectionLifecycleDebug.service';
+import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
 export interface PasskeyResponseBody {
   connection_attempt_id?: string;
@@ -28,6 +29,15 @@ export const sendConnectionPasskeyResponse = async (
   );
 
   try {
+    logConnectionFlowConsole('manager.http.passkey_response.received', {
+      layer: 'manager.http',
+      worker_id: request.params.worker_id,
+      account_id: tokenJwtData.account_id,
+      connection_attempt_id: request.body.connection_attempt_id,
+      trace_id: debugTraceId,
+      source: 'authenticated',
+      passkey_response: request.body.passkey_response,
+    });
     const response = await workerConnectionPasskeyUseCase.sendResponse(
       t,
       tokenJwtData.account_id,
@@ -38,6 +48,23 @@ export const sendConnectionPasskeyResponse = async (
         debug_trace_id: debugTraceId,
       }
     );
+    logConnectionFlowConsole('manager.http.passkey_response.accepted', {
+      layer: 'manager.http',
+      worker_id: request.params.worker_id,
+      account_id: response.account_id ?? tokenJwtData.account_id,
+      worker_type_id: response.worker_type_id,
+      connection_attempt_id:
+        response.connection_attempt_id ?? request.body.connection_attempt_id,
+      trace_id: response.debug_trace_id ?? debugTraceId,
+      status: response.status,
+      code: response.code,
+      reason: response.reason,
+      source: 'authenticated',
+      has_passkey_public_key: Boolean(response.passkey_public_key),
+      has_passkey_confirmation_code: Boolean(
+        response.passkey_confirmation_code
+      ),
+    });
 
     return sendResponse(reply, {
       message: t('worker_external_connection_qrcode_success'),
@@ -45,6 +72,15 @@ export const sendConnectionPasskeyResponse = async (
       data: response,
     });
   } catch (error) {
+    logConnectionFlowConsole('manager.http.passkey_response.error', {
+      layer: 'manager.http',
+      worker_id: request.params.worker_id,
+      account_id: tokenJwtData.account_id,
+      connection_attempt_id: request.body.connection_attempt_id,
+      trace_id: debugTraceId,
+      source: 'authenticated',
+      reason: error instanceof Error ? error.message : String(error),
+    });
     if (error instanceof Error) {
       const statusCodeByMessage: Record<string, EHTTPStatusCode> = {
         [t('worker_not_found')]: EHTTPStatusCode.not_found,

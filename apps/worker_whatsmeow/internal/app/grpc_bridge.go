@@ -107,6 +107,20 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		req.RemoveSession,
 		req.PhoneConnection != "",
 	)
+	connectionFlowLog("whatsmeow.grpc.request_connection.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             req.WorkerID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"runtime_generation":    req.RuntimeGeneration,
+		"status":                req.Status,
+		"type":                  req.Type,
+		"remove_session":        req.RemoveSession,
+		"phone_connection_set":  req.PhoneConnection != "",
+		"grpc_method":           "RequestConnection",
+		"warm_pool_id":          req.WarmPoolID,
+	})
 	resp, err := s.handler.RequestConnection(ctx, req)
 	if err != nil {
 		s.debug.Log(ctx, "whatsmeow.grpc.request_connection.error", map[string]any{
@@ -122,6 +136,18 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 			"error":                 err.Error(),
 		})
 		log.Printf("grpc RequestConnection failed worker_id=%s type=%s error=%v", req.WorkerID, req.Type, err)
+		connectionFlowLog("whatsmeow.grpc.request_connection.error", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.grpc",
+			"worker_id":             req.WorkerID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"runtime_generation":    req.RuntimeGeneration,
+			"status":                req.Status,
+			"type":                  req.Type,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"reason":                err.Error(),
+		})
 		return nil, err
 	}
 	if resp.ConnectionAttemptID == "" {
@@ -147,6 +173,25 @@ func (s *WorkerConnectionGRPCServer) RequestConnection(ctx context.Context, msg 
 		"has_passkey_confirmation_code": resp.PasskeyConfirmationCode != "",
 	})
 	log.Printf("grpc RequestConnection completed worker_id=%s type=%s has_qr=%t", req.WorkerID, req.Type, resp.QRCode != "")
+	connectionFlowLog("whatsmeow.grpc.request_connection.completed", map[string]any{
+		"trace_id":                      resp.DebugTraceID,
+		"layer":                         "worker_whatsmeow.grpc",
+		"worker_id":                     resp.WorkerID,
+		"account_id":                    resp.AccountID,
+		"worker_type_id":                WorkerTypeWhatsmeow,
+		"connection_attempt_id":         resp.ConnectionAttemptID,
+		"runtime_generation":            resp.RuntimeGeneration,
+		"status":                        resp.Status,
+		"code":                          resp.Code,
+		"reason":                        resp.Reason,
+		"duration_ms":                   time.Since(startedAt).Milliseconds(),
+		"qrcode":                        resp.QRCode,
+		"pairing_code":                  resp.PairingCode,
+		"has_passkey_public_key":        resp.PasskeyPublicKey != "",
+		"passkey_public_key":            resp.PasskeyPublicKey,
+		"has_passkey_confirmation_code": resp.PasskeyConfirmationCode != "",
+		"passkey_confirmation_code":     resp.PasskeyConfirmationCode,
+	})
 	out := newDynamicMessage(descs.workerConnectionResponse)
 	setConnectionStateMessage(out, resp)
 	return out, nil
@@ -220,6 +265,16 @@ func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, ms
 		"grpc_method":           "SendPasskeyResponse",
 		"passkey_response_len":  len(req.PasskeyResponse),
 	})
+	connectionFlowLog("whatsmeow.grpc.passkey_response.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             req.WorkerID,
+		"account_id":            req.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"grpc_method":           "SendPasskeyResponse",
+		"passkey_response":      req.PasskeyResponse,
+	})
 	resp, err := s.handler.SendPasskeyResponse(ctx, req)
 	if err != nil {
 		s.debug.Log(ctx, "whatsmeow.grpc.passkey_response.error", map[string]any{
@@ -232,6 +287,16 @@ func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, ms
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
 			"error":                 err.Error(),
 		})
+		connectionFlowLog("whatsmeow.grpc.passkey_response.error", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.grpc",
+			"worker_id":             req.WorkerID,
+			"account_id":            req.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"reason":                err.Error(),
+		})
 		return nil, err
 	}
 	if resp.ConnectionAttemptID == "" {
@@ -240,6 +305,20 @@ func (s *WorkerConnectionGRPCServer) SendPasskeyResponse(ctx context.Context, ms
 	if resp.DebugTraceID == "" {
 		resp.DebugTraceID = req.DebugTraceID
 	}
+	connectionFlowLog("whatsmeow.grpc.passkey_response.completed", map[string]any{
+		"trace_id":                      resp.DebugTraceID,
+		"layer":                         "worker_whatsmeow.grpc",
+		"worker_id":                     resp.WorkerID,
+		"account_id":                    resp.AccountID,
+		"worker_type_id":                WorkerTypeWhatsmeow,
+		"connection_attempt_id":         resp.ConnectionAttemptID,
+		"status":                        resp.Status,
+		"code":                          resp.Code,
+		"reason":                        resp.Reason,
+		"duration_ms":                   time.Since(startedAt).Milliseconds(),
+		"has_passkey_public_key":        resp.PasskeyPublicKey != "",
+		"has_passkey_confirmation_code": resp.PasskeyConfirmationCode != "",
+	})
 	out := newDynamicMessage(descs.workerConnectionResponse)
 	setConnectionStateMessage(out, resp)
 	return out, nil
@@ -266,6 +345,15 @@ func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dy
 		"connection_attempt_id": req.ConnectionAttemptID,
 		"grpc_method":           "ConfirmPasskey",
 	})
+	connectionFlowLog("whatsmeow.grpc.passkey_confirmation.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             req.WorkerID,
+		"account_id":            req.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"grpc_method":           "ConfirmPasskey",
+	})
 	resp, err := s.handler.ConfirmPasskey(ctx, req)
 	if err != nil {
 		s.debug.Log(ctx, "whatsmeow.grpc.passkey_confirmation.error", map[string]any{
@@ -278,6 +366,16 @@ func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dy
 			"duration_ms":           time.Since(startedAt).Milliseconds(),
 			"error":                 err.Error(),
 		})
+		connectionFlowLog("whatsmeow.grpc.passkey_confirmation.error", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.grpc",
+			"worker_id":             req.WorkerID,
+			"account_id":            req.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"reason":                err.Error(),
+		})
 		return nil, err
 	}
 	if resp.ConnectionAttemptID == "" {
@@ -286,6 +384,20 @@ func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dy
 	if resp.DebugTraceID == "" {
 		resp.DebugTraceID = req.DebugTraceID
 	}
+	connectionFlowLog("whatsmeow.grpc.passkey_confirmation.completed", map[string]any{
+		"trace_id":                      resp.DebugTraceID,
+		"layer":                         "worker_whatsmeow.grpc",
+		"worker_id":                     resp.WorkerID,
+		"account_id":                    resp.AccountID,
+		"worker_type_id":                WorkerTypeWhatsmeow,
+		"connection_attempt_id":         resp.ConnectionAttemptID,
+		"status":                        resp.Status,
+		"code":                          resp.Code,
+		"reason":                        resp.Reason,
+		"duration_ms":                   time.Since(startedAt).Milliseconds(),
+		"has_passkey_public_key":        resp.PasskeyPublicKey != "",
+		"has_passkey_confirmation_code": resp.PasskeyConfirmationCode != "",
+	})
 	out := newDynamicMessage(descs.workerConnectionResponse)
 	setConnectionStateMessage(out, resp)
 	return out, nil

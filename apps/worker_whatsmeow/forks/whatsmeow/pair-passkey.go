@@ -51,6 +51,7 @@ func (cli *Client) handlePasskeyNotification(ctx context.Context, node *waBinary
 		cli.Log.Warnf("Ignoring passkey notification from non-server JID %s", fromJID)
 		return
 	}
+	cli.Log.Infof("Received passkey prologue request notification")
 	pubKey, err := parsePasskeyNotification(node)
 	if err != nil {
 		cli.Log.Warnf("Failed to parse passkey notification: %v", err)
@@ -152,6 +153,7 @@ func (cli *Client) tryHandlePasskeyContinuationNotification(ctx context.Context,
 		cli.Log.Warnf("Ignoring passkey continuation notification from non-server JID %s", fromJID)
 		return
 	}
+	cli.Log.Infof("Received passkey continuation notification")
 	err := cli.handlePasskeyContinuationNotification(ctx, node)
 	if err != nil {
 		cli.Log.Warnf("Failed to handle passkey continuation notification: %v", err)

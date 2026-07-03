@@ -37,6 +37,7 @@ import {
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
+import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
 const protoPath = resolveProtoPath('worker_connection.proto');
 
@@ -56,6 +57,16 @@ if (!workerConnectionProto?.WorkerConnection) {
 }
 
 const WorkerConnectionService = workerConnectionProto.WorkerConnection;
+
+function logWorkerConnectionGrpcFlow(
+  event: string,
+  fields: Record<string, unknown>
+): void {
+  logConnectionFlowConsole(event, {
+    layer: 'worker.connection_grpc_server',
+    ...fields,
+  });
+}
 
 interface IStatusConnectionRequestProto {
   worker_id?: string;
@@ -255,6 +266,18 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         grpc_module: module,
       }
     );
+    logWorkerConnectionGrpcFlow('worker.connection_grpc.request_received', {
+      trace_id: payload.debug_trace_id,
+      worker_id: payload.worker_id,
+      account_id: accountId,
+      worker_type_id: getWorkerTypeId(),
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+      status: payload.status,
+      type: payload.type,
+      remove_session: payload.remove_session === true,
+      grpc_module: module,
+    });
 
     fastify.log.info(
       {
@@ -308,6 +331,30 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             grpc_module: module,
           }
         );
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.request_dispatched',
+          {
+            trace_id: payload.debug_trace_id,
+            worker_id: payload.worker_id,
+            account_id: accountId,
+            worker_type_id: responseState.worker_type_id,
+            connection_attempt_id: responseState.connection_attempt_id,
+            runtime_generation: responseState.runtime_generation,
+            status: responseState.status,
+            code: responseState.code,
+            reason: responseState.reason,
+            qrcode: responseState.qrcode,
+            pairing_code: responseState.pairing_code,
+            has_passkey_public_key: Boolean(responseState.passkey_public_key),
+            passkey_public_key: responseState.passkey_public_key,
+            has_passkey_confirmation_code: Boolean(
+              responseState.passkey_confirmation_code
+            ),
+            passkey_confirmation_code: responseState.passkey_confirmation_code,
+            qr_pending: responseState.qr_pending === true,
+            grpc_module: module,
+          }
+        );
         fastify.log.info(
           {
             module,
@@ -349,6 +396,18 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             grpc_module: module,
           }
         );
+        logWorkerConnectionGrpcFlow('worker.connection_grpc.request_error', {
+          trace_id: payload.debug_trace_id,
+          worker_id: payload.worker_id,
+          account_id: accountId,
+          worker_type_id: getWorkerTypeId(),
+          connection_attempt_id: payload.connection_attempt_id,
+          runtime_generation: payload.runtime_generation,
+          status: payload.status,
+          type: payload.type,
+          grpc_module: module,
+          reason: msg,
+        });
         fastify.log.error(
           {
             err,
@@ -578,7 +637,33 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
 
     const req = call.request;
+    logWorkerConnectionGrpcFlow(
+      'worker.connection_grpc.passkey_response_received',
+      {
+        trace_id: req.debug_trace_id,
+        worker_id: req.worker_id,
+        account_id: req.account_id,
+        worker_type_id: getWorkerTypeId(),
+        connection_attempt_id: req.connection_attempt_id,
+        grpc_module: module,
+        passkey_response: req.passkey_response,
+      }
+    );
     if (!req.worker_id || !req.account_id || !req.passkey_response) {
+      logWorkerConnectionGrpcFlow(
+        'worker.connection_grpc.passkey_response_invalid',
+        {
+          trace_id: req.debug_trace_id,
+          worker_id: req.worker_id,
+          account_id: req.account_id,
+          worker_type_id: getWorkerTypeId(),
+          connection_attempt_id: req.connection_attempt_id,
+          grpc_module: module,
+          has_worker_id: Boolean(req.worker_id),
+          has_account_id: Boolean(req.account_id),
+          has_passkey_response: Boolean(req.passkey_response),
+        }
+      );
       callback(
         {
           code: status.INVALID_ARGUMENT,
@@ -602,6 +687,25 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         debug_trace_id: req.debug_trace_id,
       })
       .then((response) => {
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.passkey_response_dispatched',
+          {
+            trace_id: response.debug_trace_id ?? req.debug_trace_id,
+            worker_id: req.worker_id,
+            account_id: response.account_id ?? req.account_id,
+            worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
+            connection_attempt_id:
+              response.connection_attempt_id ?? req.connection_attempt_id,
+            status: response.status,
+            code: response.code,
+            reason: response.reason,
+            has_passkey_public_key: Boolean(response.passkey_public_key),
+            has_passkey_confirmation_code: Boolean(
+              response.passkey_confirmation_code
+            ),
+            grpc_module: module,
+          }
+        );
         callback(
           null,
           connectionStateToProto({
@@ -615,6 +719,18 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.passkey_response_error',
+          {
+            trace_id: req.debug_trace_id,
+            worker_id: req.worker_id,
+            account_id: req.account_id,
+            worker_type_id: getWorkerTypeId(),
+            connection_attempt_id: req.connection_attempt_id,
+            grpc_module: module,
+            reason: msg,
+          }
+        );
         callback({ code: status.INTERNAL, message: msg, details: msg }, null);
       });
   };
@@ -639,7 +755,31 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     }
 
     const req = call.request;
+    logWorkerConnectionGrpcFlow(
+      'worker.connection_grpc.passkey_confirmation_received',
+      {
+        trace_id: req.debug_trace_id,
+        worker_id: req.worker_id,
+        account_id: req.account_id,
+        worker_type_id: getWorkerTypeId(),
+        connection_attempt_id: req.connection_attempt_id,
+        grpc_module: module,
+      }
+    );
     if (!req.worker_id || !req.account_id) {
+      logWorkerConnectionGrpcFlow(
+        'worker.connection_grpc.passkey_confirmation_invalid',
+        {
+          trace_id: req.debug_trace_id,
+          worker_id: req.worker_id,
+          account_id: req.account_id,
+          worker_type_id: getWorkerTypeId(),
+          connection_attempt_id: req.connection_attempt_id,
+          grpc_module: module,
+          has_worker_id: Boolean(req.worker_id),
+          has_account_id: Boolean(req.account_id),
+        }
+      );
       callback(
         {
           code: status.INVALID_ARGUMENT,
@@ -660,6 +800,25 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
         debug_trace_id: req.debug_trace_id,
       })
       .then((response) => {
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.passkey_confirmation_dispatched',
+          {
+            trace_id: response.debug_trace_id ?? req.debug_trace_id,
+            worker_id: req.worker_id,
+            account_id: response.account_id ?? req.account_id,
+            worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
+            connection_attempt_id:
+              response.connection_attempt_id ?? req.connection_attempt_id,
+            status: response.status,
+            code: response.code,
+            reason: response.reason,
+            has_passkey_public_key: Boolean(response.passkey_public_key),
+            has_passkey_confirmation_code: Boolean(
+              response.passkey_confirmation_code
+            ),
+            grpc_module: module,
+          }
+        );
         callback(
           null,
           connectionStateToProto({
@@ -673,6 +832,18 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.passkey_confirmation_error',
+          {
+            trace_id: req.debug_trace_id,
+            worker_id: req.worker_id,
+            account_id: req.account_id,
+            worker_type_id: getWorkerTypeId(),
+            connection_attempt_id: req.connection_attempt_id,
+            grpc_module: module,
+            reason: msg,
+          }
+        );
         callback({ code: status.INTERNAL, message: msg, details: msg }, null);
       });
   };

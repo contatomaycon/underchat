@@ -23,6 +23,7 @@ import {
 } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
+import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
 const protoPath = resolveProtoPath('worker_connection.proto');
 const packageDefinition = loadSync(protoPath, {
@@ -66,6 +67,13 @@ export class WorkerBaileysGrpcClientService {
       log: async () => undefined,
     } as unknown as ConnectionLifecycleDebugService
   ) {}
+
+  private logFlow(event: string, fields: Record<string, unknown>): void {
+    logConnectionFlowConsole(event, {
+      layer: 'service.worker_connection_grpc_client',
+      ...fields,
+    });
+  }
 
   private buildConnectionProtoPayload(payload: StatusConnectionWorkerRequest): {
     worker_id: string;
@@ -189,6 +197,17 @@ export class WorkerBaileysGrpcClientService {
         grpc_address: address,
       }
     );
+    this.logFlow('service.worker_connection_grpc.request_connection_call', {
+      trace_id: protoPayload.debug_trace_id,
+      worker_id: protoPayload.worker_id,
+      connection_attempt_id: protoPayload.connection_attempt_id,
+      runtime_generation: protoPayload.runtime_generation,
+      status: protoPayload.status,
+      type: protoPayload.type,
+      remove_session: protoPayload.remove_session === true,
+      method: 'RequestConnection',
+      grpc_address: address,
+    });
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
       (client as any).RequestConnection(
@@ -232,6 +251,30 @@ export class WorkerBaileysGrpcClientService {
             grpc_address: address,
           }
         );
+        this.logFlow('service.worker_connection_grpc.request_connection_ok', {
+          trace_id: state.debug_trace_id ?? protoPayload.debug_trace_id,
+          worker_id: protoPayload.worker_id,
+          account_id: state.account_id,
+          worker_type_id: state.worker_type_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? protoPayload.connection_attempt_id,
+          runtime_generation:
+            state.runtime_generation ?? protoPayload.runtime_generation,
+          status: state.status,
+          code: state.code,
+          reason: state.reason,
+          duration_ms: Date.now() - startedAt,
+          qrcode: state.qrcode,
+          pairing_code: state.pairing_code,
+          has_passkey_public_key: Boolean(state.passkey_public_key),
+          passkey_public_key: state.passkey_public_key,
+          has_passkey_confirmation_code: Boolean(
+            state.passkey_confirmation_code
+          ),
+          passkey_confirmation_code: state.passkey_confirmation_code,
+          method: 'RequestConnection',
+          grpc_address: address,
+        });
         return {
           ...state,
           debug_trace_id: state.debug_trace_id ?? protoPayload.debug_trace_id,
@@ -243,6 +286,20 @@ export class WorkerBaileysGrpcClientService {
           {
             trace_id: protoPayload.debug_trace_id,
             layer: 'service',
+            worker_id: protoPayload.worker_id,
+            connection_attempt_id: protoPayload.connection_attempt_id,
+            runtime_generation: protoPayload.runtime_generation,
+            status: protoPayload.status,
+            reason: error instanceof Error ? error.message : String(error),
+            duration_ms: Date.now() - startedAt,
+            method: 'RequestConnection',
+            grpc_address: address,
+          }
+        );
+        this.logFlow(
+          'service.worker_connection_grpc.request_connection_error',
+          {
+            trace_id: protoPayload.debug_trace_id,
             worker_id: protoPayload.worker_id,
             connection_attempt_id: protoPayload.connection_attempt_id,
             runtime_generation: protoPayload.runtime_generation,
@@ -319,7 +376,17 @@ export class WorkerBaileysGrpcClientService {
         grpc_address: address,
       }
     );
+    this.logFlow('service.worker_connection_grpc.passkey_response_call', {
+      trace_id: payload.debug_trace_id,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      connection_attempt_id: payload.connection_attempt_id,
+      passkey_response: payload.passkey_response,
+      method: 'SendPasskeyResponse',
+      grpc_address: address,
+    });
 
+    const startedAt = Date.now();
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
       (client as any).SendPasskeyResponse(
         payload,
@@ -337,7 +404,41 @@ export class WorkerBaileysGrpcClientService {
           resolve(protoToConnectionState(response ?? {}));
         }
       );
-    });
+    })
+      .then((state) => {
+        this.logFlow('service.worker_connection_grpc.passkey_response_ok', {
+          trace_id: state.debug_trace_id ?? payload.debug_trace_id,
+          worker_id: payload.worker_id,
+          account_id: state.account_id ?? payload.account_id,
+          worker_type_id: state.worker_type_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? payload.connection_attempt_id,
+          status: state.status,
+          code: state.code,
+          reason: state.reason,
+          duration_ms: Date.now() - startedAt,
+          has_passkey_public_key: Boolean(state.passkey_public_key),
+          has_passkey_confirmation_code: Boolean(
+            state.passkey_confirmation_code
+          ),
+          method: 'SendPasskeyResponse',
+          grpc_address: address,
+        });
+        return state;
+      })
+      .catch((error) => {
+        this.logFlow('service.worker_connection_grpc.passkey_response_error', {
+          trace_id: payload.debug_trace_id,
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          connection_attempt_id: payload.connection_attempt_id,
+          reason: error instanceof Error ? error.message : String(error),
+          duration_ms: Date.now() - startedAt,
+          method: 'SendPasskeyResponse',
+          grpc_address: address,
+        });
+        throw error;
+      });
   }
 
   private async confirmPasskeyByAddress(
@@ -350,6 +451,16 @@ export class WorkerBaileysGrpcClientService {
     );
     const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
     const metadata = new Metadata();
+    const startedAt = Date.now();
+
+    this.logFlow('service.worker_connection_grpc.passkey_confirmation_call', {
+      trace_id: payload.debug_trace_id,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      connection_attempt_id: payload.connection_attempt_id,
+      method: 'ConfirmPasskey',
+      grpc_address: address,
+    });
 
     return new Promise<IBaileysConnectionState>((resolve, reject) => {
       (client as any).ConfirmPasskey(
@@ -368,7 +479,44 @@ export class WorkerBaileysGrpcClientService {
           resolve(protoToConnectionState(response ?? {}));
         }
       );
-    });
+    })
+      .then((state) => {
+        this.logFlow('service.worker_connection_grpc.passkey_confirmation_ok', {
+          trace_id: state.debug_trace_id ?? payload.debug_trace_id,
+          worker_id: payload.worker_id,
+          account_id: state.account_id ?? payload.account_id,
+          worker_type_id: state.worker_type_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? payload.connection_attempt_id,
+          status: state.status,
+          code: state.code,
+          reason: state.reason,
+          duration_ms: Date.now() - startedAt,
+          has_passkey_public_key: Boolean(state.passkey_public_key),
+          has_passkey_confirmation_code: Boolean(
+            state.passkey_confirmation_code
+          ),
+          method: 'ConfirmPasskey',
+          grpc_address: address,
+        });
+        return state;
+      })
+      .catch((error) => {
+        this.logFlow(
+          'service.worker_connection_grpc.passkey_confirmation_error',
+          {
+            trace_id: payload.debug_trace_id,
+            worker_id: payload.worker_id,
+            account_id: payload.account_id,
+            connection_attempt_id: payload.connection_attempt_id,
+            reason: error instanceof Error ? error.message : String(error),
+            duration_ms: Date.now() - startedAt,
+            method: 'ConfirmPasskey',
+            grpc_address: address,
+          }
+        );
+        throw error;
+      });
   }
 
   private async waitForReadyByAddress(
@@ -486,9 +634,28 @@ export class WorkerBaileysGrpcClientService {
       const address = `${workerId}:${port}`;
 
       try {
+        this.logFlow('service.worker_connection_grpc.fallback_attempt', {
+          worker_id: workerId,
+          worker_type_id: workerType,
+          grpc_address: address,
+          port,
+          attempt: index + 1,
+          max_attempts: ports.length,
+        });
         return await callByAddress(address);
       } catch (error) {
         lastError = error;
+        this.logFlow('service.worker_connection_grpc.fallback_error', {
+          worker_id: workerId,
+          worker_type_id: workerType,
+          grpc_address: address,
+          port,
+          attempt: index + 1,
+          max_attempts: ports.length,
+          retryable: this.isRetryableConnectionError(error),
+          is_last_port: isLastPort,
+          reason: error instanceof Error ? error.message : String(error),
+        });
         if (isLastPort || !this.isRetryableConnectionError(error)) {
           throw error;
         }

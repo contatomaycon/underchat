@@ -4,6 +4,7 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WorkerService } from '@core/services/worker.service';
 import { WorkerBaileysGrpcClientService } from '@core/services/workerBaileysGrpcClient.service';
+import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
 export interface WorkerConnectionPasskeyResponseInput {
   connection_attempt_id?: string;
@@ -31,23 +32,60 @@ export class WorkerConnectionPasskeyUseCase {
     workerId: string,
     input: WorkerConnectionPasskeyResponseInput
   ): Promise<IBaileysConnectionState> {
+    logConnectionFlowConsole('manager.passkey.use_case.response_start', {
+      layer: 'manager.use_case',
+      worker_id: workerId,
+      account_id: accountId,
+      connection_attempt_id: input.connection_attempt_id,
+      trace_id: input.debug_trace_id,
+      passkey_response: input.passkey_response,
+    });
     const worker = await this.resolvePasskeyWorker(t, accountId, workerId);
     const passkeyResponse = this.serializePasskeyResponse(
       t,
       input.passkey_response
     );
 
-    return this.workerBaileysGrpcClientService.sendPasskeyResponse(
-      workerId,
-      {
-        worker_id: workerId,
-        account_id: accountId,
-        connection_attempt_id: input.connection_attempt_id,
-        passkey_response: passkeyResponse,
-        debug_trace_id: input.debug_trace_id,
-      },
-      worker.type?.id as EWorkerType
-    );
+    logConnectionFlowConsole('manager.passkey.use_case.response_validated', {
+      layer: 'manager.use_case',
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: worker.type?.id,
+      connection_attempt_id: input.connection_attempt_id,
+      trace_id: input.debug_trace_id,
+      passkey_response: passkeyResponse,
+    });
+
+    const response =
+      await this.workerBaileysGrpcClientService.sendPasskeyResponse(
+        workerId,
+        {
+          worker_id: workerId,
+          account_id: accountId,
+          connection_attempt_id: input.connection_attempt_id,
+          passkey_response: passkeyResponse,
+          debug_trace_id: input.debug_trace_id,
+        },
+        worker.type?.id as EWorkerType
+      );
+
+    logConnectionFlowConsole('manager.passkey.use_case.response_done', {
+      layer: 'manager.use_case',
+      worker_id: workerId,
+      account_id: response.account_id ?? accountId,
+      worker_type_id: response.worker_type_id ?? worker.type?.id,
+      connection_attempt_id:
+        response.connection_attempt_id ?? input.connection_attempt_id,
+      trace_id: response.debug_trace_id ?? input.debug_trace_id,
+      status: response.status,
+      code: response.code,
+      reason: response.reason,
+      has_passkey_public_key: Boolean(response.passkey_public_key),
+      has_passkey_confirmation_code: Boolean(
+        response.passkey_confirmation_code
+      ),
+    });
+    return response;
   }
 
   async confirm(
@@ -56,9 +94,16 @@ export class WorkerConnectionPasskeyUseCase {
     workerId: string,
     input: WorkerConnectionPasskeyConfirmationInput
   ): Promise<IBaileysConnectionState> {
+    logConnectionFlowConsole('manager.passkey.use_case.confirm_start', {
+      layer: 'manager.use_case',
+      worker_id: workerId,
+      account_id: accountId,
+      connection_attempt_id: input.connection_attempt_id,
+      trace_id: input.debug_trace_id,
+    });
     const worker = await this.resolvePasskeyWorker(t, accountId, workerId);
 
-    return this.workerBaileysGrpcClientService.confirmPasskey(
+    const response = await this.workerBaileysGrpcClientService.confirmPasskey(
       workerId,
       {
         worker_id: workerId,
@@ -68,6 +113,24 @@ export class WorkerConnectionPasskeyUseCase {
       },
       worker.type?.id as EWorkerType
     );
+
+    logConnectionFlowConsole('manager.passkey.use_case.confirm_done', {
+      layer: 'manager.use_case',
+      worker_id: workerId,
+      account_id: response.account_id ?? accountId,
+      worker_type_id: response.worker_type_id ?? worker.type?.id,
+      connection_attempt_id:
+        response.connection_attempt_id ?? input.connection_attempt_id,
+      trace_id: response.debug_trace_id ?? input.debug_trace_id,
+      status: response.status,
+      code: response.code,
+      reason: response.reason,
+      has_passkey_public_key: Boolean(response.passkey_public_key),
+      has_passkey_confirmation_code: Boolean(
+        response.passkey_confirmation_code
+      ),
+    });
+    return response;
   }
 
   private async resolvePasskeyWorker(
@@ -93,9 +156,21 @@ export class WorkerConnectionPasskeyUseCase {
       worker.type?.id !== EWorkerType.whatsmeow &&
       worker.type?.id !== EWorkerType.baileys
     ) {
+      logConnectionFlowConsole('manager.passkey.use_case.worker_invalid', {
+        layer: 'manager.use_case',
+        worker_id: workerId,
+        account_id: accountId,
+        worker_type_id: worker.type?.id,
+      });
       throw new Error(t('worker_type_invalid'));
     }
 
+    logConnectionFlowConsole('manager.passkey.use_case.worker_resolved', {
+      layer: 'manager.use_case',
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: worker.type?.id,
+    });
     return worker;
   }
 

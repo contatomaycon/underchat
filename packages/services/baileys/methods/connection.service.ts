@@ -44,6 +44,7 @@ import {
   isConnectionLifecycleDebugEnabled,
 } from '@core/services/connectionLifecycleDebug.service';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
+import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
 function readBoundedIntEnv(
   key: string,
@@ -436,6 +437,7 @@ export class BaileysConnectionService {
     event: string,
     context: ConnectionLifecycleDebugContext
   ): void {
+    logConnectionFlowConsole(event, context);
     void this.connectionLifecycleDebugService.log(event, context);
     logLocalConnectionStatus(event, context);
   }
@@ -518,6 +520,22 @@ export class BaileysConnectionService {
     debug_trace_id?: string;
   }): Promise<IBaileysConnectionState> {
     this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+    this.logDebug('baileys.provider.passkey_response.received', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: input.connection_attempt_id,
+      active_connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      has_socket: Boolean(this.socket),
+      socket_supports_passkey_response: Boolean(
+        (this.socket as PasskeyCapableSocket | undefined)?.sendPasskeyResponse
+      ),
+      passkey_response: input.passkey_response,
+    });
     this.assertPasskeyRequestContext(input);
 
     const socket = this.socket as PasskeyCapableSocket | undefined;
@@ -526,6 +544,17 @@ export class BaileysConnectionService {
     }
 
     await socket.sendPasskeyResponse(input.passkey_response);
+    this.logDebug('baileys.provider.passkey_response.sent_to_socket', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: input.connection_attempt_id,
+      active_connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+    });
     this.setStatus(Status.connecting, ECodeMessage.pairingInProgress);
 
     const payload = this.state(undefined, undefined, {
@@ -544,6 +573,21 @@ export class BaileysConnectionService {
     debug_trace_id?: string;
   }): Promise<IBaileysConnectionState> {
     this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+    this.logDebug('baileys.provider.passkey_confirmation.received', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: input.connection_attempt_id,
+      active_connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+      has_socket: Boolean(this.socket),
+      socket_supports_passkey_confirmation: Boolean(
+        (this.socket as PasskeyCapableSocket | undefined)?.confirmPasskey
+      ),
+    });
     this.assertPasskeyRequestContext(input);
 
     const socket = this.socket as PasskeyCapableSocket | undefined;
@@ -552,6 +596,17 @@ export class BaileysConnectionService {
     }
 
     await socket.confirmPasskey();
+    this.logDebug('baileys.provider.passkey_confirmation.sent_to_socket', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: input.connection_attempt_id,
+      active_connection_attempt_id: this.connectionAttemptId,
+      status: this.status,
+      code: this.code,
+    });
     this.setStatus(Status.connecting, ECodeMessage.pairingInProgress);
 
     const payload = this.state(undefined, undefined, {
