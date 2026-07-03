@@ -1217,6 +1217,67 @@ describe('WorkerCommandHandlerService connection', () => {
     );
   });
 
+  it('caches passkey request over a QR cached for the same active attempt', async () => {
+    const deps = buildHandler();
+    seedActiveQrAttempt(deps.redisStore, {
+      connectionAttemptId: 'attempt-1',
+      runtimeGeneration: 1,
+    });
+    deps.redisStore.set(
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
+      JSON.stringify({
+        code: ECodeMessage.awaitingReadQrCode,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        connection_attempt_id: 'attempt-1',
+        runtime_generation: 1,
+        qrcode: 'data:image/png;base64,qr',
+        qr_pending: false,
+        qr_generated_at: new Date().toISOString(),
+      })
+    );
+
+    await deps.handler.notifyWorkerStatus({
+      worker_id: 'worker-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.disponible,
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingPasskey,
+      passkey_public_key: '{"challenge":"abc"}',
+      passkey_pending: true,
+      connection_attempt_id: 'attempt-1',
+      runtime_generation: 1,
+    });
+
+    const cached = JSON.parse(
+      deps.redisStore.get(
+        `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`
+      ) ?? '{}'
+    ) as IBaileysConnectionState;
+
+    expect(cached).toEqual(
+      expect.objectContaining({
+        code: ECodeMessage.awaitingPasskey,
+        connection_attempt_id: 'attempt-1',
+        passkey_public_key: '{"challenge":"abc"}',
+        passkey_pending: true,
+        qr_pending: false,
+      })
+    );
+    expect(cached.qrcode).toBeUndefined();
+    expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#account-1',
+      expect.objectContaining({
+        code: ECodeMessage.awaitingPasskey,
+        passkey_public_key: '{"challenge":"abc"}',
+        connection_attempt_id: 'attempt-1',
+      })
+    );
+  });
+
   it('keeps a QR notification when a newer active request raced ahead', async () => {
     const deps = buildHandler();
     seedActiveQrAttempt(deps.redisStore, {
@@ -1569,6 +1630,45 @@ describe('WorkerCommandHandlerService connection', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('returns a cached passkey request instead of enqueueing a new QR attempt', async () => {
+    const deps = buildHandler();
+    deps.redisStore.set(
+      `connection:qrcode:${EWorkerType.wwebjs}:worker-1:attempt`,
+      JSON.stringify({
+        code: ECodeMessage.awaitingPasskey,
+        status: EBaileysConnectionStatus.connecting,
+        worker_id: 'worker-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+        connection_attempt_id: 'attempt-passkey',
+        passkey_public_key: '{"challenge":"abc"}',
+        passkey_pending: true,
+        qr_pending: false,
+      })
+    );
+
+    const response = await deps.handler.handleRequestConnectionQrCode(
+      {
+        worker_id: 'worker-1',
+        status: EWorkerStatus.online,
+        type: EBaileysConnectionType.qrcode,
+      },
+      'account-1'
+    );
+
+    expect(response).toEqual(
+      expect.objectContaining({
+        code: ECodeMessage.awaitingPasskey,
+        connection_attempt_id: 'attempt-passkey',
+        passkey_public_key: '{"challenge":"abc"}',
+        passkey_pending: true,
+        qr_pending: false,
+      })
+    );
+    expect(response.qrcode).toBeUndefined();
+    expect(deps.redisQueueService.enqueue).not.toHaveBeenCalled();
   });
 
   it('does not return a cached QR older than the WhatsApp QR lifetime', async () => {

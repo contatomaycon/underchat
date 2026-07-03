@@ -9,22 +9,21 @@ import (
 )
 
 var connectionFlowSensitiveKeys = map[string]struct{}{
-	"authenticatordata":         {},
-	"clientdatajson":            {},
-	"credential_id":             {},
-	"passkey_confirmation_code": {},
-	"passkey_public_key":        {},
-	"passkey_response":          {},
-	"passkey_secret":            {},
-	"pairing_code":              {},
-	"publickey":                 {},
-	"qr":                        {},
-	"qr_code":                   {},
-	"qrcode":                    {},
-	"rawid":                     {},
-	"signature":                 {},
-	"userhandle":                {},
-	"webauthn_assertion":        {},
+	"authenticatordata":       {},
+	"clientdatajson":          {},
+	"credentialid":            {},
+	"passkeyconfirmationcode": {},
+	"passkeypublickey":        {},
+	"passkeyresponse":         {},
+	"passkeysecret":           {},
+	"pairingcode":             {},
+	"publickey":               {},
+	"qr":                      {},
+	"qrcode":                  {},
+	"rawid":                   {},
+	"signature":               {},
+	"userhandle":              {},
+	"webauthnassertion":       {},
 }
 
 func connectionFlowLog(event string, fields map[string]any) {

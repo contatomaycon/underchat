@@ -83,6 +83,8 @@ export function reduceWorkerConnectionState(
     Boolean(currentAttempt) &&
     Boolean(incomingAttempt) &&
     currentAttempt !== incomingAttempt;
+  const sameOrUnknownAttempt =
+    !currentAttempt || !incomingAttempt || currentAttempt === incomingAttempt;
 
   if (attemptMismatch && isSuccessfulTerminal(incoming)) {
     return {
@@ -140,6 +142,12 @@ export function reduceWorkerConnectionState(
   if (incoming.qrcode) {
     next.qrcode = incoming.qrcode;
     next.qr_pending = false;
+    if (!sameOrUnknownAttempt) {
+      delete next.passkey_public_key;
+      delete next.passkey_confirmation_code;
+      delete next.passkey_pending;
+      delete next.passkey_skip_handoff_ux;
+    }
   } else if (shouldClearQr(incoming)) {
     delete next.qrcode;
   } else if (current.qrcode) {
@@ -169,14 +177,23 @@ export function reduceWorkerConnectionState(
     delete next.passkey_confirmation_code;
     delete next.passkey_pending;
     delete next.passkey_skip_handoff_ux;
-  } else {
+  } else if (sameOrUnknownAttempt || !hasUserCredential(incoming)) {
     if (current.passkey_public_key) {
       next.passkey_public_key = current.passkey_public_key;
       next.passkey_pending = current.passkey_pending;
+      next.code = ECodeMessage.awaitingPasskey;
+      delete next.qrcode;
+      delete next.pairing_code;
+      delete next.passkey_confirmation_code;
     }
     if (current.passkey_confirmation_code) {
       next.passkey_confirmation_code = current.passkey_confirmation_code;
       next.passkey_skip_handoff_ux = current.passkey_skip_handoff_ux;
+      next.code = ECodeMessage.awaitingPasskeyConfirmation;
+      next.passkey_pending = false;
+      delete next.qrcode;
+      delete next.pairing_code;
+      delete next.passkey_public_key;
     }
   }
 

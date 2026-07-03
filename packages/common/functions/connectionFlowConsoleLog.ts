@@ -3,20 +3,20 @@ type ConnectionFlowFields = Record<string, unknown>;
 const SENSITIVE_KEYS = new Set([
   'authenticatordata',
   'clientdatajson',
-  'credential_id',
-  'passkey_confirmation_code',
-  'passkey_public_key',
-  'passkey_response',
-  'passkey_secret',
-  'pairing_code',
+  'credentialid',
+  'passkeyconfirmationcode',
+  'passkeypublickey',
+  'passkeyresponse',
+  'passkeysecret',
+  'pairingcode',
   'publickey',
   'qrcode',
   'qr',
-  'qr_code',
+  'qrcode',
   'rawid',
   'signature',
   'userhandle',
-  'webauthn_assertion',
+  'webauthnassertion',
 ]);
 
 function normalizeKey(key: string): string {

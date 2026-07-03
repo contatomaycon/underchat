@@ -2532,6 +2532,29 @@ export class WorkerCommandHandlerService {
   private normalizeQrFreshness(
     state: IBaileysConnectionState
   ): IBaileysConnectionState {
+    if (
+      state.pairing_code ||
+      state.passkey_public_key ||
+      state.passkey_confirmation_code
+    ) {
+      const normalized: IBaileysConnectionState = {
+        ...state,
+        qr_pending: false,
+      };
+      delete normalized.qrcode;
+      delete normalized.qr_generated_at;
+      delete normalized.expires_at;
+      if (normalized.passkey_public_key) {
+        normalized.code = ECodeMessage.awaitingPasskey;
+      } else if (normalized.passkey_confirmation_code) {
+        normalized.code = ECodeMessage.awaitingPasskeyConfirmation;
+      } else if (normalized.pairing_code) {
+        normalized.code = ECodeMessage.awaitingPairingCode;
+      }
+      normalized.status = EBaileysConnectionStatus.connecting;
+      return normalized;
+    }
+
     if (!state.qrcode) {
       return state;
     }
@@ -2683,7 +2706,13 @@ export class WorkerCommandHandlerService {
       return { payload, shouldReturnCached: false };
     }
 
-    if (activeCached.qrcode || activeCached.qr_pending === true) {
+    if (
+      activeCached.qrcode ||
+      activeCached.pairing_code ||
+      activeCached.passkey_public_key ||
+      activeCached.passkey_confirmation_code ||
+      activeCached.qr_pending === true
+    ) {
       this.logDebug('service.qr_request.cached_state_returnable', {
         trace_id: payload.debug_trace_id,
         layer: 'service',
@@ -2695,6 +2724,10 @@ export class WorkerCommandHandlerService {
         connection_attempt_id: payload.connection_attempt_id,
         qrcode: activeCached.qrcode,
         pairing_code: activeCached.pairing_code,
+        has_passkey_public_key: Boolean(activeCached.passkey_public_key),
+        has_passkey_confirmation_code: Boolean(
+          activeCached.passkey_confirmation_code
+        ),
         qr_pending: activeCached.qr_pending === true,
       });
       return {
@@ -2868,6 +2901,23 @@ export class WorkerCommandHandlerService {
       normalized.qr_generated_at ??= new Date().toISOString();
       normalized.expires_at ??= this.qrExpiresAt(normalized);
       normalized.qr_pending = false;
+      return normalized;
+    }
+
+    if (
+      normalized.pairing_code ||
+      normalized.passkey_public_key ||
+      normalized.passkey_confirmation_code
+    ) {
+      normalized.qr_pending = false;
+      normalized.status = EBaileysConnectionStatus.connecting;
+      if (normalized.passkey_public_key) {
+        normalized.code = ECodeMessage.awaitingPasskey;
+      } else if (normalized.passkey_confirmation_code) {
+        normalized.code = ECodeMessage.awaitingPasskeyConfirmation;
+      } else if (normalized.pairing_code) {
+        normalized.code = ECodeMessage.awaitingPairingCode;
+      }
       return normalized;
     }
 
@@ -3152,7 +3202,7 @@ export class WorkerCommandHandlerService {
         };
       }
 
-      if (!state.qrcode) {
+      if (!hasQrCredential) {
         const cached = await this.getCachedQrAttemptState(
           state.worker_id,
           state.worker_type_id
@@ -3216,7 +3266,7 @@ export class WorkerCommandHandlerService {
       };
     }
 
-    if (cached.qrcode && !state.qrcode) {
+    if (cached.qrcode && !hasQrCredential) {
       return {
         ignored: true,
         reason: 'cached_qr_wins_over_without_qr',

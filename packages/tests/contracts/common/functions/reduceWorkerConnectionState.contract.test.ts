@@ -150,6 +150,51 @@ describe('reduceWorkerConnectionState', () => {
     expect(result.state.passkey_public_key).toBe(current.passkey_public_key);
   });
 
+  it('preserves passkey request against a delayed QR for the same attempt', () => {
+    const current = {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingPasskey,
+      passkey_public_key: '{"challenge":"abc"}',
+      passkey_pending: true,
+      connection_attempt_id: 'attempt-1',
+    };
+
+    const result = reduceWorkerConnectionState(current, {
+      status: EBaileysConnectionStatus.connecting,
+      code: ECodeMessage.awaitingReadQrCode,
+      qrcode: 'data:image/png;base64,old-qr',
+      connection_attempt_id: 'attempt-1',
+    });
+
+    expect(result.ignored).toBe(false);
+    expect(result.state.code).toBe(ECodeMessage.awaitingPasskey);
+    expect(result.state.passkey_public_key).toBe(current.passkey_public_key);
+    expect(result.state.qrcode).toBeUndefined();
+  });
+
+  it('accepts QR from a newer attempt after a passkey request', () => {
+    const result = reduceWorkerConnectionState(
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingPasskey,
+        passkey_public_key: '{"challenge":"abc"}',
+        passkey_pending: true,
+        connection_attempt_id: 'attempt-1',
+      },
+      {
+        status: EBaileysConnectionStatus.connecting,
+        code: ECodeMessage.awaitingReadQrCode,
+        qrcode: 'data:image/png;base64,new-qr',
+        connection_attempt_id: 'attempt-2',
+      }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.state.connection_attempt_id).toBe('attempt-2');
+    expect(result.state.qrcode).toBe('data:image/png;base64,new-qr');
+    expect(result.state.passkey_public_key).toBeUndefined();
+  });
+
   it('switches passkey request to manual passkey confirmation', () => {
     const result = reduceWorkerConnectionState(
       {
