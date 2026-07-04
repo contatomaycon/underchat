@@ -5,6 +5,6 @@ const raw =
 let normalized = raw ? String(raw).replace(/\/+$/, '') : '';
 
 if (Platform.OS === 'android' && normalized.includes('localhost')) {
-  normalized = normalized.replace('localhost', '10.0.2.2');
+  normalized = normalized.replace('localhost', '10.0.2.3');
 }
 export const BACKEND_URL = normalized;
