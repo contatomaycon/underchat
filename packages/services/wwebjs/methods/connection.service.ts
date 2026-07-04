@@ -36,6 +36,7 @@ import {
   isConnectionLifecycleDebugEnabled,
 } from '@core/services/connectionLifecycleDebug.service';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
+import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const RETRY_DELAY = 60_000;
@@ -276,6 +277,7 @@ export class WwebjsConnectionService {
     event: string,
     context: ConnectionLifecycleDebugContext
   ): void {
+    logConnectionFlowConsole(event, context);
     void this.connectionLifecycleDebugService.log(event, context);
     logLocalConnectionStatus(event, context);
   }

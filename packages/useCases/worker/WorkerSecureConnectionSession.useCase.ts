@@ -72,11 +72,33 @@ export class WorkerSecureConnectionSessionUseCase {
       debugTraceId?: string;
     }
   ): Promise<WorkerSecureConnectionSessionResponse> {
+    this.logEvent('manager.secure_connection.create.start', {
+      trace_id: input.debugTraceId,
+      worker_id: input.workerId,
+      account_id: input.accountId,
+      api_base_url: input.apiBaseUrl,
+      ttl_seconds: SESSION_TTL_SECONDS,
+    });
+
     const worker = await this.resolveWorker(t, input.accountId, input.workerId);
     const workerTypeId = worker.type?.id as EWorkerType | undefined;
     const workerStatusId = worker.status?.id;
 
+    this.logEvent('manager.secure_connection.create.worker_resolved', {
+      trace_id: input.debugTraceId,
+      worker_id: input.workerId,
+      account_id: input.accountId,
+      worker_type_id: workerTypeId,
+      worker_status_id: workerStatusId,
+    });
+
     if (!workerTypeId || !this.isSupportedWorkerType(workerTypeId)) {
+      this.logEvent('manager.secure_connection.create.worker_type_invalid', {
+        trace_id: input.debugTraceId,
+        worker_id: input.workerId,
+        account_id: input.accountId,
+        worker_type_id: workerTypeId,
+      });
       throw new Error(t('worker_type_invalid'));
     }
 
@@ -84,6 +106,13 @@ export class WorkerSecureConnectionSessionUseCase {
       workerStatusId &&
       !SECURE_CONNECTION_ALLOWED_WORKER_STATUSES.has(workerStatusId)
     ) {
+      this.logEvent('manager.secure_connection.create.worker_not_ready', {
+        trace_id: input.debugTraceId,
+        worker_id: input.workerId,
+        account_id: input.accountId,
+        worker_type_id: workerTypeId,
+        worker_status_id: workerStatusId,
+      });
       throw new Error(t('worker_qrcode_not_ready'));
     }
 
@@ -120,7 +149,10 @@ export class WorkerSecureConnectionSessionUseCase {
     await this.publishStatus(session);
 
     this.logFlow('manager.secure_connection.created', session, {
+      trace_id: input.debugTraceId,
       helper_protocol: SECURE_HELPER_PROTOCOL,
+      expires_at: session.expires_at,
+      runtime_generation: session.runtime_generation,
     });
 
     return this.toResponse(session, { includeToken: true });
@@ -134,8 +166,15 @@ export class WorkerSecureConnectionSessionUseCase {
       token: string;
     }
   ): Promise<WorkerSecureConnectionSessionResponse> {
+    this.logEvent('manager.secure_connection.view.start', {
+      worker_id: input.workerId,
+      account_id: input.accountId,
+      token_hash: this.hashToken(input.token),
+    });
+
     const session = await this.getSessionOrThrow(t, input.token);
     this.assertSameWorker(t, session, input.accountId, input.workerId);
+    this.logFlow('manager.secure_connection.view.done', session);
 
     return this.toResponse(session, { includeToken: true });
   }
@@ -148,6 +187,12 @@ export class WorkerSecureConnectionSessionUseCase {
       token: string;
     }
   ): Promise<WorkerSecureConnectionSessionResponse> {
+    this.logEvent('manager.secure_connection.cancel.start', {
+      worker_id: input.workerId,
+      account_id: input.accountId,
+      token_hash: this.hashToken(input.token),
+    });
+
     const session = await this.getSessionOrThrow(t, input.token);
     this.assertSameWorker(t, session, input.accountId, input.workerId);
 
@@ -156,6 +201,7 @@ export class WorkerSecureConnectionSessionUseCase {
       fail_reason: 'cancelled_by_user',
     });
     await this.publishStatus(cancelled);
+    this.logFlow('manager.secure_connection.cancel.done', cancelled);
 
     return this.toResponse(cancelled, { includeToken: true });
   }
@@ -164,6 +210,10 @@ export class WorkerSecureConnectionSessionUseCase {
     t: TFunction<'translation', undefined>,
     token: string
   ): Promise<WorkerSecureConnectionSessionResponse> {
+    this.logEvent('manager.secure_connection.helper_view.start', {
+      token_hash: this.hashToken(token),
+    });
+
     const session = await this.getSessionOrThrow(t, token);
 
     if (session.status === 'created') {
@@ -171,9 +221,11 @@ export class WorkerSecureConnectionSessionUseCase {
         status: 'helper_opened',
       });
       await this.publishStatus(opened);
+      this.logFlow('manager.secure_connection.helper_view.opened', opened);
       return this.toResponse(opened);
     }
 
+    this.logFlow('manager.secure_connection.helper_view.done', session);
     return this.toResponse(session);
   }
 
@@ -188,13 +240,31 @@ export class WorkerSecureConnectionSessionUseCase {
       error?: string;
     }
   ): Promise<WorkerSecureConnectionSessionResponse> {
+    this.logEvent('manager.secure_connection.helper_status.start', {
+      token_hash: this.hashToken(input.token),
+      requested_status: input.status,
+      helper_version: input.helperVersion,
+      helper_platform: input.helperPlatform,
+      has_error: Boolean(input.error),
+    });
+
     const session = await this.getSessionOrThrow(t, input.token);
     if (this.isTerminalStatus(session.status)) {
+      this.logFlow(
+        'manager.secure_connection.helper_status.ignored_terminal',
+        session,
+        {
+          requested_status: input.status,
+        }
+      );
       return this.toResponse(session);
     }
 
     const nextStatus = this.normalizeStatus(t, input.status);
     if (!SECURE_CONNECTION_HELPER_STATUSES_SET.has(nextStatus)) {
+      this.logFlow('manager.secure_connection.helper_status.invalid', session, {
+        requested_status: input.status,
+      });
       throw new Error(t('worker_secure_connection_status_invalid'));
     }
 
@@ -207,6 +277,13 @@ export class WorkerSecureConnectionSessionUseCase {
     });
 
     await this.publishStatus(next, { message: input.message });
+    this.logFlow('manager.secure_connection.helper_status.done', next, {
+      previous_status: session.status,
+      requested_status: input.status,
+      helper_version: input.helperVersion,
+      helper_platform: input.helperPlatform,
+      has_error: Boolean(input.error),
+    });
 
     return this.toResponse(next);
   }
@@ -219,19 +296,68 @@ export class WorkerSecureConnectionSessionUseCase {
       debugTraceId?: string;
     }
   ): Promise<WorkerSecureConnectionSessionResponse> {
+    this.logEvent('manager.secure_connection.session_upload.start', {
+      trace_id: input.debugTraceId,
+      token_hash: this.hashToken(input.token),
+      format_version: input.package.format_version,
+      source: input.package.source,
+      target_provider: input.package.target_provider,
+      web_version: input.package.web_version,
+      has_payload_ref: Boolean(input.package.payload_ref),
+      has_payload: input.package.payload !== undefined,
+      has_checksum: Boolean(input.package.checksum),
+    });
+
     const session = await this.getSessionOrThrow(t, input.token);
 
     if (this.isTerminalStatus(session.status)) {
+      this.logFlow(
+        'manager.secure_connection.session_upload.rejected_terminal',
+        session,
+        {
+          trace_id: input.debugTraceId,
+          upload_status: session.status,
+        }
+      );
       throw new Error(t('worker_secure_connection_status_invalid'));
     }
 
     if (session.upload_received_at) {
+      this.logFlow(
+        'manager.secure_connection.session_upload.rejected_duplicate',
+        session,
+        {
+          trace_id: input.debugTraceId,
+        }
+      );
       throw new Error(t('worker_secure_connection_session_already_uploaded'));
     }
 
     this.validateSessionPackage(t, session, input.package);
+    this.logFlow(
+      'manager.secure_connection.session_upload.validated',
+      session,
+      {
+        trace_id: input.debugTraceId,
+        format_version: input.package.format_version,
+        target_provider: input.package.target_provider,
+        has_payload_ref: Boolean(input.package.payload_ref),
+        has_payload: input.package.payload !== undefined,
+        has_checksum: Boolean(input.package.checksum),
+      }
+    );
 
     const payloadRef = await this.storePayload(input.token, input.package);
+    this.logFlow(
+      'manager.secure_connection.session_upload.payload_stored',
+      session,
+      {
+        trace_id: input.debugTraceId,
+        payload_ref: payloadRef,
+        payload_ttl_seconds: PAYLOAD_TTL_SECONDS,
+      }
+    );
+
     const received = await this.updateSession(session, {
       status: 'session_received',
       upload_received_at: new Date().toISOString(),
@@ -242,6 +368,13 @@ export class WorkerSecureConnectionSessionUseCase {
       status: 'importing',
     });
     await this.publishStatus(importing);
+    this.logFlow(
+      'manager.secure_connection.session_upload.importing',
+      importing,
+      {
+        trace_id: input.debugTraceId,
+      }
+    );
 
     try {
       const importRequest: ISecureConnectionImportRequest = {
@@ -257,6 +390,14 @@ export class WorkerSecureConnectionSessionUseCase {
         checksum: input.package.checksum,
         debug_trace_id: input.debugTraceId,
       };
+
+      this.logFlow('manager.secure_connection.import.grpc_call', importing, {
+        trace_id: input.debugTraceId,
+        payload_ref: importRequest.payload_ref,
+        format_version: importRequest.format_version,
+        target_provider: importRequest.target_provider,
+        runtime_generation: importRequest.runtime_generation,
+      });
 
       const imported =
         await this.workerBaileysGrpcClientService.importSecureSession(
@@ -274,6 +415,15 @@ export class WorkerSecureConnectionSessionUseCase {
           : 'worker_import_failed',
       });
       await this.publishStatus(connected);
+      this.logFlow('manager.secure_connection.import.grpc_result', connected, {
+        trace_id: input.debugTraceId,
+        imported_status: imported.status,
+        imported_code: imported.code,
+        imported_reason: imported.reason,
+        session_ready: imported.session_ready,
+        authenticated: imported.authenticated,
+        phone_present: Boolean(imported.phone),
+      });
 
       return this.toResponse(connected);
     } catch (error) {
@@ -283,6 +433,10 @@ export class WorkerSecureConnectionSessionUseCase {
         fail_reason: 'worker_import_failed',
       });
       await this.publishStatus(failed);
+      this.logFlow('manager.secure_connection.import.grpc_error', failed, {
+        trace_id: input.debugTraceId,
+        reason: this.sanitizeError(error),
+      });
 
       return this.toResponse(failed);
     }
@@ -369,6 +523,9 @@ export class WorkerSecureConnectionSessionUseCase {
   ): Promise<ISecureConnectionSession> {
     const raw = await this.redis.get(this.sessionKey(token));
     if (!raw) {
+      this.logEvent('manager.secure_connection.session.not_found', {
+        token_hash: this.hashToken(token),
+      });
       throw new Error(t('worker_secure_connection_session_not_found'));
     }
 
@@ -376,6 +533,7 @@ export class WorkerSecureConnectionSessionUseCase {
     if (Date.parse(session.expires_at) <= Date.now()) {
       const expired = await this.updateSession(session, { status: 'expired' });
       await this.publishStatus(expired);
+      this.logFlow('manager.secure_connection.session.expired', expired);
       throw new Error(t('worker_secure_connection_session_expired'));
     }
 
@@ -468,6 +626,9 @@ export class WorkerSecureConnectionSessionUseCase {
         message: extra.message,
       }
     );
+    this.logFlow('manager.secure_connection.status_published', session, {
+      message_present: Boolean(extra.message),
+    });
   }
 
   private toResponse(
@@ -532,13 +693,19 @@ export class WorkerSecureConnectionSessionUseCase {
     return String(error).slice(0, 240);
   }
 
+  private logEvent(event: string, details: Record<string, unknown> = {}): void {
+    logConnectionFlowConsole(event, {
+      layer: 'manager.secure_connection',
+      ...details,
+    });
+  }
+
   private logFlow(
     event: string,
     session: ISecureConnectionSession,
     details: Record<string, unknown> = {}
   ): void {
-    logConnectionFlowConsole(event, {
-      layer: 'manager.secure_connection',
+    this.logEvent(event, {
       worker_id: session.worker_id,
       account_id: session.account_id,
       worker_type_id: session.worker_type_id,

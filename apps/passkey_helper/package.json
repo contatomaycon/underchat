@@ -19,15 +19,17 @@
     "build": "pnpm run build:prod",
     "build:dev": "tsc --noEmit && electron-vite build --mode development",
     "build:prod": "tsc --noEmit && electron-vite build --mode production",
+    "icons": "node scripts/generate-desktop-icons.mjs",
+    "cert:win:self-signed": "node scripts/create-self-signed-windows-cert.mjs",
     "package": "pnpm run package:prod",
-    "package:dev": "pnpm run build:dev && electron-builder --config.directories.output=release/dev",
-    "package:prod": "pnpm run build:prod && electron-builder --config.directories.output=release/prod",
+    "package:dev": "pnpm run icons && pnpm run build:dev && node scripts/package-with-signing.mjs --config.directories.output=release/dev",
+    "package:prod": "pnpm run icons && pnpm run build:prod && node scripts/package-with-signing.mjs --config.directories.output=release/prod",
     "package:win": "pnpm run package:win:prod",
-    "package:win:dev": "pnpm run build:dev && electron-builder --win nsis --config.directories.output=release/dev",
-    "package:win:prod": "pnpm run build:prod && electron-builder --win nsis --config.directories.output=release/prod",
+    "package:win:dev": "pnpm run icons && pnpm run cert:win:self-signed && pnpm run build:dev && node scripts/package-with-signing.mjs --win nsis --config.directories.output=release/dev",
+    "package:win:prod": "pnpm run icons && pnpm run cert:win:self-signed && pnpm run build:prod && node scripts/package-with-signing.mjs --win nsis --config.directories.output=release/prod",
     "package:linux": "pnpm run package:linux:prod",
-    "package:linux:dev": "pnpm run build:dev && electron-builder --linux AppImage deb --config.directories.output=release/dev",
-    "package:linux:prod": "pnpm run build:prod && electron-builder --linux AppImage deb --config.directories.output=release/prod"
+    "package:linux:dev": "pnpm run icons && pnpm run build:dev && node scripts/package-with-signing.mjs --linux AppImage deb --config.directories.output=release/dev",
+    "package:linux:prod": "pnpm run icons && pnpm run build:prod && node scripts/package-with-signing.mjs --linux AppImage deb --config.directories.output=release/prod"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

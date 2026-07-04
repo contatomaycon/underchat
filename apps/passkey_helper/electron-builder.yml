@@ -3,7 +3,9 @@ productName: Underchat Passkey Helper
 copyright: Copyright (c) 2026 Underchat
 
 asar: true
-icon: ../../apps/mobile/assets/icon.png
+icon: build/icons/icon.png
+npmRebuild: false
+nodeGypRebuild: false
 
 directories:
   output: release
@@ -21,7 +23,14 @@ protocols:
       - underchat-passkey
 
 win:
-  icon: ../../apps/mobile/assets/icon.png
+  icon: build/icons/icon.ico
+  signAndEditExecutable: true
+  signtoolOptions:
+    sign: ./scripts/windows-sign-hook.cjs
+    publisherName:
+      - Underchat
+    signingHashAlgorithms:
+      - sha256
   target:
     - target: nsis
       arch:
@@ -36,7 +45,7 @@ nsis:
 linux:
   category: Network
   executableName: underchat-passkey-helper
-  icon: ../../apps/mobile/assets/icon.png
+  icon: build/icons/icon.png
   maintainer: Underchat <contato@underchat.com.br>
   syncDesktopName: true
   target:

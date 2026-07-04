@@ -7,6 +7,10 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { handleSecureConnectionError } from './secureConnectionError';
 import { EPrefixRoutes } from '@core/common/enums/EPrefixRoutes';
+import {
+  getSecureConnectionErrorMessage,
+  logSecureConnectionHttpFlow,
+} from './secureConnectionLog';
 
 export const createSecureConnectionSession = async (
   request: FastifyRequest<{
@@ -19,13 +23,38 @@ export const createSecureConnectionSession = async (
   const debugTraceId = extractConnectionLifecycleDebugTraceIdFromHeaders(
     request.headers as Record<string, string | string[] | undefined>
   );
+  const apiBaseUrl = resolveApiBaseUrl(request);
 
   try {
+    logSecureConnectionHttpFlow(
+      'manager.http.secure_connection.create.received',
+      {
+        trace_id: debugTraceId,
+        request_id: request.id,
+        worker_id: request.params.worker_id,
+        account_id: tokenJwtData.account_id,
+        api_base_url: apiBaseUrl,
+      }
+    );
+
     const response = await useCase.create(t, {
       accountId: tokenJwtData.account_id,
       workerId: request.params.worker_id,
-      apiBaseUrl: resolveApiBaseUrl(request),
+      apiBaseUrl,
       debugTraceId,
+    });
+
+    logSecureConnectionHttpFlow('manager.http.secure_connection.create.done', {
+      trace_id: debugTraceId,
+      request_id: request.id,
+      worker_id: response.worker_id,
+      account_id: tokenJwtData.account_id,
+      worker_type_id: response.worker_type_id,
+      connection_attempt_id: response.connection_attempt_id,
+      runtime_generation: response.runtime_generation,
+      status: response.status,
+      token_hash: response.token_hash,
+      expires_at: response.expires_at,
     });
 
     return sendResponse(reply, {
@@ -34,6 +63,13 @@ export const createSecureConnectionSession = async (
       data: response,
     });
   } catch (error) {
+    logSecureConnectionHttpFlow('manager.http.secure_connection.create.error', {
+      trace_id: debugTraceId,
+      request_id: request.id,
+      worker_id: request.params.worker_id,
+      account_id: tokenJwtData.account_id,
+      reason: getSecureConnectionErrorMessage(error),
+    });
     handleSecureConnectionError(error, reply, t);
   }
 };

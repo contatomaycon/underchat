@@ -845,8 +845,59 @@ export class WorkerBaileysGrpcClientService {
     payload: WorkerSecureSessionImportProtoPayload,
     workerType?: EWorkerType
   ): Promise<IBaileysConnectionState> {
-    return this.callWithFallback(workerId, workerType, (address) =>
-      this.importSecureSessionByAddress(address, payload)
-    );
+    const startedAt = Date.now();
+    this.logFlow('service.worker_connection_grpc.secure_import.start', {
+      trace_id: payload.debug_trace_id,
+      worker_id: workerId,
+      account_id: payload.account_id,
+      worker_type_id: workerType ?? payload.worker_type_id,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+      format_version: payload.format_version,
+      target_provider: payload.target_provider,
+      has_payload_ref: Boolean(payload.payload_ref),
+      has_payload_json: Boolean(payload.payload_json),
+      method: 'ImportSecureSession',
+    });
+
+    try {
+      const response = await this.callWithFallback(
+        workerId,
+        workerType,
+        (address) => this.importSecureSessionByAddress(address, payload)
+      );
+      this.logFlow('service.worker_connection_grpc.secure_import.done', {
+        trace_id: response.debug_trace_id ?? payload.debug_trace_id,
+        worker_id: response.worker_id ?? workerId,
+        account_id: response.account_id ?? payload.account_id,
+        worker_type_id:
+          response.worker_type_id ?? workerType ?? payload.worker_type_id,
+        connection_attempt_id:
+          response.connection_attempt_id ?? payload.connection_attempt_id,
+        runtime_generation:
+          response.runtime_generation ?? payload.runtime_generation,
+        status: response.status,
+        code: response.code,
+        reason: response.reason,
+        session_ready: response.session_ready,
+        authenticated: response.authenticated,
+        duration_ms: Date.now() - startedAt,
+        method: 'ImportSecureSession',
+      });
+      return response;
+    } catch (error) {
+      this.logFlow('service.worker_connection_grpc.secure_import.failed', {
+        trace_id: payload.debug_trace_id,
+        worker_id: workerId,
+        account_id: payload.account_id,
+        worker_type_id: workerType ?? payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        reason: error instanceof Error ? error.message : String(error),
+        duration_ms: Date.now() - startedAt,
+        method: 'ImportSecureSession',
+      });
+      throw error;
+    }
   }
 }

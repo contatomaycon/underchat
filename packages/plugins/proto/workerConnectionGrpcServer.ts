@@ -894,6 +894,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       checksum: req.checksum,
       debug_trace_id: req.debug_trace_id,
     };
+    const startedAt = Date.now();
 
     logWorkerConnectionGrpcFlow(
       'worker.connection_grpc.secure_import_received',
@@ -919,6 +920,24 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       !payload.format_version ||
       (!payload.payload_ref && !payload.payload_json)
     ) {
+      logWorkerConnectionGrpcFlow(
+        'worker.connection_grpc.secure_import_invalid_argument',
+        {
+          trace_id: payload.debug_trace_id,
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: getWorkerTypeId(),
+          connection_attempt_id: payload.connection_attempt_id,
+          runtime_generation: payload.runtime_generation,
+          format_version: payload.format_version,
+          target_provider: payload.target_provider,
+          has_payload_ref: Boolean(payload.payload_ref),
+          has_payload_json: Boolean(payload.payload_json),
+          duration_ms: Date.now() - startedAt,
+          grpc_module: module,
+          grpc_method: 'ImportSecureSession',
+        }
+      );
       callback(
         {
           code: status.INVALID_ARGUMENT,
@@ -940,6 +959,27 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     service
       .importSecureSession(payload)
       .then((response) => {
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.secure_import_done',
+          {
+            trace_id: response.debug_trace_id ?? payload.debug_trace_id,
+            worker_id: response.worker_id ?? payload.worker_id,
+            account_id: response.account_id ?? payload.account_id,
+            worker_type_id: response.worker_type_id ?? getWorkerTypeId(),
+            connection_attempt_id:
+              response.connection_attempt_id ?? payload.connection_attempt_id,
+            runtime_generation:
+              response.runtime_generation ?? payload.runtime_generation,
+            status: response.status,
+            code: response.code,
+            reason: response.reason,
+            session_ready: response.session_ready,
+            authenticated: response.authenticated,
+            duration_ms: Date.now() - startedAt,
+            grpc_module: module,
+            grpc_method: 'ImportSecureSession',
+          }
+        );
         callback(
           null,
           connectionStateToProto({
@@ -963,7 +1003,10 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
             account_id: payload.account_id,
             worker_type_id: getWorkerTypeId(),
             connection_attempt_id: payload.connection_attempt_id,
+            runtime_generation: payload.runtime_generation,
+            duration_ms: Date.now() - startedAt,
             grpc_module: module,
+            grpc_method: 'ImportSecureSession',
             reason: msg,
           }
         );

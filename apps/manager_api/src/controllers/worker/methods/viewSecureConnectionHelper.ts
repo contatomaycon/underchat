@@ -5,6 +5,11 @@ import { WorkerSecureConnectionHelperParams } from '@core/schema/worker/secureCo
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { container } from 'tsyringe';
 import { handleSecureConnectionError } from './secureConnectionError';
+import {
+  getSecureConnectionErrorMessage,
+  logSecureConnectionHttpFlow,
+  secureConnectionTokenHash,
+} from './secureConnectionLog';
 
 export const viewSecureConnectionHelper = async (
   request: FastifyRequest<{
@@ -14,9 +19,31 @@ export const viewSecureConnectionHelper = async (
 ) => {
   const useCase = container.resolve(WorkerSecureConnectionSessionUseCase);
   const { t } = request;
+  const tokenHash = secureConnectionTokenHash(request.params.token);
 
   try {
+    logSecureConnectionHttpFlow(
+      'manager.http.secure_connection.helper_view.received',
+      {
+        request_id: request.id,
+        token_hash: tokenHash,
+      }
+    );
+
     const response = await useCase.viewForHelper(t, request.params.token);
+
+    logSecureConnectionHttpFlow(
+      'manager.http.secure_connection.helper_view.done',
+      {
+        request_id: request.id,
+        worker_id: response.worker_id,
+        worker_type_id: response.worker_type_id,
+        connection_attempt_id: response.connection_attempt_id,
+        runtime_generation: response.runtime_generation,
+        status: response.status,
+        token_hash: response.token_hash,
+      }
+    );
 
     return sendResponse(reply, {
       message: t('worker_secure_connection_session_view_success'),
@@ -24,6 +51,14 @@ export const viewSecureConnectionHelper = async (
       data: response,
     });
   } catch (error) {
+    logSecureConnectionHttpFlow(
+      'manager.http.secure_connection.helper_view.error',
+      {
+        request_id: request.id,
+        token_hash: tokenHash,
+        reason: getSecureConnectionErrorMessage(error),
+      }
+    );
     handleSecureConnectionError(error, reply, t);
   }
 };

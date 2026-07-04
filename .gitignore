@@ -96,6 +96,11 @@ out
 .nuxt
 dist
 apps/passkey_helper/release/
+apps/passkey_helper/build/certs/
+apps/passkey_helper/build/electron/
+apps/passkey_helper/build/electron-builder-cache/
+apps/passkey_helper/build/wine-prefix/
+apps/passkey_helper/build/wine-runtime/
 
 # Gatsby files
 .cache/
