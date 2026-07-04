@@ -42,6 +42,18 @@ const SECURE_CONNECTION_HELPER_STATUSES_SET = new Set<string>([
   'uploading',
   'failed',
 ]);
+const SECURE_CONNECTION_STATUS_ORDER: Record<SecureConnectionStatus, number> = {
+  created: 0,
+  helper_opened: 1,
+  wa_authenticated: 2,
+  uploading: 3,
+  session_received: 4,
+  importing: 5,
+  connected: 6,
+  failed: 6,
+  expired: 6,
+  cancelled: 6,
+};
 
 const SECURE_CONNECTION_ALLOWED_WORKER_STATUSES = new Set<string>([
   EWorkerStatus.disponible,
@@ -266,6 +278,40 @@ export class WorkerSecureConnectionSessionUseCase {
         requested_status: input.status,
       });
       throw new Error(t('worker_secure_connection_status_invalid'));
+    }
+
+    if (this.isStatusRegression(session.status, nextStatus)) {
+      this.logFlow(
+        'manager.secure_connection.helper_status.ignored_regression',
+        session,
+        {
+          requested_status: input.status,
+          current_status: session.status,
+        }
+      );
+      return this.toResponse(session);
+    }
+
+    const helperMetadataChanged =
+      (input.helperVersion !== undefined &&
+        input.helperVersion !== session.helper_version) ||
+      (input.helperPlatform !== undefined &&
+        input.helperPlatform !== session.helper_platform);
+
+    if (
+      session.status === nextStatus &&
+      !input.error &&
+      !input.message &&
+      !helperMetadataChanged
+    ) {
+      this.logFlow(
+        'manager.secure_connection.helper_status.ignored_duplicate',
+        session,
+        {
+          requested_status: input.status,
+        }
+      );
+      return this.toResponse(session);
     }
 
     const next = await this.updateSession(session, {
@@ -568,6 +614,16 @@ export class WorkerSecureConnectionSessionUseCase {
       status === 'failed' ||
       status === 'expired' ||
       status === 'cancelled'
+    );
+  }
+
+  private isStatusRegression(
+    currentStatus: SecureConnectionStatus,
+    nextStatus: SecureConnectionStatus
+  ): boolean {
+    return (
+      SECURE_CONNECTION_STATUS_ORDER[nextStatus] <
+      SECURE_CONNECTION_STATUS_ORDER[currentStatus]
     );
   }
 

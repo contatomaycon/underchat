@@ -257,6 +257,11 @@ function registerIpcHandlers(): void {
         throw new Error('Sessao segura nao iniciada.');
       }
 
+      const previousStatus = normalizeSessionStatus(currentPairing.session);
+      logEvent('secure_session.status.update.start', currentPairing.context, {
+        previous_status: previousStatus,
+        requested_status: statusPayload.status,
+      });
       const result = await apiClient.updateSecureStatus(
         currentPairing.context,
         {
@@ -268,7 +273,27 @@ function registerIpcHandlers(): void {
       currentPairing.session = await fetchPairingSession(
         currentPairing.context
       ).catch(() => currentPairing?.session ?? null);
-      mainWindow?.webContents.send('underchat-passkey:session-updated');
+      const nextStatus =
+        normalizeSessionStatus(currentPairing.session) ??
+        normalizeActionStatus(result.status ?? result.code);
+
+      if (nextStatus !== previousStatus) {
+        mainWindow?.webContents.send('underchat-passkey:session-updated');
+      } else {
+        logEvent(
+          'secure_session.status.update.no_session_event',
+          currentPairing.context,
+          {
+            status: nextStatus,
+          }
+        );
+      }
+
+      logEvent('secure_session.status.update.done', currentPairing.context, {
+        next_status: nextStatus,
+        previous_status: previousStatus,
+        requested_status: statusPayload.status,
+      });
       return result;
     }
   );
@@ -282,9 +307,16 @@ function registerIpcHandlers(): void {
 
       logEvent('secure_session.upload.start', currentPairing.context, {
         format_version: sessionPackage.format_version,
+        has_payload: sessionPackage.payload !== undefined,
+        has_payload_ref: Boolean(sessionPackage.payload_ref),
         target_provider: sessionPackage.target_provider,
       });
       const enrichedPackage = await enrichSecureSessionPackage(sessionPackage);
+      logEvent('secure_session.upload.package_ready', currentPairing.context, {
+        cookie_count: countElectronCookies(enrichedPackage.payload),
+        has_payload: enrichedPackage.payload !== undefined,
+        has_payload_ref: Boolean(enrichedPackage.payload_ref),
+      });
       const result = await apiClient.uploadSecureSession(
         currentPairing.context,
         enrichedPackage
@@ -294,11 +326,39 @@ function registerIpcHandlers(): void {
       ).catch(() => currentPairing?.session ?? null);
       mainWindow?.webContents.send('underchat-passkey:session-updated');
       logEvent('secure_session.upload.done', currentPairing.context, {
+        next_status: normalizeSessionStatus(currentPairing.session),
         status: result.status ?? result.code ?? null,
       });
       return result;
     }
   );
+}
+
+function normalizeSessionStatus(
+  session: PasskeyHelperSession | null
+): string | null {
+  if (session?.status === undefined || session.status === null) {
+    return null;
+  }
+
+  return String(session.status);
+}
+
+function normalizeActionStatus(status: unknown): string | null {
+  if (status === undefined || status === null) {
+    return null;
+  }
+
+  return String(status);
+}
+
+function countElectronCookies(payload: unknown): number {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return 0;
+  }
+
+  const cookies = (payload as Record<string, unknown>).electron_cookies;
+  return Array.isArray(cookies) ? cookies.length : 0;
 }
 
 async function enrichSecureSessionPackage(

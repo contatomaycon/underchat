@@ -17,10 +17,30 @@ interface OverlayState {
 
 const CONNECTED_CODES = new Set([200, 201]);
 const CONFIRMATION_CODES = new Set([208]);
+const TERMINAL_SECURE_STATUSES = new Set([
+  'connected',
+  'failed',
+  'expired',
+  'cancelled',
+]);
+const BUSY_SECURE_STATUSES = new Set([
+  'uploading',
+  'session_received',
+  'importing',
+]);
+const AUTO_CONNECT_READY_CHECKS = 2;
 
 let bridgeRef: UnderchatPasskeyBridge | null = null;
 let rootElement: HTMLElement | null = null;
 let readinessIntervalId: number | null = null;
+let currentTokenHash: string | null = null;
+let helperOpenedReported = false;
+let waAuthenticatedReported = false;
+let whatsappReadyStableCount = 0;
+let autoConnectStarted = false;
+let secureConnectInFlight = false;
+let sessionRefreshInFlight = false;
+let pendingSessionRefresh = false;
 let state: OverlayState = {
   busy: false,
   connected: false,
@@ -40,35 +60,56 @@ export function installUnderchatPasskeyOverlay(
   refreshSession();
 
   bridge.onSessionUpdated(() => {
-    refreshSession();
+    refreshSession({ background: true });
   });
 }
 
-async function refreshSession(): Promise<void> {
+async function refreshSession(
+  options: { background?: boolean } = {}
+): Promise<void> {
   if (!bridgeRef) {
     return;
   }
 
-  setState({
-    busy: true,
-    error: null,
-    message: 'Buscando dados da verificacao...',
-  });
+  if (sessionRefreshInFlight) {
+    pendingSessionRefresh = true;
+    return;
+  }
+
+  sessionRefreshInFlight = true;
+
+  if (!options.background && !state.helperPayload) {
+    setState({
+      busy: true,
+      error: null,
+      message: 'Buscando dados da verificacao...',
+    });
+  }
 
   try {
     const helperPayload = await bridgeRef.getSession();
+    const nextTokenHash =
+      helperPayload.tokenHash ?? helperPayload.session?.token_hash ?? null;
+
+    if (nextTokenHash && nextTokenHash !== currentTokenHash) {
+      resetSecureFlowRuntime(nextTokenHash);
+    }
+
+    const secureStatus = getSecureSessionStatus(helperPayload);
+    const connected = secureStatus === 'connected' || state.connected;
 
     setState({
       busy: false,
-      error: helperPayload.error ?? null,
+      connected,
+      error: helperPayload.error ?? helperPayload.session?.error ?? null,
       helperPayload,
       message: null,
     });
 
     if (helperPayload.mode === 'secure') {
-      await bridgeRef.updateSecureStatus({
-        status: 'helper_opened',
-      });
+      if (secureStatus === 'created') {
+        void reportSecureStatus('helper_opened');
+      }
       startWhatsappReadinessProbe();
     }
   } catch (error) {
@@ -77,6 +118,13 @@ async function refreshSession(): Promise<void> {
       error: sanitizeOverlayError(error),
       message: null,
     });
+  } finally {
+    sessionRefreshInFlight = false;
+
+    if (pendingSessionRefresh) {
+      pendingSessionRefresh = false;
+      void refreshSession({ background: true });
+    }
   }
 }
 
@@ -86,14 +134,17 @@ function startWhatsappReadinessProbe(): void {
   }
 
   const probe = (): void => {
-    const ready = detectWhatsAppAuthenticated();
-    if (ready !== state.whatsappReady) {
-      setState({ whatsappReady: ready });
-      if (ready && bridgeRef) {
-        void bridgeRef.updateSecureStatus({
-          status: 'wa_authenticated',
-        });
-      }
+    const ready = detectWhatsAppAuthenticated({ strict: true });
+    whatsappReadyStableCount = ready ? whatsappReadyStableCount + 1 : 0;
+    const stableReady = whatsappReadyStableCount >= AUTO_CONNECT_READY_CHECKS;
+
+    if (stableReady !== state.whatsappReady) {
+      setState({ whatsappReady: stableReady });
+    }
+
+    if (stableReady) {
+      void reportSecureStatus('wa_authenticated');
+      maybeAutoConnectSecureSession();
     }
   };
 
@@ -329,7 +380,7 @@ function renderSecureMode(): void {
     ? state.error
     : (state.message ??
       (state.whatsappReady
-        ? 'Sessao detectada. Clique em Conectar a Underchat para enviar a sessao ao canal.'
+        ? 'Sessao detectada. A Underchat vai conectar automaticamente.'
         : 'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.'));
 
   rootElement.innerHTML = `
@@ -353,8 +404,14 @@ function renderSecureMode(): void {
         </div>
         <div class="underchat-passkey-actions">
           <button class="underchat-passkey-button" data-action="connect-secure" ${
-            state.busy || !state.whatsappReady || terminal ? 'disabled' : ''
-          }>Conectar a Underchat</button>
+            state.busy ||
+            secureConnectInFlight ||
+            !state.whatsappReady ||
+            terminal ||
+            BUSY_SECURE_STATUSES.has(status)
+              ? 'disabled'
+              : ''
+          }>${secureConnectInFlight || BUSY_SECURE_STATUSES.has(status) ? 'Conectando...' : 'Conectar a Underchat'}</button>
           <button class="underchat-passkey-button underchat-passkey-secondary" data-action="refresh" ${
             state.busy ? 'disabled' : ''
           }>Atualizar</button>
@@ -370,7 +427,7 @@ function renderSecureMode(): void {
   rootElement
     .querySelector('[data-action="connect-secure"]')
     ?.addEventListener('click', () => {
-      connectSecureSessionToUnderchat();
+      connectSecureSessionToUnderchat({ automatic: false });
     });
   rootElement
     .querySelector('[data-action="refresh"]')
@@ -379,12 +436,25 @@ function renderSecureMode(): void {
     });
 }
 
-async function connectSecureSessionToUnderchat(): Promise<void> {
+async function connectSecureSessionToUnderchat(
+  options: { automatic?: boolean } = {}
+): Promise<void> {
   if (!bridgeRef) {
     return;
   }
 
-  if (!detectWhatsAppAuthenticated()) {
+  if (secureConnectInFlight) {
+    console.log('[underchat-passkey-helper] secure_session.connect.skipped', {
+      reason: 'already_in_flight',
+    });
+    return;
+  }
+
+  if (TERMINAL_SECURE_STATUSES.has(getSecureSessionStatus())) {
+    return;
+  }
+
+  if (!detectWhatsAppAuthenticated({ strict: true })) {
     setState({
       error: 'O WhatsApp Web ainda nao parece autenticado nesta janela.',
       message: null,
@@ -393,16 +463,43 @@ async function connectSecureSessionToUnderchat(): Promise<void> {
     return;
   }
 
+  secureConnectInFlight = true;
+  if (options.automatic) {
+    autoConnectStarted = true;
+  }
+
   setState({
     busy: true,
     error: null,
-    message: 'Preparando pacote da sessao autenticada...',
+    message: options.automatic
+      ? 'WhatsApp detectado. Conectando automaticamente a Underchat...'
+      : 'Preparando pacote da sessao autenticada...',
   });
 
   try {
+    console.log('[underchat-passkey-helper] secure_session.connect.start', {
+      automatic: Boolean(options.automatic),
+      status: getSecureSessionStatus(),
+      tokenHash: getTokenHashFromState(),
+    });
     await bridgeRef.updateSecureStatus({ status: 'uploading' });
+    console.log(
+      '[underchat-passkey-helper] secure_session.package.collect.start'
+    );
     const sessionPackage = await collectSecureSessionPackage();
+    console.log(
+      '[underchat-passkey-helper] secure_session.package.collect.done',
+      {
+        hasPayload: sessionPackage.payload !== undefined,
+        localStorageKeys: countPayloadLocalStorageKeys(sessionPackage.payload),
+        webVersion: sessionPackage.web_version ?? null,
+      }
+    );
     const result = await bridgeRef.sendSecureSessionPackage(sessionPackage);
+    console.log('[underchat-passkey-helper] secure_session.upload.done', {
+      connected: Boolean(result.connected),
+      status: result.status ?? result.code ?? null,
+    });
 
     const connected =
       result.status === 'connected' || result.connected === true;
@@ -424,24 +521,46 @@ async function connectSecureSessionToUnderchat(): Promise<void> {
       error: sanitizeOverlayError(error),
       status: 'failed',
     });
+  } finally {
+    secureConnectInFlight = false;
   }
 }
 
-function detectWhatsAppAuthenticated(): boolean {
+function detectWhatsAppAuthenticated(
+  options: { strict?: boolean } = {}
+): boolean {
   if (!location.origin.startsWith('https://web.whatsapp.com')) {
     return false;
   }
 
+  const blockingSelectors = [
+    'canvas[aria-label*="Scan"]',
+    '[data-testid="qrcode"]',
+    '[data-ref] canvas',
+    'input[name="phone"]',
+  ];
+  const hasBlockingLoginUi = blockingSelectors.some((selector) =>
+    document.querySelector(selector)
+  );
   const selectors = [
+    '#side',
     '[data-testid="chat-list"]',
+    '[data-testid="conversation-list"]',
     '[data-testid="conversation-panel-wrapper"]',
     '[aria-label="Chat list"]',
     '[aria-label="Lista de conversas"]',
     '[contenteditable="true"][role="textbox"]',
   ];
 
-  if (selectors.some((selector) => document.querySelector(selector))) {
+  if (
+    !hasBlockingLoginUi &&
+    selectors.some((selector) => document.querySelector(selector))
+  ) {
     return true;
+  }
+
+  if (options.strict) {
+    return false;
   }
 
   try {
@@ -451,6 +570,60 @@ function detectWhatsAppAuthenticated(): boolean {
   } catch {
     return false;
   }
+}
+
+async function reportSecureStatus(
+  status: 'helper_opened' | 'wa_authenticated'
+) {
+  if (!bridgeRef || state.helperPayload?.mode !== 'secure') {
+    return;
+  }
+
+  if (status === 'helper_opened') {
+    if (helperOpenedReported) return;
+    helperOpenedReported = true;
+  }
+
+  if (status === 'wa_authenticated') {
+    if (waAuthenticatedReported) return;
+    waAuthenticatedReported = true;
+  }
+
+  try {
+    console.log('[underchat-passkey-helper] secure_session.status.report', {
+      status,
+      tokenHash: getTokenHashFromState(),
+    });
+    await bridgeRef.updateSecureStatus({ status });
+  } catch (error) {
+    console.warn(
+      '[underchat-passkey-helper] secure_session.status.report.error',
+      sanitizeOverlayError(error)
+    );
+  }
+}
+
+function maybeAutoConnectSecureSession(): void {
+  if (
+    !bridgeRef ||
+    state.helperPayload?.mode !== 'secure' ||
+    autoConnectStarted ||
+    secureConnectInFlight ||
+    !state.whatsappReady
+  ) {
+    return;
+  }
+
+  const status = getSecureSessionStatus();
+  if (
+    TERMINAL_SECURE_STATUSES.has(status) ||
+    BUSY_SECURE_STATUSES.has(status)
+  ) {
+    return;
+  }
+
+  autoConnectStarted = true;
+  void connectSecureSessionToUnderchat({ automatic: true });
 }
 
 async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
@@ -494,6 +667,49 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
     target_provider: 'auto',
     web_version: readWhatsAppWebVersion(),
   };
+}
+
+function getSecureSessionStatus(
+  payload: PasskeyHelperSessionPayload | null = state.helperPayload
+): string {
+  return String(payload?.session?.status ?? 'helper_opened');
+}
+
+function getTokenHashFromState(): string | null {
+  return (
+    state.helperPayload?.tokenHash ??
+    state.helperPayload?.session?.token_hash ??
+    null
+  );
+}
+
+function resetSecureFlowRuntime(tokenHash: string): void {
+  currentTokenHash = tokenHash;
+  helperOpenedReported = false;
+  waAuthenticatedReported = false;
+  whatsappReadyStableCount = 0;
+  autoConnectStarted = false;
+  secureConnectInFlight = false;
+  console.log('[underchat-passkey-helper] secure_session.runtime.reset', {
+    tokenHash,
+  });
+}
+
+function countPayloadLocalStorageKeys(payload: unknown): number {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return 0;
+  }
+
+  const localStorageValue = (payload as Record<string, unknown>).local_storage;
+  if (
+    !localStorageValue ||
+    typeof localStorageValue !== 'object' ||
+    Array.isArray(localStorageValue)
+  ) {
+    return 0;
+  }
+
+  return Object.keys(localStorageValue).length;
 }
 
 function readWhatsAppWebVersion(): string | undefined {

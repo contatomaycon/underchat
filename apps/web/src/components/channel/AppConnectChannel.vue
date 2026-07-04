@@ -76,6 +76,7 @@ const workerConnectionChannel = computed(() =>
 const MIN_PAIRING_STAGE_MS = 900;
 const QR_MAX_AGE_MS = 120_000;
 const QR_HISTORY_RECOVERY_LIMIT = 250;
+const SECURE_CONNECTION_POLL_INTERVAL_MS = 8_000;
 const QR_HISTORY_RECOVERY_DELAYS_MS = [
   1_500, 5_000, 10_000, 20_000, 40_000, 80_000, 120_000, 180_000, 240_000,
 ] as const;
@@ -124,6 +125,7 @@ const isSecureSessionLoading = shallowRef(false);
 const isOpeningSecureHelper = shallowRef(false);
 const secureHelperOpenTimeoutId = shallowRef<number | null>(null);
 const securePollingIntervalId = shallowRef<number | null>(null);
+const securePollingInFlight = shallowRef(false);
 
 const secondsNextAttempt = shallowRef(0);
 const intervalIdNextAttempt = shallowRef<number | null>(null);
@@ -438,7 +440,7 @@ function startSecureConnectionPolling() {
 
   securePollingIntervalId.value = window.setInterval(() => {
     void pollSecureConnectionSession();
-  }, 2500);
+  }, SECURE_CONNECTION_POLL_INTERVAL_MS);
 }
 
 function applySecureConnectionSession(
@@ -471,14 +473,24 @@ async function pollSecureConnectionSession() {
     return;
   }
 
-  const session = await channelStore.viewSecureConnectionSession(
-    channelId.value,
-    secureSession.value.token,
-    { silent: true }
-  );
+  if (securePollingInFlight.value) {
+    return;
+  }
 
-  if (session) {
-    applySecureConnectionSession(session);
+  securePollingInFlight.value = true;
+
+  try {
+    const session = await channelStore.viewSecureConnectionSession(
+      channelId.value,
+      secureSession.value.token,
+      { silent: true }
+    );
+
+    if (session) {
+      applySecureConnectionSession(session);
+    }
+  } finally {
+    securePollingInFlight.value = false;
   }
 }
 
