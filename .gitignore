@@ -95,6 +95,7 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+apps/passkey_helper/release/
 
 # Gatsby files
 .cache/

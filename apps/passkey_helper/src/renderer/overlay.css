@@ -1,0 +1,189 @@
+:root {
+  --underchat-passkey-bg: #101416;
+  --underchat-passkey-panel: #f7f5f0;
+  --underchat-passkey-ink: #202528;
+  --underchat-passkey-muted: #646d72;
+  --underchat-passkey-border: rgba(18, 24, 27, 0.14);
+  --underchat-passkey-blue: #1d64c8;
+  --underchat-passkey-blue-strong: #164f9e;
+  --underchat-passkey-green: #0f9f6e;
+  --underchat-passkey-red: #c93535;
+  --underchat-passkey-amber: #a96400;
+}
+
+#underchat-passkey-helper-root {
+  position: fixed;
+  z-index: 2147483647;
+  right: 22px;
+  bottom: 22px;
+  width: min(386px, calc(100vw - 32px));
+  color: var(--underchat-passkey-ink);
+  font-family: 'Segoe UI', 'Aptos', system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+.underchat-passkey-panel {
+  overflow: hidden;
+  border: 1px solid var(--underchat-passkey-border);
+  border-radius: 8px;
+  background: var(--underchat-passkey-panel);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.34);
+}
+
+.underchat-passkey-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid rgba(18, 24, 27, 0.08);
+}
+
+.underchat-passkey-title {
+  margin: 0;
+  color: var(--underchat-passkey-ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.underchat-passkey-subtitle {
+  margin: 6px 0 0;
+  color: var(--underchat-passkey-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.underchat-passkey-badge {
+  flex: 0 0 auto;
+  max-width: 118px;
+  overflow: hidden;
+  padding: 4px 8px;
+  border: 1px solid rgba(29, 100, 200, 0.18);
+  border-radius: 999px;
+  background: rgba(29, 100, 200, 0.08);
+  color: var(--underchat-passkey-blue-strong);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.underchat-passkey-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+.underchat-passkey-state {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid rgba(18, 24, 27, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.underchat-passkey-state-dot {
+  width: 9px;
+  height: 9px;
+  margin-block-start: 5px;
+  border-radius: 999px;
+  background: var(--underchat-passkey-amber);
+  box-shadow: 0 0 0 4px rgba(169, 100, 0, 0.13);
+}
+
+.underchat-passkey-state[data-tone='ready'] .underchat-passkey-state-dot {
+  background: var(--underchat-passkey-blue);
+  box-shadow: 0 0 0 4px rgba(29, 100, 200, 0.13);
+}
+
+.underchat-passkey-state[data-tone='success'] .underchat-passkey-state-dot {
+  background: var(--underchat-passkey-green);
+  box-shadow: 0 0 0 4px rgba(15, 159, 110, 0.13);
+}
+
+.underchat-passkey-state[data-tone='error'] .underchat-passkey-state-dot {
+  background: var(--underchat-passkey-red);
+  box-shadow: 0 0 0 4px rgba(201, 53, 53, 0.13);
+}
+
+.underchat-passkey-state-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.underchat-passkey-state-text {
+  margin: 4px 0 0;
+  color: var(--underchat-passkey-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.underchat-passkey-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.underchat-passkey-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--underchat-passkey-blue);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.underchat-passkey-button:hover {
+  background: var(--underchat-passkey-blue-strong);
+}
+
+.underchat-passkey-button:disabled {
+  background: #9aa9b8;
+  cursor: wait;
+}
+
+.underchat-passkey-secondary {
+  border: 1px solid var(--underchat-passkey-border);
+  background: transparent;
+  color: var(--underchat-passkey-ink);
+}
+
+.underchat-passkey-secondary:hover {
+  background: rgba(32, 37, 40, 0.06);
+}
+
+.underchat-passkey-code {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.underchat-passkey-code-cell {
+  display: grid;
+  min-height: 38px;
+  place-items: center;
+  border: 1px solid rgba(29, 100, 200, 0.22);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--underchat-passkey-blue-strong);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.underchat-passkey-meta {
+  display: grid;
+  gap: 5px;
+  color: var(--underchat-passkey-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}

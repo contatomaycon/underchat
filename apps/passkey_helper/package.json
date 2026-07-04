@@ -1,0 +1,40 @@
+{
+  "name": "passkey_helper",
+  "version": "1.0.0",
+  "description": "Underchat desktop helper for WhatsApp passkey pairing.",
+  "homepage": "https://underchat.com.br",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/index.js",
+  "author": {
+    "name": "Underchat",
+    "email": "contato@underchat.com.br"
+  },
+  "desktopName": "underchat-passkey-helper",
+  "engines": {
+    "node": "24.12.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev --mode development",
+    "build": "pnpm run build:prod",
+    "build:dev": "tsc --noEmit && electron-vite build --mode development",
+    "build:prod": "tsc --noEmit && electron-vite build --mode production",
+    "package": "pnpm run package:prod",
+    "package:dev": "pnpm run build:dev && electron-builder --config.directories.output=release/dev",
+    "package:prod": "pnpm run build:prod && electron-builder --config.directories.output=release/prod",
+    "package:win": "pnpm run package:win:prod",
+    "package:win:dev": "pnpm run build:dev && electron-builder --win nsis --config.directories.output=release/dev",
+    "package:win:prod": "pnpm run build:prod && electron-builder --win nsis --config.directories.output=release/prod",
+    "package:linux": "pnpm run package:linux:prod",
+    "package:linux:dev": "pnpm run build:dev && electron-builder --linux AppImage deb --config.directories.output=release/dev",
+    "package:linux:prod": "pnpm run build:prod && electron-builder --linux AppImage deb --config.directories.output=release/prod"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "electron": "43.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^6.0.3",
+    "vite": "8.1.0"
+  }
+}

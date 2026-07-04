@@ -1,0 +1,49 @@
+appId: br.com.underchat.passkey-helper
+productName: Underchat Passkey Helper
+copyright: Copyright (c) 2026 Underchat
+
+asar: true
+icon: ../../apps/mobile/assets/icon.png
+
+directories:
+  output: release
+
+files:
+  - dist/**
+  - package.json
+
+extraMetadata:
+  main: dist/main/index.js
+
+protocols:
+  - name: Underchat Passkey
+    schemes:
+      - underchat-passkey
+
+win:
+  icon: ../../apps/mobile/assets/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Underchat-Passkey-Helper-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+linux:
+  category: Network
+  executableName: underchat-passkey-helper
+  icon: ../../apps/mobile/assets/icon.png
+  maintainer: Underchat <contato@underchat.com.br>
+  syncDesktopName: true
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  artifactName: Underchat-Passkey-Helper-${version}-${arch}.${ext}
