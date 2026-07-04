@@ -60,6 +60,12 @@ import { disconnectWhatsappOfficial } from './methods/disconnectWhatsappOfficial
 import { connectWhatsappOfficial } from './methods/connectWhatsappOfficial';
 import { ensureWhatsappOfficialWebhookSubscription } from './methods/ensureWhatsappOfficialWebhookSubscription';
 import { viewWhatsappOfficialHealth } from './methods/viewWhatsappOfficialHealth';
+import { createSecureConnectionSession } from './methods/createSecureConnectionSession';
+import { viewSecureConnectionSession } from './methods/viewSecureConnectionSession';
+import { cancelSecureConnectionSession } from './methods/cancelSecureConnectionSession';
+import { viewSecureConnectionHelper } from './methods/viewSecureConnectionHelper';
+import { updateSecureConnectionHelperStatus } from './methods/updateSecureConnectionHelperStatus';
+import { uploadSecureConnectionHelperSession } from './methods/uploadSecureConnectionHelperSession';
 
 @injectable()
 class WorkerController {
@@ -129,6 +135,14 @@ class WorkerController {
   public ensureWhatsappOfficialWebhookSubscription =
     ensureWhatsappOfficialWebhookSubscription;
   public viewWhatsappOfficialHealth = viewWhatsappOfficialHealth;
+  public createSecureConnectionSession = createSecureConnectionSession;
+  public viewSecureConnectionSession = viewSecureConnectionSession;
+  public cancelSecureConnectionSession = cancelSecureConnectionSession;
+  public viewSecureConnectionHelper = viewSecureConnectionHelper;
+  public updateSecureConnectionHelperStatus =
+    updateSecureConnectionHelperStatus;
+  public uploadSecureConnectionHelperSession =
+    uploadSecureConnectionHelperSession;
 }
 
 export default WorkerController;

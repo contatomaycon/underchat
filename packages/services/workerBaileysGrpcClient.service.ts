@@ -14,6 +14,7 @@ import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidatio
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
 import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
   IWorkerRuntimeActivationRequestProto,
@@ -58,6 +59,9 @@ export interface WorkerPasskeyConfirmationProtoPayload {
   connection_attempt_id?: string;
   debug_trace_id?: string;
 }
+
+export type WorkerSecureSessionImportProtoPayload =
+  ISecureConnectionImportRequest;
 
 @injectable()
 export class WorkerBaileysGrpcClientService {
@@ -519,6 +523,101 @@ export class WorkerBaileysGrpcClientService {
       });
   }
 
+  private async importSecureSessionByAddress(
+    address: string,
+    payload: WorkerSecureSessionImportProtoPayload
+  ): Promise<IBaileysConnectionState> {
+    const client = new WorkerConnectionClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const metadata = new Metadata();
+    const startedAt = Date.now();
+    const protoPayload = {
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id ?? '',
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation ?? 0,
+      format_version: payload.format_version,
+      source: payload.source,
+      target_provider: payload.target_provider,
+      payload_ref: payload.payload_ref ?? '',
+      payload_json: payload.payload_json ?? '',
+      checksum: payload.checksum ?? '',
+      debug_trace_id: payload.debug_trace_id ?? '',
+    };
+
+    this.logFlow('service.worker_connection_grpc.secure_import_call', {
+      trace_id: payload.debug_trace_id,
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+      format_version: payload.format_version,
+      source: payload.source,
+      target_provider: payload.target_provider,
+      has_payload_ref: Boolean(payload.payload_ref),
+      has_payload_json: Boolean(payload.payload_json),
+      method: 'ImportSecureSession',
+      grpc_address: address,
+    });
+
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      (client as any).ImportSecureSession(
+        protoPayload,
+        metadata,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerConnectionStateProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(protoToConnectionState(response ?? {}));
+        }
+      );
+    })
+      .then((state) => {
+        this.logFlow('service.worker_connection_grpc.secure_import_ok', {
+          trace_id: state.debug_trace_id ?? payload.debug_trace_id,
+          worker_id: payload.worker_id,
+          account_id: state.account_id ?? payload.account_id,
+          worker_type_id: state.worker_type_id ?? payload.worker_type_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? payload.connection_attempt_id,
+          status: state.status,
+          code: state.code,
+          reason: state.reason,
+          session_ready: state.session_ready,
+          authenticated: state.authenticated,
+          duration_ms: Date.now() - startedAt,
+          method: 'ImportSecureSession',
+          grpc_address: address,
+        });
+        return state;
+      })
+      .catch((error) => {
+        this.logFlow('service.worker_connection_grpc.secure_import_error', {
+          trace_id: payload.debug_trace_id,
+          worker_id: payload.worker_id,
+          account_id: payload.account_id,
+          worker_type_id: payload.worker_type_id,
+          connection_attempt_id: payload.connection_attempt_id,
+          reason: error instanceof Error ? error.message : String(error),
+          duration_ms: Date.now() - startedAt,
+          method: 'ImportSecureSession',
+          grpc_address: address,
+        });
+        throw error;
+      });
+  }
+
   private async waitForReadyByAddress(
     address: string,
     timeoutMs: number
@@ -738,6 +837,16 @@ export class WorkerBaileysGrpcClientService {
   ): Promise<IBaileysConnectionState> {
     return this.callWithFallback(workerId, workerType, (address) =>
       this.confirmPasskeyByAddress(address, payload)
+    );
+  }
+
+  async importSecureSession(
+    workerId: string,
+    payload: WorkerSecureSessionImportProtoPayload,
+    workerType?: EWorkerType
+  ): Promise<IBaileysConnectionState> {
+    return this.callWithFallback(workerId, workerType, (address) =>
+      this.importSecureSessionByAddress(address, payload)
     );
   }
 }

@@ -6,6 +6,7 @@ service WorkerConnection {
   rpc RequestConnection(StatusConnectionRequest) returns (WorkerConnectionResponse);
   rpc SendPasskeyResponse(PasskeyResponseRequest) returns (WorkerConnectionResponse);
   rpc ConfirmPasskey(PasskeyConfirmationRequest) returns (WorkerConnectionResponse);
+  rpc ImportSecureSession(SecureSessionImportRequest) returns (WorkerConnectionResponse);
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
   rpc ActivateRuntime(WorkerRuntimeActivationRequest) returns (WorkerRuntimeActivationResponse);
   rpc RuntimeHealth(WorkerRuntimeHealthRequest) returns (WorkerRuntimeHealthResponse);
@@ -85,6 +86,21 @@ message PasskeyConfirmationRequest {
   string account_id = 2;
   string connection_attempt_id = 3;
   string debug_trace_id = 4;
+}
+
+message SecureSessionImportRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string worker_type_id = 3;
+  string connection_attempt_id = 4;
+  int32 runtime_generation = 5;
+  string format_version = 6;
+  string source = 7;
+  string target_provider = 8;
+  string payload_ref = 9;
+  string payload_json = 10;
+  string checksum = 11;
+  string debug_trace_id = 12;
 }
 
 message PhoneValidationRequest {

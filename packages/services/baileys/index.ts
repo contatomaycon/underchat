@@ -5,6 +5,7 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
+import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
 import { BaileysPhoneValidationService } from './methods/phoneValidation.service';
 import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
 
@@ -75,6 +76,12 @@ export class BaileysService {
     debug_trace_id?: string;
   }): Promise<IBaileysConnectionState> {
     return this.connection.confirmPasskey(input);
+  }
+
+  importSecureSession(
+    input: ISecureConnectionImportRequest
+  ): Promise<IBaileysConnectionState> {
+    return this.connection.importSecureSession(input);
   }
 
   clearUserRequestedDisconnect(): void {

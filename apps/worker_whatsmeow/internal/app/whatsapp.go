@@ -876,6 +876,48 @@ func (m *WhatsAppManager) validatePasskeyRequest(reqWorkerID, reqAccountID, reqA
 	return nil
 }
 
+func (m *WhatsAppManager) ImportSecureSession(ctx context.Context, req SecureSessionImportRequest) (ConnectionState, error) {
+	if req.DebugTraceID != "" {
+		m.setDebugTraceID(req.DebugTraceID)
+	}
+	if req.WorkerID != "" && req.WorkerID != m.cfg.WorkerID {
+		return ConnectionState{}, fmt.Errorf("request worker_id %s does not match %s", req.WorkerID, m.cfg.WorkerID)
+	}
+	if req.AccountID != "" && req.AccountID != m.cfg.AccountID {
+		return ConnectionState{}, fmt.Errorf("request account_id %s does not match %s", req.AccountID, m.cfg.AccountID)
+	}
+	connectionFlowLog("whatsmeow.provider.secure_session_import_not_implemented", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.provider",
+		"worker_id":             firstNonEmpty(req.WorkerID, m.cfg.WorkerID),
+		"account_id":            firstNonEmpty(req.AccountID, m.cfg.AccountID),
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"runtime_generation":    req.RuntimeGeneration,
+		"format_version":        req.FormatVersion,
+		"target_provider":       req.TargetProvider,
+		"has_payload_ref":       req.PayloadRef != "",
+		"has_payload_json":      req.PayloadJSON != "",
+	})
+	return ConnectionState{
+		Code:                CodeBadSession,
+		Status:              "disconnected",
+		WorkerID:            firstNonEmpty(req.WorkerID, m.cfg.WorkerID),
+		AccountID:           firstNonEmpty(req.AccountID, m.cfg.AccountID),
+		WorkerTypeID:        WorkerTypeWhatsmeow,
+		WorkerStatusID:      WorkerStatusDisponible,
+		ConnectionAttemptID: req.ConnectionAttemptID,
+		RuntimeGeneration:   req.RuntimeGeneration,
+		DebugTraceID:        req.DebugTraceID,
+		Reason:              "secure_session_import_not_implemented",
+		Error:               "Whatsmeow secure session import requires the sqlstore session importer.",
+		SessionReady:        false,
+		Authenticated:       false,
+		CanSend:             false,
+		CanReceiveRuntime:   false,
+	}, nil
+}
+
 func (m *WhatsAppManager) SendPasskeyResponse(ctx context.Context, req PasskeyResponseRequest) (ConnectionState, error) {
 	if req.DebugTraceID != "" {
 		m.setDebugTraceID(req.DebugTraceID)

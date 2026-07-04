@@ -20,6 +20,7 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { formatPhoneBR } from '@core/common/functions/formatPhoneBR';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { WorkerSecureConnectionSessionResponse } from '@core/schema/worker/secureConnection/response.schema';
 import {
   normalizeWorkerConnectionModalState,
   type WorkerConnectionModalState,
@@ -31,8 +32,18 @@ import {
   logConnectionLifecycleDebug,
 } from '@/@webcore/utils/connectionLifecycleDebug';
 import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
+import ConnectionMethodChooser from './ConnectionMethodChooser.vue';
+import ConnectionSecurePanel from './ConnectionSecurePanel.vue';
 
 const channelStore = useChannelsStore();
+
+type ConnectionMethod = 'method_selection' | 'qrcode' | 'secure';
+
+type WorkerSecureConnectionPublication = {
+  account_id?: string;
+  secure_connection?: WorkerSecureConnectionSessionResponse;
+  worker_id?: string;
+};
 
 const props = defineProps<{
   modelValue: boolean;
@@ -104,6 +115,15 @@ const externalConnectionUrl = shallowRef('');
 const externalConnectionExpiresAt = shallowRef<string | null>(null);
 const isExternalConnectionLinkLoading = shallowRef(false);
 const isExternalConnectionCopied = shallowRef(false);
+const selectedConnectionMethod =
+  shallowRef<ConnectionMethod>('method_selection');
+const secureSession = shallowRef<WorkerSecureConnectionSessionResponse | null>(
+  null
+);
+const isSecureSessionLoading = shallowRef(false);
+const isOpeningSecureHelper = shallowRef(false);
+const secureHelperOpenTimeoutId = shallowRef<number | null>(null);
+const securePollingIntervalId = shallowRef<number | null>(null);
 
 const secondsNextAttempt = shallowRef(0);
 const intervalIdNextAttempt = shallowRef<number | null>(null);
@@ -147,6 +167,11 @@ const modalState = computed<WorkerConnectionModalState>(() =>
 );
 
 const isConnected = computed(() => modalState.value === 'connected');
+const dialogMaxWidth = computed(() =>
+  selectedConnectionMethod.value === 'method_selection' && !isConnected.value
+    ? 760
+    : 640
+);
 const isQrAttemptsExpired = computed(
   () => qrMaxAttempts.value > 0 && qrAttempt.value > qrMaxAttempts.value
 );
@@ -179,6 +204,16 @@ const isActionLocked = computed(
     isRequestingQr.value ||
     isBlockingOperation.value ||
     isConnectionPreparing.value
+);
+
+const isQrConnectionSelected = computed(
+  () => selectedConnectionMethod.value === 'qrcode'
+);
+const showConnectionChooser = computed(
+  () =>
+    selectedConnectionMethod.value === 'method_selection' &&
+    !isConnected.value &&
+    !isBlockingOperation.value
 );
 
 const formattedTime = computed(() => {
@@ -369,6 +404,194 @@ async function copyExternalConnectionLink() {
   window.setTimeout(() => {
     isExternalConnectionCopied.value = false;
   }, 2000);
+}
+
+function isSecureConnectionTerminal(
+  session: WorkerSecureConnectionSessionResponse | null
+): boolean {
+  return Boolean(
+    session &&
+    ['connected', 'failed', 'expired', 'cancelled'].includes(session.status)
+  );
+}
+
+function clearSecureHelperOpenTimeout() {
+  if (secureHelperOpenTimeoutId.value !== null) {
+    window.clearTimeout(secureHelperOpenTimeoutId.value);
+    secureHelperOpenTimeoutId.value = null;
+  }
+}
+
+function stopSecureConnectionPolling() {
+  if (securePollingIntervalId.value !== null) {
+    window.clearInterval(securePollingIntervalId.value);
+    securePollingIntervalId.value = null;
+  }
+}
+
+function startSecureConnectionPolling() {
+  stopSecureConnectionPolling();
+
+  if (!channelId.value || !secureSession.value?.token) {
+    return;
+  }
+
+  securePollingIntervalId.value = window.setInterval(() => {
+    void pollSecureConnectionSession();
+  }, 2500);
+}
+
+function applySecureConnectionSession(
+  session: WorkerSecureConnectionSessionResponse
+) {
+  secureSession.value = session;
+  connectionAttemptId.value = session.connection_attempt_id;
+  connectionRuntimeGeneration.value =
+    session.runtime_generation ?? connectionRuntimeGeneration.value;
+
+  if (session.status === 'connected') {
+    statusConnection.value = EBaileysConnectionStatus.connected;
+    statusCode.value = ECodeMessage.connectionEstablished;
+    workerStatusId.value = EWorkerStatus.online;
+    sessionReady.value = true;
+    qrcode.value = undefined;
+    qrPending.value = false;
+    phoneNumber.value = session.phone ? formatPhoneBR(session.phone) : null;
+    clearQrHistoryRecovery();
+  }
+
+  if (isSecureConnectionTerminal(session)) {
+    stopSecureConnectionPolling();
+  }
+}
+
+async function pollSecureConnectionSession() {
+  if (!channelId.value || !secureSession.value?.token) {
+    stopSecureConnectionPolling();
+    return;
+  }
+
+  const session = await channelStore.viewSecureConnectionSession(
+    channelId.value,
+    secureSession.value.token,
+    { silent: true }
+  );
+
+  if (session) {
+    applySecureConnectionSession(session);
+  }
+}
+
+function openSecureHelper() {
+  if (!secureSession.value?.deep_link) {
+    return;
+  }
+
+  clearSecureHelperOpenTimeout();
+  isOpeningSecureHelper.value = true;
+  window.location.href = secureSession.value.deep_link;
+  secureHelperOpenTimeoutId.value = window.setTimeout(() => {
+    isOpeningSecureHelper.value = false;
+    secureHelperOpenTimeoutId.value = null;
+  }, 1400);
+}
+
+async function startSecureConnection(options: { openHelper?: boolean } = {}) {
+  if (!channelId.value || isSecureSessionLoading.value) {
+    return;
+  }
+
+  selectedConnectionMethod.value = 'secure';
+
+  if (secureSession.value && !isSecureConnectionTerminal(secureSession.value)) {
+    if (options.openHelper !== false) {
+      openSecureHelper();
+    }
+    startSecureConnectionPolling();
+    return;
+  }
+
+  isSecureSessionLoading.value = true;
+  const debugTraceId = ensureDebugTraceId('web_secure_connection_modal');
+
+  try {
+    const session = await channelStore.createSecureConnectionSession(
+      channelId.value,
+      {
+        silent: true,
+        debugTraceId,
+      }
+    );
+
+    if (!session) {
+      return;
+    }
+
+    applySecureConnectionSession(session);
+    startSecureConnectionPolling();
+
+    if (options.openHelper !== false) {
+      openSecureHelper();
+    }
+  } finally {
+    isSecureSessionLoading.value = false;
+  }
+}
+
+async function cancelSecureConnection() {
+  if (!channelId.value || !secureSession.value?.token) {
+    selectedConnectionMethod.value = 'method_selection';
+    return;
+  }
+
+  const session = await channelStore.cancelSecureConnectionSession(
+    channelId.value,
+    secureSession.value.token
+  );
+
+  if (session) {
+    applySecureConnectionSession(session);
+  }
+
+  selectedConnectionMethod.value = 'method_selection';
+}
+
+function returnToConnectionMethodSelection() {
+  selectedConnectionMethod.value = 'method_selection';
+  qrcode.value = undefined;
+  qrPending.value = false;
+  stopSecureConnectionPolling();
+  clearSecureHelperOpenTimeout();
+  clearQrHistoryRecovery();
+}
+
+async function selectConnectionMethod(method: 'secure' | 'qrcode') {
+  if (method === 'secure') {
+    await startSecureConnection();
+    return;
+  }
+
+  selectedConnectionMethod.value = 'qrcode';
+  await requestQrCodeIfReady({ force: true });
+}
+
+function handleSecureConnectionPublication(
+  data: WorkerSecureConnectionPublication
+) {
+  if (!data.secure_connection || data.worker_id !== channelId.value) {
+    return;
+  }
+
+  applySecureConnectionSession(data.secure_connection);
+}
+
+async function switchToSecureConnectionFromPasskeyRequirement() {
+  if (selectedConnectionMethod.value === 'secure') {
+    return;
+  }
+
+  selectedConnectionMethod.value = 'secure';
+  await startSecureConnection();
 }
 
 function resetPairingCodes() {
@@ -747,6 +970,7 @@ function shouldIgnoreConnectedPayload(
 
 function canRecoverQrFromRecentHistory(): boolean {
   return (
+    isQrConnectionSelected.value &&
     isVisible.value &&
     Boolean(channelId.value) &&
     Boolean(workerConnectionChannel.value) &&
@@ -999,6 +1223,7 @@ async function requestQrCodeIfReady(
   if (!channelId.value) return;
 
   if (
+    selectedConnectionMethod.value !== 'qrcode' ||
     !isVisible.value ||
     !isWorkerReadyForQr.value ||
     isConnected.value ||
@@ -1414,6 +1639,7 @@ function applyReducedConnectionState(
     isRequestingQr.value = false;
     clearQrHistoryRecovery();
   } else if (next.passkey_public_key) {
+    void switchToSecureConnectionFromPasskeyRequirement();
     qrcode.value = undefined;
     resetPairingCodes();
     passkeyPublicKey.value = next.passkey_public_key;
@@ -1424,6 +1650,7 @@ function applyReducedConnectionState(
     isRequestingQr.value = false;
     clearQrHistoryRecovery();
   } else if (next.passkey_confirmation_code) {
+    void switchToSecureConnectionFromPasskeyRequirement();
     qrcode.value = undefined;
     resetPairingCodes();
     passkeyPublicKey.value = undefined;
@@ -1553,52 +1780,61 @@ function shouldProcessConnectionPublication(ctx?: {
 }
 
 function handleWorkerConnectionMessage(
-  data: IBaileysConnectionState,
+  data: IBaileysConnectionState | WorkerSecureConnectionPublication,
   ctx?: { offset?: number }
 ) {
   if (!channelId.value || data.worker_id !== channelId.value) {
     return;
   }
 
-  activeDebugTraceId.value = data.debug_trace_id ?? activeDebugTraceId.value;
+  if ('secure_connection' in data && data.secure_connection) {
+    handleSecureConnectionPublication(data);
+    return;
+  }
+
+  const connectionData = data as IBaileysConnectionState;
+  activeDebugTraceId.value =
+    connectionData.debug_trace_id ?? activeDebugTraceId.value;
   logLocalConnectionStatus('web.connection_modal.message_received', {
     layer: 'web.connection_modal',
-    worker_id: data.worker_id,
-    account_id: data.account_id,
-    worker_type_id: data.worker_type_id,
-    worker_status_id: data.worker_status_id,
-    status: data.status,
-    code: data.code,
-    session_ready: data.session_ready,
-    can_send: data.can_send,
-    can_receive_runtime: data.can_receive_runtime,
-    authenticated: data.authenticated,
-    provider_state: data.provider_state,
-    degraded_reason: data.degraded_reason,
-    phone: data.phone,
-    connection_attempt_id: data.connection_attempt_id,
-    runtime_generation: data.runtime_generation,
+    worker_id: connectionData.worker_id,
+    account_id: connectionData.account_id,
+    worker_type_id: connectionData.worker_type_id,
+    worker_status_id: connectionData.worker_status_id,
+    status: connectionData.status,
+    code: connectionData.code,
+    session_ready: connectionData.session_ready,
+    can_send: connectionData.can_send,
+    can_receive_runtime: connectionData.can_receive_runtime,
+    authenticated: connectionData.authenticated,
+    provider_state: connectionData.provider_state,
+    degraded_reason: connectionData.degraded_reason,
+    phone: connectionData.phone,
+    connection_attempt_id: connectionData.connection_attempt_id,
+    runtime_generation: connectionData.runtime_generation,
     offset: ctx?.offset,
   });
   logConnectionLifecycleDebug('web.centrifugo.connection_message', {
     trace_id: activeDebugTraceId.value,
     layer: 'web',
-    worker_id: data.worker_id,
-    account_id: data.account_id,
-    worker_type_id: data.worker_type_id,
-    connection_attempt_id: data.connection_attempt_id,
-    runtime_generation: data.runtime_generation,
-    status: data.status,
-    code: data.code,
-    reason: data.reason,
-    qrcode: data.qrcode,
-    pairing_code: data.pairing_code,
-    has_passkey_public_key: Boolean(data.passkey_public_key),
-    has_passkey_confirmation_code: Boolean(data.passkey_confirmation_code),
+    worker_id: connectionData.worker_id,
+    account_id: connectionData.account_id,
+    worker_type_id: connectionData.worker_type_id,
+    connection_attempt_id: connectionData.connection_attempt_id,
+    runtime_generation: connectionData.runtime_generation,
+    status: connectionData.status,
+    code: connectionData.code,
+    reason: connectionData.reason,
+    qrcode: connectionData.qrcode,
+    pairing_code: connectionData.pairing_code,
+    has_passkey_public_key: Boolean(connectionData.passkey_public_key),
+    has_passkey_confirmation_code: Boolean(
+      connectionData.passkey_confirmation_code
+    ),
     offset: ctx?.offset,
   });
 
-  if (shouldIgnoreConnectionPayloadIdentity(data)) {
+  if (shouldIgnoreConnectionPayloadIdentity(connectionData)) {
     return;
   }
 
@@ -1606,37 +1842,37 @@ function handleWorkerConnectionMessage(
     return;
   }
 
-  if (shouldIgnoreConnectedPayload(data)) {
+  if (shouldIgnoreConnectedPayload(connectionData)) {
     logConnectionLifecycleDebug('web.centrifugo.connected_ignored', {
-      trace_id: data.debug_trace_id ?? activeDebugTraceId.value,
+      trace_id: connectionData.debug_trace_id ?? activeDebugTraceId.value,
       layer: 'web',
-      worker_id: data.worker_id,
-      account_id: data.account_id,
-      worker_type_id: data.worker_type_id,
-      connection_attempt_id: data.connection_attempt_id,
-      runtime_generation: data.runtime_generation,
-      status: data.status,
-      code: data.code,
-      worker_status_id: data.worker_status_id,
-      session_ready: data.session_ready,
-      phone: data.phone,
+      worker_id: connectionData.worker_id,
+      account_id: connectionData.account_id,
+      worker_type_id: connectionData.worker_type_id,
+      connection_attempt_id: connectionData.connection_attempt_id,
+      runtime_generation: connectionData.runtime_generation,
+      status: connectionData.status,
+      code: connectionData.code,
+      worker_status_id: connectionData.worker_status_id,
+      session_ready: connectionData.session_ready,
+      phone: connectionData.phone,
       offset: ctx?.offset,
     });
     return;
   }
 
-  if (data.worker_status_id) {
-    workerStatusId.value = data.worker_status_id;
+  if (connectionData.worker_status_id) {
+    workerStatusId.value = connectionData.worker_status_id;
   }
 
-  if (data.worker_status_id === EWorkerStatus.recreating) {
+  if (connectionData.worker_status_id === EWorkerStatus.recreating) {
     isResetting.value = true;
     statusConnection.value = EBaileysConnectionStatus.connecting;
     statusCode.value = ECodeMessage.awaitConnection;
     qrcode.value = undefined;
     qrPending.value = false;
-    connectionAttemptId.value = data.connection_attempt_id;
-    connectionRuntimeGeneration.value = data.runtime_generation;
+    connectionAttemptId.value = connectionData.connection_attempt_id;
+    connectionRuntimeGeneration.value = connectionData.runtime_generation;
     pairingStartedAt.value = null;
     resetPairingCodes();
     resetPasskeyState();
@@ -1645,7 +1881,7 @@ function handleWorkerConnectionMessage(
     return;
   }
 
-  if (data.worker_status_id === EWorkerStatus.creating) {
+  if (connectionData.worker_status_id === EWorkerStatus.creating) {
     if (hasActiveConnectionCode.value || qrPending.value) {
       return;
     }
@@ -1655,13 +1891,16 @@ function handleWorkerConnectionMessage(
     return;
   }
 
-  if (data.worker_status_id) {
+  if (connectionData.worker_status_id) {
     isResetting.value = false;
   }
 
-  applyReducedConnectionState(data);
+  applyReducedConnectionState(connectionData);
 
-  if (data.worker_status_id === EWorkerStatus.disponible) {
+  if (
+    connectionData.worker_status_id === EWorkerStatus.disponible &&
+    isQrConnectionSelected.value
+  ) {
     void requestQrCodeIfReady({ silent: true });
   }
 }
@@ -1693,8 +1932,6 @@ onMounted(async () => {
     workerConnectionChannel.value,
     handleWorkerConnectionMessage
   );
-
-  await requestQrCodeIfReady();
 });
 
 watch(isVisible, (visible) => {
@@ -1710,6 +1947,14 @@ watch(isVisible, (visible) => {
       code: statusCode.value,
     });
     clearQrHistoryRecovery();
+    clearSecureHelperOpenTimeout();
+    stopSecureConnectionPolling();
+    if (
+      !secureSession.value ||
+      isSecureConnectionTerminal(secureSession.value)
+    ) {
+      selectedConnectionMethod.value = 'method_selection';
+    }
     return;
   }
 
@@ -1721,8 +1966,16 @@ watch(isVisible, (visible) => {
     account_id: accountId.value ?? undefined,
   });
   void loadExternalConnectionLink();
-  void recoverQrFromRecentHistory('dialog_visible');
-  void requestQrCodeIfReady({ silent: true });
+
+  if (isQrConnectionSelected.value) {
+    void recoverQrFromRecentHistory('dialog_visible');
+    void requestQrCodeIfReady({ silent: true });
+  }
+
+  if (selectedConnectionMethod.value === 'secure' && secureSession.value) {
+    startSecureConnectionPolling();
+    void pollSecureConnectionSession();
+  }
 });
 
 watch(
@@ -1763,7 +2016,9 @@ watch(
 
     if (statusId === EWorkerStatus.disponible) {
       isResetting.value = false;
-      void requestQrCodeIfReady({ silent: true });
+      if (isQrConnectionSelected.value) {
+        void requestQrCodeIfReady({ silent: true });
+      }
     }
   }
 );
@@ -1772,6 +2027,8 @@ onUnmounted(() => {
   clearNextAttemptCountdown();
   clearConnectedStateDelay();
   clearQrHistoryRecovery();
+  clearSecureHelperOpenTimeout();
+  stopSecureConnectionPolling();
 
   globalThis.removeEventListener(
     'centrifugo-recovery-failed',
@@ -1788,11 +2045,28 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <VDialog v-model="isVisible" max-width="640">
+  <VDialog v-model="isVisible" :max-width="dialogMaxWidth">
     <DialogCloseBtn @click="isVisible = false" />
 
     <VCard data-testid="connection-dialog">
-      <VRow no-gutters>
+      <ConnectionMethodChooser
+        v-if="showConnectionChooser"
+        :disabled="channelStore.loading || isSecureSessionLoading"
+        @select="selectConnectionMethod"
+      />
+
+      <ConnectionSecurePanel
+        v-else-if="selectedConnectionMethod === 'secure' && !isConnected"
+        :session="secureSession"
+        :loading="isSecureSessionLoading"
+        :opening="isOpeningSecureHelper"
+        @start="startSecureConnection"
+        @open="openSecureHelper"
+        @back="returnToConnectionMethodSelection"
+        @cancel="cancelSecureConnection"
+      />
+
+      <VRow v-else no-gutters>
         <VCol cols="12" sm="8" md="12" lg="7" order="2" order-lg="1">
           <VCardItem>
             <VCardTitle>{{ $t('conection') }}</VCardTitle>

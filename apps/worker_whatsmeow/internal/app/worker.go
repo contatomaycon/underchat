@@ -260,6 +260,14 @@ func (w *Worker) ConfirmPasskey(ctx context.Context, req PasskeyConfirmationRequ
 	return manager.ConfirmPasskey(ctx, req)
 }
 
+func (w *Worker) ImportSecureSession(ctx context.Context, req SecureSessionImportRequest) (ConnectionState, error) {
+	manager := w.currentWhatsApp()
+	if manager == nil {
+		return ConnectionState{}, fmt.Errorf("whatsmeow runtime is not initialized")
+	}
+	return manager.ImportSecureSession(ctx, req)
+}
+
 func (w *Worker) ValidatePhone(ctx context.Context, req PhoneValidationRequest) (PhoneValidationResponse, error) {
 	manager := w.currentWhatsApp()
 	if manager == nil {

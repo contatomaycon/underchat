@@ -16,6 +16,7 @@ type WorkerConnectionHandler interface {
 	RequestConnection(context.Context, StatusConnectionRequest) (ConnectionState, error)
 	SendPasskeyResponse(context.Context, PasskeyResponseRequest) (ConnectionState, error)
 	ConfirmPasskey(context.Context, PasskeyConfirmationRequest) (ConnectionState, error)
+	ImportSecureSession(context.Context, SecureSessionImportRequest) (ConnectionState, error)
 	ValidatePhone(context.Context, PhoneValidationRequest) (PhoneValidationResponse, error)
 	ActivateRuntime(context.Context, WorkerRuntimeActivationRequest) (WorkerRuntimeActivationResponse, error)
 	RuntimeHealth(context.Context, WorkerRuntimeHealthRequest) (WorkerRuntimeHealthResponse, error)
@@ -403,6 +404,65 @@ func (s *WorkerConnectionGRPCServer) ConfirmPasskey(ctx context.Context, msg *dy
 	return out, nil
 }
 
+func (s *WorkerConnectionGRPCServer) ImportSecureSession(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	req := SecureSessionImportRequest{
+		WorkerID:            dynamicString(msg, "worker_id"),
+		AccountID:           dynamicString(msg, "account_id"),
+		WorkerTypeID:        dynamicString(msg, "worker_type_id"),
+		ConnectionAttemptID: dynamicString(msg, "connection_attempt_id"),
+		RuntimeGeneration:   int(dynamicInt32(msg, "runtime_generation")),
+		FormatVersion:       dynamicString(msg, "format_version"),
+		Source:              dynamicString(msg, "source"),
+		TargetProvider:      dynamicString(msg, "target_provider"),
+		PayloadRef:          dynamicString(msg, "payload_ref"),
+		PayloadJSON:         dynamicString(msg, "payload_json"),
+		Checksum:            dynamicString(msg, "checksum"),
+		DebugTraceID:        dynamicString(msg, "debug_trace_id"),
+	}
+	startedAt := time.Now()
+	connectionFlowLog("whatsmeow.grpc.secure_import.received", map[string]any{
+		"trace_id":              req.DebugTraceID,
+		"layer":                 "worker_whatsmeow.grpc",
+		"worker_id":             req.WorkerID,
+		"account_id":            req.AccountID,
+		"worker_type_id":        WorkerTypeWhatsmeow,
+		"connection_attempt_id": req.ConnectionAttemptID,
+		"runtime_generation":    req.RuntimeGeneration,
+		"format_version":        req.FormatVersion,
+		"target_provider":       req.TargetProvider,
+		"has_payload_ref":       req.PayloadRef != "",
+		"has_payload_json":      req.PayloadJSON != "",
+		"grpc_method":           "ImportSecureSession",
+	})
+	resp, err := s.handler.ImportSecureSession(ctx, req)
+	if err != nil {
+		connectionFlowLog("whatsmeow.grpc.secure_import.error", map[string]any{
+			"trace_id":              req.DebugTraceID,
+			"layer":                 "worker_whatsmeow.grpc",
+			"worker_id":             req.WorkerID,
+			"account_id":            req.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"connection_attempt_id": req.ConnectionAttemptID,
+			"duration_ms":           time.Since(startedAt).Milliseconds(),
+			"reason":                err.Error(),
+		})
+		return nil, err
+	}
+	if resp.ConnectionAttemptID == "" {
+		resp.ConnectionAttemptID = req.ConnectionAttemptID
+	}
+	if resp.DebugTraceID == "" {
+		resp.DebugTraceID = req.DebugTraceID
+	}
+	out := newDynamicMessage(descs.workerConnectionResponse)
+	setConnectionStateMessage(out, resp)
+	return out, nil
+}
+
 func (s *WorkerConnectionGRPCServer) ValidatePhone(ctx context.Context, msg *dynamicpb.Message) (*dynamicpb.Message, error) {
 	descs, err := getDescriptors()
 	if err != nil {
@@ -508,6 +568,7 @@ type dynamicWorkerConnectionService interface {
 	RequestConnection(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	SendPasskeyResponse(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	ConfirmPasskey(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
+	ImportSecureSession(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	ValidatePhone(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	ActivateRuntime(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
 	RuntimeHealth(context.Context, *dynamicpb.Message) (*dynamicpb.Message, error)
@@ -529,6 +590,10 @@ func RegisterWorkerConnectionService(server *grpc.Server, service dynamicWorkerC
 			{
 				MethodName: "ConfirmPasskey",
 				Handler:    confirmPasskeyHandler,
+			},
+			{
+				MethodName: "ImportSecureSession",
+				Handler:    importSecureSessionHandler,
 			},
 			{
 				MethodName: "ValidatePhone",
@@ -610,6 +675,28 @@ func confirmPasskeyHandler(srv any, ctx context.Context, dec func(any) error, in
 	}
 	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(dynamicWorkerConnectionService).ConfirmPasskey(ctx, req.(*dynamicpb.Message))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func importSecureSessionHandler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	descs, err := getDescriptors()
+	if err != nil {
+		return nil, err
+	}
+	in := newDynamicMessage(descs.secureSessionImportRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(dynamicWorkerConnectionService).ImportSecureSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/worker_connection.WorkerConnection/ImportSecureSession",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(dynamicWorkerConnectionService).ImportSecureSession(ctx, req.(*dynamicpb.Message))
 	}
 	return interceptor(ctx, in, info, handler)
 }

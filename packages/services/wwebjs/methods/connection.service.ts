@@ -8,6 +8,7 @@ import { wwebjsEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
@@ -648,6 +649,45 @@ export class WwebjsConnectionService {
     if (shouldReconnect) {
       this.scheduleNextReconnectAttempt();
     }
+  }
+
+  async importSecureSession(
+    input: ISecureConnectionImportRequest
+  ): Promise<IBaileysConnectionState> {
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.badSession,
+      status: Status.disconnected,
+      worker_id: input.worker_id || getWorker(),
+      account_id: input.account_id || getAccount(),
+      worker_type_id: EWorkerType.wwebjs,
+      worker_status_id: EWorkerStatus.disponible,
+      connection_attempt_id: input.connection_attempt_id,
+      runtime_generation: input.runtime_generation,
+      debug_trace_id: input.debug_trace_id,
+      reason: 'secure_session_import_not_implemented',
+      error:
+        'WWebJS secure session import requires the updated LocalAuth importer.',
+      session_ready: false,
+      authenticated: false,
+      can_send: false,
+      can_receive_runtime: false,
+    };
+
+    this.logDebug('wwebjs.provider.secure_session_import_not_implemented', {
+      trace_id: input.debug_trace_id,
+      layer: 'wwebjs',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id,
+      connection_attempt_id: input.connection_attempt_id,
+      runtime_generation: input.runtime_generation,
+      format_version: input.format_version,
+      target_provider: input.target_provider,
+      has_payload_ref: Boolean(input.payload_ref),
+      has_payload_json: Boolean(input.payload_json),
+    });
+
+    return payload;
   }
 
   reconnect(input: IBaileysConnection): void {

@@ -23,6 +23,7 @@ const (
 	CodeConnectionLost              = 408
 	CodeConnectionClosed            = 428
 	CodeConnectionReplaced          = 440
+	CodeBadSession                  = 500
 	CodeUnavailableService          = 503
 	CodeInfo                        = 1000
 )
@@ -123,6 +124,21 @@ type PasskeyConfirmationRequest struct {
 	WorkerID            string `json:"worker_id"`
 	AccountID           string `json:"account_id"`
 	ConnectionAttemptID string `json:"connection_attempt_id"`
+	DebugTraceID        string `json:"debug_trace_id"`
+}
+
+type SecureSessionImportRequest struct {
+	WorkerID            string `json:"worker_id"`
+	AccountID           string `json:"account_id"`
+	WorkerTypeID        string `json:"worker_type_id"`
+	ConnectionAttemptID string `json:"connection_attempt_id"`
+	RuntimeGeneration   int    `json:"runtime_generation"`
+	FormatVersion       string `json:"format_version"`
+	Source              string `json:"source"`
+	TargetProvider      string `json:"target_provider"`
+	PayloadRef          string `json:"payload_ref"`
+	PayloadJSON         string `json:"payload_json"`
+	Checksum            string `json:"checksum"`
 	DebugTraceID        string `json:"debug_trace_id"`
 }
 

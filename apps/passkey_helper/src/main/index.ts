@@ -2,7 +2,11 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { PasskeyHelperApiClient, type PasskeyHelperSession } from './apiClient';
+import {
+  PasskeyHelperApiClient,
+  type PasskeyHelperSession,
+  type SecureSessionPackage,
+} from './apiClient';
 import {
   extractDeepLinkFromArgv,
   isAllowedHttpApiUrl,
@@ -110,6 +114,7 @@ function registerIpcHandlers(): void {
       return {
         apiBaseUrl: currentPairing.context.apiBaseUrl,
         error: currentPairing.error,
+        mode: currentPairing.context.mode,
         tokenHash: currentPairing.context.tokenHash,
       };
     }
@@ -122,6 +127,7 @@ function registerIpcHandlers(): void {
 
     return {
       apiBaseUrl: currentPairing.context.apiBaseUrl,
+      mode: currentPairing.context.mode,
       session: currentPairing.session,
       tokenHash: currentPairing.context.tokenHash,
     };
@@ -158,6 +164,100 @@ function registerIpcHandlers(): void {
     });
     return result;
   });
+
+  ipcMain.handle(
+    'underchat-passkey:update-secure-status',
+    async (
+      _event,
+      statusPayload: {
+        error?: string;
+        message?: string;
+        status: string;
+      }
+    ) => {
+      if (!currentPairing) {
+        throw new Error('Sessao segura nao iniciada.');
+      }
+
+      const result = await apiClient.updateSecureStatus(
+        currentPairing.context,
+        {
+          ...statusPayload,
+          helper_platform: process.platform,
+          helper_version: app.getVersion(),
+        }
+      );
+      currentPairing.session = await fetchPairingSession(
+        currentPairing.context
+      ).catch(() => currentPairing?.session ?? null);
+      mainWindow?.webContents.send('underchat-passkey:session-updated');
+      return result;
+    }
+  );
+
+  ipcMain.handle(
+    'underchat-passkey:upload-secure-session',
+    async (_event, sessionPackage: SecureSessionPackage) => {
+      if (!currentPairing) {
+        throw new Error('Sessao segura nao iniciada.');
+      }
+
+      logEvent('secure_session.upload.start', currentPairing.context, {
+        format_version: sessionPackage.format_version,
+        target_provider: sessionPackage.target_provider,
+      });
+      const enrichedPackage = await enrichSecureSessionPackage(sessionPackage);
+      const result = await apiClient.uploadSecureSession(
+        currentPairing.context,
+        enrichedPackage
+      );
+      currentPairing.session = await fetchPairingSession(
+        currentPairing.context
+      ).catch(() => currentPairing?.session ?? null);
+      mainWindow?.webContents.send('underchat-passkey:session-updated');
+      logEvent('secure_session.upload.done', currentPairing.context, {
+        status: result.status ?? result.code ?? null,
+      });
+      return result;
+    }
+  );
+}
+
+async function enrichSecureSessionPackage(
+  sessionPackage: SecureSessionPackage
+): Promise<SecureSessionPackage> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return sessionPackage;
+  }
+
+  const cookies = await mainWindow.webContents.session.cookies
+    .get({ url: WHATSAPP_WEB_ORIGIN })
+    .catch(() => []);
+  const payload =
+    sessionPackage.payload &&
+    typeof sessionPackage.payload === 'object' &&
+    !Array.isArray(sessionPackage.payload)
+      ? (sessionPackage.payload as Record<string, unknown>)
+      : {};
+
+  return {
+    ...sessionPackage,
+    payload: {
+      ...payload,
+      electron_cookies: cookies.map((cookie) => ({
+        domain: cookie.domain,
+        expirationDate: cookie.expirationDate,
+        httpOnly: cookie.httpOnly,
+        name: cookie.name,
+        path: cookie.path,
+        sameSite: cookie.sameSite,
+        secure: cookie.secure,
+        session: cookie.session,
+        value: cookie.value,
+      })),
+      electron_partition: 'persist:underchat-passkey-helper',
+    },
+  };
 }
 
 async function handleDeepLink(rawUrl: string): Promise<void> {
@@ -169,6 +269,7 @@ async function handleDeepLink(rawUrl: string): Promise<void> {
     currentPairing = {
       context: {
         apiBaseUrl: '',
+        mode: 'pair',
         token: '',
         tokenHash: 'invalid-link',
       },
@@ -211,7 +312,8 @@ async function fetchPairingSession(
     hasConfirmationCode: Boolean(
       session.confirmationCode ?? session.passkey_confirmation_code
     ),
-    hasPublicKey: Boolean(publicKey),
+    hasPublicKey: context.mode === 'secure' ? undefined : Boolean(publicKey),
+    mode: context.mode,
     status: session.status ?? null,
   });
   return session;
@@ -285,6 +387,7 @@ function createMainWindow(initialError?: string): void {
     currentPairing = {
       context: {
         apiBaseUrl: '',
+        mode: 'pair',
         token: '',
         tokenHash: 'invalid-link',
       },

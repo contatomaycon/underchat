@@ -28,6 +28,7 @@ import { WwebjsHealthCheckService } from '@core/services/wwebjs/methods/healthCh
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
 import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
   IWorkerRuntimeActivationRequestProto,
@@ -92,6 +93,21 @@ interface IPasskeyConfirmationRequestProto {
   worker_id?: string;
   account_id?: string;
   connection_attempt_id?: string;
+  debug_trace_id?: string;
+}
+
+interface ISecureSessionImportRequestProto {
+  worker_id?: string;
+  account_id?: string;
+  worker_type_id?: string;
+  connection_attempt_id?: string;
+  runtime_generation?: number | string;
+  format_version?: string;
+  source?: string;
+  target_provider?: string;
+  payload_ref?: string;
+  payload_json?: string;
+  checksum?: string;
   debug_trace_id?: string;
 }
 
@@ -848,6 +864,113 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       });
   };
 
+  const handleImportSecureSession = (
+    call: ServerUnaryCall<
+      ISecureSessionImportRequestProto,
+      IWorkerConnectionStateProto
+    >,
+    callback: sendUnaryData<IWorkerConnectionStateProto>
+  ) => {
+    const req = call.request;
+    const requestRuntimeGeneration = optionalRuntimeGeneration(
+      req.runtime_generation
+    );
+    const payload: ISecureConnectionImportRequest = {
+      worker_id: req.worker_id ?? '',
+      account_id: req.account_id ?? '',
+      worker_type_id: req.worker_type_id as EWorkerType | undefined,
+      connection_attempt_id: req.connection_attempt_id ?? '',
+      runtime_generation: requestRuntimeGeneration,
+      format_version: req.format_version ?? '',
+      source: 'whatsapp_web',
+      target_provider:
+        req.target_provider === 'baileys' ||
+        req.target_provider === 'wwebjs' ||
+        req.target_provider === 'whatsmeow'
+          ? req.target_provider
+          : 'auto',
+      payload_ref: req.payload_ref,
+      payload_json: req.payload_json,
+      checksum: req.checksum,
+      debug_trace_id: req.debug_trace_id,
+    };
+
+    logWorkerConnectionGrpcFlow(
+      'worker.connection_grpc.secure_import_received',
+      {
+        trace_id: payload.debug_trace_id,
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: getWorkerTypeId(),
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        format_version: payload.format_version,
+        target_provider: payload.target_provider,
+        has_payload_ref: Boolean(payload.payload_ref),
+        has_payload_json: Boolean(payload.payload_json),
+        grpc_module: module,
+      }
+    );
+
+    if (
+      !payload.worker_id ||
+      !payload.account_id ||
+      !payload.connection_attempt_id ||
+      !payload.format_version ||
+      (!payload.payload_ref && !payload.payload_json)
+    ) {
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message:
+            'Missing required fields: worker_id, account_id, connection_attempt_id, format_version, payload',
+          details:
+            'Missing required fields: worker_id, account_id, connection_attempt_id, format_version, payload',
+        },
+        null
+      );
+      return;
+    }
+
+    const service =
+      module === ERouteModule.worker_wwebjs
+        ? container.resolve(WwebjsService)
+        : container.resolve(BaileysService);
+
+    service
+      .importSecureSession(payload)
+      .then((response) => {
+        callback(
+          null,
+          connectionStateToProto({
+            ...response,
+            worker_type_id: response.worker_type_id ?? fallbackWorkerTypeId,
+            connection_attempt_id:
+              response.connection_attempt_id ?? payload.connection_attempt_id,
+            debug_trace_id: response.debug_trace_id ?? payload.debug_trace_id,
+            runtime_generation:
+              response.runtime_generation ?? payload.runtime_generation,
+          })
+        );
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logWorkerConnectionGrpcFlow(
+          'worker.connection_grpc.secure_import_error',
+          {
+            trace_id: payload.debug_trace_id,
+            worker_id: payload.worker_id,
+            account_id: payload.account_id,
+            worker_type_id: getWorkerTypeId(),
+            connection_attempt_id: payload.connection_attempt_id,
+            grpc_module: module,
+            reason: msg,
+          }
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   grpcServer.addService(WorkerConnectionService.service, {
     RequestConnection: handleRequestConnection,
     ValidatePhone: handleValidatePhone,
@@ -855,6 +978,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
     RuntimeHealth: handleRuntimeHealth,
     SendPasskeyResponse: handleSendPasskeyResponse,
     ConfirmPasskey: handleConfirmPasskey,
+    ImportSecureSession: handleImportSecureSession,
   });
 
   const bind = `0.0.0.0:${grpcPort}`;

@@ -47,6 +47,7 @@ import { UpdateSecurityKeyRequest } from '@core/schema/worker/updateSecurityKey/
 import { UpdateSecurityKeyResponse } from '@core/schema/worker/updateSecurityKey/response.schema';
 import { WorkerExternalConnectionLinkResponse } from '@core/schema/worker/externalConnectionLink/response.schema';
 import { WorkerExternalConnectionViewResponse } from '@core/schema/worker/externalConnection/response.schema';
+import { WorkerSecureConnectionSessionResponse } from '@core/schema/worker/secureConnection/response.schema';
 import { ICreateWorkerResponse } from '@core/common/interfaces/ICreateWorkerResponse';
 import { IWorkerLifecycleAck } from '@core/common/interfaces/IWorkerLifecycleAck';
 import { WorkerWhatsappEmbeddedConfigResponse } from '@core/schema/worker/whatsappEmbeddedConfig/response.schema';
@@ -1059,6 +1060,110 @@ export const useChannelsStore = defineStore('channels', {
 
         this.loading = false;
 
+        return null;
+      }
+    },
+
+    async createSecureConnectionSession(
+      workerId: string,
+      options: { silent?: boolean; debugTraceId?: string } = {}
+    ): Promise<WorkerSecureConnectionSessionResponse | null> {
+      const debugTraceId =
+        options.debugTraceId ?? createWebTraceId('web_secure_connection');
+      try {
+        if (!options.silent) {
+          this.loading = true;
+        }
+
+        const response = await axios.post<
+          IApiResponse<WorkerSecureConnectionSessionResponse>
+        >(
+          `/worker/${workerId}/connection/secure-session`,
+          {},
+          buildConnectionLifecycleDebugConfig(debugTraceId)
+        );
+
+        if (!options.silent) {
+          this.loading = false;
+        }
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          const message =
+            data?.message ??
+            this.i18n.global.t('secure_connection_start_error');
+
+          if (!options.silent) {
+            this.showSnackbar(message, EColor.error);
+          }
+
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t('secure_connection_start_error');
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        if (!options.silent) {
+          this.showSnackbar(errorMessage, EColor.error);
+        }
+        this.loading = false;
+
+        return null;
+      }
+    },
+
+    async viewSecureConnectionSession(
+      workerId: string,
+      token: string,
+      options: { silent?: boolean } = {}
+    ): Promise<WorkerSecureConnectionSessionResponse | null> {
+      try {
+        const response = await axios.get<
+          IApiResponse<WorkerSecureConnectionSessionResponse>
+        >(
+          `/worker/${workerId}/connection/secure-session/${encodeURIComponent(
+            token
+          )}`
+        );
+
+        const data = response?.data;
+        if (!data?.status || !data?.data) {
+          return null;
+        }
+
+        return data.data;
+      } catch (error) {
+        if (!options.silent && error instanceof AxiosError) {
+          this.showSnackbar(
+            error.response?.data?.message ??
+              this.i18n.global.t('secure_connection_status_error'),
+            EColor.error
+          );
+        }
+
+        return null;
+      }
+    },
+
+    async cancelSecureConnectionSession(
+      workerId: string,
+      token: string
+    ): Promise<WorkerSecureConnectionSessionResponse | null> {
+      try {
+        const response = await axios.post<
+          IApiResponse<WorkerSecureConnectionSessionResponse>
+        >(
+          `/worker/${workerId}/connection/secure-session/${encodeURIComponent(
+            token
+          )}/cancel`
+        );
+
+        return response?.data?.status ? (response.data.data ?? null) : null;
+      } catch {
         return null;
       }
     },

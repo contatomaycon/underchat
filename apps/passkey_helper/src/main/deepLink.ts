@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 
 export const PASSKEY_PROTOCOL = 'underchat-passkey';
-export const DEV_MANAGER_API_URL = 'http://localhost:3002';
-export const PROD_MANAGER_API_URL = 'https://api-manager.underchat.com.br/';
+export const DEV_MANAGER_API_URL = 'http://localhost:3002/v1';
+export const PROD_MANAGER_API_URL = 'https://api-manager.underchat.com.br/v1';
 export const DEFAULT_MANAGER_API_URL =
   import.meta.env.MAIN_VITE_UNDERCHAT_MANAGER_API_URL?.trim() ||
   (import.meta.env.DEV ? DEV_MANAGER_API_URL : PROD_MANAGER_API_URL);
 
 export interface PasskeyDeepLinkContext {
   apiBaseUrl: string;
+  mode: 'pair' | 'secure';
   token: string;
   tokenHash: string;
 }
@@ -28,7 +29,7 @@ export function parsePasskeyDeepLink(rawUrl: string): PasskeyDeepLinkContext {
     throw new Error('Protocolo de passkey invalido.');
   }
 
-  if (parsed.hostname !== 'pair') {
+  if (parsed.hostname !== 'pair' && parsed.hostname !== 'secure') {
     throw new Error('Acao de passkey invalida.');
   }
 
@@ -41,6 +42,7 @@ export function parsePasskeyDeepLink(rawUrl: string): PasskeyDeepLinkContext {
 
   return {
     apiBaseUrl,
+    mode: parsed.hostname === 'secure' ? 'secure' : 'pair',
     token,
     tokenHash: hashToken(token),
   };
@@ -110,9 +112,16 @@ export function isAllowedHttpApiUrl(
     return false;
   }
 
+  const apiPath = api.pathname.replace(/\/+$/, '');
+  const targetPath =
+    apiPath && target.pathname.startsWith(`${apiPath}/`)
+      ? target.pathname.slice(apiPath.length)
+      : target.pathname;
+
   return (
     target.origin === api.origin &&
-    target.pathname.startsWith('/worker/connection/passkey-helper/')
+    (targetPath.startsWith('/worker/connection/passkey-helper/') ||
+      targetPath.startsWith('/worker/connection/secure-helper/'))
   );
 }
 

@@ -76,6 +76,14 @@ import { disconnectWhatsappOfficialSchema } from '@core/schema/worker/disconnect
 import { connectWhatsappOfficialSchema } from '@core/schema/worker/connectWhatsappOfficial';
 import { ensureWhatsappOfficialWebhookSubscriptionSchema } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription';
 import { whatsappOfficialHealthSchema } from '@core/schema/worker/whatsappOfficialHealth';
+import {
+  workerSecureConnectionCancelSchema,
+  workerSecureConnectionCreateSchema,
+  workerSecureConnectionHelperSessionSchema,
+  workerSecureConnectionHelperStatusSchema,
+  workerSecureConnectionHelperViewSchema,
+  workerSecureConnectionViewSchema,
+} from '@core/schema/worker/secureConnection';
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
@@ -146,6 +154,54 @@ export default function workerRoutes(server: FastifyInstance) {
       planGuard,
       planStatus,
     ],
+  });
+
+  server.post('/worker/:worker_id/connection/secure-session', {
+    schema: workerSecureConnectionCreateSchema,
+    handler: workerController.createSecureConnectionSession,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/:worker_id/connection/secure-session/:token', {
+    schema: workerSecureConnectionViewSchema,
+    handler: workerController.viewSecureConnectionSession,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.post('/worker/:worker_id/connection/secure-session/:token/cancel', {
+    schema: workerSecureConnectionCancelSchema,
+    handler: workerController.cancelSecureConnectionSession,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
+  });
+
+  server.get('/worker/connection/secure-helper/:token', {
+    schema: workerSecureConnectionHelperViewSchema,
+    handler: workerController.viewSecureConnectionHelper,
+  });
+
+  server.post('/worker/connection/secure-helper/:token/status', {
+    schema: workerSecureConnectionHelperStatusSchema,
+    handler: workerController.updateSecureConnectionHelperStatus,
+  });
+
+  server.post('/worker/connection/secure-helper/:token/session', {
+    schema: workerSecureConnectionHelperSessionSchema,
+    handler: workerController.uploadSecureConnectionHelperSession,
   });
 
   server.post('/worker/:worker_id/external-connection-link', {

@@ -5,6 +5,7 @@ import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionS
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysConnection } from '@core/common/interfaces/IBaileysConnection';
+import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
 import { WwebjsPhoneValidationService } from './methods/phoneValidation.service';
 import { IPhoneValidationResult } from '@core/common/interfaces/IPhoneValidationResult';
 
@@ -68,6 +69,12 @@ export class WwebjsService {
 
   republishLastState(): void {
     this.connection.republishLastState();
+  }
+
+  importSecureSession(
+    input: ISecureConnectionImportRequest
+  ): Promise<IBaileysConnectionState> {
+    return this.connection.importSecureSession(input);
   }
 
   shutdown(): Promise<void> {
