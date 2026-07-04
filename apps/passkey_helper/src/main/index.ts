@@ -1,6 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
 
 import {
   PasskeyHelperApiClient,
@@ -16,9 +15,13 @@ import {
   type PasskeyDeepLinkContext,
 } from './deepLink';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const appMainDir = import.meta.dirname;
 const WHATSAPP_WEB_ORIGIN = 'https://web.whatsapp.com';
+const CHROME_STABLE_VERSION = '150.0.7871.46';
+const CHROME_STABLE_MAJOR_VERSION =
+  CHROME_STABLE_VERSION.split('.')[0] ?? '150';
 const isDevelopment = !app.isPackaged;
+const whatsAppWebUserAgent = getWhatsAppWebUserAgent();
 
 interface CurrentPairing {
   context: PasskeyDeepLinkContext;
@@ -32,73 +35,148 @@ let currentPairing: CurrentPairing | null = null;
 const apiClient = new PasskeyHelperApiClient();
 
 app.setName('Underchat Passkey Helper');
+app.userAgentFallback = whatsAppWebUserAgent;
 app.setPath(
   'userData',
   process.platform === 'linux'
     ? join(app.getPath('appData'), 'underchat-passkey-helper')
     : join(app.getPath('appData'), 'Underchat Passkey Helper')
 );
+configureRuntimeSwitches();
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit();
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  console.log('[underchat-passkey-helper] single_instance.lock_denied', {
+    argvCount: process.argv.length,
+    hasDeepLink: Boolean(extractDeepLinkFromArgv(process.argv)),
+  });
+  app.exit(0);
+} else {
+  registerProtocol();
+  registerIpcHandlers();
+  registerAppLifecycleHandlers();
 }
 
-registerProtocol();
-registerIpcHandlers();
-
-app.on('second-instance', (_event, argv) => {
-  const deepLink = extractDeepLinkFromArgv(argv);
-
-  if (deepLink) {
-    void handleDeepLink(deepLink);
-  }
-
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
-    }
-
-    mainWindow.focus();
-  }
-});
-
-app.on('open-url', (event, url) => {
-  event.preventDefault();
-  void handleDeepLink(url);
-});
-
-app.whenReady().then(async () => {
-  const initialDeepLink = extractDeepLinkFromArgv(process.argv);
-
-  if (initialDeepLink) {
-    await handleDeepLink(initialDeepLink);
+function registerProtocol(): void {
+  if (process.platform === 'linux') {
+    console.log('[underchat-passkey-helper] protocol.register.skipped_linux', {
+      protocol: PASSKEY_PROTOCOL,
+    });
     return;
   }
 
-  createMainWindow();
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createMainWindow();
-  }
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-function registerProtocol(): void {
   if (process.defaultApp && process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PASSKEY_PROTOCOL, process.execPath, [
-      resolve(process.argv[1] ?? ''),
-    ]);
+    const entrypoint = getDefaultAppProtocolEntrypoint();
+
+    if (entrypoint) {
+      app.setAsDefaultProtocolClient(PASSKEY_PROTOCOL, process.execPath, [
+        resolve(entrypoint),
+      ]);
+      console.log('[underchat-passkey-helper] protocol.register.default_app', {
+        protocol: PASSKEY_PROTOCOL,
+      });
+    }
+
     return;
   }
 
   app.setAsDefaultProtocolClient(PASSKEY_PROTOCOL);
+  console.log('[underchat-passkey-helper] protocol.register.packaged', {
+    protocol: PASSKEY_PROTOCOL,
+  });
+}
+
+function configureRuntimeSwitches(): void {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+  app.commandLine.appendSwitch('disable-vulkan');
+  app.commandLine.appendSwitch('disable-features', 'Vulkan');
+  console.log('[underchat-passkey-helper] runtime.switches.linux', {
+    disableGpu: true,
+    disableVulkan: true,
+    ozonePlatform: 'x11',
+  });
+}
+
+function getDefaultAppProtocolEntrypoint(): string | null {
+  for (const arg of process.argv.slice(1)) {
+    if (
+      arg.startsWith('-') ||
+      arg.startsWith(`${PASSKEY_PROTOCOL}://`) ||
+      arg.startsWith('--deep-link=')
+    ) {
+      continue;
+    }
+
+    return arg;
+  }
+
+  return null;
+}
+
+function registerAppLifecycleHandlers(): void {
+  app.on('second-instance', (_event, argv) => {
+    const deepLink = extractDeepLinkFromArgv(argv);
+
+    console.log('[underchat-passkey-helper] second_instance.received', {
+      argvCount: argv.length,
+      hasDeepLink: Boolean(deepLink),
+    });
+
+    if (deepLink) {
+      void handleDeepLink(deepLink);
+    }
+
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+
+      mainWindow.focus();
+    }
+  });
+
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    void handleDeepLink(url);
+  });
+
+  app.whenReady().then(async () => {
+    const initialDeepLink = extractDeepLinkFromArgv(process.argv);
+
+    console.log('[underchat-passkey-helper] app.ready', {
+      argvCount: process.argv.length,
+      hasDeepLink: Boolean(initialDeepLink),
+      isPackaged: app.isPackaged,
+      platform: process.platform,
+    });
+
+    if (initialDeepLink) {
+      await handleDeepLink(initialDeepLink);
+      return;
+    }
+
+    createMainWindow();
+  });
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createMainWindow();
+    }
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  });
 }
 
 function registerIpcHandlers(): void {
@@ -335,29 +413,66 @@ function createMainWindow(initialError?: string): void {
     return;
   }
 
+  console.log('[underchat-passkey-helper] window.create.start');
   mainWindow = new BrowserWindow({
     backgroundColor: '#0f1519',
-    height: 860,
-    minHeight: 680,
-    minWidth: 960,
+    autoHideMenuBar: true,
+    height: 720,
+    minHeight: 560,
+    minWidth: 760,
     show: false,
     title: 'Underchat Passkey Helper',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       partition: 'persist:underchat-passkey-helper',
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: true,
+      preload: join(appMainDir, '../preload/index.js'),
+      sandbox: false,
     },
-    width: 1180,
+    width: 980,
   });
+  console.log('[underchat-passkey-helper] window.create.done');
+  mainWindow.setMenuBarVisibility(false);
+  mainWindow.webContents.setUserAgent(whatsAppWebUserAgent);
+  configureWhatsAppRequestHeaders(mainWindow);
+
+  let hasShownWindow = false;
+  const showMainWindow = (reason: string): void => {
+    if (!mainWindow || mainWindow.isDestroyed() || hasShownWindow) {
+      return;
+    }
+
+    hasShownWindow = true;
+    mainWindow.show();
+    mainWindow.focus();
+    console.log('[underchat-passkey-helper] window.show', { reason });
+  };
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
+    showMainWindow('ready-to-show');
   });
+
+  setTimeout(() => {
+    showMainWindow('timeout');
+  }, 3000);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  mainWindow.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedUrl) => {
+      console.error('[underchat-passkey-helper] window.load.failed', {
+        domain: getSafeDomain(validatedUrl),
+        errorCode,
+        errorDescription,
+      });
+    }
+  );
+
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[underchat-passkey-helper] renderer.gone', details);
   });
 
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
@@ -396,18 +511,73 @@ function createMainWindow(initialError?: string): void {
     };
   }
 
-  mainWindow.loadURL(WHATSAPP_WEB_ORIGIN).catch((error: unknown) => {
-    console.error(
-      '[underchat-passkey-helper] window.load.error',
-      sanitizeError(error)
-    );
+  console.log('[underchat-passkey-helper] window.load.start', {
+    domain: getSafeDomain(WHATSAPP_WEB_ORIGIN),
   });
+  mainWindow
+    .loadURL(WHATSAPP_WEB_ORIGIN, {
+      userAgent: whatsAppWebUserAgent,
+    })
+    .catch((error: unknown) => {
+      console.error(
+        '[underchat-passkey-helper] window.load.error',
+        sanitizeError(error)
+      );
+    });
 
   if (isDevelopment) {
     mainWindow.webContents.on('did-finish-load', () => {
       console.log('[underchat-passkey-helper] whatsapp.loaded');
     });
   }
+}
+
+function configureWhatsAppRequestHeaders(window: BrowserWindow): void {
+  const platform = getUserAgentPlatform();
+  const clientHintsPlatform =
+    process.platform === 'win32'
+      ? 'Windows'
+      : process.platform === 'darwin'
+        ? 'macOS'
+        : 'Linux';
+
+  window.webContents.session.webRequest.onBeforeSendHeaders(
+    {
+      urls: [`${WHATSAPP_WEB_ORIGIN}/*`],
+    },
+    (details, callback) => {
+      details.requestHeaders['User-Agent'] = whatsAppWebUserAgent;
+      details.requestHeaders['sec-ch-ua'] =
+        `"Google Chrome";v="${CHROME_STABLE_MAJOR_VERSION}", "Chromium";v="${CHROME_STABLE_MAJOR_VERSION}", "Not_A Brand";v="99"`;
+      details.requestHeaders['sec-ch-ua-mobile'] = '?0';
+      details.requestHeaders['sec-ch-ua-platform'] = `"${clientHintsPlatform}"`;
+
+      callback({
+        requestHeaders: details.requestHeaders,
+      });
+    }
+  );
+
+  console.log('[underchat-passkey-helper] whatsapp.headers.override', {
+    chromeVersion: CHROME_STABLE_VERSION,
+    platform,
+  });
+}
+
+function getWhatsAppWebUserAgent(): string {
+  return `Mozilla/5.0 (${getUserAgentPlatform()}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_STABLE_VERSION} Safari/537.36`;
+}
+
+function getUserAgentPlatform(): string {
+  if (process.platform === 'win32') {
+    return 'Windows NT 10.0; Win64; x64';
+  }
+
+  if (process.platform === 'darwin') {
+    return 'Macintosh; Intel Mac OS X 10_15_7';
+  }
+
+  return 'X11; Linux x86_64';
 }
 
 function isAllowedNavigation(rawUrl: string): boolean {
@@ -426,6 +596,12 @@ function isAllowedNavigation(rawUrl: string): boolean {
 }
 
 function logBlockedNavigation(rawUrl: string): void {
+  const domain = getSafeDomain(rawUrl);
+
+  console.warn('[underchat-passkey-helper] navigation.blocked', { domain });
+}
+
+function getSafeDomain(rawUrl: string): string {
   let domain = 'invalid-url';
 
   try {
@@ -434,7 +610,7 @@ function logBlockedNavigation(rawUrl: string): void {
     // keep sanitized fallback
   }
 
-  console.warn('[underchat-passkey-helper] navigation.blocked', { domain });
+  return domain;
 }
 
 function logEvent(

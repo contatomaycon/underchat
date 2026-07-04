@@ -47,6 +47,7 @@ allowBuilds:
   core-js: true
   cpu-features: true
   dtrace-provider: true
+  electron: true
   electron-winstaller: true
   esbuild: true
   msw: true

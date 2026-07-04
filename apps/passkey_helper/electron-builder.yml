@@ -6,6 +6,7 @@ asar: true
 icon: build/icons/icon.png
 npmRebuild: false
 nodeGypRebuild: false
+afterPack: scripts/after-pack.cjs
 
 directories:
   output: release

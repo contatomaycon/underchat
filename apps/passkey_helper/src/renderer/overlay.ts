@@ -278,7 +278,6 @@ function render(): void {
           }>Atualizar</button>
         </div>
         <div class="underchat-passkey-meta">
-          <span>API: ${escapeHtml(formatApi(payload?.apiBaseUrl))}</span>
           <span>Canal: ${escapeHtml(session?.channelName ?? session?.channel_name ?? 'nao informado')}</span>
           <span>Expira: ${escapeHtml(session?.expiresAt ?? session?.expires_at ?? 'nao informado')}</span>
         </div>
@@ -361,7 +360,6 @@ function renderSecureMode(): void {
           }>Atualizar</button>
         </div>
         <div class="underchat-passkey-meta">
-          <span>API: ${escapeHtml(formatApi(payload?.apiBaseUrl))}</span>
           <span>Status: ${escapeHtml(status)}</span>
           <span>Expira: ${escapeHtml(session?.expiresAt ?? session?.expires_at ?? 'nao informado')}</span>
         </div>
@@ -560,20 +558,16 @@ function injectStyles(): void {
   document.documentElement.appendChild(style);
 }
 
-function formatApi(apiBaseUrl?: string): string {
-  if (!apiBaseUrl) {
-    return 'nao informada';
-  }
-
-  try {
-    return new URL(apiBaseUrl).origin;
-  } catch {
-    return 'invalida';
-  }
-}
-
 function sanitizeOverlayError(error: unknown): string {
   if (error instanceof Error && error.message) {
+    if (
+      /fetch failed|ECONNREFUSED|Failed to fetch|update-secure-status/i.test(
+        error.message
+      )
+    ) {
+      return 'Underchat indisponivel. Mantenha a tela aberta e tente atualizar.';
+    }
+
     return error.message;
   }
 
