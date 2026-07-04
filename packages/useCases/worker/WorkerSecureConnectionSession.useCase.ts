@@ -17,7 +17,7 @@ import {
 import { WorkerSecureConnectionSessionResponse } from '@core/schema/worker/secureConnection/response.schema';
 import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
 import { CentrifugoService } from '@core/services/centrifugo.service';
-import { WorkerBaileysGrpcClientService } from '@core/services/workerBaileysGrpcClient.service';
+import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { WorkerService } from '@core/services/worker.service';
 import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
@@ -69,8 +69,8 @@ export class WorkerSecureConnectionSessionUseCase {
     @inject('Redis') private readonly redis: Redis,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
-    @inject(WorkerBaileysGrpcClientService)
-    private readonly workerBaileysGrpcClientService: WorkerBaileysGrpcClientService,
+    @inject(WorkerGrpcClientService)
+    private readonly workerGrpcClientService: WorkerGrpcClientService,
     @inject(WorkerRuntimeRepository)
     private readonly workerRuntimeRepository: WorkerRuntimeRepository = undefined as never
   ) {}
@@ -95,6 +95,7 @@ export class WorkerSecureConnectionSessionUseCase {
     const worker = await this.resolveWorker(t, input.accountId, input.workerId);
     const workerTypeId = worker.type?.id as EWorkerType | undefined;
     const workerStatusId = worker.status?.id;
+    const serverId = worker.server?.id;
 
     this.logEvent('manager.secure_connection.create.worker_resolved', {
       trace_id: input.debugTraceId,
@@ -102,6 +103,7 @@ export class WorkerSecureConnectionSessionUseCase {
       account_id: input.accountId,
       worker_type_id: workerTypeId,
       worker_status_id: workerStatusId,
+      server_id: serverId,
     });
 
     if (!workerTypeId || !this.isSupportedWorkerType(workerTypeId)) {
@@ -112,6 +114,16 @@ export class WorkerSecureConnectionSessionUseCase {
         worker_type_id: workerTypeId,
       });
       throw new Error(t('worker_type_invalid'));
+    }
+
+    if (!serverId) {
+      this.logEvent('manager.secure_connection.create.server_missing', {
+        trace_id: input.debugTraceId,
+        worker_id: input.workerId,
+        account_id: input.accountId,
+        worker_type_id: workerTypeId,
+      });
+      throw new Error(t('worker_not_found'));
     }
 
     if (
@@ -138,6 +150,7 @@ export class WorkerSecureConnectionSessionUseCase {
     const session: ISecureConnectionSession = {
       account_id: input.accountId,
       worker_id: input.workerId,
+      server_id: serverId,
       worker_type_id: workerTypeId,
       worker_status_id: workerStatusId,
       token,
@@ -165,6 +178,7 @@ export class WorkerSecureConnectionSessionUseCase {
       helper_protocol: SECURE_HELPER_PROTOCOL,
       expires_at: session.expires_at,
       runtime_generation: session.runtime_generation,
+      server_id: session.server_id,
     });
 
     return this.toResponse(session, { includeToken: true });
@@ -437,20 +451,21 @@ export class WorkerSecureConnectionSessionUseCase {
         debug_trace_id: input.debugTraceId,
       };
 
+      const serverId = await this.resolveSessionServerId(t, importing);
+
       this.logFlow('manager.secure_connection.import.grpc_call', importing, {
         trace_id: input.debugTraceId,
         payload_ref: importRequest.payload_ref,
         format_version: importRequest.format_version,
         target_provider: importRequest.target_provider,
         runtime_generation: importRequest.runtime_generation,
+        server_id: serverId,
       });
 
-      const imported =
-        await this.workerBaileysGrpcClientService.importSecureSession(
-          importing.worker_id,
-          importRequest,
-          importing.worker_type_id
-        );
+      const imported = await this.workerGrpcClientService.importSecureSession(
+        serverId,
+        importRequest
+      );
       const connected = await this.updateSession(importing, {
         status: imported.session_ready ? 'connected' : 'failed',
         phone: imported.phone,
@@ -509,6 +524,28 @@ export class WorkerSecureConnectionSessionUseCase {
     }
 
     return worker;
+  }
+
+  private async resolveSessionServerId(
+    t: TFunction<'translation', undefined>,
+    session: ISecureConnectionSession
+  ): Promise<string> {
+    if (session.server_id) {
+      return session.server_id;
+    }
+
+    const worker = await this.resolveWorker(
+      t,
+      session.account_id,
+      session.worker_id
+    );
+    const serverId = worker.server?.id;
+
+    if (!serverId) {
+      throw new Error(t('worker_not_found'));
+    }
+
+    return serverId;
   }
 
   private isSupportedWorkerType(workerTypeId: EWorkerType): boolean {

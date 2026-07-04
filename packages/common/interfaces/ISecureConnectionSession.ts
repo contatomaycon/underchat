@@ -22,6 +22,7 @@ export type SecureConnectionTargetProvider =
 export interface ISecureConnectionSession {
   account_id: string;
   worker_id: string;
+  server_id?: string;
   worker_type_id?: EWorkerType;
   worker_status_id?: string;
   token: string;

@@ -14,6 +14,7 @@ service WorkerCommand {
   rpc GetTypingSimulationConfig(GetTypingSimulationConfigRequest) returns (GetTypingSimulationConfigResponse);
   rpc RegisterS3BackupFallbackUpload(RegisterS3BackupFallbackUploadRequest) returns (WorkerCommandResponse);
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
+  rpc ImportSecureSession(SecureSessionImportRequest) returns (SecureSessionImportResponse);
   rpc CreateWarmWorker(CreateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
   rpc DeleteWarmWorker(DeleteWarmWorkerRequest) returns (WorkerCommandResponse);
   rpc ActivateWarmWorker(ActivateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
@@ -168,6 +169,44 @@ message PhoneValidationResponse {
   string jid = 5;
   string phone = 6;
   string error = 7;
+}
+
+message SecureSessionImportRequest {
+  string worker_id = 1;
+  string account_id = 2;
+  string worker_type_id = 3;
+  string connection_attempt_id = 4;
+  int32 runtime_generation = 5;
+  string format_version = 6;
+  string source = 7;
+  string target_provider = 8;
+  string payload_ref = 9;
+  string payload_json = 10;
+  string checksum = 11;
+  string debug_trace_id = 12;
+}
+
+message SecureSessionImportResponse {
+  int32 code = 1;
+  string status = 2;
+  string worker_id = 3;
+  string account_id = 4;
+  string phone = 5;
+  string worker_status_id = 6;
+  string connection_attempt_id = 7;
+  string reason = 8;
+  string error = 9;
+  int32 runtime_generation = 10;
+  string worker_type_id = 11;
+  string debug_trace_id = 12;
+  bool session_ready = 13;
+  bool can_send = 14;
+  bool can_receive_runtime = 15;
+  bool authenticated = 16;
+  string provider_state = 17;
+  string degraded_reason = 18;
+  string last_probe_at = 19;
+  int32 probe_latency_ms = 20;
 }
 
 message CreateWarmWorkerRequest {

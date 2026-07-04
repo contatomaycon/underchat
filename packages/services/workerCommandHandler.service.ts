@@ -40,6 +40,7 @@ import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/
 import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
 import { IWorkerSelfHealingRequestProto } from '@core/common/interfaces/IWorkerSelfHealingRequestProto';
 import { ServerSshViewerRepository } from '@core/repositories/server/ServerSshViewer.repository';
@@ -2369,6 +2370,67 @@ export class WorkerCommandHandlerService {
       },
       workerType
     );
+  }
+
+  async importSecureSession(
+    input: ISecureConnectionImportRequest
+  ): Promise<IBaileysConnectionState> {
+    const workerId = input.worker_id?.trim();
+    const accountId = input.account_id?.trim();
+
+    if (!workerId || !accountId || !input.connection_attempt_id) {
+      throw new Error(
+        'Missing required fields: worker_id, account_id, connection_attempt_id'
+      );
+    }
+
+    const workerType =
+      (input.worker_type_id as EWorkerType | undefined) ??
+      (await this.resolveWorkerTypeForConnection(workerId, accountId));
+
+    this.logDebug('service.command_handler.secure_import.start', {
+      trace_id: input.debug_trace_id,
+      layer: 'service',
+      worker_id: workerId,
+      account_id: accountId,
+      worker_type_id: workerType,
+      connection_attempt_id: input.connection_attempt_id,
+      runtime_generation: input.runtime_generation,
+      target_provider: input.target_provider,
+      has_payload_ref: Boolean(input.payload_ref),
+      has_payload_json: Boolean(input.payload_json),
+    });
+
+    const response =
+      await this.workerBaileysGrpcClientService.importSecureSession(
+        workerId,
+        {
+          ...input,
+          worker_id: workerId,
+          account_id: accountId,
+          worker_type_id: workerType ?? input.worker_type_id,
+        },
+        workerType
+      );
+
+    this.logDebug('service.command_handler.secure_import.done', {
+      trace_id: response.debug_trace_id ?? input.debug_trace_id,
+      layer: 'service',
+      worker_id: response.worker_id || workerId,
+      account_id: response.account_id || accountId,
+      worker_type_id: response.worker_type_id ?? workerType,
+      connection_attempt_id:
+        response.connection_attempt_id ?? input.connection_attempt_id,
+      runtime_generation:
+        response.runtime_generation ?? input.runtime_generation,
+      status: response.status,
+      code: response.code,
+      reason: response.reason,
+      session_ready: response.session_ready,
+      authenticated: response.authenticated,
+    });
+
+    return response;
   }
 
   private startOnlineConnectionWorkflow(

@@ -29,6 +29,13 @@ import { IGetTypingSimulationConfigRequestProto } from '@core/common/interfaces/
 import { IGetTypingSimulationConfigResponseProto } from '@core/common/interfaces/IGetTypingSimulationConfigResponseProto';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
+import {
+  ISecureConnectionImportRequest,
+  SecureConnectionTargetProvider,
+} from '@core/common/interfaces/ISecureConnectionSession';
+import { connectionStateToProto } from '@core/common/functions/workerConnectionStateProtoMapper';
 import { IRegisterS3BackupFallbackUploadRequestProto } from '@core/common/interfaces/IRegisterS3BackupFallbackUploadRequestProto';
 import { IWorkerSelfHealingRequestProto } from '@core/common/interfaces/IWorkerSelfHealingRequestProto';
 import {
@@ -58,6 +65,54 @@ if (!workerCommandProto || !workerCommandProto.WorkerCommand) {
 }
 
 const WorkerCommandService = workerCommandProto.WorkerCommand;
+
+interface ISecureSessionImportRequestProto {
+  worker_id?: string;
+  account_id?: string;
+  worker_type_id?: string;
+  connection_attempt_id?: string;
+  runtime_generation?: number | string;
+  format_version?: string;
+  source?: string;
+  target_provider?: string;
+  payload_ref?: string;
+  payload_json?: string;
+  checksum?: string;
+  debug_trace_id?: string;
+}
+
+function optionalProtoNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value) && value !== 0) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed !== 0 ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+function normalizeSecureSessionImportRequest(
+  input: ISecureSessionImportRequestProto
+): ISecureConnectionImportRequest {
+  return {
+    worker_id: input.worker_id ?? '',
+    account_id: input.account_id ?? '',
+    worker_type_id: input.worker_type_id as EWorkerType | undefined,
+    connection_attempt_id: input.connection_attempt_id ?? '',
+    runtime_generation: optionalProtoNumber(input.runtime_generation),
+    format_version: input.format_version ?? '',
+    source: input.source as 'whatsapp_web',
+    target_provider: (input.target_provider ||
+      'auto') as SecureConnectionTargetProvider,
+    payload_ref: input.payload_ref || undefined,
+    payload_json: input.payload_json || undefined,
+    checksum: input.checksum || undefined,
+    debug_trace_id: input.debug_trace_id || undefined,
+  };
+}
 
 function getMetadataString(
   call: ServerUnaryCall<unknown, unknown>,
@@ -477,6 +532,79 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleImportSecureSession = (
+    call: ServerUnaryCall<
+      ISecureSessionImportRequestProto,
+      IWorkerConnectionStateProto
+    >,
+    callback: sendUnaryData<IWorkerConnectionStateProto>
+  ) => {
+    const req = call.request;
+
+    if (
+      !req.worker_id ||
+      !req.account_id ||
+      !req.connection_attempt_id ||
+      !req.format_version ||
+      !req.source ||
+      !req.target_provider
+    ) {
+      const message =
+        'Missing required fields: worker_id, account_id, connection_attempt_id, format_version, source, target_provider';
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message,
+          details: message,
+        },
+        null
+      );
+      return;
+    }
+
+    const payload = normalizeSecureSessionImportRequest(req);
+    logLocalConnectionStatus('service.command_grpc.secure_import_received', {
+      layer: 'service.grpc',
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id,
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation,
+      target_provider: payload.target_provider,
+      has_payload_ref: Boolean(payload.payload_ref),
+      has_payload_json: Boolean(payload.payload_json),
+    });
+
+    handler
+      .importSecureSession(payload)
+      .then((response) => {
+        logLocalConnectionStatus('service.command_grpc.secure_import_done', {
+          layer: 'service.grpc',
+          worker_id: response.worker_id || payload.worker_id,
+          account_id: response.account_id || payload.account_id,
+          worker_type_id: response.worker_type_id ?? payload.worker_type_id,
+          connection_attempt_id:
+            response.connection_attempt_id ?? payload.connection_attempt_id,
+          runtime_generation:
+            response.runtime_generation ?? payload.runtime_generation,
+          status: response.status,
+          code: response.code,
+          reason: response.reason,
+          session_ready: response.session_ready,
+          authenticated: response.authenticated,
+        });
+        callback(null, connectionStateToProto(response));
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: payload.worker_id },
+          'ImportSecureSession gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   const handleCreateWarmWorker = (
     call: ServerUnaryCall<
       ICreateWarmWorkerRequestProto,
@@ -570,6 +698,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     GetTypingSimulationConfig: handleGetTypingSimulationConfig,
     RegisterS3BackupFallbackUpload: handleRegisterS3BackupFallbackUpload,
     ValidatePhone: handleValidatePhone,
+    ImportSecureSession: handleImportSecureSession,
     CreateWarmWorker: handleCreateWarmWorker,
     DeleteWarmWorker: handleDeleteWarmWorker,
     ActivateWarmWorker: handleActivateWarmWorker,

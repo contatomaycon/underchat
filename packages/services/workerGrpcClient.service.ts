@@ -20,6 +20,10 @@ import { IWorkerPayloadProto } from '@core/common/interfaces/IWorkerPayloadProto
 import { StatusConnectionWorkerRequest } from '@core/schema/worker/statusConnection/request.schema';
 import { IPhoneValidationRequest } from '@core/common/interfaces/IPhoneValidationRequest';
 import { IPhoneValidationResponse } from '@core/common/interfaces/IPhoneValidationResponse';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
+import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
+import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
   IActivateWarmWorkerRequestProto,
   ICreateWarmWorkerRequestProto,
@@ -361,6 +365,93 @@ export class WorkerGrpcClientService {
           );
         }
       );
+    });
+  }
+
+  async importSecureSession(
+    serverId: string,
+    payload: ISecureConnectionImportRequest,
+    timeoutMs: number = GRPC_DEADLINE_MS
+  ): Promise<IBaileysConnectionState> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + timeoutMs);
+    const metadata = new Metadata();
+    const protoPayload = {
+      worker_id: payload.worker_id,
+      account_id: payload.account_id,
+      worker_type_id: payload.worker_type_id ?? '',
+      connection_attempt_id: payload.connection_attempt_id,
+      runtime_generation: payload.runtime_generation ?? 0,
+      format_version: payload.format_version,
+      source: payload.source,
+      target_provider: payload.target_provider,
+      payload_ref: payload.payload_ref ?? '',
+      payload_json: payload.payload_json ?? '',
+      checksum: payload.checksum ?? '',
+      debug_trace_id: payload.debug_trace_id ?? '',
+    };
+
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_command_grpc.secure_import_call',
+      {
+        trace_id: payload.debug_trace_id,
+        layer: 'service',
+        worker_id: payload.worker_id,
+        account_id: payload.account_id,
+        worker_type_id: payload.worker_type_id,
+        connection_attempt_id: payload.connection_attempt_id,
+        runtime_generation: payload.runtime_generation,
+        method: 'ImportSecureSession',
+        grpc_address: address,
+      }
+    );
+
+    return new Promise<IBaileysConnectionState>((resolve, reject) => {
+      (client as any).ImportSecureSession(
+        protoPayload,
+        metadata,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerConnectionStateProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(protoToConnectionState(response ?? {}));
+        }
+      );
+    }).then((state) => {
+      void this.connectionLifecycleDebugService.log(
+        'service.worker_command_grpc.secure_import_ok',
+        {
+          trace_id: state.debug_trace_id ?? payload.debug_trace_id,
+          layer: 'service',
+          worker_id: state.worker_id || payload.worker_id,
+          account_id: state.account_id || payload.account_id,
+          worker_type_id: state.worker_type_id ?? payload.worker_type_id,
+          connection_attempt_id:
+            state.connection_attempt_id ?? payload.connection_attempt_id,
+          runtime_generation:
+            state.runtime_generation ?? payload.runtime_generation,
+          status: state.status,
+          code: state.code,
+          reason: state.reason,
+          session_ready: state.session_ready,
+          authenticated: state.authenticated,
+          method: 'ImportSecureSession',
+          grpc_address: address,
+        }
+      );
+      return state;
     });
   }
 }
