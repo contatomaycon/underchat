@@ -135,6 +135,11 @@
   box-shadow: 0 0 0 4px rgba(29, 100, 200, 0.13);
 }
 
+.underchat-passkey-state[data-tone='syncing'] .underchat-passkey-state-dot {
+  background: var(--underchat-passkey-amber);
+  box-shadow: 0 0 0 4px rgba(169, 100, 0, 0.13);
+}
+
 .underchat-passkey-state[data-tone='success'] .underchat-passkey-state-dot {
   background: var(--underchat-passkey-green);
   box-shadow: 0 0 0 4px rgba(15, 159, 110, 0.13);
@@ -148,6 +153,11 @@
 .underchat-passkey-state-dot[data-tone='ready'] {
   background: var(--underchat-passkey-blue);
   box-shadow: 0 0 0 4px rgba(29, 100, 200, 0.13);
+}
+
+.underchat-passkey-state-dot[data-tone='syncing'] {
+  background: var(--underchat-passkey-amber);
+  box-shadow: 0 0 0 4px rgba(169, 100, 0, 0.13);
 }
 
 .underchat-passkey-state-dot[data-tone='success'] {

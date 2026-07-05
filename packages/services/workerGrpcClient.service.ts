@@ -50,6 +50,7 @@ if (!WorkerCommandClient) {
 }
 
 const GRPC_DEADLINE_MS = 10_000;
+const SECURE_IMPORT_GRPC_DEADLINE_MS = 120_000;
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -371,7 +372,7 @@ export class WorkerGrpcClientService {
   async importSecureSession(
     serverId: string,
     payload: ISecureConnectionImportRequest,
-    timeoutMs: number = GRPC_DEADLINE_MS
+    timeoutMs: number = SECURE_IMPORT_GRPC_DEADLINE_MS
   ): Promise<IBaileysConnectionState> {
     const { host, port } =
       await this.workerGrpcRegistryService.getAddress(serverId);

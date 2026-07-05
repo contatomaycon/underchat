@@ -44,6 +44,7 @@ if (!WorkerConnectionClient) {
 
 const GRPC_DEADLINE_MS = 10_000;
 const GRPC_READY_DEADLINE_MS = 10_000;
+const SECURE_IMPORT_GRPC_DEADLINE_MS = 120_000;
 
 export interface WorkerPasskeyResponseProtoPayload {
   worker_id: string;
@@ -531,7 +532,7 @@ export class WorkerBaileysGrpcClientService {
       address,
       credentials.createInsecure()
     );
-    const deadline = new Date(Date.now() + GRPC_DEADLINE_MS);
+    const deadline = new Date(Date.now() + SECURE_IMPORT_GRPC_DEADLINE_MS);
     const metadata = new Metadata();
     const startedAt = Date.now();
     const protoPayload = {

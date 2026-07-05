@@ -34,6 +34,7 @@ const inboundKafkaPublishBaseDelay = 250 * time.Millisecond
 const inboundKafkaPublishMaxDelay = 2 * time.Second
 const whatsmeowSessionReadyTimeout = 20 * time.Second
 const whatsmeowSessionReadyPollInterval = 250 * time.Millisecond
+const secureImportConnectedPublishHoldReason = "secure_session_import_stability_wait"
 
 type WhatsAppManager struct {
 	cfg        Config
@@ -70,6 +71,8 @@ type WhatsAppManager struct {
 	currentPasskeySkipHandoffUX    bool
 	connectionAttemptID            string
 	debugTraceID                   string
+	connectedPublishHoldReason     string
+	connectedPublishHoldAttemptID  string
 	qrGenerationCount              int
 	qrReadSessionLocked            bool
 	qrHash                         string
@@ -1291,6 +1294,42 @@ func (m *WhatsAppManager) clearConnectionAttemptID() {
 	m.mu.Unlock()
 }
 
+func (m *WhatsAppManager) setConnectedPublishHold(reason string, connectionAttemptID string) {
+	m.mu.Lock()
+	m.connectedPublishHoldReason = reason
+	m.connectedPublishHoldAttemptID = connectionAttemptID
+	m.mu.Unlock()
+}
+
+func (m *WhatsAppManager) clearConnectedPublishHold(reason string) {
+	m.mu.Lock()
+	heldReason := m.connectedPublishHoldReason
+	heldAttemptID := m.connectedPublishHoldAttemptID
+	m.connectedPublishHoldReason = ""
+	m.connectedPublishHoldAttemptID = ""
+	m.mu.Unlock()
+
+	if heldReason != "" {
+		localConnectionStatusLog("whatsmeow.connected_publish_hold.clear", map[string]any{
+			"layer":                 "worker_whatsmeow.readiness",
+			"provider":              "whatsmeow",
+			"worker_id":             m.cfg.WorkerID,
+			"account_id":            m.cfg.AccountID,
+			"worker_type_id":        WorkerTypeWhatsmeow,
+			"reason":                reason,
+			"held_reason":           heldReason,
+			"connection_attempt_id": heldAttemptID,
+			"runtime_generation":    m.cfg.RuntimeGeneration,
+		})
+	}
+}
+
+func (m *WhatsAppManager) connectedPublishHeld() (bool, string, string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.connectedPublishHoldReason != "", m.connectedPublishHoldReason, m.connectedPublishHoldAttemptID
+}
+
 func (m *WhatsAppManager) setDebugTraceID(debugTraceID string) {
 	m.mu.Lock()
 	m.debugTraceID = debugTraceID
@@ -2170,6 +2209,21 @@ func (m *WhatsAppManager) handleEvent(evt any) {
 		m.consecutiveSendFailures = 0
 		m.degradedReason = ""
 		m.mu.Unlock()
+		if held, holdReason, holdAttemptID := m.connectedPublishHeld(); held {
+			localConnectionStatusLog("whatsmeow.event.connected.publish_held", map[string]any{
+				"layer":                 "worker_whatsmeow.event",
+				"provider":              "whatsmeow",
+				"worker_id":             m.cfg.WorkerID,
+				"account_id":            m.cfg.AccountID,
+				"worker_type_id":        WorkerTypeWhatsmeow,
+				"status":                "connected",
+				"code":                  CodeConnectionEstablished,
+				"reason":                holdReason,
+				"connection_attempt_id": holdAttemptID,
+				"runtime_generation":    m.cfg.RuntimeGeneration,
+			})
+			return
+		}
 		go m.publishConnectedWhenReady(context.Background(), "connected-event", phone, false)
 	case *events.Disconnected:
 		log.Printf("whatsmeow event disconnected worker_id=%s", m.cfg.WorkerID)

@@ -14,7 +14,10 @@ interface OverlayState {
   error: string | null;
   helperPayload: PasskeyHelperSessionPayload | null;
   message: string | null;
+  whatsappAuthenticated: boolean;
+  whatsappReadinessReason: string | null;
   whatsappReady: boolean;
+  whatsappSyncing: boolean;
 }
 
 interface JsonRecord {
@@ -69,6 +72,15 @@ interface WhatsAppWebAuthDump {
   creds: WhatsAppWebExtractedCreds;
 }
 
+interface WhatsAppReadinessSnapshot {
+  authenticated: boolean;
+  hasBlockingLoginUi: boolean;
+  hasChatUi: boolean;
+  readyForHandoff: boolean;
+  reason: string;
+  syncing: boolean;
+}
+
 const CONNECTED_CODES = new Set([200, 201]);
 const CONFIRMATION_CODES = new Set([208]);
 const TERMINAL_SECURE_STATUSES = new Set([
@@ -82,7 +94,20 @@ const BUSY_SECURE_STATUSES = new Set([
   'session_received',
   'importing',
 ]);
-const AUTO_CONNECT_READY_CHECKS = 2;
+const AUTO_CONNECT_READY_CHECKS = 4;
+const HANDOFF_READY_WAIT_TIMEOUT_MS = 75_000;
+const HANDOFF_READY_WAIT_POLL_MS = 2_000;
+const AUTH_DUMP_RETRY_ATTEMPTS = 6;
+const AUTH_DUMP_RETRY_DELAY_MS = 2_500;
+const WHATSAPP_SYNC_BLOCKING_TEXT_PATTERNS = [
+  /mantenha\s+o\s+app\s+aberto\s+nos\s+dois\s+dispositivos/i,
+  /keep\s+(?:the\s+)?app\s+open\s+on\s+both\s+devices/i,
+  /keep\s+whatsapp\s+open\s+on\s+both\s+devices/i,
+  /sincronizando\s+(?:suas\s+)?mensagens/i,
+  /syncing\s+(?:your\s+)?messages/i,
+  /carregando\s+(?:suas\s+)?mensagens/i,
+  /loading\s+(?:your\s+)?messages/i,
+];
 const WORKER_TYPE_PROVIDER_MAP: Record<
   string,
   SecureSessionPackage['target_provider']
@@ -117,7 +142,10 @@ let state: OverlayState = {
   error: null,
   helperPayload: null,
   message: null,
+  whatsappAuthenticated: false,
+  whatsappReadinessReason: null,
   whatsappReady: false,
+  whatsappSyncing: false,
 };
 
 export function installUnderchatPasskeyOverlay(
@@ -220,12 +248,24 @@ function startWhatsappReadinessProbe(): void {
   }
 
   const probe = (): void => {
-    const ready = detectWhatsAppAuthenticated({ strict: true });
-    whatsappReadyStableCount = ready ? whatsappReadyStableCount + 1 : 0;
+    const readiness = inspectWhatsAppReadiness();
+    whatsappReadyStableCount = readiness.readyForHandoff
+      ? whatsappReadyStableCount + 1
+      : 0;
     const stableReady = whatsappReadyStableCount >= AUTO_CONNECT_READY_CHECKS;
 
-    if (stableReady !== state.whatsappReady) {
-      setState({ whatsappReady: stableReady });
+    if (
+      stableReady !== state.whatsappReady ||
+      readiness.authenticated !== state.whatsappAuthenticated ||
+      readiness.syncing !== state.whatsappSyncing ||
+      readiness.reason !== state.whatsappReadinessReason
+    ) {
+      setState({
+        whatsappAuthenticated: readiness.authenticated,
+        whatsappReadinessReason: readiness.reason,
+        whatsappReady: stableReady,
+        whatsappSyncing: readiness.syncing,
+      });
     }
 
     if (stableReady) {
@@ -456,18 +496,28 @@ function renderSecureMode(): void {
       ? 'success'
       : state.whatsappReady
         ? 'ready'
-        : 'waiting';
+        : state.whatsappSyncing
+          ? 'syncing'
+          : 'waiting';
   const title = state.connected
     ? 'Underchat conectada'
     : state.whatsappReady
-      ? 'WhatsApp Web conectado'
-      : 'Entre no WhatsApp Web';
+      ? 'WhatsApp Web pronto'
+      : state.whatsappSyncing
+        ? 'Sincronizando WhatsApp Web'
+        : state.whatsappAuthenticated
+          ? 'Aguardando WhatsApp Web'
+          : 'Entre no WhatsApp Web';
   const text = state.error
     ? state.error
     : (state.message ??
       (state.whatsappReady
-        ? 'Sessao detectada. A Underchat vai conectar automaticamente.'
-        : 'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.'));
+        ? 'Sessao pronta. A Underchat vai conectar automaticamente.'
+        : state.whatsappSyncing
+          ? 'Mantenha o app aberto nos dois dispositivos ate o WhatsApp terminar a sincronizacao.'
+          : state.whatsappAuthenticated
+            ? 'Aguarde a interface terminar de carregar antes de enviar a sessao.'
+            : 'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.'));
 
   if (securePanelMinimized) {
     rootElement.innerHTML = `
@@ -589,11 +639,17 @@ async function connectSecureSessionToUnderchat(
     return;
   }
 
-  if (!detectWhatsAppAuthenticated({ strict: true })) {
+  const readiness = inspectWhatsAppReadiness();
+  if (!readiness.readyForHandoff) {
     setState({
-      error: 'O WhatsApp Web ainda nao parece autenticado nesta janela.',
-      message: null,
+      error: null,
+      message: readiness.syncing
+        ? 'Aguarde a sincronizacao inicial do WhatsApp Web antes de conectar a Underchat.'
+        : 'O WhatsApp Web ainda nao esta pronto nesta janela.',
+      whatsappAuthenticated: readiness.authenticated,
+      whatsappReadinessReason: readiness.reason,
       whatsappReady: false,
+      whatsappSyncing: readiness.syncing,
     });
     return;
   }
@@ -748,11 +804,16 @@ function summarizeBytePair(
     : null;
 }
 
-function detectWhatsAppAuthenticated(
-  options: { strict?: boolean } = {}
-): boolean {
+function inspectWhatsAppReadiness(): WhatsAppReadinessSnapshot {
   if (!location.origin.startsWith('https://web.whatsapp.com')) {
-    return false;
+    return {
+      authenticated: false,
+      hasBlockingLoginUi: false,
+      hasChatUi: false,
+      readyForHandoff: false,
+      reason: 'not_whatsapp_web',
+      syncing: false,
+    };
   }
 
   const blockingSelectors = [
@@ -764,6 +825,7 @@ function detectWhatsAppAuthenticated(
   const hasBlockingLoginUi = blockingSelectors.some((selector) =>
     document.querySelector(selector)
   );
+  const hasSyncBlockingText = hasWhatsAppSyncBlockingText();
   const selectors = [
     '#side',
     '[data-testid="chat-list"]',
@@ -773,25 +835,38 @@ function detectWhatsAppAuthenticated(
     '[aria-label="Lista de conversas"]',
     '[contenteditable="true"][role="textbox"]',
   ];
+  const hasChatUi = selectors.some((selector) =>
+    document.querySelector(selector)
+  );
+  const authenticated = !hasBlockingLoginUi && hasChatUi;
+  const readyForHandoff = authenticated && !hasSyncBlockingText;
+  const reason = hasBlockingLoginUi
+    ? 'login_required'
+    : hasSyncBlockingText
+      ? 'whatsapp_web_syncing'
+      : hasChatUi
+        ? 'ready_for_handoff'
+        : 'waiting_for_chat_ui';
 
-  if (
-    !hasBlockingLoginUi &&
-    selectors.some((selector) => document.querySelector(selector))
-  ) {
-    return true;
-  }
+  return {
+    authenticated,
+    hasBlockingLoginUi,
+    hasChatUi,
+    readyForHandoff,
+    reason,
+    syncing: authenticated && hasSyncBlockingText,
+  };
+}
 
-  if (options.strict) {
+function hasWhatsAppSyncBlockingText(): boolean {
+  const text = document.body?.innerText ?? '';
+  if (!text) {
     return false;
   }
 
-  try {
-    return Object.keys(localStorage).some((key) =>
-      /wa|wawc|whatsapp|last-wid|multi-device/i.test(key)
-    );
-  } catch {
-    return false;
-  }
+  return WHATSAPP_SYNC_BLOCKING_TEXT_PATTERNS.some((pattern) =>
+    pattern.test(text)
+  );
 }
 
 async function reportSecureStatus(
@@ -927,12 +1002,17 @@ function scheduleHelperAutoClose(): void {
 }
 
 function isSecureSessionExtractionError(message: string): boolean {
-  return /extrair|extract|auth_dump|noise key|identity key|signed pre-key|registrationId/i.test(
+  return /extrair|extract|auth_dump|noise key|identity key|signed pre-key|registrationId|sincroniz|syncing|transferir a sessao|ficou pronto/i.test(
     message
   );
 }
 
 async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
+  const readiness = await waitForWhatsAppHandoffReady();
+  recordDebugLog('secure_session.handoff_ready.confirmed', {
+    reason: readiness.reason,
+  });
+
   const targetProvider = getSecureSessionTargetProvider();
   const indexedDbNames = await listIndexedDbNames();
   const payload: JsonRecord = {
@@ -942,7 +1022,7 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
   };
   const needsWhatsAppWebCreds = targetProvider !== 'wwebjs';
   const authDump = needsWhatsAppWebCreds
-    ? await extractWhatsAppWebAuthDump()
+    ? await extractWhatsAppWebAuthDumpWithRetry()
     : null;
 
   if (authDump) {
@@ -980,6 +1060,47 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
     target_provider: targetProvider,
     web_version: readWhatsAppWebVersion(),
   };
+}
+
+async function waitForWhatsAppHandoffReady(): Promise<WhatsAppReadinessSnapshot> {
+  const startedAt = Date.now();
+  let lastReadiness = inspectWhatsAppReadiness();
+
+  while (Date.now() - startedAt <= HANDOFF_READY_WAIT_TIMEOUT_MS) {
+    lastReadiness = inspectWhatsAppReadiness();
+    recordDebugLog('secure_session.handoff_ready.probe', {
+      authenticated: lastReadiness.authenticated,
+      hasBlockingLoginUi: lastReadiness.hasBlockingLoginUi,
+      hasChatUi: lastReadiness.hasChatUi,
+      readyForHandoff: lastReadiness.readyForHandoff,
+      reason: lastReadiness.reason,
+      syncing: lastReadiness.syncing,
+    });
+
+    if (lastReadiness.readyForHandoff) {
+      return lastReadiness;
+    }
+
+    setState({
+      busy: true,
+      error: null,
+      message: lastReadiness.syncing
+        ? 'Aguardando o WhatsApp Web terminar a sincronizacao inicial...'
+        : 'Aguardando o WhatsApp Web ficar pronto...',
+      whatsappAuthenticated: lastReadiness.authenticated,
+      whatsappReadinessReason: lastReadiness.reason,
+      whatsappReady: false,
+      whatsappSyncing: lastReadiness.syncing,
+    });
+
+    await delay(HANDOFF_READY_WAIT_POLL_MS);
+  }
+
+  throw new Error(
+    lastReadiness.syncing
+      ? 'O WhatsApp Web ainda esta sincronizando. Mantenha o app aberto nos dois dispositivos e tente novamente.'
+      : 'O WhatsApp Web ainda nao ficou pronto para transferir a sessao.'
+  );
 }
 
 function normalizeWhatsAppWebAuthDump(
@@ -1039,6 +1160,55 @@ async function extractWhatsAppWebAuthDump(): Promise<WhatsAppWebAuthDump> {
   }
 
   return extractWhatsAppWebAuthDumpFromIsolatedWorld();
+}
+
+async function extractWhatsAppWebAuthDumpWithRetry(): Promise<WhatsAppWebAuthDump> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= AUTH_DUMP_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      recordDebugLog('secure_session.auth_dump.retry_attempt', {
+        attempt,
+        maxAttempts: AUTH_DUMP_RETRY_ATTEMPTS,
+      });
+      return await extractWhatsAppWebAuthDump();
+    } catch (error) {
+      lastError = error;
+      const message = sanitizeOverlayError(error);
+      const readiness = inspectWhatsAppReadiness();
+      recordDebugLog('secure_session.auth_dump.retry_error', {
+        attempt,
+        maxAttempts: AUTH_DUMP_RETRY_ATTEMPTS,
+        readiness_reason: readiness.reason,
+        syncing: readiness.syncing,
+        reason: message,
+      });
+
+      if (
+        attempt >= AUTH_DUMP_RETRY_ATTEMPTS ||
+        (!isSecureSessionExtractionError(message) && !readiness.syncing)
+      ) {
+        break;
+      }
+
+      setState({
+        busy: true,
+        error: null,
+        message: readiness.syncing
+          ? 'WhatsApp ainda sincronizando. Tentando extrair novamente em instantes...'
+          : 'A sessao ainda nao liberou todo o material criptografico. Tentando novamente...',
+        whatsappAuthenticated: readiness.authenticated,
+        whatsappReadinessReason: readiness.reason,
+        whatsappReady: readiness.readyForHandoff,
+        whatsappSyncing: readiness.syncing,
+      });
+      await delay(AUTH_DUMP_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Nao foi possivel extrair a sessao autenticada.');
 }
 
 async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWebAuthDump> {
@@ -1849,6 +2019,12 @@ function toPositiveInteger(value: unknown): number | null {
   return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -1894,6 +2070,10 @@ function resetSecureFlowRuntime(tokenHash: string): void {
   autoConnectStarted = false;
   secureConnectInFlight = false;
   securePanelMinimized = false;
+  state.whatsappAuthenticated = false;
+  state.whatsappReadinessReason = null;
+  state.whatsappReady = false;
+  state.whatsappSyncing = false;
   console.log('[underchat-passkey-helper] secure_session.runtime.reset', {
     tokenHash,
   });
