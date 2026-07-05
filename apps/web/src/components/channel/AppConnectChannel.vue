@@ -80,6 +80,12 @@ const MIN_PAIRING_STAGE_MS = 900;
 const QR_MAX_AGE_MS = 120_000;
 const QR_HISTORY_RECOVERY_LIMIT = 250;
 const SECURE_CONNECTION_POLL_INTERVAL_MS = 8_000;
+const SECURE_CONNECTION_POLLABLE_STATUSES = new Set<string>([
+  'session_received',
+  'importing',
+  'validating_worker',
+  'connected',
+]);
 const QR_HISTORY_RECOVERY_DELAYS_MS = [
   1_500, 5_000, 10_000, 20_000, 40_000, 80_000, 120_000, 180_000, 240_000,
 ] as const;
@@ -425,6 +431,14 @@ function isSecureConnectionTerminal(
   );
 }
 
+function shouldPollSecureConnectionSession(
+  session: WorkerSecureConnectionSessionResponse | null
+): boolean {
+  return Boolean(
+    session?.token && SECURE_CONNECTION_POLLABLE_STATUSES.has(session.status)
+  );
+}
+
 function hasActiveSecureConnectionAttempt(): boolean {
   return Boolean(
     secureSession.value && !isSecureConnectionTerminal(secureSession.value)
@@ -467,23 +481,35 @@ function startSecureConnectionPolling() {
 function applySecureConnectionSession(
   session: WorkerSecureConnectionSessionResponse
 ) {
-  secureSession.value = session;
-  connectionAttemptId.value = session.connection_attempt_id;
-  connectionRuntimeGeneration.value =
-    session.runtime_generation ?? connectionRuntimeGeneration.value;
+  const previous = secureSession.value;
+  const nextSession: WorkerSecureConnectionSessionResponse = {
+    ...previous,
+    ...session,
+    token: session.token ?? previous?.token,
+    deep_link: session.deep_link ?? previous?.deep_link,
+    helper_download_url:
+      session.helper_download_url ?? previous?.helper_download_url,
+  };
 
-  if (session.status === 'connected_confirmed') {
+  secureSession.value = nextSession;
+  connectionAttemptId.value = nextSession.connection_attempt_id;
+  connectionRuntimeGeneration.value =
+    nextSession.runtime_generation ?? connectionRuntimeGeneration.value;
+
+  if (nextSession.status === 'connected_confirmed') {
     statusConnection.value = EBaileysConnectionStatus.connected;
     statusCode.value = ECodeMessage.connectionEstablished;
     workerStatusId.value = EWorkerStatus.online;
     sessionReady.value = true;
     qrcode.value = undefined;
     qrPending.value = false;
-    phoneNumber.value = session.phone ? formatPhoneBR(session.phone) : null;
+    phoneNumber.value = nextSession.phone
+      ? formatPhoneBR(nextSession.phone)
+      : null;
     clearQrHistoryRecovery();
   }
 
-  if (['failed', 'expired', 'cancelled'].includes(session.status)) {
+  if (['failed', 'expired', 'cancelled'].includes(nextSession.status)) {
     clearConnectedStateDelay();
     statusConnection.value = EBaileysConnectionStatus.disconnected;
     statusCode.value = ECodeMessage.awaitConnection;
@@ -491,8 +517,17 @@ function applySecureConnectionSession(
     sessionReady.value = false;
   }
 
-  if (isSecureConnectionTerminal(session)) {
+  if (isSecureConnectionTerminal(nextSession)) {
     stopSecureConnectionPolling();
+    return;
+  }
+
+  if (isVisible.value && isSecureConnectionMethodActive()) {
+    startSecureConnectionPolling();
+
+    if (shouldPollSecureConnectionSession(nextSession)) {
+      void pollSecureConnectionSession();
+    }
   }
 }
 
