@@ -79,6 +79,8 @@ let currentPairing: CurrentPairing | null = null;
 let localSessionClearInFlight: Promise<void> | null = null;
 let localSessionClearedTokenHash: string | null = null;
 let connectedCleanupCloseTimer: NodeJS.Timeout | null = null;
+let allowMainWindowClose = false;
+let closeCleanupInFlight: Promise<void> | null = null;
 const diagnosticLogEntries: DiagnosticLogEntry[] = [];
 const MAX_DIAGNOSTIC_LOG_ENTRIES = 5000;
 
@@ -224,6 +226,20 @@ function registerAppLifecycleHandlers(): void {
     }
   });
 
+  app.on('before-quit', (event) => {
+    if (
+      allowMainWindowClose ||
+      closeCleanupInFlight ||
+      !mainWindow ||
+      mainWindow.isDestroyed()
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    void closeHelperAfterCleanup('app_before_quit');
+  });
+
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
       app.quit();
@@ -267,17 +283,11 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('underchat-passkey:close-helper', async () => {
-    if (
-      normalizeSessionStatus(currentPairing?.session ?? null) === 'connected'
-    ) {
-      await clearWhatsAppWebLocalSession('helper_close_connected');
-    }
-
     logEvent('helper.close.requested', currentPairing?.context, {
       status: normalizeSessionStatus(currentPairing?.session ?? null),
     });
 
-    closeMainWindowAndQuit();
+    await closeHelperAfterCleanup('helper_close_requested');
 
     return {
       connected: true,
@@ -576,7 +586,40 @@ function scheduleConnectedCleanupAndClose(reason: string): void {
   }, 2200);
 }
 
+async function closeHelperAfterCleanup(reason: string): Promise<void> {
+  if (closeCleanupInFlight) {
+    await closeCleanupInFlight;
+    return;
+  }
+
+  closeCleanupInFlight = (async () => {
+    logEvent('helper.close.cleanup.start', currentPairing?.context, {
+      reason,
+      status: normalizeSessionStatus(currentPairing?.session ?? null),
+    });
+
+    await clearWhatsAppWebLocalSession(reason);
+
+    logEvent('helper.close.cleanup.done', currentPairing?.context, {
+      reason,
+    });
+  })()
+    .catch((error) => {
+      logEvent('helper.close.cleanup.error', currentPairing?.context, {
+        reason: sanitizeError(error),
+      });
+    })
+    .finally(() => {
+      closeCleanupInFlight = null;
+      closeMainWindowAndQuit();
+    });
+
+  await closeCleanupInFlight;
+}
+
 function closeMainWindowAndQuit(): void {
+  allowMainWindowClose = true;
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.close();
   }
@@ -1645,6 +1688,7 @@ function createMainWindow(initialError?: string): void {
   }
 
   console.log('[underchat-passkey-helper] window.create.start');
+  allowMainWindowClose = false;
   mainWindow = new BrowserWindow({
     backgroundColor: '#0f1519',
     autoHideMenuBar: true,
@@ -1687,8 +1731,18 @@ function createMainWindow(initialError?: string): void {
     showMainWindow('timeout');
   }, 3000);
 
+  mainWindow.on('close', (event) => {
+    if (allowMainWindowClose) {
+      return;
+    }
+
+    event.preventDefault();
+    void closeHelperAfterCleanup('window_close');
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
+    allowMainWindowClose = false;
   });
 
   mainWindow.webContents.on(

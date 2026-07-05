@@ -108,6 +108,7 @@ let helperAutoCloseTimerId: number | null = null;
 let secureUploadPollingIntervalId: number | null = null;
 let secureUploadWatchdogTimerId: number | null = null;
 let isolatedWorldAuthExtractionDebug: JsonRecord[] = [];
+let securePanelMinimized = false;
 let state: OverlayState = {
   busy: false,
   connected: false,
@@ -468,6 +469,29 @@ function renderSecureMode(): void {
         ? 'Sessao detectada. A Underchat vai conectar automaticamente.'
         : 'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.'));
 
+  if (securePanelMinimized) {
+    rootElement.innerHTML = `
+      <section class="underchat-passkey-panel underchat-passkey-panel-minimized" aria-live="polite">
+        <button class="underchat-passkey-restore" data-action="restore-panel" type="button" aria-label="Reabrir painel da conexao segura">
+          <span class="underchat-passkey-state-dot" data-tone="${tone}"></span>
+          <span>
+            <strong>Conexao segura</strong>
+            <small>${escapeHtml(title)}</small>
+          </span>
+          <span class="underchat-passkey-restore-label">Reabrir</span>
+        </button>
+      </section>
+    `;
+
+    rootElement
+      .querySelector('[data-action="restore-panel"]')
+      ?.addEventListener('click', () => {
+        securePanelMinimized = false;
+        render();
+      });
+    return;
+  }
+
   rootElement.innerHTML = `
     <section class="underchat-passkey-panel" aria-live="polite">
       <header class="underchat-passkey-header">
@@ -475,9 +499,14 @@ function renderSecureMode(): void {
           <h1 class="underchat-passkey-title">Conexao segura Underchat</h1>
           <p class="underchat-passkey-subtitle">WhatsApp Web nativo com suporte a passkey.</p>
         </div>
-        <span class="underchat-passkey-badge" title="${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem-token')}">
-          ${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem token')}
-        </span>
+        <div class="underchat-passkey-header-actions">
+          <span class="underchat-passkey-badge" title="${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem-token')}">
+            ${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem token')}
+          </span>
+          <button class="underchat-passkey-icon-button" data-action="minimize-panel" type="button" aria-label="Minimizar painel da conexao segura" title="Minimizar">
+            <span aria-hidden="true"></span>
+          </button>
+        </div>
       </header>
       <div class="underchat-passkey-body">
         <div class="underchat-passkey-state" data-tone="${tone}">
@@ -533,6 +562,12 @@ function renderSecureMode(): void {
     .querySelector('[data-action="download-log"]')
     ?.addEventListener('click', () => {
       downloadDebugLog();
+    });
+  rootElement
+    .querySelector('[data-action="minimize-panel"]')
+    ?.addEventListener('click', () => {
+      securePanelMinimized = true;
+      render();
     });
 }
 
@@ -1858,6 +1893,7 @@ function resetSecureFlowRuntime(tokenHash: string): void {
   whatsappReadyStableCount = 0;
   autoConnectStarted = false;
   secureConnectInFlight = false;
+  securePanelMinimized = false;
   console.log('[underchat-passkey-helper] secure_session.runtime.reset', {
     tokenHash,
   });
