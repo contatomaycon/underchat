@@ -9,6 +9,8 @@ import overlayCss from './overlay.css?inline';
 interface OverlayState {
   busy: boolean;
   connected: boolean;
+  diagnosticsEnabled: boolean;
+  diagnosticsMessage: string | null;
   error: string | null;
   helperPayload: PasskeyHelperSessionPayload | null;
   message: string | null;
@@ -101,9 +103,14 @@ let secureConnectInFlight = false;
 let sessionRefreshInFlight = false;
 let pendingSessionRefresh = false;
 let automaticExtractionRetryTimerId: number | null = null;
+let helperAutoCloseTimerId: number | null = null;
+let secureUploadPollingIntervalId: number | null = null;
+let secureUploadWatchdogTimerId: number | null = null;
 let state: OverlayState = {
   busy: false,
   connected: false,
+  diagnosticsEnabled: false,
+  diagnosticsMessage: null,
   error: null,
   helperPayload: null,
   message: null,
@@ -118,6 +125,16 @@ export function installUnderchatPasskeyOverlay(
   ensureRoot();
   render();
   refreshSession();
+  bridge
+    .getDiagnosticsInfo()
+    .then((info) => {
+      setState({ diagnosticsEnabled: info.enabled });
+      recordDebugLog('diagnostics.info.loaded', {
+        channel: info.channel,
+        enabled: info.enabled,
+      });
+    })
+    .catch(() => undefined);
 
   bridge.onSessionUpdated(() => {
     refreshSession({ background: true });
@@ -169,6 +186,12 @@ async function refreshSession(
     if (helperPayload.mode === 'secure') {
       if (secureStatus === 'created') {
         void reportSecureStatus('helper_opened');
+      }
+      if (TERMINAL_SECURE_STATUSES.has(secureStatus)) {
+        stopSecureUploadStatusPolling();
+      }
+      if (secureStatus === 'connected') {
+        scheduleHelperAutoClose();
       }
       startWhatsappReadinessProbe();
     }
@@ -475,7 +498,17 @@ function renderSecureMode(): void {
           <button class="underchat-passkey-button underchat-passkey-secondary" data-action="refresh" ${
             state.busy ? 'disabled' : ''
           }>Atualizar</button>
+          ${
+            state.diagnosticsEnabled
+              ? `<button class="underchat-passkey-button underchat-passkey-secondary" data-action="download-log">Baixar log</button>`
+              : ''
+          }
         </div>
+        ${
+          state.diagnosticsMessage
+            ? `<p class="underchat-passkey-debug-message">${escapeHtml(state.diagnosticsMessage)}</p>`
+            : ''
+        }
         <div class="underchat-passkey-meta">
           <span>Status: ${escapeHtml(status)}</span>
           <span>Expira: ${escapeHtml(session?.expiresAt ?? session?.expires_at ?? 'nao informado')}</span>
@@ -493,6 +526,11 @@ function renderSecureMode(): void {
     .querySelector('[data-action="refresh"]')
     ?.addEventListener('click', () => {
       refreshSession();
+    });
+  rootElement
+    .querySelector('[data-action="download-log"]')
+    ?.addEventListener('click', () => {
+      downloadDebugLog();
     });
 }
 
@@ -530,19 +568,27 @@ async function connectSecureSessionToUnderchat(
 
   setState({
     busy: true,
+    diagnosticsMessage: null,
     error: null,
     message: options.automatic
       ? 'WhatsApp detectado. Conectando automaticamente a Underchat...'
       : 'Preparando pacote da sessao autenticada...',
   });
+  startSecureUploadStatusPolling();
 
   try {
+    recordDebugLog('secure_session.connect.start', {
+      automatic: Boolean(options.automatic),
+      status: getSecureSessionStatus(),
+      tokenHash: getTokenHashFromState(),
+    });
     console.log('[underchat-passkey-helper] secure_session.connect.start', {
       automatic: Boolean(options.automatic),
       status: getSecureSessionStatus(),
       tokenHash: getTokenHashFromState(),
     });
     await bridgeRef.updateSecureStatus({ status: 'uploading' });
+    recordDebugLog('secure_session.package.collect.start');
     console.log(
       '[underchat-passkey-helper] secure_session.package.collect.start'
     );
@@ -555,6 +601,12 @@ async function connectSecureSessionToUnderchat(
         webVersion: sessionPackage.web_version ?? null,
       }
     );
+    recordDebugLog('secure_session.package.collect.done', {
+      hasPayload: sessionPackage.payload !== undefined,
+      localStorageKeys: countPayloadLocalStorageKeys(sessionPackage.payload),
+      targetProvider: sessionPackage.target_provider,
+      webVersion: sessionPackage.web_version ?? null,
+    });
     const result = await bridgeRef.sendSecureSessionPackage(sessionPackage);
     console.log('[underchat-passkey-helper] secure_session.upload.done', {
       connected: Boolean(result.connected),
@@ -568,9 +620,12 @@ async function connectSecureSessionToUnderchat(
       connected,
       error: connected ? null : (result.error ?? result.message ?? null),
       message: connected
-        ? 'Sessao enviada. Voce pode voltar para a Underchat.'
+        ? 'Sessao conectada na Underchat. Fechando o helper...'
         : 'A Underchat recebeu a sessao, mas ainda nao confirmou a conexao.',
     });
+    if (connected) {
+      scheduleHelperAutoClose();
+    }
   } catch (error) {
     const sanitizedError = sanitizeOverlayError(error);
     const extractionError = isSecureSessionExtractionError(sanitizedError);
@@ -589,8 +644,42 @@ async function connectSecureSessionToUnderchat(
       status: extractionError ? 'wa_authenticated' : 'failed',
     });
   } finally {
+    stopSecureUploadStatusPolling();
     secureConnectInFlight = false;
   }
+}
+
+async function downloadDebugLog(): Promise<void> {
+  if (!bridgeRef) {
+    return;
+  }
+
+  try {
+    recordDebugLog('diagnostic_log.download.requested', {
+      status: getSecureSessionStatus(),
+      tokenHash: getTokenHashFromState(),
+    });
+    const result = await bridgeRef.downloadDebugLog();
+    setState({
+      diagnosticsMessage:
+        result.status === 'saved'
+          ? `Log salvo em: ${result.message ?? 'arquivo selecionado'}`
+          : result.status === 'cancelled'
+            ? 'Download do log cancelado.'
+            : (result.message ?? 'Nao foi possivel salvar o log.'),
+    });
+  } catch (error) {
+    setState({
+      diagnosticsMessage: sanitizeOverlayError(error),
+    });
+  }
+}
+
+function recordDebugLog(
+  event: string,
+  details: Record<string, unknown> = {}
+): void {
+  void bridgeRef?.appendDebugLog(event, details).catch(() => undefined);
 }
 
 function detectWhatsAppAuthenticated(
@@ -703,6 +792,58 @@ function scheduleAutomaticExtractionRetry(): void {
     autoConnectStarted = false;
     maybeAutoConnectSecureSession();
   }, 10_000);
+}
+
+function startSecureUploadStatusPolling(): void {
+  stopSecureUploadStatusPolling();
+
+  secureUploadWatchdogTimerId = window.setTimeout(() => {
+    recordDebugLog('secure_session.upload.watchdog', {
+      status: getSecureSessionStatus(),
+      tokenHash: getTokenHashFromState(),
+    });
+    setState({
+      message: state.diagnosticsEnabled
+        ? 'Importacao ainda em andamento. Se continuar assim, clique em Baixar log para analisar o fluxo.'
+        : 'Importacao ainda em andamento. Aguarde a resposta da Underchat.',
+    });
+  }, 18_000);
+
+  secureUploadPollingIntervalId = window.setInterval(() => {
+    void refreshSession({ background: true });
+  }, 2500);
+}
+
+function stopSecureUploadStatusPolling(): void {
+  if (secureUploadPollingIntervalId !== null) {
+    window.clearInterval(secureUploadPollingIntervalId);
+    secureUploadPollingIntervalId = null;
+  }
+
+  if (secureUploadWatchdogTimerId !== null) {
+    window.clearTimeout(secureUploadWatchdogTimerId);
+    secureUploadWatchdogTimerId = null;
+  }
+}
+
+function scheduleHelperAutoClose(): void {
+  if (!bridgeRef || helperAutoCloseTimerId !== null) {
+    return;
+  }
+
+  console.log('[underchat-passkey-helper] helper.auto_close.scheduled', {
+    tokenHash: getTokenHashFromState(),
+    status: getSecureSessionStatus(),
+  });
+  helperAutoCloseTimerId = window.setTimeout(() => {
+    helperAutoCloseTimerId = null;
+    void bridgeRef?.closeHelper().catch((error) => {
+      console.warn(
+        '[underchat-passkey-helper] helper.auto_close.error',
+        sanitizeOverlayError(error)
+      );
+    });
+  }, 1800);
 }
 
 function isSecureSessionExtractionError(message: string): boolean {
@@ -1430,6 +1571,11 @@ function resetSecureFlowRuntime(tokenHash: string): void {
   if (automaticExtractionRetryTimerId !== null) {
     window.clearTimeout(automaticExtractionRetryTimerId);
     automaticExtractionRetryTimerId = null;
+  }
+  stopSecureUploadStatusPolling();
+  if (helperAutoCloseTimerId !== null) {
+    window.clearTimeout(helperAutoCloseTimerId);
+    helperAutoCloseTimerId = null;
   }
 
   currentTokenHash = tokenHash;

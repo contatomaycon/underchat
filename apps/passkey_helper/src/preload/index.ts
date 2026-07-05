@@ -44,6 +44,11 @@ export interface PasskeyHelperActionResult {
   status?: number | string;
 }
 
+export interface PasskeyHelperDiagnosticsInfo {
+  channel: string;
+  enabled: boolean;
+}
+
 export interface SecureSessionPackage {
   account_hint?: string;
   created_at: string;
@@ -56,8 +61,15 @@ export interface SecureSessionPackage {
 }
 
 export interface UnderchatPasskeyBridge {
+  appendDebugLog: (
+    event: string,
+    details?: Record<string, unknown>
+  ) => Promise<PasskeyHelperActionResult>;
+  closeHelper: () => Promise<PasskeyHelperActionResult>;
   confirmPasskey: () => Promise<PasskeyHelperActionResult>;
+  downloadDebugLog: () => Promise<PasskeyHelperActionResult>;
   extractWhatsAppWebAuthDump: () => Promise<unknown>;
+  getDiagnosticsInfo: () => Promise<PasskeyHelperDiagnosticsInfo>;
   getPasskeyAssertion: (publicKey: unknown) => Promise<unknown>;
   getSession: () => Promise<PasskeyHelperSessionPayload>;
   onSessionUpdated: (callback: () => void) => () => void;
@@ -75,14 +87,31 @@ export interface UnderchatPasskeyBridge {
 }
 
 const bridge: UnderchatPasskeyBridge = {
+  appendDebugLog: (event, details = {}) =>
+    ipcRenderer.invoke('underchat-passkey:append-debug-log', {
+      details,
+      event,
+    }) as Promise<PasskeyHelperActionResult>,
+  closeHelper: () =>
+    ipcRenderer.invoke(
+      'underchat-passkey:close-helper'
+    ) as Promise<PasskeyHelperActionResult>,
   confirmPasskey: () =>
     ipcRenderer.invoke(
       'underchat-passkey:confirm'
+    ) as Promise<PasskeyHelperActionResult>,
+  downloadDebugLog: () =>
+    ipcRenderer.invoke(
+      'underchat-passkey:download-debug-log'
     ) as Promise<PasskeyHelperActionResult>,
   extractWhatsAppWebAuthDump: () =>
     ipcRenderer.invoke(
       'underchat-passkey:extract-wa-auth-dump'
     ) as Promise<unknown>,
+  getDiagnosticsInfo: () =>
+    ipcRenderer.invoke(
+      'underchat-passkey:get-diagnostics-info'
+    ) as Promise<PasskeyHelperDiagnosticsInfo>,
   getPasskeyAssertion,
   getSession: () =>
     ipcRenderer.invoke(

@@ -5,7 +5,12 @@ import Redis from 'ioredis';
 import { v7 as uuidv7 } from 'uuid';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import {
+  channelsConfigCentrifugo,
+  workerCentrifugoQueue,
+} from '@core/common/functions/centrifugoQueue';
+import { currentTime } from '@core/common/functions/currentTime';
 import {
   ISecureConnectionImportRequest,
   ISecureConnectionSession,
@@ -14,6 +19,7 @@ import {
   SecureConnectionTargetProvider,
   SECURE_CONNECTION_STATUSES,
 } from '@core/common/interfaces/ISecureConnectionSession';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { WorkerSecureConnectionSessionResponse } from '@core/schema/worker/secureConnection/response.schema';
 import { WorkerRuntimeRepository } from '@core/repositories/worker/WorkerRuntime.repository';
 import { CentrifugoService } from '@core/services/centrifugo.service';
@@ -466,14 +472,19 @@ export class WorkerSecureConnectionSessionUseCase {
         serverId,
         importRequest
       );
+      const importReadiness = this.resolveImportedConnectionReadiness(imported);
+      if (importReadiness.ready) {
+        await this.persistConnectedWorker(importing, imported, importReadiness);
+      }
+
       const connected = await this.updateSession(importing, {
-        status: imported.session_ready ? 'connected' : 'failed',
-        phone: imported.phone,
+        status: importReadiness.ready ? 'connected' : 'failed',
+        phone: importReadiness.phone ?? imported.phone,
         imported_at: new Date().toISOString(),
-        error: imported.session_ready ? undefined : imported.error,
-        fail_reason: imported.session_ready
+        error: importReadiness.ready
           ? undefined
-          : 'worker_import_failed',
+          : this.resolveImportFailureMessage(imported, importReadiness),
+        fail_reason: importReadiness.ready ? undefined : 'worker_import_failed',
       });
       await this.publishStatus(connected);
       this.logFlow('manager.secure_connection.import.grpc_result', connected, {
@@ -483,6 +494,11 @@ export class WorkerSecureConnectionSessionUseCase {
         imported_reason: imported.reason,
         session_ready: imported.session_ready,
         authenticated: imported.authenticated,
+        can_send: imported.can_send,
+        can_receive_runtime: imported.can_receive_runtime,
+        worker_status_id: imported.worker_status_id,
+        readiness_ready: importReadiness.ready,
+        readiness_reason: importReadiness.reason,
         phone_present: Boolean(imported.phone),
       });
 
@@ -704,6 +720,103 @@ export class WorkerSecureConnectionSessionUseCase {
       PAYLOAD_TTL_SECONDS
     );
     return payloadRef;
+  }
+
+  private resolveImportedConnectionReadiness(
+    imported: IBaileysConnectionState
+  ): { phone: string | null; ready: boolean; reason?: string } {
+    const phone = imported.phone?.trim() || null;
+    const isConnectedStatus =
+      imported.status === 'connected' ||
+      imported.code === ECodeMessage.connectionEstablished;
+    const isOnline = imported.worker_status_id === EWorkerStatus.online;
+    const ready =
+      isConnectedStatus &&
+      isOnline &&
+      imported.session_ready === true &&
+      imported.authenticated === true &&
+      imported.can_send === true &&
+      imported.can_receive_runtime === true &&
+      Boolean(phone);
+
+    if (ready) {
+      return { phone, ready: true };
+    }
+
+    const missing: string[] = [];
+    if (!isConnectedStatus) missing.push('connected_status');
+    if (!isOnline) missing.push('worker_online_status');
+    if (imported.session_ready !== true) missing.push('session_ready');
+    if (imported.authenticated !== true) missing.push('authenticated');
+    if (imported.can_send !== true) missing.push('can_send');
+    if (imported.can_receive_runtime !== true) {
+      missing.push('can_receive_runtime');
+    }
+    if (!phone) missing.push('phone');
+
+    return {
+      phone,
+      ready: false,
+      reason: `secure_import_not_ready:${missing.join(',')}`,
+    };
+  }
+
+  private resolveImportFailureMessage(
+    imported: IBaileysConnectionState,
+    readiness: { reason?: string }
+  ): string {
+    return (
+      imported.error?.trim() ||
+      imported.reason?.trim() ||
+      imported.degraded_reason?.trim() ||
+      readiness.reason ||
+      'secure_import_not_ready'
+    );
+  }
+
+  private async persistConnectedWorker(
+    session: ISecureConnectionSession,
+    imported: IBaileysConnectionState,
+    readiness: { phone: string | null }
+  ): Promise<void> {
+    const connectionDate = currentTime();
+    await this.workerService.updateWorkerPhoneStatusConnectionDate({
+      worker_id: session.worker_id,
+      status: EWorkerStatus.online,
+      number: readiness.phone,
+      connection_date: connectionDate,
+    });
+
+    const payload: IBaileysConnectionState = {
+      ...imported,
+      code: imported.code ?? ECodeMessage.connectionEstablished,
+      status: imported.status || 'connected',
+      worker_id: session.worker_id,
+      account_id: session.account_id,
+      worker_type_id: session.worker_type_id,
+      worker_status_id: EWorkerStatus.online,
+      phone: readiness.phone ?? undefined,
+      connection_attempt_id: session.connection_attempt_id,
+      runtime_generation: session.runtime_generation,
+      debug_trace_id: imported.debug_trace_id,
+      session_ready: true,
+      authenticated: true,
+      can_send: true,
+      can_receive_runtime: true,
+    };
+
+    await this.centrifugoService.publish(channelsConfigCentrifugo(), payload);
+    this.logFlow('manager.secure_connection.import.worker_persisted', session, {
+      worker_status_id: EWorkerStatus.online,
+      phone_present: Boolean(readiness.phone),
+      connection_date: connectionDate,
+      status: payload.status,
+      code: payload.code,
+      session_ready: payload.session_ready,
+      authenticated: payload.authenticated,
+      can_send: payload.can_send,
+      can_receive_runtime: payload.can_receive_runtime,
+    });
   }
 
   private async publishStatus(

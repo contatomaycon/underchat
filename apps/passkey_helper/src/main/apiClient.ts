@@ -52,7 +52,15 @@ interface ApiEnvelope<T> {
   status?: boolean;
 }
 
+type ApiLogFn = (
+  event: string,
+  context: PasskeyDeepLinkContext,
+  details?: Record<string, unknown>
+) => void;
+
 export class PasskeyHelperApiClient {
+  constructor(private readonly log?: ApiLogFn) {}
+
   async fetchSession(
     context: PasskeyDeepLinkContext
   ): Promise<PasskeyHelperSession> {
@@ -138,35 +146,63 @@ export class PasskeyHelperApiClient {
     const endpoint = `${context.apiBaseUrl}${basePath}/${encodeURIComponent(
       context.token
     )}${suffix}`;
-    const response = await fetch(endpoint, {
-      ...init,
-      cache: 'no-store',
-      redirect: 'error',
+    const startedAt = Date.now();
+
+    this.log?.('api.request.start', context, {
+      body_bytes:
+        typeof init.body === 'string'
+          ? Buffer.byteLength(init.body)
+          : undefined,
+      method: init.method ?? 'GET',
+      suffix: suffix || '/',
     });
 
-    if (!response.ok) {
-      throw new Error(`API retornou HTTP ${response.status}.`);
-    }
+    try {
+      const response = await fetch(endpoint, {
+        ...init,
+        cache: 'no-store',
+        redirect: 'error',
+      });
 
-    if (response.status === 204) {
-      return {} as T;
-    }
+      this.log?.('api.request.response', context, {
+        duration_ms: Date.now() - startedAt,
+        method: init.method ?? 'GET',
+        status: response.status,
+        suffix: suffix || '/',
+      });
 
-    const json = (await response.json()) as T | ApiEnvelope<T>;
-
-    if (
-      json &&
-      typeof json === 'object' &&
-      'status' in json &&
-      'data' in json
-    ) {
-      const envelope = json as ApiEnvelope<T>;
-      if (envelope.status === false) {
-        throw new Error(envelope.message ?? 'API retornou erro.');
+      if (!response.ok) {
+        throw new Error(`API retornou HTTP ${response.status}.`);
       }
-      return (envelope.data ?? ({} as T)) as T;
-    }
 
-    return json as T;
+      if (response.status === 204) {
+        return {} as T;
+      }
+
+      const json = (await response.json()) as T | ApiEnvelope<T>;
+
+      if (
+        json &&
+        typeof json === 'object' &&
+        'status' in json &&
+        'data' in json
+      ) {
+        const envelope = json as ApiEnvelope<T>;
+        if (envelope.status === false) {
+          throw new Error(envelope.message ?? 'API retornou erro.');
+        }
+        return (envelope.data ?? ({} as T)) as T;
+      }
+
+      return json as T;
+    } catch (error) {
+      this.log?.('api.request.error', context, {
+        duration_ms: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+        method: init.method ?? 'GET',
+        suffix: suffix || '/',
+      });
+      throw error;
+    }
   }
 }

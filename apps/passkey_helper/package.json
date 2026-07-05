@@ -17,8 +17,8 @@
   "scripts": {
     "dev": "electron-vite dev --mode development",
     "build": "pnpm run build:prod",
-    "build:dev": "tsc --noEmit && electron-vite build --mode development",
-    "build:prod": "tsc --noEmit && electron-vite build --mode production",
+    "build:dev": "UNDERCHAT_PASSKEY_HELPER_CHANNEL=dev tsc --noEmit && UNDERCHAT_PASSKEY_HELPER_CHANNEL=dev electron-vite build --mode development",
+    "build:prod": "UNDERCHAT_PASSKEY_HELPER_CHANNEL=prod tsc --noEmit && UNDERCHAT_PASSKEY_HELPER_CHANNEL=prod electron-vite build --mode production",
     "icons": "node scripts/generate-desktop-icons.mjs",
     "cert:win:self-signed": "node scripts/create-self-signed-windows-cert.mjs",
     "package": "pnpm run package:prod",

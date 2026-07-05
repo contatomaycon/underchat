@@ -556,6 +556,16 @@ func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req Secu
 		state.ConnectionAttemptID = req.ConnectionAttemptID
 		state.RuntimeGeneration = req.RuntimeGeneration
 		state.DebugTraceID = req.DebugTraceID
+		state.WorkerStatusID = WorkerStatusDisponible
+		if state.Status == "" {
+			state.Status = "connecting"
+		}
+		if state.Code == 0 {
+			state.Code = CodeAwaitConnection
+		}
+		if state.Reason == "" {
+			state.Reason = firstNonEmpty(state.DegradedReason, "secure_session_import_not_ready")
+		}
 		if state.Error == "" {
 			state.Error = "Imported whatsmeow store connected, but session readiness was not confirmed."
 		}
@@ -567,20 +577,32 @@ func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req Secu
 	}
 
 	state := m.currentConnectionState()
-	state.Code = CodeConnectionEstablished
-	state.Status = "connected"
-	state.WorkerStatusID = WorkerStatusOnline
 	state.WorkerID = m.cfg.WorkerID
 	state.AccountID = m.cfg.AccountID
 	state.WorkerTypeID = WorkerTypeWhatsmeow
 	state.ConnectionAttemptID = req.ConnectionAttemptID
 	state.RuntimeGeneration = req.RuntimeGeneration
 	state.DebugTraceID = req.DebugTraceID
-	state.Phone = phone
-	state.SessionReady = true
-	state.Authenticated = true
-	state.CanSend = true
-	state.CanReceiveRuntime = true
+	state.Phone = firstNonEmpty(state.Phone, phone)
+	if !state.SessionReady || !state.Authenticated || !state.CanSend || !state.CanReceiveRuntime || state.Phone == "" {
+		state.WorkerStatusID = WorkerStatusDisponible
+		if state.Status == "" || state.Status == "connected" {
+			state.Status = "connecting"
+		}
+		if state.Code == 0 || state.Code == CodeConnectionEstablished {
+			state.Code = CodeAwaitConnection
+		}
+		if state.Reason == "" {
+			state.Reason = firstNonEmpty(state.DegradedReason, "secure_session_import_not_ready")
+		}
+		if state.Error == "" {
+			state.Error = "Imported whatsmeow store did not pass the final readiness check."
+		}
+		return state, nil
+	}
+	state.Code = CodeConnectionEstablished
+	state.Status = "connected"
+	state.WorkerStatusID = WorkerStatusOnline
 	connectionFlowLog("whatsmeow.provider.secure_import.connected", map[string]any{
 		"trace_id":              req.DebugTraceID,
 		"layer":                 "worker_whatsmeow.provider",
@@ -590,6 +612,12 @@ func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req Secu
 		"connection_attempt_id": req.ConnectionAttemptID,
 		"runtime_generation":    req.RuntimeGeneration,
 		"phone_present":         phone != "",
+		"session_ready":         state.SessionReady,
+		"can_send":              state.CanSend,
+		"can_receive_runtime":   state.CanReceiveRuntime,
+		"authenticated":         state.Authenticated,
+		"provider_state":        state.ProviderState,
+		"degraded_reason":       state.DegradedReason,
 		"store_path":            storeDBPath,
 	})
 	return state, nil

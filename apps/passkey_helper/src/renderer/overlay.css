@@ -162,6 +162,13 @@
   background: rgba(32, 37, 40, 0.06);
 }
 
+.underchat-passkey-debug-message {
+  margin: -2px 0 0;
+  color: var(--underchat-passkey-blue-strong);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .underchat-passkey-code {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

@@ -98,13 +98,18 @@ describe('WwebjsConnectionService', () => {
       stop: jest.fn(),
       notifyDisconnected: jest.fn(async () => undefined),
     };
+    const redis = {
+      get: jest.fn(async () => null),
+      set: jest.fn(async () => 'OK'),
+    };
 
     const service = new WwebjsConnectionService(
       centrifugo as never,
       elasticDatabaseService as never,
       balanceWorkerStatusGrpcClientService as never,
       incomingMessageService as never,
-      healthCheckService as never
+      healthCheckService as never,
+      redis as never
     );
 
     const servicePrivate = service as unknown as WwebjsConnectionServicePrivate;

@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 import {
@@ -16,8 +16,12 @@ import {
   type PasskeyDeepLinkContext,
 } from './deepLink';
 
+declare const __UNDERCHAT_PASSKEY_HELPER_CHANNEL__: string;
+
 const appMainDir = import.meta.dirname;
 const WHATSAPP_WEB_ORIGIN = 'https://web.whatsapp.com';
+const WHATSAPP_WEB_STORAGE_PARTITION = 'persist:underchat-passkey-helper';
+const WHATSAPP_WEB_STORAGE_PARTITION_DIR = 'underchat-passkey-helper';
 const CHROME_STABLE_VERSION = '150.0.7871.46';
 const CHROME_STABLE_MAJOR_VERSION =
   CHROME_STABLE_VERSION.split('.')[0] ?? '150';
@@ -46,6 +50,8 @@ const WWEBJS_PROFILE_SKIP_FILE_NAMES = new Set([
   'DevToolsActivePort',
 ]);
 const isDevelopment = !app.isPackaged;
+const helperBuildChannel = __UNDERCHAT_PASSKEY_HELPER_CHANNEL__;
+const diagnosticsEnabled = helperBuildChannel === 'dev' || isDevelopment;
 const whatsAppWebUserAgent = getWhatsAppWebUserAgent();
 
 interface CurrentPairing {
@@ -60,11 +66,24 @@ type SecureSessionProfileFile = {
 };
 
 type SecureSessionProfileFiles = Record<string, SecureSessionProfileFile>;
+type DiagnosticLogEntry = {
+  details: Record<string, unknown>;
+  event: string;
+  timestamp: string;
+  tokenHash?: string;
+};
 
 let mainWindow: BrowserWindow | null = null;
 let currentPairing: CurrentPairing | null = null;
+let localSessionClearInFlight: Promise<void> | null = null;
+let localSessionClearedTokenHash: string | null = null;
+let connectedCleanupCloseTimer: NodeJS.Timeout | null = null;
+const diagnosticLogEntries: DiagnosticLogEntry[] = [];
+const MAX_DIAGNOSTIC_LOG_ENTRIES = 5000;
 
-const apiClient = new PasskeyHelperApiClient();
+const apiClient = new PasskeyHelperApiClient((event, context, details = {}) => {
+  logEvent(event, context, details);
+});
 
 app.setName('Underchat Passkey Helper');
 app.userAgentFallback = whatsAppWebUserAgent;
@@ -212,6 +231,60 @@ function registerAppLifecycleHandlers(): void {
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.handle('underchat-passkey:get-diagnostics-info', async () => ({
+    channel: helperBuildChannel,
+    enabled: diagnosticsEnabled,
+  }));
+
+  ipcMain.handle(
+    'underchat-passkey:append-debug-log',
+    async (
+      _event,
+      input: {
+        details?: Record<string, unknown>;
+        event?: string;
+      }
+    ) => {
+      logEvent(
+        `renderer.${input.event || 'event'}`,
+        currentPairing?.context,
+        input.details ?? {}
+      );
+      return { status: 'ok' };
+    }
+  );
+
+  ipcMain.handle('underchat-passkey:download-debug-log', async () => {
+    if (!diagnosticsEnabled) {
+      return {
+        message: 'Log de diagnostico disponivel apenas no release dev.',
+        status: 'disabled',
+      };
+    }
+
+    return saveDiagnosticLog();
+  });
+
+  ipcMain.handle('underchat-passkey:close-helper', async () => {
+    if (
+      normalizeSessionStatus(currentPairing?.session ?? null) === 'connected'
+    ) {
+      await clearWhatsAppWebLocalSession('helper_close_connected');
+    }
+
+    logEvent('helper.close.requested', currentPairing?.context, {
+      status: normalizeSessionStatus(currentPairing?.session ?? null),
+    });
+
+    closeMainWindowAndQuit();
+
+    return {
+      connected: true,
+      status:
+        normalizeSessionStatus(currentPairing?.session ?? null) ?? 'closing',
+    };
+  });
+
   ipcMain.handle('underchat-passkey:get-session', async () => {
     if (!currentPairing) {
       return {
@@ -229,7 +302,11 @@ function registerIpcHandlers(): void {
       };
     }
 
-    if (!currentPairing.session) {
+    if (currentPairing.context.mode === 'secure') {
+      currentPairing.session = await fetchPairingSession(
+        currentPairing.context
+      );
+    } else if (!currentPairing.session) {
       currentPairing.session = await fetchPairingSession(
         currentPairing.context
       );
@@ -388,9 +465,13 @@ function registerIpcHandlers(): void {
       currentPairing.session = await fetchPairingSession(
         currentPairing.context
       ).catch(() => currentPairing?.session ?? null);
+      const nextStatus = normalizeSessionStatus(currentPairing.session);
+      if (nextStatus === 'connected' || result.connected === true) {
+        scheduleConnectedCleanupAndClose('secure_session_connected');
+      }
       mainWindow?.webContents.send('underchat-passkey:session-updated');
       logEvent('secure_session.upload.done', currentPairing.context, {
-        next_status: normalizeSessionStatus(currentPairing.session),
+        next_status: nextStatus,
         status: result.status ?? result.code ?? null,
       });
       return result;
@@ -423,6 +504,260 @@ function countElectronCookies(payload: unknown): number {
 
   const cookies = (payload as Record<string, unknown>).electron_cookies;
   return Array.isArray(cookies) ? cookies.length : 0;
+}
+
+function scheduleConnectedCleanupAndClose(reason: string): void {
+  if (connectedCleanupCloseTimer) {
+    return;
+  }
+
+  logEvent(
+    'secure_session.connected_cleanup.scheduled',
+    currentPairing?.context,
+    {
+      reason,
+    }
+  );
+
+  connectedCleanupCloseTimer = setTimeout(() => {
+    connectedCleanupCloseTimer = null;
+    void clearWhatsAppWebLocalSession(reason)
+      .catch((error) => {
+        logEvent(
+          'secure_session.local_session.clear.schedule_error',
+          currentPairing?.context,
+          {
+            reason: sanitizeError(error),
+          }
+        );
+      })
+      .finally(() => {
+        closeMainWindowAndQuit();
+      });
+  }, 2200);
+}
+
+function closeMainWindowAndQuit(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.close();
+  }
+
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+}
+
+async function clearWhatsAppWebLocalSession(reason: string): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  const tokenHash = currentPairing?.context.tokenHash ?? null;
+  if (tokenHash && localSessionClearedTokenHash === tokenHash) {
+    return;
+  }
+
+  if (localSessionClearInFlight) {
+    await localSessionClearInFlight;
+    return;
+  }
+
+  localSessionClearInFlight = clearWhatsAppWebLocalSessionInternal(reason)
+    .then(() => {
+      localSessionClearedTokenHash = tokenHash;
+    })
+    .finally(() => {
+      localSessionClearInFlight = null;
+    });
+
+  await localSessionClearInFlight;
+}
+
+async function clearWhatsAppWebLocalSessionInternal(
+  reason: string
+): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  logEvent(
+    'secure_session.local_session.clear.start',
+    currentPairing?.context,
+    {
+      reason,
+      partition: WHATSAPP_WEB_STORAGE_PARTITION,
+    }
+  );
+
+  try {
+    mainWindow.webContents.stop();
+    if (!mainWindow.webContents.getURL().startsWith('about:blank')) {
+      await mainWindow.webContents.loadURL('about:blank');
+    }
+  } catch (error) {
+    logEvent(
+      'secure_session.local_session.clear.navigate_error',
+      currentPairing?.context,
+      {
+        reason: sanitizeError(error),
+      }
+    );
+  }
+
+  const webSession = mainWindow.webContents.session;
+  const clearResults = await Promise.allSettled([
+    webSession.clearStorageData({
+      origin: WHATSAPP_WEB_ORIGIN,
+      storages: [
+        'cachestorage',
+        'cookies',
+        'filesystem',
+        'indexdb',
+        'localstorage',
+        'serviceworkers',
+        'shadercache',
+      ],
+    }),
+    webSession.clearCache(),
+    webSession.cookies
+      .get({ url: WHATSAPP_WEB_ORIGIN })
+      .then((cookies) =>
+        Promise.all(
+          cookies.map((cookie) =>
+            webSession.cookies.remove(
+              `${WHATSAPP_WEB_ORIGIN}${cookie.path || '/'}`,
+              cookie.name
+            )
+          )
+        )
+      ),
+  ]);
+
+  await Promise.resolve(webSession.flushStorageData()).catch(() => undefined);
+
+  const partitionRoot = getWhatsAppWebPartitionRoot();
+  await rm(partitionRoot, { recursive: true, force: true }).catch((error) => {
+    logEvent(
+      'secure_session.local_session.clear.profile_remove_error',
+      currentPairing?.context,
+      {
+        reason: sanitizeError(error),
+      }
+    );
+  });
+
+  logEvent('secure_session.local_session.clear.done', currentPairing?.context, {
+    failed_steps: clearResults.filter((result) => result.status === 'rejected')
+      .length,
+    partition_removed: true,
+    reason,
+  });
+}
+
+function getWhatsAppWebPartitionRoot(): string {
+  return join(
+    app.getPath('userData'),
+    'Partitions',
+    WHATSAPP_WEB_STORAGE_PARTITION_DIR
+  );
+}
+
+async function saveDiagnosticLog(): Promise<{
+  message?: string;
+  status: string;
+}> {
+  const tokenHash = currentPairing?.context.tokenHash ?? 'sem-token';
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const defaultPath = join(
+    app.getPath('downloads'),
+    `underchat-passkey-helper-${tokenHash}-${timestamp}.json`
+  );
+
+  const saveDialogOptions = {
+    buttonLabel: 'Salvar log',
+    defaultPath,
+    filters: [
+      {
+        extensions: ['json'],
+        name: 'JSON',
+      },
+    ],
+    title: 'Salvar log de diagnostico Underchat Passkey Helper',
+  };
+  const result =
+    mainWindow && !mainWindow.isDestroyed()
+      ? await dialog.showSaveDialog(mainWindow, saveDialogOptions)
+      : await dialog.showSaveDialog(saveDialogOptions);
+
+  if (result.canceled || !result.filePath) {
+    logEvent('diagnostic_log.download.cancelled', currentPairing?.context);
+    return { status: 'cancelled' };
+  }
+
+  const snapshot = {
+    app: {
+      channel: helperBuildChannel,
+      diagnostics_enabled: diagnosticsEnabled,
+      electron: process.versions.electron,
+      node: process.versions.node,
+      packaged: app.isPackaged,
+      platform: process.platform,
+      version: app.getVersion(),
+    },
+    context: currentPairing
+      ? {
+          api_base_url: redactApiBaseUrl(currentPairing.context.apiBaseUrl),
+          mode: currentPairing.context.mode,
+          token_hash: currentPairing.context.tokenHash,
+        }
+      : null,
+    current_page: mainWindow
+      ? {
+          domain: getSafeDomain(mainWindow.webContents.getURL()),
+          url: sanitizeUrlForDiagnostics(mainWindow.webContents.getURL()),
+        }
+      : null,
+    generated_at: new Date().toISOString(),
+    session: currentPairing?.session
+      ? redactDiagnosticValue(currentPairing.session)
+      : null,
+    storage: {
+      partition: WHATSAPP_WEB_STORAGE_PARTITION,
+      partition_root: getWhatsAppWebPartitionRoot(),
+      local_session_cleared_for_token_hash: localSessionClearedTokenHash,
+    },
+    events: diagnosticLogEntries,
+  };
+
+  await writeFile(result.filePath, JSON.stringify(snapshot, null, 2), 'utf8');
+  logEvent('diagnostic_log.download.saved', currentPairing?.context, {
+    file_path: result.filePath,
+  });
+
+  return {
+    message: result.filePath,
+    status: 'saved',
+  };
+}
+
+function redactApiBaseUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return 'invalid-url';
+  }
+}
+
+function sanitizeUrlForDiagnostics(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return 'invalid-url';
+  }
 }
 
 function summarizeAuthDump(dump: unknown): Record<string, unknown> {
@@ -891,7 +1226,7 @@ async function enrichSecureSessionPackage(
         session: cookie.session,
         value: cookie.value,
       })),
-      electron_partition: 'persist:underchat-passkey-helper',
+      electron_partition: WHATSAPP_WEB_STORAGE_PARTITION,
       ...(wwebjsLocalAuthFiles
         ? {
             wwebjs_local_auth: {
@@ -924,7 +1259,7 @@ async function collectWwebjsLocalAuthProfileFiles(
   const partitionRoot = join(
     app.getPath('userData'),
     'Partitions',
-    'underchat-passkey-helper'
+    WHATSAPP_WEB_STORAGE_PARTITION_DIR
   );
   const files: SecureSessionProfileFiles = {};
   const budget = { totalBytes: 0 };
@@ -1126,7 +1461,7 @@ function createMainWindow(initialError?: string): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      partition: 'persist:underchat-passkey-helper',
+      partition: WHATSAPP_WEB_STORAGE_PARTITION,
       preload: join(appMainDir, '../preload/index.js'),
       sandbox: false,
     },
@@ -1319,8 +1654,53 @@ function logEvent(
   context: PasskeyDeepLinkContext | null | undefined,
   details: Record<string, unknown> = {}
 ): void {
-  console.log('[underchat-passkey-helper]', event, {
-    ...details,
+  const safeDetails = redactDiagnosticValue(details) as Record<string, unknown>;
+  const output = {
+    ...safeDetails,
+    tokenHash: context?.tokenHash,
+  };
+  diagnosticLogEntries.push({
+    details: safeDetails,
+    event,
+    timestamp: new Date().toISOString(),
     tokenHash: context?.tokenHash,
   });
+  if (diagnosticLogEntries.length > MAX_DIAGNOSTIC_LOG_ENTRIES) {
+    diagnosticLogEntries.splice(
+      0,
+      diagnosticLogEntries.length - MAX_DIAGNOSTIC_LOG_ENTRIES
+    );
+  }
+  console.log('[underchat-passkey-helper]', event, output);
+}
+
+function redactDiagnosticValue(value: unknown, key = ''): unknown {
+  if (isSensitiveDiagnosticKey(key)) {
+    return '[redacted]';
+  }
+
+  if (Array.isArray(value)) {
+    if (key && /cookies?|payload|files?/i.test(key)) {
+      return `[array:${value.length}]`;
+    }
+    return value.slice(0, 100).map((item) => redactDiagnosticValue(item));
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const output: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(
+    value as Record<string, unknown>
+  )) {
+    output[entryKey] = redactDiagnosticValue(entryValue, entryKey);
+  }
+  return output;
+}
+
+function isSensitiveDiagnosticKey(key: string): boolean {
+  return /(^token$|token$|secret|private|public_key|passkey|signature|cookie|payload|qrcode|qr_code|creds|auth|value|data|content|sessionPackage)/i.test(
+    key
+  );
 }
