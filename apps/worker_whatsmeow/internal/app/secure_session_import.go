@@ -550,9 +550,6 @@ func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req Secu
 	m.mu.Unlock()
 	m.publishState(ctx, "connecting", CodeAwaitConnection, WorkerStatusDisponible, "", "", true)
 
-	m.setConnectedPublishHold(secureImportConnectedPublishHoldReason, req.ConnectionAttemptID)
-	defer m.clearConnectedPublishHold("secure_session_import_finished")
-
 	if err := m.connectClient(m.connectionContext(), client, "secure-session-import"); err != nil {
 		restoreBackup("connect_failed")
 		_ = m.initClient(ctx)

@@ -4,6 +4,7 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerSecureConnectionSessionUseCase } from '@core/useCases/worker/WorkerSecureConnectionSession.useCase';
 import { ISecureConnectionSession } from '@core/common/interfaces/ISecureConnectionSession';
 import { IWorkerRuntimeHealthResponseProto } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
+import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 const sessionKey = (token: string) => `connection:secure:session:${token}`;
 
@@ -184,6 +185,115 @@ describe('WorkerSecureConnectionSessionUseCase secure import readiness', () => {
       hardFailure: true,
       ready: false,
     });
+  });
+
+  it('does not add a second manager stability window after whatsmeow returns ready', () => {
+    const { useCase } = buildUseCase();
+    const resolveStableMs = (
+      useCase as unknown as {
+        resolveSecureImportValidationStableMs: (
+          session: ISecureConnectionSession,
+          importedReadiness: { ready?: boolean }
+        ) => number;
+      }
+    ).resolveSecureImportValidationStableMs.bind(useCase);
+
+    expect(
+      resolveStableMs(buildSession(EWorkerType.whatsmeow), { ready: true })
+    ).toBe(0);
+    expect(
+      resolveStableMs(buildSession(EWorkerType.wwebjs), { ready: true })
+    ).toBeGreaterThan(0);
+  });
+
+  it('recovers validating whatsmeow sessions from authenticated web polling when runtime is already ready', async () => {
+    const redis = buildRedis();
+    const session: ISecureConnectionSession = {
+      ...buildSession(EWorkerType.whatsmeow),
+      status: 'validating_worker',
+      upload_received_at: '2026-01-01T00:01:00.000Z',
+      imported_at: '2026-01-01T00:01:10.000Z',
+    };
+    redis.store.set(sessionKey(session.token), JSON.stringify(session));
+    const {
+      useCase,
+      workerGrpcClientService,
+      workerService,
+      centrifugoService,
+    } = buildUseCase({
+      redis: redis.client,
+      workerGrpcClientService: {
+        runtimeHealth: jest.fn(async () =>
+          buildReadyHealth(EWorkerType.whatsmeow)
+        ),
+      },
+    });
+
+    const response = await useCase.viewAuthenticated(
+      ((key: string) => key) as never,
+      {
+        accountId: session.account_id,
+        workerId: session.worker_id,
+        token: session.token,
+      }
+    );
+
+    expect(response.status).toBe('connected_confirmed');
+    expect(response.token).toBe(session.token);
+    expect(response.phone).toBe('556192037138');
+    expect(workerGrpcClientService.runtimeHealth).toHaveBeenCalledWith(
+      'server-1',
+      { worker_id: 'worker-1' }
+    );
+    expect(
+      workerService.updateWorkerPhoneStatusConnectionDate
+    ).toHaveBeenCalledWith({
+      worker_id: 'worker-1',
+      status: EWorkerStatus.online,
+      number: '556192037138',
+      connection_date: expect.any(String),
+    });
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      workerCentrifugoQueue(session.account_id),
+      expect.objectContaining({
+        worker_id: session.worker_id,
+        worker_status_id: EWorkerStatus.online,
+        phone: '556192037138',
+      })
+    );
+  });
+
+  it('does not recover authenticated web polling while whatsmeow import is still in progress', async () => {
+    const redis = buildRedis();
+    const session: ISecureConnectionSession = {
+      ...buildSession(EWorkerType.whatsmeow),
+      status: 'importing',
+      upload_received_at: '2026-01-01T00:01:00.000Z',
+    };
+    redis.store.set(sessionKey(session.token), JSON.stringify(session));
+    const { useCase, workerGrpcClientService, workerService } = buildUseCase({
+      redis: redis.client,
+      workerGrpcClientService: {
+        runtimeHealth: jest.fn(async () =>
+          buildReadyHealth(EWorkerType.whatsmeow)
+        ),
+      },
+    });
+
+    const response = await useCase.viewAuthenticated(
+      ((key: string) => key) as never,
+      {
+        accountId: session.account_id,
+        workerId: session.worker_id,
+        token: session.token,
+      }
+    );
+
+    expect(response.status).toBe('importing');
+    expect(workerGrpcClientService.runtimeHealth).not.toHaveBeenCalled();
+    expect(
+      workerService.updateWorkerPhoneStatusConnectionDate
+    ).not.toHaveBeenCalled();
   });
 
   it('recovers validating secure imports when helper reports a network failure after wwebjs connected', async () => {

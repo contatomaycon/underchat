@@ -245,9 +245,19 @@ export class WorkerSecureConnectionSessionUseCase {
 
     const session = await this.getSessionOrThrow(t, input.token);
     this.assertSameWorker(t, session, input.accountId, input.workerId);
-    this.logFlow('manager.secure_connection.view.done', session);
+    const recovered =
+      session.status === 'importing'
+        ? session
+        : await this.recoverImportedRuntimeIfReady(
+            t,
+            session,
+            'authenticated_view'
+          );
+    this.logFlow('manager.secure_connection.view.done', recovered, {
+      previous_status: session.status,
+    });
 
-    return this.toResponse(session, { includeToken: true });
+    return this.toResponse(recovered, { includeToken: true });
   }
 
   async cancelAuthenticated(
@@ -581,6 +591,10 @@ export class WorkerSecureConnectionSessionUseCase {
         imported_at: new Date().toISOString(),
       });
       await this.publishStatus(validating);
+      const validationStableMs = this.resolveSecureImportValidationStableMs(
+        validating,
+        importedReadiness
+      );
       this.logFlow(
         'manager.secure_connection.import.validation_started',
         validating,
@@ -598,7 +612,7 @@ export class WorkerSecureConnectionSessionUseCase {
           immediate_readiness_reason: importedReadiness.reason,
           phone_present: Boolean(imported.phone),
           validation_timeout_ms: SECURE_IMPORT_VALIDATION_TIMEOUT_MS,
-          validation_stable_ms: SECURE_IMPORT_VALIDATION_STABLE_MS,
+          validation_stable_ms: validationStableMs,
         }
       );
 
@@ -976,11 +990,29 @@ export class WorkerSecureConnectionSessionUseCase {
     };
   }
 
+  private resolveSecureImportValidationStableMs(
+    session: ISecureConnectionSession,
+    importedReadiness: { ready?: boolean }
+  ): number {
+    if (
+      session.worker_type_id === EWorkerType.whatsmeow &&
+      importedReadiness.ready === true
+    ) {
+      return 0;
+    }
+
+    return SECURE_IMPORT_VALIDATION_STABLE_MS;
+  }
+
   private async waitForStableImportedRuntimeHealth(
     session: ISecureConnectionSession,
     serverId: string,
     imported: IBaileysConnectionState,
-    importedReadiness: { phone: string | null; reason?: string },
+    importedReadiness: {
+      phone: string | null;
+      ready: boolean;
+      reason?: string;
+    },
     debugTraceId?: string
   ): Promise<{
     ready: boolean;
@@ -992,6 +1024,10 @@ export class WorkerSecureConnectionSessionUseCase {
   }> {
     const startedAt = Date.now();
     const deadlineAt = startedAt + SECURE_IMPORT_VALIDATION_TIMEOUT_MS;
+    const stableRequiredMs = this.resolveSecureImportValidationStableMs(
+      session,
+      importedReadiness
+    );
     let stableSince: number | null = null;
     let lastHealth: IWorkerRuntimeHealthResponseProto | undefined;
     let lastReason =
@@ -1044,7 +1080,7 @@ export class WorkerSecureConnectionSessionUseCase {
           elapsed_ms: Date.now() - startedAt,
           stable_elapsed_ms:
             stableSince === null ? 0 : Date.now() - stableSince,
-          stable_required_ms: SECURE_IMPORT_VALIDATION_STABLE_MS,
+          stable_required_ms: stableRequiredMs,
           worker_type_id: health.worker_type_id,
           runtime_generation: health.runtime_generation,
           session_ready: health.session_ready,
@@ -1067,7 +1103,7 @@ export class WorkerSecureConnectionSessionUseCase {
 
       if (readiness.ready) {
         stableSince ??= Date.now();
-        if (Date.now() - stableSince >= SECURE_IMPORT_VALIDATION_STABLE_MS) {
+        if (Date.now() - stableSince >= stableRequiredMs) {
           return {
             ready: true,
             phone: readiness.phone,
@@ -1424,6 +1460,10 @@ export class WorkerSecureConnectionSessionUseCase {
     };
 
     await this.centrifugoService.publish(channelsConfigCentrifugo(), payload);
+    await this.centrifugoService.publishSub(
+      workerCentrifugoQueue(session.account_id),
+      payload
+    );
     this.logFlow('manager.secure_connection.import.worker_persisted', session, {
       worker_status_id: EWorkerStatus.online,
       phone_present: Boolean(readiness.phone),
