@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { join, resolve } from 'node:path';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join, relative, resolve, sep } from 'node:path';
 
 import {
   PasskeyHelperApiClient,
@@ -20,6 +21,30 @@ const WHATSAPP_WEB_ORIGIN = 'https://web.whatsapp.com';
 const CHROME_STABLE_VERSION = '150.0.7871.46';
 const CHROME_STABLE_MAJOR_VERSION =
   CHROME_STABLE_VERSION.split('.')[0] ?? '150';
+const WWEBJS_PROFILE_MAX_BYTES = 80 * 1024 * 1024;
+const WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES = new Set([
+  'Cookies',
+  'Cookies-journal',
+  'IndexedDB',
+  'Local Storage',
+  'Network Persistent State',
+  'Preferences',
+  'Service Worker',
+  'Session Storage',
+  'Shared Dictionary',
+  'TransportSecurity',
+  'Trust Tokens',
+  'Trust Tokens-journal',
+  'WebStorage',
+  'blob_storage',
+]);
+const WWEBJS_PROFILE_SKIP_FILE_NAMES = new Set([
+  'LOCK',
+  'SingletonCookie',
+  'SingletonLock',
+  'SingletonSocket',
+  'DevToolsActivePort',
+]);
 const isDevelopment = !app.isPackaged;
 const whatsAppWebUserAgent = getWhatsAppWebUserAgent();
 
@@ -28,6 +53,13 @@ interface CurrentPairing {
   error: string | null;
   session: PasskeyHelperSession | null;
 }
+
+type SecureSessionProfileFile = {
+  data: string;
+  encoding: 'base64';
+};
+
+type SecureSessionProfileFiles = Record<string, SecureSessionProfileFile>;
 
 let mainWindow: BrowserWindow | null = null;
 let currentPairing: CurrentPairing | null = null;
@@ -371,6 +403,15 @@ async function enrichSecureSessionPackage(
   const cookies = await mainWindow.webContents.session.cookies
     .get({ url: WHATSAPP_WEB_ORIGIN })
     .catch(() => []);
+  const wwebjsLocalAuthFiles = await collectWwebjsLocalAuthProfileFiles(
+    sessionPackage
+  ).catch((error) => {
+    logEvent('secure_session.profile_export.error', currentPairing?.context, {
+      reason: sanitizeError(error),
+      target_provider: sessionPackage.target_provider,
+    });
+    return null;
+  });
   const payload =
     sessionPackage.payload &&
     typeof sessionPackage.payload === 'object' &&
@@ -394,7 +435,150 @@ async function enrichSecureSessionPackage(
         value: cookie.value,
       })),
       electron_partition: 'persist:underchat-passkey-helper',
+      ...(wwebjsLocalAuthFiles
+        ? {
+            wwebjs_local_auth: {
+              files: wwebjsLocalAuthFiles,
+            },
+          }
+        : {}),
     },
+  };
+}
+
+async function collectWwebjsLocalAuthProfileFiles(
+  sessionPackage: SecureSessionPackage
+): Promise<SecureSessionProfileFiles | null> {
+  if (
+    sessionPackage.target_provider !== 'wwebjs' &&
+    sessionPackage.target_provider !== 'auto'
+  ) {
+    return null;
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+
+  try {
+    await Promise.resolve(mainWindow.webContents.session.flushStorageData());
+  } catch {}
+
+  const partitionRoot = join(
+    app.getPath('userData'),
+    'Partitions',
+    'underchat-passkey-helper'
+  );
+  const files: SecureSessionProfileFiles = {};
+  const budget = { totalBytes: 0 };
+
+  for (const entryName of WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES) {
+    const entryPath = join(partitionRoot, entryName);
+    const entryStat = await stat(entryPath).catch(() => null);
+    if (!entryStat) {
+      continue;
+    }
+
+    if (entryStat.isDirectory()) {
+      await collectProfileEntryFiles({
+        budget,
+        files,
+        profileRoot: partitionRoot,
+        targetPath: entryPath,
+      });
+      continue;
+    }
+
+    if (entryStat.isFile()) {
+      await addProfileFile({
+        budget,
+        files,
+        profileRoot: partitionRoot,
+        targetPath: entryPath,
+      });
+    }
+  }
+
+  const localStatePath = join(app.getPath('userData'), 'Local State');
+  if (await stat(localStatePath).catch(() => null)) {
+    await addProfileFile({
+      budget,
+      files,
+      profileRoot: app.getPath('userData'),
+      targetPath: localStatePath,
+      outputPrefix: '',
+    });
+  }
+
+  logEvent('secure_session.profile_export.done', currentPairing?.context, {
+    file_count: Object.keys(files).length,
+    total_bytes: budget.totalBytes,
+    target_provider: sessionPackage.target_provider,
+  });
+
+  return Object.keys(files).length ? files : null;
+}
+
+async function collectProfileEntryFiles(input: {
+  budget: { totalBytes: number };
+  files: SecureSessionProfileFiles;
+  outputPrefix?: string;
+  profileRoot: string;
+  targetPath: string;
+}): Promise<void> {
+  const entries = await readdir(input.targetPath, {
+    withFileTypes: true,
+  }).catch(() => []);
+
+  for (const entry of entries) {
+    if (WWEBJS_PROFILE_SKIP_FILE_NAMES.has(entry.name)) {
+      continue;
+    }
+
+    const entryPath = join(input.targetPath, entry.name);
+    if (entry.isDirectory()) {
+      await collectProfileEntryFiles({
+        ...input,
+        targetPath: entryPath,
+      });
+      continue;
+    }
+
+    if (entry.isFile()) {
+      await addProfileFile({
+        ...input,
+        targetPath: entryPath,
+      });
+    }
+  }
+}
+
+async function addProfileFile(input: {
+  budget: { totalBytes: number };
+  files: SecureSessionProfileFiles;
+  outputPrefix?: string;
+  profileRoot: string;
+  targetPath: string;
+}): Promise<void> {
+  const fileStat = await stat(input.targetPath).catch(() => null);
+  if (!fileStat?.isFile()) {
+    return;
+  }
+
+  const nextTotal = input.budget.totalBytes + fileStat.size;
+  if (nextTotal > WWEBJS_PROFILE_MAX_BYTES) {
+    throw new Error('wwebjs_profile_export_size_limit_exceeded');
+  }
+
+  input.budget.totalBytes = nextTotal;
+  const relativePath = relative(input.profileRoot, input.targetPath)
+    .split(sep)
+    .join('/');
+  const outputPath = `${input.outputPrefix ?? 'Default/'}${relativePath}`;
+  const data = await readFile(input.targetPath);
+  input.files[outputPath] = {
+    data: data.toString('base64'),
+    encoding: 'base64',
   };
 }
 
@@ -675,11 +859,11 @@ function getSafeDomain(rawUrl: string): string {
 
 function logEvent(
   event: string,
-  context: PasskeyDeepLinkContext,
+  context: PasskeyDeepLinkContext | null | undefined,
   details: Record<string, unknown> = {}
 ): void {
   console.log('[underchat-passkey-helper]', event, {
     ...details,
-    tokenHash: context.tokenHash,
+    tokenHash: context?.tokenHash,
   });
 }

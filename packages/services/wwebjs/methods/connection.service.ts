@@ -1,5 +1,6 @@
 import whatsappWeb, { type ChatState } from '@wwebjs/whatsapp-web.js';
 import QRCode from 'qrcode';
+import Redis from 'ioredis';
 import fs from 'node:fs';
 import path from 'node:path';
 import { singleton, inject } from 'tsyringe';
@@ -8,7 +9,10 @@ import { wwebjsEnvironment } from '@core/config/environments';
 import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysConnectionStatus';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
-import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
+import {
+  ISecureConnectionImportRequest,
+  ISecureConnectionSessionPackage,
+} from '@core/common/interfaces/ISecureConnectionSession';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
@@ -155,6 +159,21 @@ function renderQrSvgDataUrl(qr: string): string {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+
+  return String(error);
+}
+
 const PUPPETEER_PROTOCOL_TIMEOUT_MS = (() => {
   const parsed = Number.parseInt(
     process.env.WWEBJS_PROTOCOL_TIMEOUT_MS ?? '',
@@ -265,6 +284,7 @@ export class WwebjsConnectionService {
     private readonly incomingMessageService: WwebjsIncomingMessageService,
     @inject(WwebjsHealthCheckService)
     private readonly healthCheckService: WwebjsHealthCheckService,
+    @inject('Redis') private readonly redis: Redis,
     @inject(ConnectionLifecycleDebugService)
     private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
       log: async () => undefined,
@@ -656,26 +676,223 @@ export class WwebjsConnectionService {
   async importSecureSession(
     input: ISecureConnectionImportRequest
   ): Promise<IBaileysConnectionState> {
-    const payload: IBaileysConnectionState = {
-      code: ECodeMessage.badSession,
-      status: Status.disconnected,
+    this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+    this.connectionAttemptId =
+      input.connection_attempt_id ?? this.connectionAttemptId;
+
+    this.logDebug('wwebjs.provider.secure_session_import.received', {
+      trace_id: input.debug_trace_id,
+      layer: 'wwebjs',
       worker_id: input.worker_id || getWorker(),
       account_id: input.account_id || getAccount(),
       worker_type_id: EWorkerType.wwebjs,
+      connection_attempt_id: input.connection_attempt_id,
+      runtime_generation: input.runtime_generation,
+      format_version: input.format_version,
+      target_provider: input.target_provider,
+      has_payload_ref: Boolean(input.payload_ref),
+      has_payload_json: Boolean(input.payload_json),
+    });
+
+    try {
+      this.assertSecureSessionImportContext(input);
+      const sessionPackage = await this.resolveSecureSessionPackage(input);
+      const payloadSummary =
+        this.summarizeWwebjsSecureSessionPayload(sessionPackage);
+
+      this.logDebug('wwebjs.provider.secure_session_import.payload_resolved', {
+        trace_id: input.debug_trace_id,
+        layer: 'wwebjs',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.wwebjs,
+        connection_attempt_id: input.connection_attempt_id,
+        runtime_generation: input.runtime_generation,
+        format_version: sessionPackage.format_version,
+        target_provider: sessionPackage.target_provider,
+        ...payloadSummary,
+      });
+
+      const importer =
+        whatsappWeb.SecureSessionImport?.importWhatsAppWebSessionToLocalAuth;
+      if (typeof importer !== 'function') {
+        throw new Error('wwebjs_secure_session_importer_unavailable');
+      }
+
+      this.healthCheckService.stop();
+      this.cancelAttempt(false);
+      await this.waitForPendingTeardown();
+      this.clearChromiumProfileLock();
+      this.prepareFolder();
+
+      const result = await importer({
+        sessionPackage: sessionPackage as Parameters<
+          typeof importer
+        >[0]['sessionPackage'],
+        clientId: getWorker(),
+        dataPath: path.join(getFolder(), '.wwebjs_auth'),
+        overwrite: true,
+        cleanupBackupOnSuccess: false,
+      });
+
+      this.logDebug('wwebjs.provider.secure_session_import.files_imported', {
+        trace_id: input.debug_trace_id,
+        layer: 'wwebjs',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.wwebjs,
+        connection_attempt_id: input.connection_attempt_id,
+        runtime_generation: input.runtime_generation,
+        imported_file_count: result.importedFiles.length,
+        backup_created: Boolean(result.backupPath),
+        format_version: result.formatVersion,
+        account_hint_present: Boolean(result.accountHint),
+      });
+
+      return await this.connect({
+        initial_connection: true,
+        allow_restore: true,
+        force_new: true,
+        requested_by_user: true,
+        type: EBaileysConnectionType.qrcode,
+        connection_attempt_id: input.connection_attempt_id,
+        debug_trace_id: input.debug_trace_id,
+      });
+    } catch (error) {
+      return this.failSecureSessionImport(input, error);
+    }
+  }
+
+  private assertSecureSessionImportContext(
+    input: ISecureConnectionImportRequest
+  ): void {
+    if (input.worker_id && input.worker_id !== getWorker()) {
+      throw new Error('secure_session_worker_mismatch');
+    }
+
+    if (input.account_id && input.account_id !== getAccount()) {
+      throw new Error('secure_session_account_mismatch');
+    }
+
+    if (input.source !== 'whatsapp_web') {
+      throw new Error('secure_session_source_unsupported');
+    }
+
+    if (
+      input.target_provider !== 'auto' &&
+      input.target_provider !== 'wwebjs'
+    ) {
+      throw new Error('secure_session_target_provider_mismatch');
+    }
+  }
+
+  private async resolveSecureSessionPackage(
+    input: ISecureConnectionImportRequest
+  ): Promise<ISecureConnectionSessionPackage> {
+    const rawPayload = input.payload_json?.trim()
+      ? input.payload_json
+      : input.payload_ref
+        ? await this.redis.get(input.payload_ref)
+        : undefined;
+
+    if (!rawPayload) {
+      throw new Error('secure_session_payload_not_found');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawPayload);
+    } catch {
+      throw new Error('secure_session_payload_invalid_json');
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('secure_session_payload_invalid');
+    }
+
+    const sessionPackage = parsed as ISecureConnectionSessionPackage;
+    if (
+      sessionPackage.source !== 'whatsapp_web' ||
+      !sessionPackage.format_version
+    ) {
+      throw new Error('secure_session_package_invalid');
+    }
+
+    if (!sessionPackage.target_provider) {
+      sessionPackage.target_provider = input.target_provider;
+    }
+
+    if (
+      sessionPackage.target_provider !== 'auto' &&
+      sessionPackage.target_provider !== 'wwebjs'
+    ) {
+      throw new Error('secure_session_target_provider_mismatch');
+    }
+
+    return sessionPackage;
+  }
+
+  private summarizeWwebjsSecureSessionPayload(
+    sessionPackage: ISecureConnectionSessionPackage
+  ): Record<string, unknown> {
+    const payload =
+      sessionPackage.payload &&
+      typeof sessionPackage.payload === 'object' &&
+      !Array.isArray(sessionPackage.payload)
+        ? (sessionPackage.payload as Record<string, unknown>)
+        : {};
+    const localAuth =
+      payload.wwebjs_local_auth &&
+      typeof payload.wwebjs_local_auth === 'object' &&
+      !Array.isArray(payload.wwebjs_local_auth)
+        ? (payload.wwebjs_local_auth as Record<string, unknown>)
+        : undefined;
+    const files =
+      localAuth?.files &&
+      typeof localAuth.files === 'object' &&
+      !Array.isArray(localAuth.files)
+        ? (localAuth.files as Record<string, unknown>)
+        : undefined;
+
+    return {
+      has_wwebjs_local_auth: Boolean(localAuth),
+      profile_file_count: files ? Object.keys(files).length : 0,
+      has_default_cookies: Boolean(files?.['Default/Cookies']),
+      has_default_indexeddb: Object.keys(files ?? {}).some((file) =>
+        file.startsWith('Default/IndexedDB/')
+      ),
+      has_baileys_multi_file_auth_state: Boolean(
+        payload.baileys_multi_file_auth_state
+      ),
+      has_whatsmeow_sqlstore: Boolean(payload.whatsmeow_sqlstore),
+    };
+  }
+
+  private failSecureSessionImport(
+    input: ISecureConnectionImportRequest,
+    error: unknown
+  ): IBaileysConnectionState {
+    const errorMessage = this.normalizeSecureSessionImportErrorMessage(
+      error
+    ).slice(0, 240);
+    this.setStatus(Status.disconnected, ECodeMessage.badSession);
+    this.connectionEstablished = false;
+    this.connecting = false;
+
+    const payload = this.state(undefined, undefined, {
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: input.connection_attempt_id,
       runtime_generation: input.runtime_generation,
       debug_trace_id: input.debug_trace_id,
-      reason: 'secure_session_import_not_implemented',
-      error:
-        'WWebJS secure session import requires the updated LocalAuth importer.',
+      reason: 'secure_session_import_failed',
+      error: errorMessage,
       session_ready: false,
       authenticated: false,
       can_send: false,
       can_receive_runtime: false,
-    };
+    });
 
-    this.logDebug('wwebjs.provider.secure_session_import_not_implemented', {
+    this.logDebug('wwebjs.provider.secure_session_import.failed', {
       trace_id: input.debug_trace_id,
       layer: 'wwebjs',
       worker_id: payload.worker_id,
@@ -685,11 +902,25 @@ export class WwebjsConnectionService {
       runtime_generation: input.runtime_generation,
       format_version: input.format_version,
       target_provider: input.target_provider,
-      has_payload_ref: Boolean(input.payload_ref),
-      has_payload_json: Boolean(input.payload_json),
+      reason: errorMessage,
     });
 
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, 'secure_session_import_failed');
     return payload;
+  }
+
+  private normalizeSecureSessionImportErrorMessage(error: unknown): string {
+    const rawMessage = getErrorMessage(error);
+    if (
+      rawMessage === 'wwebjs_import_payload_unsupported' ||
+      rawMessage === 'wwebjs_import_payload_missing' ||
+      rawMessage === 'wwebjs_import_empty_profile'
+    ) {
+      return 'WWebJS secure import requires payload.wwebjs_local_auth.files with a Chromium LocalAuth profile exported by the helper.';
+    }
+
+    return rawMessage;
   }
 
   reconnect(input: IBaileysConnection): void {

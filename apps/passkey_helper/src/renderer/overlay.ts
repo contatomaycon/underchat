@@ -29,6 +29,14 @@ const BUSY_SECURE_STATUSES = new Set([
   'importing',
 ]);
 const AUTO_CONNECT_READY_CHECKS = 2;
+const WORKER_TYPE_PROVIDER_MAP: Record<
+  string,
+  SecureSessionPackage['target_provider']
+> = {
+  '019a930d-c6f6-766d-9c84-53307d4159a1': 'baileys',
+  '019a930d-c6f6-766d-9c84-62b9c3e7d1f0': 'wwebjs',
+  'e80ad183-2b46-4628-9105-a036f2d28720': 'whatsmeow',
+};
 
 let bridgeRef: UnderchatPasskeyBridge | null = null;
 let rootElement: HTMLElement | null = null;
@@ -664,9 +672,18 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
       user_agent: navigator.userAgent,
     },
     source: 'whatsapp_web',
-    target_provider: 'auto',
+    target_provider: getSecureSessionTargetProvider(),
     web_version: readWhatsAppWebVersion(),
   };
+}
+
+function getSecureSessionTargetProvider(): SecureSessionPackage['target_provider'] {
+  const workerTypeId = state.helperPayload?.session?.worker_type_id;
+  if (!workerTypeId) {
+    return 'auto';
+  }
+
+  return WORKER_TYPE_PROVIDER_MAP[workerTypeId] ?? 'auto';
 }
 
 function getSecureSessionStatus(

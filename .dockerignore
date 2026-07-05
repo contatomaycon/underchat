@@ -1,1 +1,9 @@
 node_modules
+.git
+.turbo
+.cache
+coverage
+
+apps/passkey_helper/build
+apps/passkey_helper/release
+apps/passkey_helper/dist

@@ -3,13 +3,16 @@ import {
   DEFAULT_CONNECTION_CONFIG,
   fetchLatestBaileysVersion,
   fetchLatestWaWebVersion,
+  importWhatsAppWebSessionToMultiFileAuthState,
   makeWASocket,
+  type WhatsAppWebSessionPackage,
   useMultiFileAuthState,
   type WASocket,
 } from '@whiskeysockets/baileys';
 import type WebSocket from 'ws';
 import QRCode from 'qrcode';
 import P from 'pino';
+import Redis from 'ioredis';
 import fs from 'node:fs';
 import path from 'node:path';
 import { request as httpsRequest, type Agent as HttpsAgent } from 'node:https';
@@ -22,7 +25,10 @@ import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysC
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
 import { IBaileysUpdateEvent } from '@core/common/interfaces/IBaileysUpdateEvent';
-import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureConnectionSession';
+import {
+  ISecureConnectionImportRequest,
+  ISecureConnectionSessionPackage,
+} from '@core/common/interfaces/ISecureConnectionSession';
 import { ElasticDatabaseService } from '@core/services/elasticDatabase.service';
 import { EWppConnection } from '@core/common/enums/EWppConnection';
 import { wppConnectionMappings } from '@core/mappings/wppConnection.mappings';
@@ -426,6 +432,7 @@ export class BaileysConnectionService {
     private readonly baileysIncomingMessageService: BaileysIncomingMessageService,
     @inject(BaileysHealthCheckService)
     private readonly healthCheckService: BaileysHealthCheckService,
+    @inject('Redis') private readonly redis: Redis,
     @inject(ConnectionLifecycleDebugService)
     private readonly connectionLifecycleDebugService: ConnectionLifecycleDebugService = {
       log: async () => undefined,
@@ -622,26 +629,213 @@ export class BaileysConnectionService {
   async importSecureSession(
     input: ISecureConnectionImportRequest
   ): Promise<IBaileysConnectionState> {
-    const payload: IBaileysConnectionState = {
-      code: ECodeMessage.badSession,
-      status: Status.disconnected,
+    this.debugTraceId = input.debug_trace_id ?? this.debugTraceId;
+    this.connectionAttemptId =
+      input.connection_attempt_id ?? this.connectionAttemptId;
+
+    this.logDebug('baileys.provider.secure_session_import.received', {
+      trace_id: input.debug_trace_id,
+      layer: 'baileys',
       worker_id: input.worker_id || getWorker(),
       account_id: input.account_id || getAccount(),
       worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: input.connection_attempt_id,
+      runtime_generation: input.runtime_generation,
+      format_version: input.format_version,
+      target_provider: input.target_provider,
+      has_payload_ref: Boolean(input.payload_ref),
+      has_payload_json: Boolean(input.payload_json),
+    });
+
+    try {
+      this.assertSecureSessionImportContext(input);
+      const sessionPackage = await this.resolveSecureSessionPackage(input);
+      const payloadSummary =
+        this.summarizeBaileysSecureSessionPayload(sessionPackage);
+
+      this.logDebug('baileys.provider.secure_session_import.payload_resolved', {
+        trace_id: input.debug_trace_id,
+        layer: 'baileys',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.baileys,
+        connection_attempt_id: input.connection_attempt_id,
+        runtime_generation: input.runtime_generation,
+        format_version: sessionPackage.format_version,
+        target_provider: sessionPackage.target_provider,
+        ...payloadSummary,
+      });
+
+      this.healthCheckService.stop();
+      this.clearReconnectRetryTimer();
+      await this.safeLogout(false).catch(() => undefined);
+      this.cancelAttempt(false);
+      this.prepareFolder();
+
+      const result = await importWhatsAppWebSessionToMultiFileAuthState({
+        folder: getFolder(),
+        sessionPackage: sessionPackage as WhatsAppWebSessionPackage,
+        overwrite: true,
+        cleanupBackupOnSuccess: false,
+      });
+
+      this.logDebug('baileys.provider.secure_session_import.files_imported', {
+        trace_id: input.debug_trace_id,
+        layer: 'baileys',
+        worker_id: getWorker(),
+        account_id: getAccount(),
+        worker_type_id: EWorkerType.baileys,
+        connection_attempt_id: input.connection_attempt_id,
+        runtime_generation: input.runtime_generation,
+        imported_file_count: result.importedFiles.length,
+        backup_created: Boolean(result.backupFolder),
+        format_version: result.formatVersion,
+        account_hint_present: Boolean(result.accountHint),
+      });
+
+      return await this.connect({
+        initial_connection: true,
+        allow_restore: true,
+        force_new: true,
+        requested_by_user: true,
+        type: EBaileysConnectionType.qrcode,
+        connection_attempt_id: input.connection_attempt_id,
+        debug_trace_id: input.debug_trace_id,
+      });
+    } catch (error) {
+      return this.failSecureSessionImport(input, error);
+    }
+  }
+
+  private assertSecureSessionImportContext(
+    input: ISecureConnectionImportRequest
+  ): void {
+    if (input.worker_id && input.worker_id !== getWorker()) {
+      throw new Error('secure_session_worker_mismatch');
+    }
+
+    if (input.account_id && input.account_id !== getAccount()) {
+      throw new Error('secure_session_account_mismatch');
+    }
+
+    if (input.source !== 'whatsapp_web') {
+      throw new Error('secure_session_source_unsupported');
+    }
+
+    if (
+      input.target_provider !== 'auto' &&
+      input.target_provider !== 'baileys'
+    ) {
+      throw new Error('secure_session_target_provider_mismatch');
+    }
+  }
+
+  private async resolveSecureSessionPackage(
+    input: ISecureConnectionImportRequest
+  ): Promise<ISecureConnectionSessionPackage> {
+    const rawPayload = input.payload_json?.trim()
+      ? input.payload_json
+      : input.payload_ref
+        ? await this.redis.get(input.payload_ref)
+        : undefined;
+
+    if (!rawPayload) {
+      throw new Error('secure_session_payload_not_found');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawPayload);
+    } catch {
+      throw new Error('secure_session_payload_invalid_json');
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('secure_session_payload_invalid');
+    }
+
+    const sessionPackage = parsed as ISecureConnectionSessionPackage;
+    if (
+      sessionPackage.source !== 'whatsapp_web' ||
+      !sessionPackage.format_version
+    ) {
+      throw new Error('secure_session_package_invalid');
+    }
+
+    if (!sessionPackage.target_provider) {
+      sessionPackage.target_provider = input.target_provider;
+    }
+
+    if (
+      sessionPackage.target_provider !== 'auto' &&
+      sessionPackage.target_provider !== 'baileys'
+    ) {
+      throw new Error('secure_session_target_provider_mismatch');
+    }
+
+    return sessionPackage;
+  }
+
+  private summarizeBaileysSecureSessionPayload(
+    sessionPackage: ISecureConnectionSessionPackage
+  ): Record<string, unknown> {
+    const payload =
+      sessionPackage.payload &&
+      typeof sessionPackage.payload === 'object' &&
+      !Array.isArray(sessionPackage.payload)
+        ? (sessionPackage.payload as Record<string, unknown>)
+        : {};
+    const baileysPayload =
+      payload.baileys_multi_file_auth_state &&
+      typeof payload.baileys_multi_file_auth_state === 'object' &&
+      !Array.isArray(payload.baileys_multi_file_auth_state)
+        ? (payload.baileys_multi_file_auth_state as Record<string, unknown>)
+        : undefined;
+    const files =
+      baileysPayload?.files &&
+      typeof baileysPayload.files === 'object' &&
+      !Array.isArray(baileysPayload.files)
+        ? (baileysPayload.files as Record<string, unknown>)
+        : payload.files &&
+            typeof payload.files === 'object' &&
+            !Array.isArray(payload.files)
+          ? (payload.files as Record<string, unknown>)
+          : undefined;
+
+    return {
+      has_baileys_multi_file_auth_state: Boolean(baileysPayload),
+      auth_file_count: files ? Object.keys(files).length : 0,
+      has_creds_json: Boolean(files?.['creds.json']),
+      has_wwebjs_local_auth: Boolean(payload.wwebjs_local_auth),
+      has_whatsmeow_sqlstore: Boolean(payload.whatsmeow_sqlstore),
+    };
+  }
+
+  private failSecureSessionImport(
+    input: ISecureConnectionImportRequest,
+    error: unknown
+  ): IBaileysConnectionState {
+    const errorMessage = this.normalizeSecureSessionImportErrorMessage(
+      error
+    ).slice(0, 240);
+    this.setStatus(Status.disconnected, ECodeMessage.badSession);
+    this.connectionEstablished = false;
+    this.connecting = false;
+
+    const payload = this.state(undefined, undefined, {
       worker_status_id: EWorkerStatus.disponible,
       connection_attempt_id: input.connection_attempt_id,
       runtime_generation: input.runtime_generation,
       debug_trace_id: input.debug_trace_id,
-      reason: 'secure_session_import_not_implemented',
-      error:
-        'Baileys secure session import requires the updated baileys session importer.',
+      reason: 'secure_session_import_failed',
+      error: errorMessage,
       session_ready: false,
       authenticated: false,
       can_send: false,
       can_receive_runtime: false,
-    };
+    });
 
-    this.logDebug('baileys.provider.secure_session_import_not_implemented', {
+    this.logDebug('baileys.provider.secure_session_import.failed', {
       trace_id: input.debug_trace_id,
       layer: 'baileys',
       worker_id: payload.worker_id,
@@ -651,11 +845,29 @@ export class BaileysConnectionService {
       runtime_generation: input.runtime_generation,
       format_version: input.format_version,
       target_provider: input.target_provider,
-      has_payload_ref: Boolean(input.payload_ref),
-      has_payload_json: Boolean(input.payload_json),
+      reason: errorMessage,
     });
 
+    this.publishSub(payload, true);
+    void this.notifyWorkerStatusSafely(payload, 'secure_session_import_failed');
     return payload;
+  }
+
+  private normalizeSecureSessionImportErrorMessage(error: unknown): string {
+    const rawMessage = getErrorMessage(error);
+    if (
+      rawMessage === 'baileys_import_payload_unsupported' ||
+      rawMessage === 'baileys_import_payload_missing' ||
+      rawMessage === 'baileys_import_missing_creds_file'
+    ) {
+      return 'Baileys secure import requires payload.baileys_multi_file_auth_state.files with creds.json. Browser profile/cookies alone cannot be imported by Baileys.';
+    }
+
+    if (rawMessage === 'baileys_import_missing_required_creds') {
+      return 'Baileys secure import received creds.json, but required key material is missing or invalid.';
+    }
+
+    return rawMessage;
   }
 
   clearUserRequestedDisconnect(): void {

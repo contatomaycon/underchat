@@ -30,7 +30,8 @@ exports.default = async function afterPack(context) {
     executablePath,
     [
       '#!/bin/sh',
-      'APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
+      'SELF=$(readlink -f -- "$0" 2>/dev/null || printf "%s\\n" "$0")',
+      'APP_DIR=$(CDPATH= cd -- "$(dirname -- "$SELF")" && pwd)',
       'unset WAYLAND_DISPLAY',
       'unset ELECTRON_RUN_AS_NODE',
       'unset ELECTRON_NO_ATTACH_CONSOLE',
