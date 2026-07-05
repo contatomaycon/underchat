@@ -57,6 +57,7 @@ export interface SecureSessionPackage {
 
 export interface UnderchatPasskeyBridge {
   confirmPasskey: () => Promise<PasskeyHelperActionResult>;
+  extractWhatsAppWebAuthDump: () => Promise<unknown>;
   getPasskeyAssertion: (publicKey: unknown) => Promise<unknown>;
   getSession: () => Promise<PasskeyHelperSessionPayload>;
   onSessionUpdated: (callback: () => void) => () => void;
@@ -78,6 +79,10 @@ const bridge: UnderchatPasskeyBridge = {
     ipcRenderer.invoke(
       'underchat-passkey:confirm'
     ) as Promise<PasskeyHelperActionResult>,
+  extractWhatsAppWebAuthDump: () =>
+    ipcRenderer.invoke(
+      'underchat-passkey:extract-wa-auth-dump'
+    ) as Promise<unknown>,
   getPasskeyAssertion,
   getSession: () =>
     ipcRenderer.invoke(

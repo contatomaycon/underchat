@@ -100,6 +100,7 @@ let autoConnectStarted = false;
 let secureConnectInFlight = false;
 let sessionRefreshInFlight = false;
 let pendingSessionRefresh = false;
+let automaticExtractionRetryTimerId: number | null = null;
 let state: OverlayState = {
   busy: false,
   connected: false,
@@ -571,14 +572,21 @@ async function connectSecureSessionToUnderchat(
         : 'A Underchat recebeu a sessao, mas ainda nao confirmou a conexao.',
     });
   } catch (error) {
+    const sanitizedError = sanitizeOverlayError(error);
+    const extractionError = isSecureSessionExtractionError(sanitizedError);
     setState({
       busy: false,
-      error: sanitizeOverlayError(error),
+      error: sanitizedError,
       message: null,
     });
+
+    if (options.automatic && extractionError) {
+      scheduleAutomaticExtractionRetry();
+    }
+
     await bridgeRef.updateSecureStatus({
-      error: sanitizeOverlayError(error),
-      status: 'failed',
+      error: sanitizedError,
+      status: extractionError ? 'wa_authenticated' : 'failed',
     });
   } finally {
     secureConnectInFlight = false;
@@ -685,16 +693,40 @@ function maybeAutoConnectSecureSession(): void {
   void connectSecureSessionToUnderchat({ automatic: true });
 }
 
+function scheduleAutomaticExtractionRetry(): void {
+  if (automaticExtractionRetryTimerId !== null) {
+    return;
+  }
+
+  automaticExtractionRetryTimerId = window.setTimeout(() => {
+    automaticExtractionRetryTimerId = null;
+    autoConnectStarted = false;
+    maybeAutoConnectSecureSession();
+  }, 10_000);
+}
+
+function isSecureSessionExtractionError(message: string): boolean {
+  return /extrair|extract|auth_dump|noise key|identity key|signed pre-key|registrationId/i.test(
+    message
+  );
+}
+
 async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
   const targetProvider = getSecureSessionTargetProvider();
-  const authDump = await extractWhatsAppWebAuthDump();
   const indexedDbNames = await listIndexedDbNames();
   const payload: JsonRecord = {
     href: location.href,
     indexed_db_names: indexedDbNames,
     user_agent: navigator.userAgent,
-    whatsapp_web_creds: authDump.creds,
-    whatsapp_web_session_summary: {
+  };
+  const needsWhatsAppWebCreds = targetProvider !== 'wwebjs';
+  const authDump = needsWhatsAppWebCreds
+    ? await extractWhatsAppWebAuthDump()
+    : null;
+
+  if (authDump) {
+    payload.whatsapp_web_creds = authDump.creds;
+    payload.whatsapp_web_session_summary = {
       app_state_sync_key_count: authDump.appStateSyncKeyCount,
       app_state_version_count: authDump.appStateVersionCount,
       has_account: Boolean(authDump.creds.account.accountSignatureKey),
@@ -706,10 +738,10 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
       ),
       has_signed_pre_key: Boolean(authDump.creds.signedPreKey.signature),
       registration_id_present: authDump.creds.registrationId > 0,
-    },
-  };
+    };
+  }
 
-  if (targetProvider === 'baileys' || targetProvider === 'auto') {
+  if (authDump && (targetProvider === 'baileys' || targetProvider === 'auto')) {
     payload.baileys_multi_file_auth_state = {
       files: {
         'creds.json': createBaileysCredsFile(authDump.creds),
@@ -719,7 +751,7 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
   }
 
   return {
-    account_hint: authDump.creds.me.id,
+    account_hint: authDump?.creds.me.id,
     created_at: new Date().toISOString(),
     format_version: 'underchat-wa-web-session-v1',
     payload,
@@ -729,7 +761,60 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
   };
 }
 
+function normalizeWhatsAppWebAuthDump(
+  value: unknown
+): WhatsAppWebAuthDump | null {
+  if (!isRecord(value) || !isRecord(value.creds)) {
+    return null;
+  }
+
+  const creds = value.creds;
+  if (
+    !isRecord(creds.account) ||
+    !isRecord(creds.me) ||
+    !isRecord(creds.noiseKey) ||
+    !isRecord(creds.signedIdentityKey) ||
+    !isRecord(creds.signedPreKey) ||
+    !isRecord(creds.signedPreKey.keyPair) ||
+    typeof creds.me.id !== 'string' ||
+    typeof creds.noiseKey.private !== 'string' ||
+    typeof creds.noiseKey.public !== 'string' ||
+    typeof creds.signedIdentityKey.private !== 'string' ||
+    typeof creds.signedIdentityKey.public !== 'string' ||
+    typeof creds.signedPreKey.signature !== 'string' ||
+    typeof creds.registrationId !== 'number'
+  ) {
+    return null;
+  }
+
+  return value as unknown as WhatsAppWebAuthDump;
+}
+
 async function extractWhatsAppWebAuthDump(): Promise<WhatsAppWebAuthDump> {
+  if (bridgeRef) {
+    try {
+      const pageWorldDump = await bridgeRef.extractWhatsAppWebAuthDump();
+      const normalizedDump = normalizeWhatsAppWebAuthDump(pageWorldDump);
+
+      if (normalizedDump) {
+        return normalizedDump;
+      }
+
+      console.warn(
+        '[underchat-passkey-helper] secure_session.auth_dump.page_world.invalid_shape'
+      );
+    } catch (error) {
+      console.warn(
+        '[underchat-passkey-helper] secure_session.auth_dump.page_world.error',
+        sanitizeOverlayError(error)
+      );
+    }
+  }
+
+  return extractWhatsAppWebAuthDumpFromIsolatedWorld();
+}
+
+async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWebAuthDump> {
   const signalDb = await openIndexedDb('signal-storage');
   let metaRows: unknown[] = [];
   let signedPreKeyRows: unknown[] = [];
@@ -1342,6 +1427,11 @@ function getTokenHashFromState(): string | null {
 }
 
 function resetSecureFlowRuntime(tokenHash: string): void {
+  if (automaticExtractionRetryTimerId !== null) {
+    window.clearTimeout(automaticExtractionRetryTimerId);
+    automaticExtractionRetryTimerId = null;
+  }
+
   currentTokenHash = tokenHash;
   helperOpenedReported = false;
   waAuthenticatedReported = false;

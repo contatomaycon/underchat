@@ -243,6 +243,38 @@ function registerIpcHandlers(): void {
     };
   });
 
+  ipcMain.handle('underchat-passkey:extract-wa-auth-dump', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      throw new Error('Janela do WhatsApp Web nao esta aberta.');
+    }
+
+    const currentUrl = mainWindow.webContents.getURL();
+    if (!currentUrl.startsWith(WHATSAPP_WEB_ORIGIN)) {
+      throw new Error('A janela atual nao esta no WhatsApp Web.');
+    }
+
+    logEvent(
+      'secure_session.auth_dump.page_world.start',
+      currentPairing?.context,
+      {
+        domain: getSafeDomain(currentUrl),
+      }
+    );
+
+    const dump = await mainWindow.webContents.executeJavaScript(
+      EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
+      false
+    );
+
+    logEvent(
+      'secure_session.auth_dump.page_world.done',
+      currentPairing?.context,
+      summarizeAuthDump(dump)
+    );
+
+    return dump;
+  });
+
   ipcMain.handle(
     'underchat-passkey:send-response',
     async (_event, passkeyResponse: unknown) => {
@@ -392,6 +424,431 @@ function countElectronCookies(payload: unknown): number {
   const cookies = (payload as Record<string, unknown>).electron_cookies;
   return Array.isArray(cookies) ? cookies.length : 0;
 }
+
+function summarizeAuthDump(dump: unknown): Record<string, unknown> {
+  const root =
+    dump && typeof dump === 'object' && !Array.isArray(dump)
+      ? (dump as Record<string, unknown>)
+      : {};
+  const creds =
+    root.creds && typeof root.creds === 'object' && !Array.isArray(root.creds)
+      ? (root.creds as Record<string, unknown>)
+      : {};
+  const noiseKey =
+    creds.noiseKey &&
+    typeof creds.noiseKey === 'object' &&
+    !Array.isArray(creds.noiseKey)
+      ? (creds.noiseKey as Record<string, unknown>)
+      : {};
+  const me =
+    creds.me && typeof creds.me === 'object' && !Array.isArray(creds.me)
+      ? (creds.me as Record<string, unknown>)
+      : {};
+
+  return {
+    app_state_sync_key_count: root.appStateSyncKeyCount ?? null,
+    app_state_version_count: root.appStateVersionCount ?? null,
+    has_creds: Boolean(root.creds),
+    has_me: typeof me.id === 'string' && me.id.length > 0,
+    has_noise_key:
+      typeof noiseKey.private === 'string' &&
+      noiseKey.private.length > 0 &&
+      typeof noiseKey.public === 'string' &&
+      noiseKey.public.length > 0,
+    registration_id_present: typeof creds.registrationId === 'number',
+  };
+}
+
+const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
+(async () => {
+  function isRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function bytesToBase64(value) {
+    const bytes = toUint8(value);
+    if (!bytes) return null;
+    let binary = '';
+    const step = 0x8000;
+    for (let index = 0; index < bytes.length; index += step) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(index, index + step)));
+    }
+    return btoa(binary);
+  }
+
+  function bytesToBase64Required(value, label) {
+    const base64 = bytesToBase64(value);
+    if (!base64) throw new Error('Nao foi possivel converter ' + label + ' para base64.');
+    return base64;
+  }
+
+  function toUint8(value) {
+    if (!value) return null;
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (ArrayBuffer.isView(value)) {
+      return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    }
+    if (typeof value === 'string') {
+      return Uint8Array.from(value, function(char) { return char.charCodeAt(0); });
+    }
+    if (isRecord(value) && value.type === 'Buffer' && typeof value.data === 'string') {
+      try {
+        return Uint8Array.from(atob(value.data), function(char) { return char.charCodeAt(0); });
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function getPath(value, path) {
+    let current = value;
+    for (const key of path) {
+      if (!isRecord(current)) return undefined;
+      current = current[key];
+    }
+    return current;
+  }
+
+  function toUint8FromPaths(value, paths) {
+    for (const path of paths) {
+      const bytes = toUint8(getPath(value, path));
+      if (bytes) return bytes;
+    }
+    return null;
+  }
+
+  function toPositiveInteger(value) {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+  }
+
+  function normalizeOptionalString(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  function openIndexedDb(name) {
+    return new Promise(function(resolve, reject) {
+      const request = indexedDB.open(name);
+      request.onsuccess = function() { resolve(request.result); };
+      request.onerror = function() { reject(request.error || new Error('indexeddb_open_failed:' + name)); };
+    });
+  }
+
+  function getAllFromIndexedDbStore(database, storeName) {
+    return new Promise(function(resolve, reject) {
+      try {
+        if (!database.objectStoreNames.contains(storeName)) {
+          resolve([]);
+          return;
+        }
+        const transaction = database.transaction(storeName, 'readonly');
+        const request = transaction.objectStore(storeName).getAll();
+        request.onsuccess = function() { resolve(Array.isArray(request.result) ? request.result : []); };
+        request.onerror = function() { reject(request.error || new Error('indexeddb_get_all_failed:' + storeName)); };
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async function getAllFromFirstStore(database, storeNames) {
+    for (const storeName of storeNames) {
+      const rows = await getAllFromIndexedDbStore(database, storeName);
+      if (rows.length > 0) return rows;
+    }
+    return [];
+  }
+
+  function createSignalMetaMap(rows) {
+    const metaMap = {};
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      const key = normalizeOptionalString(row.key);
+      if (!key) continue;
+      metaMap[key] = row.value;
+    }
+    return metaMap;
+  }
+
+  async function decryptRegistrationMaterial(value) {
+    if (!isRecord(value)) return null;
+    const encrypted = toUint8(value.value);
+    if (!value.encKey || !encrypted) return null;
+    const decrypted = await crypto.subtle.decrypt(
+      { counter: new Uint8Array(16), length: 128, name: 'AES-CTR' },
+      value.encKey,
+      new Uint8Array(encrypted)
+    );
+    return new Uint8Array(decrypted);
+  }
+
+  function unwrapModule(moduleValue) {
+    return moduleValue && moduleValue.default ? moduleValue.default : moduleValue;
+  }
+
+  function getWaModule(name) {
+    try {
+      if (typeof window.require === 'function') {
+        return unwrapModule(window.require(name));
+      }
+    } catch {}
+
+    try {
+      if (typeof require === 'function') {
+        return unwrapModule(require(name));
+      }
+    } catch {}
+
+    try {
+      if (typeof window.__d === 'function') {
+        let captured;
+        const sentinel = '__underchatWaProbe_' + Math.random().toString(36).slice(2);
+        window.__d(sentinel, [name], function(_target, _exports, _module, parentRequire) {
+          if (typeof parentRequire === 'function') captured = unwrapModule(parentRequire(name));
+        });
+        if (!captured && typeof window.__d.require === 'function') {
+          captured = unwrapModule(window.__d.require(name));
+        }
+        if (captured) return captured;
+      }
+    } catch {}
+
+    return null;
+  }
+
+  async function getRegistrationInfoViaInternalModule() {
+    const moduleValue = getWaModule('WAWebSignalStoreApi');
+    const signalStore = isRecord(moduleValue) ? moduleValue.waSignalStore : null;
+    const getter = isRecord(signalStore) ? signalStore.getRegistrationInfo : null;
+    if (typeof getter !== 'function') return null;
+    try {
+      return await getter();
+    } catch {
+      return null;
+    }
+  }
+
+  async function getNoiseInfoViaInternalModule() {
+    const moduleValue = getWaModule('WAWebUserPrefsInfoStore');
+    const waNoiseInfo = isRecord(moduleValue) ? moduleValue.waNoiseInfo : null;
+    const getter = isRecord(waNoiseInfo) ? waNoiseInfo.get : null;
+    if (typeof getter !== 'function') return null;
+
+    try {
+      const decrypted = await getter();
+      const staticKeyPair =
+        getPath(decrypted, ['staticKeyPair']) ||
+        getPath(decrypted, ['keyPair']) ||
+        decrypted;
+      const publicKey = toUint8FromPaths(staticKeyPair, [
+        ['pubKey'],
+        ['publicKey'],
+        ['public']
+      ]);
+      const privateKey = toUint8FromPaths(staticKeyPair, [
+        ['privKey'],
+        ['privateKey'],
+        ['private']
+      ]);
+      return publicKey && privateKey ? { private: privateKey, public: publicKey } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function getAdvSecretKeyBase64() {
+    const moduleValue = getWaModule('WAWebUserPrefsMultiDevice');
+    const getter = isRecord(moduleValue) ? moduleValue.getADVSecretKey : null;
+    if (typeof getter !== 'function') return null;
+    try {
+      const value = await getter();
+      if (typeof value === 'string') return value;
+      return bytesToBase64(value);
+    } catch {
+      return null;
+    }
+  }
+
+  async function getModelTableRows(moduleName, tableGetterName) {
+    const moduleValue = getWaModule(moduleName);
+    const getter = isRecord(moduleValue) ? moduleValue[tableGetterName] : null;
+    if (typeof getter !== 'function') return [];
+    try {
+      const table = getter();
+      const all = isRecord(table) ? table.all : null;
+      if (typeof all !== 'function') return [];
+      const rows = await all();
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function getLatestSignedPreKey(rows) {
+    const candidates = [];
+    for (const row of rows) {
+      if (!isRecord(row)) continue;
+      const keyPair = isRecord(row.keyPair) ? row.keyPair : null;
+      const keyId = toPositiveInteger(row.keyId);
+      const publicKey = keyPair ? toUint8FromPaths(keyPair, [['pubKey'], ['publicKey'], ['public']]) : null;
+      const privateKey = keyPair ? toUint8FromPaths(keyPair, [['privKey'], ['privateKey'], ['private']]) : null;
+      const signature = toUint8(row.signature);
+      if (!keyId || !publicKey || !privateKey || !signature) continue;
+      candidates.push({
+        keyId,
+        keyPair: {
+          private: bytesToBase64Required(privateKey, 'signed pre-key private'),
+          public: bytesToBase64Required(publicKey, 'signed pre-key public')
+        },
+        signature: bytesToBase64Required(signature, 'signed pre-key signature')
+      });
+    }
+    candidates.sort(function(left, right) { return left.keyId - right.keyId; });
+    return candidates[candidates.length - 1] || null;
+  }
+
+  function extractAdvAccount(value) {
+    if (!isRecord(value)) return null;
+    const accountSignature = bytesToBase64(value.accountSignature);
+    const accountSignatureKey = bytesToBase64(value.accountSignatureKey);
+    const details = bytesToBase64(value.details);
+    const deviceSignature = bytesToBase64(value.deviceSignature);
+    if (!accountSignature || !accountSignatureKey || !details || !deviceSignature) return null;
+    return { accountSignature, accountSignatureKey, details, deviceSignature };
+  }
+
+  function readLocalStorageJson(key) {
+    const value = localStorage.getItem(key);
+    if (value === null) return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  function widValueToString(value) {
+    if (typeof value === 'string') return value;
+    if (!isRecord(value)) return null;
+    return (
+      normalizeOptionalString(value._serialized) ||
+      normalizeOptionalString(value.serialized) ||
+      normalizeOptionalString(value.id) ||
+      normalizeOptionalString(value.user)
+    );
+  }
+
+  function widToJid(value) {
+    const wid = widValueToString(value);
+    if (!wid) return null;
+    const atIndex = wid.lastIndexOf('@');
+    const head = atIndex >= 0 ? wid.slice(0, atIndex) : wid;
+    const server = atIndex >= 0 ? wid.slice(atIndex + 1) : 's.whatsapp.net';
+    const colonIndex = head.indexOf(':');
+    const userAndAgent = colonIndex >= 0 ? head.slice(0, colonIndex) : head;
+    const device = colonIndex >= 0 ? Number(head.slice(colonIndex + 1)) : 0;
+    const dotIndex = userAndAgent.indexOf('.');
+    const user = dotIndex >= 0 ? userAndAgent.slice(0, dotIndex) : userAndAgent;
+    if (!user || !Number.isFinite(device)) return null;
+    return user + ':' + device + '@' + server;
+  }
+
+  function readMeFromModules() {
+    const connModel = getWaModule('WAWebConnModel');
+    const conn = isRecord(connModel) ? connModel.Conn : null;
+    if (!isRecord(conn)) return { id: null, lid: null };
+    return {
+      id: widToJid(conn.wid || conn.me || conn.meUser),
+      lid: widToJid(conn.lid || conn.meLid || conn.lidWid)
+    };
+  }
+
+  if (!location.origin.startsWith('https://web.whatsapp.com')) {
+    throw new Error('A janela atual nao esta no WhatsApp Web.');
+  }
+
+  const signalDb = await openIndexedDb('signal-storage');
+  let metaRows = [];
+  let signedPreKeyRows = [];
+  try {
+    metaRows = await getAllFromFirstStore(signalDb, ['signal-meta-store']);
+    signedPreKeyRows = await getAllFromFirstStore(signalDb, ['signed-prekey-store', 'signed-pre-key-store']);
+  } finally {
+    signalDb.close();
+  }
+
+  const metaMap = createSignalMetaMap(metaRows);
+  const registrationInfo = await getRegistrationInfoViaInternalModule();
+  const staticPublicKey =
+    (await decryptRegistrationMaterial(metaMap.signal_static_pubkey)) ||
+    toUint8FromPaths(registrationInfo, [
+      ['identityKeyPair', 'pubKey'],
+      ['identityKeyPair', 'publicKey'],
+      ['identityKeyPair', 'public']
+    ]);
+  const staticPrivateKey =
+    (await decryptRegistrationMaterial(metaMap.signal_static_privkey)) ||
+    toUint8FromPaths(registrationInfo, [
+      ['identityKeyPair', 'privKey'],
+      ['identityKeyPair', 'privateKey'],
+      ['identityKeyPair', 'private']
+    ]);
+  const noise = await getNoiseInfoViaInternalModule();
+  const signedPreKey = getLatestSignedPreKey(signedPreKeyRows);
+  const account = extractAdvAccount(metaMap.adv_signed_identity);
+  const registrationId =
+    toPositiveInteger(metaMap.signal_reg_id) ||
+    toPositiveInteger(getPath(registrationInfo, ['registrationId'])) ||
+    toPositiveInteger(getPath(registrationInfo, ['regId']));
+  const moduleMe = readMeFromModules();
+  const meId = widToJid(readLocalStorageJson('last-wid-md')) || moduleMe.id;
+  const meLid = widToJid(readLocalStorageJson('WALid')) || moduleMe.lid;
+  const meDisplayName = normalizeOptionalString(readLocalStorageJson('me-display-name'));
+
+  if (!registrationId) throw new Error('Nao foi possivel extrair o registrationId da sessao.');
+  if (!noise) throw new Error('Nao foi possivel extrair a noise key da sessao.');
+  if (!staticPublicKey || !staticPrivateKey) throw new Error('Nao foi possivel extrair a identity key da sessao.');
+  if (!signedPreKey) throw new Error('Nao foi possivel extrair a signed pre-key da sessao.');
+  if (!account) throw new Error('Nao foi possivel extrair a identidade ADV da sessao.');
+  if (!meId) throw new Error('Nao foi possivel identificar o JID conectado.');
+
+  const syncKeyRows = await getModelTableRows('WAWebSchemaSyncKeys', 'getSyncKeysTable');
+  const versionRows = await getModelTableRows('WAWebSchemaCollectionVersion', 'getCollectionVersionTable');
+  const preKeyId =
+    toPositiveInteger(metaMap.signal_prekey_id) ||
+    toPositiveInteger(metaMap.signal_pre_key_id) ||
+    signedPreKey.keyId + 1;
+
+  return {
+    appStateSyncKeyCount: syncKeyRows.length,
+    appStateVersionCount: versionRows.length,
+    creds: {
+      account,
+      advSecretKey: await getAdvSecretKeyBase64(),
+      firstUnuploadedPreKeyId: preKeyId,
+      me: Object.assign(
+        { id: meId },
+        meLid ? { lid: meLid } : {},
+        meDisplayName ? { name: meDisplayName } : {}
+      ),
+      nextPreKeyId: preKeyId,
+      noiseKey: {
+        private: bytesToBase64Required(noise.private, 'noise private key'),
+        public: bytesToBase64Required(noise.public, 'noise public key')
+      },
+      platform: 'web',
+      registrationId,
+      signedIdentityKey: {
+        private: bytesToBase64Required(staticPrivateKey, 'identity private key'),
+        public: bytesToBase64Required(staticPublicKey, 'identity public key')
+      },
+      signedPreKey
+    }
+  };
+})()
+`;
 
 async function enrichSecureSessionPackage(
   sessionPackage: SecureSessionPackage
