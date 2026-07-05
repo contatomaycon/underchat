@@ -26,6 +26,7 @@ import { CentrifugoService } from '@core/services/centrifugo.service';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { WorkerService } from '@core/services/worker.service';
 import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
+import { IWorkerRuntimeHealthResponseProto } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 
 const SECURE_HELPER_PROTOCOL = 'underchat-authenticator';
 const SECURE_HELPER_HOST = 'secure';
@@ -37,6 +38,18 @@ const PAYLOAD_TTL_SECONDS = Math.max(
   SESSION_TTL_SECONDS,
   Number(process.env.SECURE_CONNECTION_PAYLOAD_TTL_SECONDS) || 1800
 );
+const SECURE_IMPORT_VALIDATION_TIMEOUT_MS = Math.max(
+  20_000,
+  Number(process.env.SECURE_CONNECTION_WORKER_VALIDATION_TIMEOUT_MS) || 60_000
+);
+const SECURE_IMPORT_VALIDATION_STABLE_MS = Math.max(
+  5_000,
+  Number(process.env.SECURE_CONNECTION_WORKER_VALIDATION_STABLE_MS) || 20_000
+);
+const SECURE_IMPORT_VALIDATION_POLL_MS = Math.max(
+  500,
+  Number(process.env.SECURE_CONNECTION_WORKER_VALIDATION_POLL_MS) || 1_000
+);
 
 const SECURE_CONNECTION_STATUSES_SET = new Set<string>(
   SECURE_CONNECTION_STATUSES
@@ -45,6 +58,8 @@ const SECURE_CONNECTION_STATUSES_SET = new Set<string>(
 const SECURE_CONNECTION_HELPER_STATUSES_SET = new Set<string>([
   'helper_opened',
   'wa_authenticated',
+  'wa_syncing',
+  'wa_ready',
   'uploading',
   'failed',
 ]);
@@ -52,13 +67,17 @@ const SECURE_CONNECTION_STATUS_ORDER: Record<SecureConnectionStatus, number> = {
   created: 0,
   helper_opened: 1,
   wa_authenticated: 2,
+  wa_syncing: 2,
+  wa_ready: 2,
   uploading: 3,
   session_received: 4,
   importing: 5,
+  validating_worker: 6,
   connected: 6,
-  failed: 6,
-  expired: 6,
-  cancelled: 6,
+  connected_confirmed: 7,
+  failed: 7,
+  expired: 7,
+  cancelled: 7,
 };
 
 const SECURE_CONNECTION_ALLOWED_WORKER_STATUSES = new Set<string>([
@@ -472,35 +491,91 @@ export class WorkerSecureConnectionSessionUseCase {
         serverId,
         importRequest
       );
-      const importReadiness = this.resolveImportedConnectionReadiness(imported);
-      if (importReadiness.ready) {
-        await this.persistConnectedWorker(importing, imported, importReadiness);
+
+      const importedReadiness =
+        this.resolveImportedConnectionReadiness(imported);
+      const validating = await this.updateSession(importing, {
+        status: 'validating_worker',
+        phone: importedReadiness.phone ?? imported.phone,
+        imported_at: new Date().toISOString(),
+      });
+      await this.publishStatus(validating);
+      this.logFlow(
+        'manager.secure_connection.import.validation_started',
+        validating,
+        {
+          trace_id: input.debugTraceId,
+          imported_status: imported.status,
+          imported_code: imported.code,
+          imported_reason: imported.reason,
+          session_ready: imported.session_ready,
+          authenticated: imported.authenticated,
+          can_send: imported.can_send,
+          can_receive_runtime: imported.can_receive_runtime,
+          worker_status_id: imported.worker_status_id,
+          immediate_readiness_ready: importedReadiness.ready,
+          immediate_readiness_reason: importedReadiness.reason,
+          phone_present: Boolean(imported.phone),
+          validation_timeout_ms: SECURE_IMPORT_VALIDATION_TIMEOUT_MS,
+          validation_stable_ms: SECURE_IMPORT_VALIDATION_STABLE_MS,
+        }
+      );
+
+      const validation = await this.waitForStableImportedRuntimeHealth(
+        validating,
+        serverId,
+        imported,
+        importedReadiness,
+        input.debugTraceId
+      );
+
+      if (validation.ready) {
+        await this.persistConnectedWorker(
+          validating,
+          validation.imported,
+          validation
+        );
       }
 
-      const connected = await this.updateSession(importing, {
-        status: importReadiness.ready ? 'connected' : 'failed',
-        phone: importReadiness.phone ?? imported.phone,
-        imported_at: new Date().toISOString(),
-        error: importReadiness.ready
+      const connected = await this.updateSession(validating, {
+        status: validation.ready ? 'connected_confirmed' : 'failed',
+        phone: validation.phone ?? importedReadiness.phone ?? imported.phone,
+        error: validation.ready
           ? undefined
-          : this.resolveImportFailureMessage(imported, importReadiness),
-        fail_reason: importReadiness.ready ? undefined : 'worker_import_failed',
+          : this.resolveImportFailureMessage(imported, validation),
+        fail_reason: validation.ready
+          ? undefined
+          : (validation.reason ?? 'worker_runtime_validation_failed'),
       });
       await this.publishStatus(connected);
-      this.logFlow('manager.secure_connection.import.grpc_result', connected, {
-        trace_id: input.debugTraceId,
-        imported_status: imported.status,
-        imported_code: imported.code,
-        imported_reason: imported.reason,
-        session_ready: imported.session_ready,
-        authenticated: imported.authenticated,
-        can_send: imported.can_send,
-        can_receive_runtime: imported.can_receive_runtime,
-        worker_status_id: imported.worker_status_id,
-        readiness_ready: importReadiness.ready,
-        readiness_reason: importReadiness.reason,
-        phone_present: Boolean(imported.phone),
-      });
+      this.logFlow(
+        'manager.secure_connection.import.validation_result',
+        connected,
+        {
+          trace_id: input.debugTraceId,
+          imported_status: imported.status,
+          imported_code: imported.code,
+          imported_reason: imported.reason,
+          session_ready: imported.session_ready,
+          authenticated: imported.authenticated,
+          can_send: imported.can_send,
+          can_receive_runtime: imported.can_receive_runtime,
+          worker_status_id: imported.worker_status_id,
+          immediate_readiness_ready: importedReadiness.ready,
+          immediate_readiness_reason: importedReadiness.reason,
+          validation_ready: validation.ready,
+          validation_reason: validation.reason,
+          validation_elapsed_ms: validation.elapsedMs,
+          health_provider_state: validation.health?.provider_state,
+          health_degraded_reason: validation.health?.degraded_reason,
+          health_session_ready: validation.health?.session_ready,
+          health_authenticated: validation.health?.authenticated,
+          health_can_send: validation.health?.can_send,
+          health_can_receive_runtime: validation.health?.can_receive_runtime,
+          health_phone_present: Boolean(validation.health?.phone),
+          phone_present: Boolean(imported.phone),
+        }
+      );
 
       return this.toResponse(connected);
     } catch (error) {
@@ -663,7 +738,7 @@ export class WorkerSecureConnectionSessionUseCase {
 
   private isTerminalStatus(status: SecureConnectionStatus): boolean {
     return (
-      status === 'connected' ||
+      status === 'connected_confirmed' ||
       status === 'failed' ||
       status === 'expired' ||
       status === 'cancelled'
@@ -759,6 +834,270 @@ export class WorkerSecureConnectionSessionUseCase {
       ready: false,
       reason: `secure_import_not_ready:${missing.join(',')}`,
     };
+  }
+
+  private async waitForStableImportedRuntimeHealth(
+    session: ISecureConnectionSession,
+    serverId: string,
+    imported: IBaileysConnectionState,
+    importedReadiness: { phone: string | null; reason?: string },
+    debugTraceId?: string
+  ): Promise<{
+    ready: boolean;
+    phone: string | null;
+    reason?: string;
+    health?: IWorkerRuntimeHealthResponseProto;
+    imported: IBaileysConnectionState;
+    elapsedMs: number;
+  }> {
+    const startedAt = Date.now();
+    const deadlineAt = startedAt + SECURE_IMPORT_VALIDATION_TIMEOUT_MS;
+    let stableSince: number | null = null;
+    let lastHealth: IWorkerRuntimeHealthResponseProto | undefined;
+    let lastReason =
+      importedReadiness.reason ?? 'secure_import_runtime_validation_pending';
+
+    while (Date.now() <= deadlineAt) {
+      let health: IWorkerRuntimeHealthResponseProto | undefined;
+
+      try {
+        health = await this.workerGrpcClientService.runtimeHealth(serverId, {
+          worker_id: session.worker_id,
+        });
+      } catch (error) {
+        lastReason = `runtime_health_error:${this.sanitizeError(error)}`;
+        this.logFlow(
+          'manager.secure_connection.import.validation_probe_error',
+          session,
+          {
+            trace_id: debugTraceId,
+            reason: lastReason,
+            elapsed_ms: Date.now() - startedAt,
+            stable_elapsed_ms:
+              stableSince === null ? 0 : Date.now() - stableSince,
+          }
+        );
+
+        if (stableSince !== null) {
+          break;
+        }
+
+        await this.delay(SECURE_IMPORT_VALIDATION_POLL_MS);
+        continue;
+      }
+
+      lastHealth = health;
+      const readiness = this.resolveRuntimeHealthReadiness(
+        health,
+        session,
+        importedReadiness.phone ?? imported.phone
+      );
+      lastReason = readiness.reason ?? 'secure_import_runtime_not_ready';
+
+      this.logFlow(
+        'manager.secure_connection.import.validation_probe',
+        session,
+        {
+          trace_id: debugTraceId,
+          ready: readiness.ready,
+          reason: readiness.reason,
+          elapsed_ms: Date.now() - startedAt,
+          stable_elapsed_ms:
+            stableSince === null ? 0 : Date.now() - stableSince,
+          stable_required_ms: SECURE_IMPORT_VALIDATION_STABLE_MS,
+          worker_type_id: health.worker_type_id,
+          runtime_generation: health.runtime_generation,
+          session_ready: health.session_ready,
+          authenticated: health.authenticated,
+          can_send: health.can_send,
+          can_receive_runtime: health.can_receive_runtime,
+          activated: health.activated,
+          standby: health.standby,
+          provider_state: health.provider_state,
+          degraded_reason: health.degraded_reason,
+          kafka_unhealthy: health.kafka_unhealthy,
+          phone_present: Boolean(readiness.phone),
+          error_present: Boolean(health.error),
+        }
+      );
+
+      if (readiness.hardFailure) {
+        break;
+      }
+
+      if (readiness.ready) {
+        stableSince ??= Date.now();
+        if (Date.now() - stableSince >= SECURE_IMPORT_VALIDATION_STABLE_MS) {
+          return {
+            ready: true,
+            phone: readiness.phone,
+            health,
+            imported: this.buildValidatedConnectionState(
+              session,
+              imported,
+              health,
+              readiness.phone
+            ),
+            elapsedMs: Date.now() - startedAt,
+          };
+        }
+      } else if (stableSince !== null) {
+        lastReason = `secure_import_runtime_health_lost:${readiness.reason}`;
+        break;
+      }
+
+      await this.delay(SECURE_IMPORT_VALIDATION_POLL_MS);
+    }
+
+    return {
+      ready: false,
+      phone:
+        this.normalizeConnectionPhone(lastHealth?.phone) ??
+        importedReadiness.phone ??
+        this.normalizeConnectionPhone(imported.phone),
+      reason:
+        lastReason === 'secure_import_runtime_validation_pending'
+          ? 'secure_import_runtime_validation_timeout'
+          : lastReason,
+      health: lastHealth,
+      imported,
+      elapsedMs: Date.now() - startedAt,
+    };
+  }
+
+  private resolveRuntimeHealthReadiness(
+    health: IWorkerRuntimeHealthResponseProto | undefined,
+    session: ISecureConnectionSession,
+    phoneFallback?: string | null
+  ): {
+    hardFailure: boolean;
+    phone: string | null;
+    ready: boolean;
+    reason?: string;
+  } {
+    const phone =
+      this.normalizeConnectionPhone(health?.phone) ??
+      this.normalizeConnectionPhone(phoneFallback);
+    const providerState = (health?.provider_state ?? '').toLowerCase();
+    const healthGeneration = this.normalizeOptionalNumber(
+      health?.runtime_generation
+    );
+    const generationMismatch =
+      session.runtime_generation !== undefined &&
+      healthGeneration !== undefined &&
+      session.runtime_generation !== healthGeneration;
+    const hardFailure = Boolean(
+      health?.error ||
+      health?.degraded_reason ||
+      health?.kafka_unhealthy === true ||
+      generationMismatch
+    );
+    const ready =
+      health?.session_ready === true &&
+      health?.can_send === true &&
+      health?.can_receive_runtime === true &&
+      health?.authenticated === true &&
+      health?.activated === true &&
+      health?.standby !== true &&
+      (!health?.worker_type_id ||
+        health.worker_type_id === session.worker_type_id) &&
+      health?.kafka_unhealthy !== true &&
+      !health?.error &&
+      !health?.degraded_reason &&
+      providerState === 'connected' &&
+      Boolean(phone) &&
+      !generationMismatch;
+
+    if (ready) {
+      return { hardFailure: false, phone, ready: true };
+    }
+
+    const missing: string[] = [];
+    if (health?.session_ready !== true) missing.push('session_ready');
+    if (health?.authenticated !== true) missing.push('authenticated');
+    if (health?.can_send !== true) missing.push('can_send');
+    if (health?.can_receive_runtime !== true) {
+      missing.push('can_receive_runtime');
+    }
+    if (health?.activated !== true) missing.push('activated');
+    if (health?.standby === true) missing.push('standby');
+    if (
+      health?.worker_type_id &&
+      health.worker_type_id !== session.worker_type_id
+    ) {
+      missing.push('worker_type_mismatch');
+    }
+    if (providerState !== 'connected') missing.push('provider_state');
+    if (health?.kafka_unhealthy === true) missing.push('kafka_unhealthy');
+    if (health?.error) missing.push('runtime_error');
+    if (health?.degraded_reason) missing.push('degraded_reason');
+    if (generationMismatch) missing.push('runtime_generation_mismatch');
+    if (!phone) missing.push('phone');
+
+    return {
+      hardFailure,
+      phone,
+      ready: false,
+      reason: `secure_import_runtime_not_ready:${missing.join(',')}`,
+    };
+  }
+
+  private buildValidatedConnectionState(
+    session: ISecureConnectionSession,
+    imported: IBaileysConnectionState,
+    health: IWorkerRuntimeHealthResponseProto,
+    phone: string | null
+  ): IBaileysConnectionState {
+    return {
+      ...imported,
+      account_id: imported.account_id || session.account_id,
+      authenticated: true,
+      can_receive_runtime: true,
+      can_send: true,
+      code: imported.code ?? ECodeMessage.connectionEstablished,
+      connection_attempt_id:
+        imported.connection_attempt_id ?? session.connection_attempt_id,
+      debug_trace_id: imported.debug_trace_id,
+      degraded_reason: undefined,
+      error: undefined,
+      last_probe_at: health.last_probe_at,
+      phone: phone ?? undefined,
+      probe_latency_ms: this.normalizeOptionalNumber(health.probe_latency_ms),
+      provider_state: health.provider_state || 'connected',
+      runtime_generation:
+        this.normalizeOptionalNumber(health.runtime_generation) ??
+        imported.runtime_generation ??
+        session.runtime_generation,
+      session_ready: true,
+      status: imported.status || 'connected',
+      worker_id: imported.worker_id || session.worker_id,
+      worker_status_id: EWorkerStatus.online,
+      worker_type_id: imported.worker_type_id ?? session.worker_type_id,
+    };
+  }
+
+  private normalizeConnectionPhone(value?: string | null): string | null {
+    const phone = value?.trim();
+    return phone || null;
+  }
+
+  private normalizeOptionalNumber(value: unknown): number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private resolveImportFailureMessage(

@@ -70,7 +70,10 @@ import {
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
 import { IWorkerConnectionQrCodeQueueMessage } from '@core/common/interfaces/IWorkerConnectionQrCodeQueueMessage';
 import { WorkerConnectionQrCodeRedisQueueService } from '@core/services/workerConnectionQrCodeRedisQueue.service';
-import { IWorkerRuntimeHealthResponseProto } from '@core/common/interfaces/IWorkerRuntimeActivationProto';
+import {
+  IWorkerRuntimeHealthRequestProto,
+  IWorkerRuntimeHealthResponseProto,
+} from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 import {
   ConnectionLifecycleDebugContext,
   ConnectionLifecycleDebugService,
@@ -2428,6 +2431,57 @@ export class WorkerCommandHandlerService {
       reason: response.reason,
       session_ready: response.session_ready,
       authenticated: response.authenticated,
+    });
+
+    return response;
+  }
+
+  async runtimeHealth(
+    input: IWorkerRuntimeHealthRequestProto
+  ): Promise<IWorkerRuntimeHealthResponseProto> {
+    const workerId = input.worker_id?.trim();
+    const warmPoolId = input.warm_pool_id?.trim();
+
+    if (!workerId && !warmPoolId) {
+      throw new Error('Missing required fields: worker_id or warm_pool_id');
+    }
+
+    this.logDebug('service.command_handler.runtime_health.start', {
+      layer: 'service',
+      worker_id: workerId,
+      warm_pool_id: warmPoolId,
+    });
+
+    const workerType = workerId
+      ? await this.resolveWorkerTypeForConnection(workerId)
+      : undefined;
+    const response = await this.workerBaileysGrpcClientService.runtimeHealth(
+      workerId || warmPoolId || '',
+      {
+        worker_id: workerId,
+        warm_pool_id: warmPoolId,
+      },
+      workerType
+    );
+
+    this.logDebug('service.command_handler.runtime_health.done', {
+      layer: 'service',
+      worker_id: response.worker_id || workerId,
+      warm_pool_id: response.warm_pool_id || warmPoolId,
+      resolved_worker_type_id: workerType,
+      worker_type_id: response.worker_type_id,
+      runtime_generation: response.runtime_generation,
+      session_ready: response.session_ready,
+      authenticated: response.authenticated,
+      can_send: response.can_send,
+      can_receive_runtime: response.can_receive_runtime,
+      activated: response.activated,
+      standby: response.standby,
+      provider_state: response.provider_state,
+      degraded_reason: response.degraded_reason,
+      kafka_unhealthy: response.kafka_unhealthy,
+      phone_present: Boolean(response.phone),
+      error_present: Boolean(response.error),
     });
 
     return response;

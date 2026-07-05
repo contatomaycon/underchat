@@ -17,7 +17,7 @@ const emit = defineEmits<{
 
 const statusTone = computed(() => {
   if (!props.session) return 'waiting';
-  if (props.session.status === 'connected') return 'success';
+  if (props.session.status === 'connected_confirmed') return 'success';
   if (
     props.session.status === 'failed' ||
     props.session.status === 'expired' ||
@@ -28,7 +28,11 @@ const statusTone = computed(() => {
   if (
     props.session.status === 'importing' ||
     props.session.status === 'session_received' ||
-    props.session.status === 'uploading'
+    props.session.status === 'uploading' ||
+    props.session.status === 'wa_syncing' ||
+    props.session.status === 'wa_ready' ||
+    props.session.status === 'validating_worker' ||
+    props.session.status === 'connected'
   ) {
     return 'busy';
   }
@@ -42,10 +46,14 @@ const statusTitleKey = computed(() => {
     created: 'secure_connection_created_title',
     helper_opened: 'secure_connection_helper_opened_title',
     wa_authenticated: 'secure_connection_whatsapp_ready_title',
+    wa_syncing: 'secure_connection_whatsapp_syncing_title',
+    wa_ready: 'secure_connection_whatsapp_stable_title',
     uploading: 'secure_connection_uploading_title',
     session_received: 'secure_connection_received_title',
     importing: 'secure_connection_importing_title',
-    connected: 'secure_connection_connected_title',
+    validating_worker: 'secure_connection_validating_title',
+    connected: 'secure_connection_validating_title',
+    connected_confirmed: 'secure_connection_connected_title',
     failed: 'secure_connection_failed_title',
     expired: 'secure_connection_expired_title',
     cancelled: 'secure_connection_cancelled_title',
@@ -61,10 +69,14 @@ const statusDescriptionKey = computed(() => {
     created: 'secure_connection_created_description',
     helper_opened: 'secure_connection_helper_opened_description',
     wa_authenticated: 'secure_connection_whatsapp_ready_description',
+    wa_syncing: 'secure_connection_whatsapp_syncing_description',
+    wa_ready: 'secure_connection_whatsapp_stable_description',
     uploading: 'secure_connection_uploading_description',
     session_received: 'secure_connection_received_description',
     importing: 'secure_connection_importing_description',
-    connected: 'secure_connection_connected_description',
+    validating_worker: 'secure_connection_validating_description',
+    connected: 'secure_connection_validating_description',
+    connected_confirmed: 'secure_connection_connected_description',
     failed: 'secure_connection_failed_description',
     expired: 'secure_connection_expired_description',
     cancelled: 'secure_connection_cancelled_description',
@@ -76,7 +88,7 @@ const statusDescriptionKey = computed(() => {
 const canOpenHelper = computed(
   () =>
     Boolean(props.session?.deep_link) &&
-    props.session?.status !== 'connected' &&
+    props.session?.status !== 'connected_confirmed' &&
     props.session?.status !== 'cancelled'
 );
 </script>
@@ -153,7 +165,7 @@ const canOpenHelper = computed(
       </VBtn>
 
       <VBtn
-        v-if="session && session.status !== 'connected'"
+        v-if="session && session.status !== 'connected_confirmed'"
         variant="tonal"
         color="error"
         @click="emit('cancel')"

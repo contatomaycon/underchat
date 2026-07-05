@@ -419,7 +419,9 @@ function isSecureConnectionTerminal(
 ): boolean {
   return Boolean(
     session &&
-    ['connected', 'failed', 'expired', 'cancelled'].includes(session.status)
+    ['connected_confirmed', 'failed', 'expired', 'cancelled'].includes(
+      session.status
+    )
   );
 }
 
@@ -457,7 +459,7 @@ function applySecureConnectionSession(
   connectionRuntimeGeneration.value =
     session.runtime_generation ?? connectionRuntimeGeneration.value;
 
-  if (session.status === 'connected') {
+  if (session.status === 'connected_confirmed') {
     statusConnection.value = EBaileysConnectionStatus.connected;
     statusCode.value = ECodeMessage.connectionEstablished;
     workerStatusId.value = EWorkerStatus.online;

@@ -462,7 +462,7 @@ function registerIpcHandlers(): void {
         currentPairing.context
       ).catch(() => currentPairing?.session ?? null);
       const nextStatus = normalizeSessionStatus(currentPairing.session);
-      if (nextStatus === 'connected' || result.connected === true) {
+      if (nextStatus === 'connected_confirmed') {
         scheduleConnectedCleanupAndClose('secure_session_connected');
       }
       mainWindow?.webContents.send('underchat-authenticator:session-updated');

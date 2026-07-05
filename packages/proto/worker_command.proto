@@ -15,6 +15,7 @@ service WorkerCommand {
   rpc RegisterS3BackupFallbackUpload(RegisterS3BackupFallbackUploadRequest) returns (WorkerCommandResponse);
   rpc ValidatePhone(PhoneValidationRequest) returns (PhoneValidationResponse);
   rpc ImportSecureSession(SecureSessionImportRequest) returns (SecureSessionImportResponse);
+  rpc RuntimeHealth(WorkerRuntimeHealthRequest) returns (WorkerRuntimeHealthResponse);
   rpc CreateWarmWorker(CreateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
   rpc DeleteWarmWorker(DeleteWarmWorkerRequest) returns (WorkerCommandResponse);
   rpc ActivateWarmWorker(ActivateWarmWorkerRequest) returns (WarmWorkerCommandResponse);
@@ -207,6 +208,37 @@ message SecureSessionImportResponse {
   string degraded_reason = 18;
   string last_probe_at = 19;
   int32 probe_latency_ms = 20;
+}
+
+message WorkerRuntimeHealthRequest {
+  string worker_id = 1;
+  string warm_pool_id = 2;
+}
+
+message WorkerRuntimeHealthResponse {
+  string worker_id = 1;
+  string account_id = 2;
+  string warm_pool_id = 3;
+  bool standby = 4;
+  bool activated = 5;
+  bool ready = 6;
+  bool has_session = 7;
+  bool has_qr = 8;
+  string error = 9;
+  string worker_type_id = 10;
+  int32 runtime_generation = 11;
+  string runtime_state = 12;
+  bool qr_stream_ready = 13;
+  bool session_ready = 14;
+  bool can_send = 15;
+  bool can_receive_runtime = 16;
+  bool authenticated = 17;
+  string provider_state = 18;
+  string degraded_reason = 19;
+  string last_probe_at = 20;
+  int32 probe_latency_ms = 21;
+  string phone = 22;
+  bool kafka_unhealthy = 23;
 }
 
 message CreateWarmWorkerRequest {

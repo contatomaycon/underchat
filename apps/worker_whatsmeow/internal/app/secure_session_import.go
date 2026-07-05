@@ -81,7 +81,7 @@ type secureSessionWhatsAppWebCreds struct {
 }
 
 const (
-	secureImportStableReadyWindow       = 8 * time.Second
+	secureImportStableReadyWindow       = 30 * time.Second
 	secureImportStableReadyPollInterval = 500 * time.Millisecond
 )
 

@@ -81,7 +81,7 @@ interface WhatsAppReadinessSnapshot {
 }
 
 const TERMINAL_SECURE_STATUSES = new Set([
-  'connected',
+  'connected_confirmed',
   'failed',
   'expired',
   'cancelled',
@@ -90,8 +90,10 @@ const BUSY_SECURE_STATUSES = new Set([
   'uploading',
   'session_received',
   'importing',
+  'validating_worker',
+  'connected',
 ]);
-const AUTO_CONNECT_READY_CHECKS = 4;
+const WHATSAPP_HANDOFF_STABLE_WINDOW_MS = 30_000;
 const HANDOFF_READY_WAIT_TIMEOUT_MS = 75_000;
 const HANDOFF_READY_WAIT_POLL_MS = 2_000;
 const AUTH_DUMP_RETRY_ATTEMPTS = 6;
@@ -119,8 +121,8 @@ let rootElement: HTMLElement | null = null;
 let readinessIntervalId: number | null = null;
 let currentTokenHash: string | null = null;
 let helperOpenedReported = false;
-let waAuthenticatedReported = false;
-let whatsappReadyStableCount = 0;
+let lastReportedWhatsAppStatus: string | null = null;
+let whatsappReadyStableSinceMs: number | null = null;
 let autoConnectStarted = false;
 let secureConnectInFlight = false;
 let sessionRefreshInFlight = false;
@@ -201,7 +203,7 @@ async function refreshSession(
     }
 
     const secureStatus = getSecureSessionStatus(helperPayload);
-    const connected = secureStatus === 'connected' || state.connected;
+    const connected = secureStatus === 'connected_confirmed' || state.connected;
 
     setState({
       busy: false,
@@ -218,7 +220,7 @@ async function refreshSession(
       if (TERMINAL_SECURE_STATUSES.has(secureStatus)) {
         stopSecureUploadStatusPolling();
       }
-      if (secureStatus === 'connected') {
+      if (secureStatus === 'connected_confirmed') {
         scheduleHelperAutoClose();
       }
       startWhatsappReadinessProbe();
@@ -246,27 +248,49 @@ function startWhatsappReadinessProbe(): void {
 
   const probe = (): void => {
     const readiness = inspectWhatsAppReadiness();
-    whatsappReadyStableCount = readiness.readyForHandoff
-      ? whatsappReadyStableCount + 1
-      : 0;
-    const stableReady = whatsappReadyStableCount >= AUTO_CONNECT_READY_CHECKS;
+    const now = Date.now();
+
+    if (readiness.readyForHandoff) {
+      whatsappReadyStableSinceMs ??= now;
+    } else {
+      whatsappReadyStableSinceMs = null;
+    }
+
+    const stableElapsedMs =
+      whatsappReadyStableSinceMs === null
+        ? 0
+        : now - whatsappReadyStableSinceMs;
+    const stableReady = stableElapsedMs >= WHATSAPP_HANDOFF_STABLE_WINDOW_MS;
+    const nextReason =
+      readiness.readyForHandoff && !stableReady
+        ? 'waiting_for_stability'
+        : readiness.reason;
 
     if (
       stableReady !== state.whatsappReady ||
       readiness.authenticated !== state.whatsappAuthenticated ||
       readiness.syncing !== state.whatsappSyncing ||
-      readiness.reason !== state.whatsappReadinessReason
+      nextReason !== state.whatsappReadinessReason
     ) {
       setState({
         whatsappAuthenticated: readiness.authenticated,
-        whatsappReadinessReason: readiness.reason,
+        whatsappReadinessReason: nextReason,
         whatsappReady: stableReady,
         whatsappSyncing: readiness.syncing,
       });
     }
 
+    if (readiness.authenticated) {
+      void reportSecureStatus(
+        readiness.syncing
+          ? 'wa_syncing'
+          : readiness.readyForHandoff
+            ? 'wa_ready'
+            : 'wa_authenticated'
+      );
+    }
+
     if (stableReady) {
-      void reportSecureStatus('wa_authenticated');
       maybeAutoConnectSecureSession();
     }
   };
@@ -349,37 +373,55 @@ function renderSecureMode(): void {
   const payload = state.helperPayload;
   const session = payload?.session;
   const status = String(session?.status ?? 'helper_opened');
-  const terminal = ['connected', 'failed', 'expired', 'cancelled'].includes(
-    status
-  );
+  const terminal = TERMINAL_SECURE_STATUSES.has(status);
+  const connectedConfirmed =
+    status === 'connected_confirmed' || state.connected;
+  const validatingWorker =
+    status === 'validating_worker' || status === 'connected';
   const tone = state.error
     ? 'error'
-    : status === 'connected' || state.connected
+    : connectedConfirmed
       ? 'success'
-      : state.whatsappReady
-        ? 'ready'
-        : state.whatsappSyncing
-          ? 'syncing'
-          : 'waiting';
-  const title = state.connected
-    ? 'Underchat conectada'
-    : state.whatsappReady
-      ? 'WhatsApp Web pronto'
-      : state.whatsappSyncing
-        ? 'Sincronizando WhatsApp Web'
-        : state.whatsappAuthenticated
-          ? 'Aguardando WhatsApp Web'
-          : 'Entre no WhatsApp Web';
-  const text = state.error
-    ? state.error
-    : (state.message ??
-      (state.whatsappReady
-        ? 'Sessão pronta. A Underchat vai conectar automaticamente.'
-        : state.whatsappSyncing
-          ? 'Mantenha o app aberto nos dois dispositivos até o WhatsApp terminar a sincronização.'
-          : state.whatsappAuthenticated
-            ? 'Aguarde a interface terminar de carregar antes de enviar a sessão.'
-            : 'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.'));
+      : BUSY_SECURE_STATUSES.has(status)
+        ? 'syncing'
+        : state.whatsappReady
+          ? 'ready'
+          : state.whatsappSyncing
+            ? 'syncing'
+            : 'waiting';
+  let title = 'Entre no WhatsApp Web';
+  let fallbackText =
+    'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.';
+
+  if (connectedConfirmed) {
+    title = 'Underchat conectada';
+    fallbackText =
+      'Canal validado pela Underchat. A sessão local será removida.';
+  } else if (validatingWorker) {
+    title = 'Validando canal';
+    fallbackText =
+      'A sessão foi enviada. A Underchat está confirmando se o worker ficou estável.';
+  } else if (status === 'importing') {
+    title = 'Importando sessão';
+    fallbackText =
+      'A Underchat está restaurando a sessão no canal e verificando o runtime.';
+  } else if (status === 'uploading' || status === 'session_received') {
+    title = 'Enviando sessão';
+    fallbackText = 'A sessão autenticada está sendo enviada para a Underchat.';
+  } else if (state.whatsappReady) {
+    title = 'WhatsApp Web pronto';
+    fallbackText = 'Sessão pronta. A Underchat vai conectar automaticamente.';
+  } else if (state.whatsappSyncing) {
+    title = 'Sincronizando WhatsApp Web';
+    fallbackText =
+      'Mantenha o app aberto nos dois dispositivos até o WhatsApp terminar a sincronização.';
+  } else if (state.whatsappAuthenticated) {
+    title = 'Aguardando estabilidade';
+    fallbackText =
+      'Aguarde 30 segundos sem avisos de sincronização antes de enviar a sessão.';
+  }
+
+  const text = state.error ? state.error : (state.message ?? fallbackText);
 
   if (securePanelMinimized) {
     rootElement.innerHTML = `
@@ -502,12 +544,12 @@ async function connectSecureSessionToUnderchat(
   }
 
   const readiness = inspectWhatsAppReadiness();
-  if (!readiness.readyForHandoff) {
+  if (!readiness.readyForHandoff || !state.whatsappReady) {
     setState({
       error: null,
       message: readiness.syncing
         ? 'Aguarde a sincronização inicial do WhatsApp Web antes de conectar à Underchat.'
-        : 'O WhatsApp Web ainda não está pronto nesta janela.',
+        : 'Aguarde 30 segundos de estabilidade no WhatsApp Web antes de conectar à Underchat.',
       whatsappAuthenticated: readiness.authenticated,
       whatsappReadinessReason: readiness.reason,
       whatsappReady: false,
@@ -574,15 +616,14 @@ async function connectSecureSessionToUnderchat(
       status: result.status ?? null,
     });
 
-    const connected =
-      result.status === 'connected' || result.connected === true;
+    const connected = result.status === 'connected_confirmed';
     setState({
       busy: false,
       connected,
       error: connected ? null : (result.error ?? result.message ?? null),
       message: connected
         ? 'Sessão conectada na Underchat. Fechando o Underchat Authenticator...'
-        : 'A Underchat recebeu a sessão, mas ainda não confirmou a conexão.',
+        : 'A Underchat recebeu a sessão e ainda está validando o canal.',
     });
     if (connected) {
       scheduleHelperAutoClose();
@@ -732,7 +773,7 @@ function hasWhatsAppSyncBlockingText(): boolean {
 }
 
 async function reportSecureStatus(
-  status: 'helper_opened' | 'wa_authenticated'
+  status: 'helper_opened' | 'wa_authenticated' | 'wa_syncing' | 'wa_ready'
 ) {
   if (!bridgeRef || state.helperPayload?.mode !== 'secure') {
     return;
@@ -743,17 +784,23 @@ async function reportSecureStatus(
     helperOpenedReported = true;
   }
 
-  if (status === 'wa_authenticated') {
-    if (waAuthenticatedReported) return;
+  if (
+    status === 'wa_authenticated' ||
+    status === 'wa_syncing' ||
+    status === 'wa_ready'
+  ) {
+    if (lastReportedWhatsAppStatus === status) return;
     const currentStatus = getSecureSessionStatus();
     if (
       currentStatus !== 'created' &&
       currentStatus !== 'helper_opened' &&
-      currentStatus !== 'wa_authenticated'
+      currentStatus !== 'wa_authenticated' &&
+      currentStatus !== 'wa_syncing' &&
+      currentStatus !== 'wa_ready'
     ) {
       return;
     }
-    waAuthenticatedReported = true;
+    lastReportedWhatsAppStatus = status;
   }
 
   try {
@@ -927,20 +974,48 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
 async function waitForWhatsAppHandoffReady(): Promise<WhatsAppReadinessSnapshot> {
   const startedAt = Date.now();
   let lastReadiness = inspectWhatsAppReadiness();
+  let stableSince =
+    lastReadiness.readyForHandoff && whatsappReadyStableSinceMs !== null
+      ? whatsappReadyStableSinceMs
+      : lastReadiness.readyForHandoff
+        ? Date.now()
+        : null;
 
   while (Date.now() - startedAt <= HANDOFF_READY_WAIT_TIMEOUT_MS) {
     lastReadiness = inspectWhatsAppReadiness();
+    if (lastReadiness.readyForHandoff) {
+      stableSince ??= Date.now();
+    } else {
+      stableSince = null;
+    }
+
+    const stableElapsedMs = stableSince === null ? 0 : Date.now() - stableSince;
     recordDebugLog('secure_session.handoff_ready.probe', {
       authenticated: lastReadiness.authenticated,
       hasBlockingLoginUi: lastReadiness.hasBlockingLoginUi,
       hasChatUi: lastReadiness.hasChatUi,
       readyForHandoff: lastReadiness.readyForHandoff,
       reason: lastReadiness.reason,
+      stableElapsedMs,
+      stableRequiredMs: WHATSAPP_HANDOFF_STABLE_WINDOW_MS,
       syncing: lastReadiness.syncing,
     });
 
-    if (lastReadiness.readyForHandoff) {
+    if (
+      lastReadiness.readyForHandoff &&
+      stableElapsedMs >= WHATSAPP_HANDOFF_STABLE_WINDOW_MS
+    ) {
       return lastReadiness;
+    }
+
+    if (lastReadiness.authenticated) {
+      void reportSecureStatus(
+        lastReadiness.syncing
+          ? 'wa_syncing'
+          : lastReadiness.readyForHandoff
+            ? 'wa_ready'
+            : 'wa_authenticated'
+      );
     }
 
     setState({
@@ -948,9 +1023,17 @@ async function waitForWhatsAppHandoffReady(): Promise<WhatsAppReadinessSnapshot>
       error: null,
       message: lastReadiness.syncing
         ? 'Aguardando o WhatsApp Web terminar a sincronização inicial...'
-        : 'Aguardando o WhatsApp Web ficar pronto...',
+        : lastReadiness.readyForHandoff
+          ? `Aguardando estabilidade do WhatsApp Web (${Math.floor(
+              stableElapsedMs / 1000
+            )}/30s)...`
+          : 'Aguardando o WhatsApp Web ficar pronto...',
       whatsappAuthenticated: lastReadiness.authenticated,
-      whatsappReadinessReason: lastReadiness.reason,
+      whatsappReadinessReason:
+        lastReadiness.readyForHandoff &&
+        stableElapsedMs < WHATSAPP_HANDOFF_STABLE_WINDOW_MS
+          ? 'waiting_for_stability'
+          : lastReadiness.reason,
       whatsappReady: false,
       whatsappSyncing: lastReadiness.syncing,
     });
@@ -1927,8 +2010,8 @@ function resetSecureFlowRuntime(tokenHash: string): void {
 
   currentTokenHash = tokenHash;
   helperOpenedReported = false;
-  waAuthenticatedReported = false;
-  whatsappReadyStableCount = 0;
+  lastReportedWhatsAppStatus = null;
+  whatsappReadyStableSinceMs = null;
   autoConnectStarted = false;
   secureConnectInFlight = false;
   securePanelMinimized = false;

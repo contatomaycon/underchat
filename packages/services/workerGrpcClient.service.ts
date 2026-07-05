@@ -25,6 +25,10 @@ import { ISecureConnectionImportRequest } from '@core/common/interfaces/ISecureC
 import { IWorkerConnectionStateProto } from '@core/common/interfaces/IWorkerConnectionStateProto';
 import { protoToConnectionState } from '@core/common/functions/workerConnectionStateProtoMapper';
 import {
+  IWorkerRuntimeHealthRequestProto,
+  IWorkerRuntimeHealthResponseProto,
+} from '@core/common/interfaces/IWorkerRuntimeActivationProto';
+import {
   IActivateWarmWorkerRequestProto,
   ICreateWarmWorkerRequestProto,
   IDeleteWarmWorkerRequestProto,
@@ -51,6 +55,7 @@ if (!WorkerCommandClient) {
 
 const GRPC_DEADLINE_MS = 10_000;
 const SECURE_IMPORT_GRPC_DEADLINE_MS = 120_000;
+const RUNTIME_HEALTH_GRPC_DEADLINE_MS = 10_000;
 
 @injectable()
 export class WorkerGrpcClientService {
@@ -453,6 +458,84 @@ export class WorkerGrpcClientService {
         }
       );
       return state;
+    });
+  }
+
+  async runtimeHealth(
+    serverId: string,
+    payload: IWorkerRuntimeHealthRequestProto,
+    timeoutMs: number = RUNTIME_HEALTH_GRPC_DEADLINE_MS
+  ): Promise<IWorkerRuntimeHealthResponseProto> {
+    const { host, port } =
+      await this.workerGrpcRegistryService.getAddress(serverId);
+    const address = `${host}:${port}`;
+    const client = new WorkerCommandClient(
+      address,
+      credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + timeoutMs);
+    const metadata = new Metadata();
+
+    void this.connectionLifecycleDebugService.log(
+      'service.worker_command_grpc.runtime_health_call',
+      {
+        layer: 'service',
+        worker_id: payload.worker_id,
+        warm_pool_id: payload.warm_pool_id,
+        method: 'RuntimeHealth',
+        grpc_address: address,
+      }
+    );
+
+    return new Promise<IWorkerRuntimeHealthResponseProto>((resolve, reject) => {
+      (client as any).RuntimeHealth(
+        payload,
+        metadata,
+        { deadline },
+        (
+          err: ServiceError | null,
+          response?: IWorkerRuntimeHealthResponseProto
+        ): void => {
+          client.close();
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(
+            response ?? {
+              worker_id: payload.worker_id,
+              warm_pool_id: payload.warm_pool_id,
+              ready: false,
+              error: 'Empty gRPC response',
+            }
+          );
+        }
+      );
+    }).then((health) => {
+      void this.connectionLifecycleDebugService.log(
+        'service.worker_command_grpc.runtime_health_ok',
+        {
+          layer: 'service',
+          worker_id: health.worker_id || payload.worker_id,
+          warm_pool_id: health.warm_pool_id || payload.warm_pool_id,
+          worker_type_id: health.worker_type_id,
+          runtime_generation: health.runtime_generation,
+          session_ready: health.session_ready,
+          authenticated: health.authenticated,
+          can_send: health.can_send,
+          can_receive_runtime: health.can_receive_runtime,
+          activated: health.activated,
+          standby: health.standby,
+          provider_state: health.provider_state,
+          degraded_reason: health.degraded_reason,
+          kafka_unhealthy: health.kafka_unhealthy,
+          phone_present: Boolean(health.phone),
+          error_present: Boolean(health.error),
+          method: 'RuntimeHealth',
+          grpc_address: address,
+        }
+      );
+      return health;
     });
   }
 }

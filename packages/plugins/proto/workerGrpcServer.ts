@@ -44,6 +44,10 @@ import {
   IDeleteWarmWorkerRequestProto,
   IWarmWorkerCommandResponseProto,
 } from '@core/common/interfaces/IWorkerWarmCommandProto';
+import {
+  IWorkerRuntimeHealthRequestProto,
+  IWorkerRuntimeHealthResponseProto,
+} from '@core/common/interfaces/IWorkerRuntimeActivationProto';
 import { resolveProtoPath } from '@core/common/functions/resolveProtoPath';
 import { ConnectionLifecycleDebugService } from '@core/services/connectionLifecycleDebug.service';
 import { logLocalConnectionStatus } from '@core/common/functions/localConnectionStatusLog';
@@ -605,6 +609,43 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
       });
   };
 
+  const handleRuntimeHealth = (
+    call: ServerUnaryCall<
+      IWorkerRuntimeHealthRequestProto,
+      IWorkerRuntimeHealthResponseProto
+    >,
+    callback: sendUnaryData<IWorkerRuntimeHealthResponseProto>
+  ) => {
+    const req = call.request;
+
+    if (!req.worker_id && !req.warm_pool_id) {
+      const message = 'Missing required fields: worker_id or warm_pool_id';
+      callback(
+        {
+          code: status.INVALID_ARGUMENT,
+          message,
+          details: message,
+        },
+        null
+      );
+      return;
+    }
+
+    handler
+      .runtimeHealth(req)
+      .then((response) => {
+        callback(null, response);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        fastify.log.error(
+          { err, workerId: req.worker_id, warmPoolId: req.warm_pool_id },
+          'RuntimeHealth gRPC handler error'
+        );
+        callback({ code: status.INTERNAL, message: msg, details: msg }, null);
+      });
+  };
+
   const handleCreateWarmWorker = (
     call: ServerUnaryCall<
       ICreateWarmWorkerRequestProto,
@@ -699,6 +740,7 @@ const workerGrpcServerPlugin: FastifyPluginAsync = async (
     RegisterS3BackupFallbackUpload: handleRegisterS3BackupFallbackUpload,
     ValidatePhone: handleValidatePhone,
     ImportSecureSession: handleImportSecureSession,
+    RuntimeHealth: handleRuntimeHealth,
     CreateWarmWorker: handleCreateWarmWorker,
     DeleteWarmWorker: handleDeleteWarmWorker,
     ActivateWarmWorker: handleActivateWarmWorker,
