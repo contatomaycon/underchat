@@ -261,7 +261,13 @@ func (w *Worker) ConfirmPasskey(ctx context.Context, req PasskeyConfirmationRequ
 }
 
 func (w *Worker) ImportSecureSession(ctx context.Context, req SecureSessionImportRequest) (ConnectionState, error) {
-	manager := w.currentWhatsApp()
+	w.runtimeMu.Lock()
+	manager := w.whatsapp
+	if req.RuntimeGeneration > 0 && w.cfg.RuntimeGeneration != req.RuntimeGeneration {
+		w.cfg.RuntimeGeneration = req.RuntimeGeneration
+	}
+	w.runtimeMu.Unlock()
+
 	if manager == nil {
 		return ConnectionState{}, fmt.Errorf("whatsmeow runtime is not initialized")
 	}

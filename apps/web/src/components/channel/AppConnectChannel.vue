@@ -425,6 +425,19 @@ function isSecureConnectionTerminal(
   );
 }
 
+function hasActiveSecureConnectionAttempt(): boolean {
+  return Boolean(
+    secureSession.value && !isSecureConnectionTerminal(secureSession.value)
+  );
+}
+
+function isSecureConnectionMethodActive(): boolean {
+  return (
+    selectedConnectionMethod.value === 'secure' ||
+    selectedConnectionMethod.value === 'authenticator_install'
+  );
+}
+
 function clearSecureHelperOpenTimeout() {
   if (secureHelperOpenTimeoutId.value !== null) {
     window.clearTimeout(secureHelperOpenTimeoutId.value);
@@ -468,6 +481,14 @@ function applySecureConnectionSession(
     qrPending.value = false;
     phoneNumber.value = session.phone ? formatPhoneBR(session.phone) : null;
     clearQrHistoryRecovery();
+  }
+
+  if (['failed', 'expired', 'cancelled'].includes(session.status)) {
+    clearConnectedStateDelay();
+    statusConnection.value = EBaileysConnectionStatus.disconnected;
+    statusCode.value = ECodeMessage.awaitConnection;
+    workerStatusId.value = EWorkerStatus.disponible;
+    sessionReady.value = false;
   }
 
   if (isSecureConnectionTerminal(session)) {
@@ -923,6 +944,12 @@ function hasConfirmedSessionReady(
     data.code === ECodeMessage.connectionEstablished &&
     data.worker_status_id === EWorkerStatus.online &&
     data.session_ready === true &&
+    data.authenticated === true &&
+    data.can_send === true &&
+    data.can_receive_runtime === true &&
+    !data.degraded_reason &&
+    (!data.provider_state ||
+      data.provider_state.toLowerCase() === 'connected') &&
     Boolean(data.phone?.trim())
   );
 }
@@ -933,6 +960,35 @@ function shouldIgnoreConnectedPayload(
 ): boolean {
   if (!isConnectedPayload(data)) {
     return false;
+  }
+
+  if (
+    hasActiveSecureConnectionAttempt() &&
+    (isSecureConnectionMethodActive() ||
+      data.connection_attempt_id === secureSession.value?.connection_attempt_id)
+  ) {
+    logLocalConnectionStatus('web.connection_modal.connected_ignored', {
+      layer: 'web.connection_modal',
+      worker_id: data.worker_id ?? channelId.value ?? undefined,
+      account_id: data.account_id ?? accountId.value ?? undefined,
+      worker_type_id: data.worker_type_id ?? activeWorkerTypeId.value,
+      worker_status_id: data.worker_status_id,
+      status: data.status,
+      code: data.code,
+      session_ready: data.session_ready,
+      can_send: data.can_send,
+      can_receive_runtime: data.can_receive_runtime,
+      authenticated: data.authenticated,
+      provider_state: data.provider_state,
+      degraded_reason: data.degraded_reason,
+      reason: 'secure_connection_waiting_connected_confirmed',
+      phone: data.phone,
+      connection_attempt_id: data.connection_attempt_id,
+      secure_connection_attempt_id: secureSession.value?.connection_attempt_id,
+      secure_connection_status: secureSession.value?.status,
+      runtime_generation: data.runtime_generation,
+    });
+    return true;
   }
 
   if (!hasConfirmedSessionReady(data)) {

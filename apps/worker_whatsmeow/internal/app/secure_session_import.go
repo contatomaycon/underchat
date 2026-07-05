@@ -595,9 +595,6 @@ func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req Secu
 		return state, nil
 	}
 
-	m.clearConnectedPublishHold("secure_session_import_stable")
-	m.publishState(ctx, "connected", CodeConnectionEstablished, WorkerStatusOnline, phone, "", true)
-
 	if backupCreated {
 		_ = os.RemoveAll(backupDir)
 	}
