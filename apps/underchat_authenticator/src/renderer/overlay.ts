@@ -954,7 +954,7 @@ async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
   if (authDump && (targetProvider === 'baileys' || targetProvider === 'auto')) {
     payload.baileys_multi_file_auth_state = {
       files: {
-        'creds.json': createBaileysCredsFile(authDump.creds),
+        'creds.json': JSON.stringify(createBaileysCredsFile(authDump.creds)),
       },
       source: 'whatsapp_web_creds',
     };

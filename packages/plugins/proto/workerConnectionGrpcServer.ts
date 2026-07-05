@@ -157,6 +157,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       ? EWorkerType.wwebjs
       : EWorkerType.baileys;
   const grpcServer = new Server();
+  let secureImportRuntimeGeneration: number | undefined;
 
   const getAccountId = () =>
     module === ERouteModule.worker_wwebjs
@@ -183,10 +184,18 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       ? wwebjsEnvironment.workerTypeId
       : baileysEnvironment.workerTypeId) ?? fallbackWorkerTypeId;
 
+  const rememberRuntimeGeneration = (runtimeGeneration: unknown) => {
+    const parsed = optionalRuntimeGeneration(runtimeGeneration);
+    if (parsed !== undefined) {
+      secureImportRuntimeGeneration = parsed;
+    }
+  };
+
   const getRuntimeGeneration = () =>
-    module === ERouteModule.worker_wwebjs
+    secureImportRuntimeGeneration ??
+    (module === ERouteModule.worker_wwebjs
       ? wwebjsEnvironment.runtimeGeneration
-      : baileysEnvironment.runtimeGeneration;
+      : baileysEnvironment.runtimeGeneration);
 
   const getRuntimeState = () => {
     if (isWarmStandby()) {
@@ -225,6 +234,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       warm_pool_id: request.warm_pool_id,
       session_volume_name: request.session_volume_name,
     };
+    rememberRuntimeGeneration(input.runtime_generation);
 
     return module === ERouteModule.worker_wwebjs
       ? wwebjsEnvironment.activateRuntime(input)
@@ -895,6 +905,7 @@ const workerConnectionGrpcServerPlugin: FastifyPluginAsync<
       debug_trace_id: req.debug_trace_id,
     };
     const startedAt = Date.now();
+    rememberRuntimeGeneration(requestRuntimeGeneration);
 
     logWorkerConnectionGrpcFlow(
       'worker.connection_grpc.secure_import_received',
