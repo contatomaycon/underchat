@@ -587,8 +587,10 @@ async function connectSecureSessionToUnderchat(
       status: getSecureSessionStatus(),
       tokenHash: getTokenHashFromState(),
     });
-    await bridgeRef.updateSecureStatus({ status: 'uploading' });
     recordDebugLog('secure_session.package.collect.start');
+    setState({
+      message: 'Extraindo a sessao autenticada do WhatsApp Web...',
+    });
     console.log(
       '[underchat-passkey-helper] secure_session.package.collect.start'
     );
@@ -607,6 +609,10 @@ async function connectSecureSessionToUnderchat(
       targetProvider: sessionPackage.target_provider,
       webVersion: sessionPackage.web_version ?? null,
     });
+    setState({
+      message: 'Enviando sessao autenticada para a Underchat...',
+    });
+    await bridgeRef.updateSecureStatus({ status: 'uploading' });
     const result = await bridgeRef.sendSecureSessionPackage(sessionPackage);
     console.log('[underchat-passkey-helper] secure_session.upload.done', {
       connected: Boolean(result.connected),
@@ -742,6 +748,14 @@ async function reportSecureStatus(
 
   if (status === 'wa_authenticated') {
     if (waAuthenticatedReported) return;
+    const currentStatus = getSecureSessionStatus();
+    if (
+      currentStatus !== 'created' &&
+      currentStatus !== 'helper_opened' &&
+      currentStatus !== 'wa_authenticated'
+    ) {
+      return;
+    }
     waAuthenticatedReported = true;
   }
 
@@ -798,14 +812,20 @@ function startSecureUploadStatusPolling(): void {
   stopSecureUploadStatusPolling();
 
   secureUploadWatchdogTimerId = window.setTimeout(() => {
+    const status = getSecureSessionStatus();
     recordDebugLog('secure_session.upload.watchdog', {
-      status: getSecureSessionStatus(),
+      status,
       tokenHash: getTokenHashFromState(),
     });
     setState({
-      message: state.diagnosticsEnabled
-        ? 'Importacao ainda em andamento. Se continuar assim, clique em Baixar log para analisar o fluxo.'
-        : 'Importacao ainda em andamento. Aguarde a resposta da Underchat.',
+      message:
+        status === 'uploading' || BUSY_SECURE_STATUSES.has(status)
+          ? state.diagnosticsEnabled
+            ? 'Importacao ainda em andamento. Se continuar assim, clique em Baixar log para analisar o fluxo.'
+            : 'Importacao ainda em andamento. Aguarde a resposta da Underchat.'
+          : state.diagnosticsEnabled
+            ? 'Extracao da sessao demorou mais que o esperado. Clique em Baixar log se continuar assim.'
+            : 'Extracao da sessao demorou mais que o esperado.',
     });
   }, 18_000);
 

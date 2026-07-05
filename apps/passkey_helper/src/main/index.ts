@@ -26,6 +26,7 @@ const CHROME_STABLE_VERSION = '150.0.7871.46';
 const CHROME_STABLE_MAJOR_VERSION =
   CHROME_STABLE_VERSION.split('.')[0] ?? '150';
 const WWEBJS_PROFILE_MAX_BYTES = 80 * 1024 * 1024;
+const WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS = 12_000;
 const WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES = new Set([
   'Cookies',
   'Cookies-journal',
@@ -338,9 +339,13 @@ function registerIpcHandlers(): void {
       }
     );
 
-    const dump = await mainWindow.webContents.executeJavaScript(
-      EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
-      false
+    const dump = await withTimeout(
+      mainWindow.webContents.executeJavaScript(
+        EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
+        false
+      ),
+      WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+      'Tempo excedido ao extrair credenciais do WhatsApp Web.'
     );
 
     logEvent(
@@ -495,6 +500,27 @@ function normalizeActionStatus(status: unknown): string | null {
   }
 
   return String(status);
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string
+): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function countElectronCookies(payload: unknown): number {
