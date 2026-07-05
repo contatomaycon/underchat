@@ -806,6 +806,7 @@ export class BaileysConnectionService {
       has_baileys_multi_file_auth_state: Boolean(baileysPayload),
       auth_file_count: files ? Object.keys(files).length : 0,
       has_creds_json: Boolean(files?.['creds.json']),
+      has_whatsapp_web_creds: Boolean(payload.whatsapp_web_creds),
       has_wwebjs_local_auth: Boolean(payload.wwebjs_local_auth),
       has_whatsmeow_sqlstore: Boolean(payload.whatsmeow_sqlstore),
     };
@@ -860,11 +861,14 @@ export class BaileysConnectionService {
       rawMessage === 'baileys_import_payload_missing' ||
       rawMessage === 'baileys_import_missing_creds_file'
     ) {
-      return 'Baileys secure import requires payload.baileys_multi_file_auth_state.files with creds.json. Browser profile/cookies alone cannot be imported by Baileys.';
+      return 'Baileys secure import requires payload.whatsapp_web_creds or payload.baileys_multi_file_auth_state.files with creds.json.';
     }
 
-    if (rawMessage === 'baileys_import_missing_required_creds') {
-      return 'Baileys secure import received creds.json, but required key material is missing or invalid.';
+    if (
+      rawMessage === 'baileys_import_missing_required_creds' ||
+      rawMessage === 'baileys_import_missing_required_whatsapp_web_creds'
+    ) {
+      return 'Baileys secure import received credentials, but required key material is missing or invalid.';
     }
 
     return rawMessage;

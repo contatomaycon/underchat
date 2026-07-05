@@ -15,6 +15,57 @@ interface OverlayState {
   whatsappReady: boolean;
 }
 
+interface JsonRecord {
+  [key: string]: unknown;
+}
+
+interface BufferJsonWrapper {
+  data: string;
+  type: 'Buffer';
+}
+
+interface WhatsAppWebExtractedCreds {
+  account: {
+    accountSignature: string;
+    accountSignatureKey: string;
+    details: string;
+    deviceSignature: string;
+  };
+  advSecretKey: string | null;
+  firstUnuploadedPreKeyId: number;
+  me: {
+    id: string;
+    lid?: string;
+    name?: string | null;
+    username?: string | null;
+  };
+  nextPreKeyId: number;
+  noiseKey: {
+    private: string;
+    public: string;
+  };
+  platform: 'web';
+  registrationId: number;
+  signedIdentityKey: {
+    private: string;
+    public: string;
+  };
+  signedPreKey: {
+    keyId: number;
+    keyPair: {
+      private: string;
+      public: string;
+    };
+    signature: string;
+  };
+}
+
+interface WhatsAppWebAuthDump {
+  appStateSyncKeyCount: number;
+  appStateVersionCount: number;
+  creds: WhatsAppWebExtractedCreds;
+}
+
 const CONNECTED_CODES = new Set([200, 201]);
 const CONFIRMATION_CODES = new Set([208]);
 const TERMINAL_SECURE_STATUSES = new Set([
@@ -635,46 +686,636 @@ function maybeAutoConnectSecureSession(): void {
 }
 
 async function collectSecureSessionPackage(): Promise<SecureSessionPackage> {
-  const localStorageSnapshot: Record<string, string> = {};
+  const targetProvider = getSecureSessionTargetProvider();
+  const authDump = await extractWhatsAppWebAuthDump();
+  const indexedDbNames = await listIndexedDbNames();
+  const payload: JsonRecord = {
+    href: location.href,
+    indexed_db_names: indexedDbNames,
+    user_agent: navigator.userAgent,
+    whatsapp_web_creds: authDump.creds,
+    whatsapp_web_session_summary: {
+      app_state_sync_key_count: authDump.appStateSyncKeyCount,
+      app_state_version_count: authDump.appStateVersionCount,
+      has_account: Boolean(authDump.creds.account.accountSignatureKey),
+      has_lid: Boolean(authDump.creds.me.lid),
+      has_me: Boolean(authDump.creds.me.id),
+      has_noise_key: Boolean(authDump.creds.noiseKey.private),
+      has_signed_identity_key: Boolean(
+        authDump.creds.signedIdentityKey.private
+      ),
+      has_signed_pre_key: Boolean(authDump.creds.signedPreKey.signature),
+      registration_id_present: authDump.creds.registrationId > 0,
+    },
+  };
 
-  try {
-    for (let index = 0; index < localStorage.length; index += 1) {
-      const key = localStorage.key(index);
-      if (!key) continue;
-      const value = localStorage.getItem(key);
-      if (value !== null) {
-        localStorageSnapshot[key] = value;
-      }
-    }
-  } catch {
-    // The importers can still use cookies/profile data captured by Electron.
+  if (targetProvider === 'baileys' || targetProvider === 'auto') {
+    payload.baileys_multi_file_auth_state = {
+      files: {
+        'creds.json': createBaileysCredsFile(authDump.creds),
+      },
+      source: 'whatsapp_web_creds',
+    };
   }
 
-  const indexedDbNames =
-    typeof indexedDB.databases === 'function'
-      ? await indexedDB
-          .databases()
-          .then((databases) =>
-            databases
-              .map((database) => database.name)
-              .filter((name): name is string => Boolean(name))
-          )
-          .catch(() => [])
+  return {
+    account_hint: authDump.creds.me.id,
+    created_at: new Date().toISOString(),
+    format_version: 'underchat-wa-web-session-v1',
+    payload,
+    source: 'whatsapp_web',
+    target_provider: targetProvider,
+    web_version: readWhatsAppWebVersion(),
+  };
+}
+
+async function extractWhatsAppWebAuthDump(): Promise<WhatsAppWebAuthDump> {
+  const signalDb = await openIndexedDb('signal-storage');
+  let metaRows: unknown[] = [];
+  let signedPreKeyRows: unknown[] = [];
+
+  try {
+    [metaRows, signedPreKeyRows] = await Promise.all([
+      getAllFromIndexedDbStore(signalDb, 'signal-meta-store'),
+      getAllFromIndexedDbStore(signalDb, 'signed-prekey-store'),
+    ]);
+  } finally {
+    signalDb.close();
+  }
+
+  const metaMap = createSignalMetaMap(metaRows);
+  const registrationInfo = await getRegistrationInfoViaInternalModule();
+  const staticPublicKey =
+    (await decryptRegistrationMaterial(metaMap.signal_static_pubkey)) ??
+    toUint8FromPath(registrationInfo, ['identityKeyPair', 'pubKey']);
+  const staticPrivateKey =
+    (await decryptRegistrationMaterial(metaMap.signal_static_privkey)) ??
+    toUint8FromPath(registrationInfo, ['identityKeyPair', 'privKey']);
+  const noise = await getNoiseInfoViaInternalModule();
+  const signedPreKey = getLatestSignedPreKey(signedPreKeyRows);
+  const account = extractAdvAccount(metaMap.adv_signed_identity);
+  const registrationId =
+    toPositiveInteger(metaMap.signal_reg_id) ??
+    toPositiveInteger(getRecordValue(registrationInfo, 'registrationId')) ??
+    toPositiveInteger(getRecordValue(registrationInfo, 'regId'));
+  const meId = widToJid(readLocalStorageJson('last-wid-md'));
+  const meLid = widToJid(readLocalStorageJson('WALid'));
+  const meDisplayName = normalizeOptionalString(
+    readLocalStorageJson('me-display-name')
+  );
+
+  if (!registrationId) {
+    throw new Error('Nao foi possivel extrair o registrationId da sessao.');
+  }
+  if (!noise) {
+    throw new Error('Nao foi possivel extrair a noise key da sessao.');
+  }
+  if (!staticPublicKey || !staticPrivateKey) {
+    throw new Error('Nao foi possivel extrair a identity key da sessao.');
+  }
+  if (!signedPreKey) {
+    throw new Error('Nao foi possivel extrair a signed pre-key da sessao.');
+  }
+  if (!account) {
+    throw new Error('Nao foi possivel extrair a identidade ADV da sessao.');
+  }
+  if (!meId) {
+    throw new Error('Nao foi possivel identificar o JID conectado.');
+  }
+
+  const [syncKeyRows, versionRows] = await Promise.all([
+    getModelTableRows('WAWebSchemaSyncKeys', 'getSyncKeysTable'),
+    getModelTableRows(
+      'WAWebSchemaCollectionVersion',
+      'getCollectionVersionTable'
+    ),
+  ]);
+  const preKeyId =
+    toPositiveInteger(metaMap.signal_prekey_id) ??
+    toPositiveInteger(metaMap.signal_pre_key_id) ??
+    signedPreKey.keyId + 1;
+
+  return {
+    appStateSyncKeyCount: syncKeyRows.length,
+    appStateVersionCount: versionRows.length,
+    creds: {
+      account,
+      advSecretKey: await getAdvSecretKeyBase64(),
+      firstUnuploadedPreKeyId: preKeyId,
+      me: {
+        id: meId,
+        ...(meLid ? { lid: meLid } : {}),
+        ...(meDisplayName ? { name: meDisplayName } : {}),
+      },
+      nextPreKeyId: preKeyId,
+      noiseKey: {
+        private: bytesToBase64Required(noise.private, 'noise private key'),
+        public: bytesToBase64Required(noise.public, 'noise public key'),
+      },
+      platform: 'web',
+      registrationId,
+      signedIdentityKey: {
+        private: bytesToBase64Required(
+          staticPrivateKey,
+          'identity private key'
+        ),
+        public: bytesToBase64Required(staticPublicKey, 'identity public key'),
+      },
+      signedPreKey,
+    },
+  };
+}
+
+function createBaileysCredsFile(creds: WhatsAppWebExtractedCreds): JsonRecord {
+  const accountSignatureKey = base64ToBytes(creds.account.accountSignatureKey);
+  const signalIdentities =
+    accountSignatureKey && creds.me.lid
+      ? [
+          {
+            identifier: {
+              deviceId: 0,
+              name: creds.me.lid,
+            },
+            identifierKey: bufferWrap(
+              bytesToBase64Required(
+                prefixSignalPublicKey(accountSignatureKey),
+                'account signature key'
+              )
+            ),
+          },
+        ]
       : [];
 
   return {
-    created_at: new Date().toISOString(),
-    format_version: 'underchat-wa-web-session-v1',
-    payload: {
-      href: location.href,
-      indexed_db_names: indexedDbNames,
-      local_storage: localStorageSnapshot,
-      user_agent: navigator.userAgent,
+    account: {
+      accountSignature: bufferWrap(creds.account.accountSignature),
+      accountSignatureKey: bufferWrap(creds.account.accountSignatureKey),
+      details: bufferWrap(creds.account.details),
+      deviceSignature: bufferWrap(creds.account.deviceSignature),
     },
-    source: 'whatsapp_web',
-    target_provider: getSecureSessionTargetProvider(),
-    web_version: readWhatsAppWebVersion(),
+    accountSettings: {
+      unarchiveChats: false,
+    },
+    accountSyncCounter: 0,
+    advSecretKey: creds.advSecretKey ?? '',
+    firstUnuploadedPreKeyId: creds.firstUnuploadedPreKeyId,
+    me: creds.me,
+    nextPreKeyId: creds.nextPreKeyId,
+    noiseKey: {
+      private: bufferWrap(creds.noiseKey.private),
+      public: bufferWrap(creds.noiseKey.public),
+    },
+    pairingEphemeralKeyPair: {
+      private: bufferWrap(creds.noiseKey.private),
+      public: bufferWrap(creds.noiseKey.public),
+    },
+    platform: creds.platform,
+    processedHistoryMessages: [],
+    registered: true,
+    registrationId: creds.registrationId,
+    signalIdentities,
+    signedIdentityKey: {
+      private: bufferWrap(creds.signedIdentityKey.private),
+      public: bufferWrap(creds.signedIdentityKey.public),
+    },
+    signedPreKey: {
+      keyId: creds.signedPreKey.keyId,
+      keyPair: {
+        private: bufferWrap(creds.signedPreKey.keyPair.private),
+        public: bufferWrap(creds.signedPreKey.keyPair.public),
+      },
+      signature: bufferWrap(creds.signedPreKey.signature),
+    },
   };
+}
+
+async function listIndexedDbNames(): Promise<string[]> {
+  return typeof indexedDB.databases === 'function'
+    ? indexedDB
+        .databases()
+        .then((databases) =>
+          databases
+            .map((database) => database.name)
+            .filter((name): name is string => Boolean(name))
+        )
+        .catch(() => [])
+    : [];
+}
+
+function openIndexedDb(name: string): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(name);
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () =>
+      reject(request.error ?? new Error(`indexeddb_open_failed:${name}`));
+  });
+}
+
+function getAllFromIndexedDbStore(
+  database: IDBDatabase,
+  storeName: string
+): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    try {
+      const transaction = database.transaction(storeName, 'readonly');
+      const request = transaction.objectStore(storeName).getAll();
+
+      request.onsuccess = () =>
+        resolve(Array.isArray(request.result) ? request.result : []);
+      request.onerror = () =>
+        reject(
+          request.error ?? new Error(`indexeddb_get_all_failed:${storeName}`)
+        );
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function createSignalMetaMap(rows: unknown[]): JsonRecord {
+  const metaMap: JsonRecord = {};
+
+  rows.forEach((row) => {
+    if (!isRecord(row)) {
+      return;
+    }
+
+    const key = normalizeOptionalString(row.key);
+    if (!key) {
+      return;
+    }
+
+    metaMap[key] = row.value;
+  });
+
+  return metaMap;
+}
+
+async function decryptRegistrationMaterial(
+  value: unknown
+): Promise<Uint8Array | null> {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const encrypted = toUint8(value.value);
+  if (!value.encKey || !encrypted) {
+    return null;
+  }
+
+  const decrypted = await crypto.subtle.decrypt(
+    {
+      counter: new Uint8Array(16),
+      length: 128,
+      name: 'AES-CTR',
+    },
+    value.encKey as CryptoKey,
+    new Uint8Array(encrypted)
+  );
+
+  return new Uint8Array(decrypted);
+}
+
+function getWaModule(name: string): unknown {
+  const globalRecord = globalThis as unknown as Record<string, unknown>;
+  const directRequire = globalRecord.require;
+
+  try {
+    if (typeof directRequire === 'function') {
+      return (directRequire as (moduleName: string) => unknown)(name);
+    }
+  } catch {}
+
+  const moduleLoader = globalRecord.__d;
+  if (typeof moduleLoader !== 'function') {
+    return null;
+  }
+
+  try {
+    let captured: unknown;
+    const sentinel = `__underchatWaProbe_${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    (
+      moduleLoader as (
+        id: string,
+        deps: string[],
+        factory: (...args: unknown[]) => void
+      ) => void
+    )(sentinel, [name], (...args: unknown[]) => {
+      const parentRequire = args[3];
+      if (typeof parentRequire === 'function') {
+        captured = (parentRequire as (moduleName: string) => unknown)(name);
+      }
+    });
+
+    const loaderRequire = (moduleLoader as unknown as Record<string, unknown>)
+      .require;
+    if (!captured && typeof loaderRequire === 'function') {
+      captured = (loaderRequire as (moduleName: string) => unknown)(name);
+    }
+
+    return captured ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getRegistrationInfoViaInternalModule(): Promise<unknown> {
+  const module = getWaModule('WAWebSignalStoreApi');
+  const signalStore = isRecord(module) ? module.waSignalStore : null;
+  const getter = isRecord(signalStore) ? signalStore.getRegistrationInfo : null;
+
+  if (typeof getter !== 'function') {
+    return null;
+  }
+
+  try {
+    return await (getter as () => Promise<unknown>)();
+  } catch {
+    return null;
+  }
+}
+
+async function getNoiseInfoViaInternalModule(): Promise<{
+  private: Uint8Array;
+  public: Uint8Array;
+} | null> {
+  const module = getWaModule('WAWebUserPrefsInfoStore');
+  const waNoiseInfo = isRecord(module) ? module.waNoiseInfo : null;
+  const getter = isRecord(waNoiseInfo) ? waNoiseInfo.get : null;
+
+  if (typeof getter !== 'function') {
+    return null;
+  }
+
+  try {
+    const decrypted = await (getter as () => Promise<unknown>)();
+    const staticKeyPair = isRecord(decrypted) ? decrypted.staticKeyPair : null;
+    const publicKey = toUint8FromPath(staticKeyPair, ['pubKey']);
+    const privateKey = toUint8FromPath(staticKeyPair, ['privKey']);
+
+    return publicKey && privateKey
+      ? {
+          private: privateKey,
+          public: publicKey,
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getAdvSecretKeyBase64(): Promise<string | null> {
+  const module = getWaModule('WAWebUserPrefsMultiDevice');
+  const getter = isRecord(module) ? module.getADVSecretKey : null;
+
+  if (typeof getter !== 'function') {
+    return null;
+  }
+
+  try {
+    const value = await (getter as () => Promise<unknown>)();
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    return bytesToBase64(value);
+  } catch {
+    return null;
+  }
+}
+
+async function getModelTableRows(
+  moduleName: string,
+  tableGetterName: string
+): Promise<unknown[]> {
+  const module = getWaModule(moduleName);
+  const getter = isRecord(module) ? module[tableGetterName] : null;
+
+  if (typeof getter !== 'function') {
+    return [];
+  }
+
+  try {
+    const table = (getter as () => unknown)();
+    const all = isRecord(table) ? table.all : null;
+    if (typeof all !== 'function') {
+      return [];
+    }
+
+    const rows = await (all as () => Promise<unknown>)();
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
+function getLatestSignedPreKey(
+  rows: unknown[]
+): WhatsAppWebExtractedCreds['signedPreKey'] | null {
+  const candidates = rows
+    .filter(isRecord)
+    .map((row) => {
+      const keyPair = isRecord(row.keyPair) ? row.keyPair : null;
+      const keyId = toPositiveInteger(row.keyId);
+      const publicKey = keyPair ? toUint8(keyPair.pubKey) : null;
+      const privateKey = keyPair ? toUint8(keyPair.privKey) : null;
+      const signature = toUint8(row.signature);
+
+      if (!keyId || !publicKey || !privateKey || !signature) {
+        return null;
+      }
+
+      return {
+        keyId,
+        keyPair: {
+          private: bytesToBase64Required(privateKey, 'signed pre-key private'),
+          public: bytesToBase64Required(publicKey, 'signed pre-key public'),
+        },
+        signature: bytesToBase64Required(signature, 'signed pre-key signature'),
+      };
+    })
+    .filter(
+      (candidate): candidate is WhatsAppWebExtractedCreds['signedPreKey'] =>
+        Boolean(candidate)
+    )
+    .sort((left, right) => left.keyId - right.keyId);
+
+  return candidates.at(-1) ?? null;
+}
+
+function extractAdvAccount(
+  value: unknown
+): WhatsAppWebExtractedCreds['account'] | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const accountSignature = bytesToBase64(value.accountSignature);
+  const accountSignatureKey = bytesToBase64(value.accountSignatureKey);
+  const details = bytesToBase64(value.details);
+  const deviceSignature = bytesToBase64(value.deviceSignature);
+
+  if (
+    !accountSignature ||
+    !accountSignatureKey ||
+    !details ||
+    !deviceSignature
+  ) {
+    return null;
+  }
+
+  return {
+    accountSignature,
+    accountSignatureKey,
+    details,
+    deviceSignature,
+  };
+}
+
+function readLocalStorageJson(key: string): unknown {
+  const value = localStorage.getItem(key);
+
+  if (value === null) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function widToJid(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  const wid = value.trim();
+  const atIndex = wid.lastIndexOf('@');
+  const head = atIndex >= 0 ? wid.slice(0, atIndex) : wid;
+  const server = atIndex >= 0 ? wid.slice(atIndex + 1) : 's.whatsapp.net';
+  const colonIndex = head.indexOf(':');
+  const userAndAgent = colonIndex >= 0 ? head.slice(0, colonIndex) : head;
+  const device = colonIndex >= 0 ? Number(head.slice(colonIndex + 1)) : 0;
+  const dotIndex = userAndAgent.indexOf('.');
+  const user = dotIndex >= 0 ? userAndAgent.slice(0, dotIndex) : userAndAgent;
+
+  if (!user || !Number.isFinite(device)) {
+    return null;
+  }
+
+  return `${user}:${device}@${server}`;
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function getRecordValue(value: unknown, key: string): unknown {
+  return isRecord(value) ? value[key] : undefined;
+}
+
+function toUint8FromPath(value: unknown, path: string[]): Uint8Array | null {
+  let current = value;
+
+  for (const key of path) {
+    if (!isRecord(current)) {
+      return null;
+    }
+    current = current[key];
+  }
+
+  return toUint8(current);
+}
+
+function toUint8(value: unknown): Uint8Array | null {
+  if (!value) {
+    return null;
+  }
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (typeof value === 'string') {
+    return Uint8Array.from(value, (char) => char.charCodeAt(0));
+  }
+  if (
+    isRecord(value) &&
+    value.type === 'Buffer' &&
+    typeof value.data === 'string'
+  ) {
+    return base64ToBytes(value.data);
+  }
+
+  return null;
+}
+
+function bytesToBase64(value: unknown): string | null {
+  const bytes = toUint8(value);
+  if (!bytes) {
+    return null;
+  }
+
+  let binary = '';
+  const step = 0x8000;
+  for (let index = 0; index < bytes.length; index += step) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + step));
+  }
+
+  return btoa(binary);
+}
+
+function bytesToBase64Required(value: unknown, label: string): string {
+  const base64 = bytesToBase64(value);
+  if (!base64) {
+    throw new Error(`Nao foi possivel converter ${label} para base64.`);
+  }
+
+  return base64;
+}
+
+function base64ToBytes(value: string): Uint8Array | null {
+  try {
+    return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+function prefixSignalPublicKey(value: Uint8Array): Uint8Array {
+  if (value.length === 33) {
+    return value;
+  }
+
+  const output = new Uint8Array(value.length + 1);
+  output[0] = 5;
+  output.set(value, 1);
+  return output;
+}
+
+function bufferWrap(base64: string): BufferJsonWrapper {
+  return {
+    data: base64,
+    type: 'Buffer',
+  };
+}
+
+function toPositiveInteger(value: unknown): number | null {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function getSecureSessionTargetProvider(): SecureSessionPackage['target_provider'] {

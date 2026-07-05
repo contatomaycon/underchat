@@ -15,7 +15,10 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.mau.fi/whatsmeow/proto/waAdv"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
+	"go.mau.fi/whatsmeow/util/keys"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
@@ -41,6 +44,40 @@ type secureSessionWhatsmeowSQLStorePayload struct {
 	StoreDBBase64 string                              `json:"store_db_base64"`
 	StoreDB       string                              `json:"store_db"`
 	Files         map[string]secureSessionPayloadFile `json:"files"`
+}
+
+type secureSessionWhatsAppWebCreds struct {
+	Account struct {
+		AccountSignature    string `json:"accountSignature"`
+		AccountSignatureKey string `json:"accountSignatureKey"`
+		Details             string `json:"details"`
+		DeviceSignature     string `json:"deviceSignature"`
+	} `json:"account"`
+	AdvSecretKey *string `json:"advSecretKey"`
+	Me           struct {
+		ID       string  `json:"id"`
+		LID      string  `json:"lid"`
+		Name     *string `json:"name"`
+		Username *string `json:"username"`
+	} `json:"me"`
+	NoiseKey struct {
+		Private string `json:"private"`
+		Public  string `json:"public"`
+	} `json:"noiseKey"`
+	Platform       string `json:"platform"`
+	RegistrationID uint32 `json:"registrationId"`
+	SignedPreKey   struct {
+		KeyID   uint32 `json:"keyId"`
+		KeyPair struct {
+			Private string `json:"private"`
+			Public  string `json:"public"`
+		} `json:"keyPair"`
+		Signature string `json:"signature"`
+	} `json:"signedPreKey"`
+	SignedIdentityKey struct {
+		Private string `json:"private"`
+		Public  string `json:"public"`
+	} `json:"signedIdentityKey"`
 }
 
 func (m *WhatsAppManager) importSecureSessionPackage(ctx context.Context, req SecureSessionImportRequest) (ConnectionState, error) {
@@ -73,7 +110,7 @@ func (m *WhatsAppManager) importSecureSessionPackage(ctx context.Context, req Se
 		return m.secureImportFailureState(req, "secure_session_payload_unavailable", err.Error()), nil
 	}
 
-	storeDB, err := extractWhatsmeowStoreDB(pkg)
+	storeDB, err := extractWhatsmeowStoreDB(ctx, pkg)
 	if err != nil {
 		connectionFlowLog("whatsmeow.provider.secure_import.unsupported_payload", map[string]any{
 			"trace_id":              req.DebugTraceID,
@@ -139,7 +176,7 @@ func (m *WhatsAppManager) resolveSecureSessionPackage(ctx context.Context, req S
 	return pkg, nil
 }
 
-func extractWhatsmeowStoreDB(pkg secureSessionPackage) ([]byte, error) {
+func extractWhatsmeowStoreDB(ctx context.Context, pkg secureSessionPackage) ([]byte, error) {
 	if len(pkg.Payload) == 0 || string(pkg.Payload) == "null" {
 		return nil, fmt.Errorf("secure session payload is empty")
 	}
@@ -182,14 +219,140 @@ func extractWhatsmeowStoreDB(pkg secureSessionPackage) ([]byte, error) {
 		}
 	}
 
-	if hasPayloadKey(payload, "wwebjs_local_auth", "local_auth", "wwebjsLocalAuth", "browser_storage", "cookies", "local_storage", "indexeddb_databases") {
-		return nil, fmt.Errorf("secure session package contains a WhatsApp Web browser profile; whatsmeow requires payload.whatsmeow_sqlstore.store_db_base64")
-	}
-	if hasPayloadKey(payload, "baileys_multi_file_auth_state") {
-		return nil, fmt.Errorf("secure session package contains Baileys auth state; whatsmeow requires payload.whatsmeow_sqlstore.store_db_base64")
+	if rawCreds := payload["whatsapp_web_creds"]; len(rawCreds) > 0 {
+		var creds secureSessionWhatsAppWebCreds
+		if err := json.Unmarshal(rawCreds, &creds); err != nil {
+			return nil, fmt.Errorf("decode whatsapp web creds: %w", err)
+		}
+		return buildWhatsmeowStoreDBFromWebCreds(ctx, creds)
 	}
 
-	return nil, fmt.Errorf("secure session package does not contain payload.whatsmeow_sqlstore.store_db_base64")
+	if hasPayloadKey(payload, "wwebjs_local_auth", "local_auth", "wwebjsLocalAuth", "browser_storage", "cookies", "local_storage", "indexeddb_databases") {
+		return nil, fmt.Errorf("secure session package contains a WhatsApp Web browser profile; whatsmeow requires payload.whatsapp_web_creds or payload.whatsmeow_sqlstore.store_db_base64")
+	}
+	if hasPayloadKey(payload, "baileys_multi_file_auth_state") {
+		return nil, fmt.Errorf("secure session package contains Baileys auth state; whatsmeow requires payload.whatsapp_web_creds or payload.whatsmeow_sqlstore.store_db_base64")
+	}
+
+	return nil, fmt.Errorf("secure session package does not contain payload.whatsapp_web_creds or payload.whatsmeow_sqlstore.store_db_base64")
+}
+
+func buildWhatsmeowStoreDBFromWebCreds(ctx context.Context, creds secureSessionWhatsAppWebCreds) ([]byte, error) {
+	if err := validateWhatsAppWebCreds(creds); err != nil {
+		return nil, err
+	}
+
+	tempDir, err := os.MkdirTemp("", "underchat-whatsmeow-secure-import-*")
+	if err != nil {
+		return nil, fmt.Errorf("create temporary sqlstore dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "store.db")
+	container, err := sqlstore.New(ctx, "sqlite3", "file:"+dbPath+"?_foreign_keys=on", waLog.Noop)
+	if err != nil {
+		return nil, fmt.Errorf("create temporary whatsmeow sqlstore: %w", err)
+	}
+
+	device := container.NewDevice()
+	jid, err := types.ParseJID(creds.Me.ID)
+	if err != nil {
+		_ = container.Close()
+		return nil, fmt.Errorf("parse whatsapp web me.id: %w", err)
+	}
+	device.ID = &jid
+	if strings.TrimSpace(creds.Me.LID) != "" {
+		lid, err := types.ParseJID(creds.Me.LID)
+		if err != nil {
+			_ = container.Close()
+			return nil, fmt.Errorf("parse whatsapp web me.lid: %w", err)
+		}
+		device.LID = lid
+	}
+
+	device.RegistrationID = creds.RegistrationID
+	device.NoiseKey = keys.NewKeyPairFromPrivateKey(mustDecodeFixed32(creds.NoiseKey.Private))
+	device.IdentityKey = keys.NewKeyPairFromPrivateKey(mustDecodeFixed32(creds.SignedIdentityKey.Private))
+	signature := mustDecodeFixed64(creds.SignedPreKey.Signature)
+	device.SignedPreKey = &keys.PreKey{
+		KeyPair:   *keys.NewKeyPairFromPrivateKey(mustDecodeFixed32(creds.SignedPreKey.KeyPair.Private)),
+		KeyID:     creds.SignedPreKey.KeyID,
+		Signature: &signature,
+	}
+	device.AdvSecretKey = decodeOptionalBase64(derefString(creds.AdvSecretKey))
+	device.Account = &waAdv.ADVSignedDeviceIdentity{
+		AccountSignature:    mustDecodeBase64(creds.Account.AccountSignature),
+		AccountSignatureKey: mustDecodeBase64(creds.Account.AccountSignatureKey),
+		Details:             mustDecodeBase64(creds.Account.Details),
+		DeviceSignature:     mustDecodeBase64(creds.Account.DeviceSignature),
+	}
+	device.Platform = firstNonEmpty(creds.Platform, "web")
+	if creds.Me.Name != nil {
+		device.PushName = strings.TrimSpace(*creds.Me.Name)
+	}
+
+	if err := device.Save(ctx); err != nil {
+		_ = container.Close()
+		return nil, fmt.Errorf("save imported whatsmeow device: %w", err)
+	}
+	if err := container.Close(); err != nil {
+		return nil, fmt.Errorf("close temporary whatsmeow sqlstore: %w", err)
+	}
+
+	storeDB, err := os.ReadFile(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("read generated whatsmeow store.db: %w", err)
+	}
+	if len(storeDB) == 0 {
+		return nil, fmt.Errorf("generated whatsmeow store.db is empty")
+	}
+	return storeDB, nil
+}
+
+func validateWhatsAppWebCreds(creds secureSessionWhatsAppWebCreds) error {
+	if strings.TrimSpace(creds.Me.ID) == "" {
+		return fmt.Errorf("whatsapp web creds missing me.id")
+	}
+	if creds.RegistrationID == 0 {
+		return fmt.Errorf("whatsapp web creds missing registrationId")
+	}
+	if _, err := decodeFixed32(creds.NoiseKey.Private); err != nil {
+		return fmt.Errorf("invalid noiseKey.private: %w", err)
+	}
+	if _, err := decodeFixed32(creds.NoiseKey.Public); err != nil {
+		return fmt.Errorf("invalid noiseKey.public: %w", err)
+	}
+	if _, err := decodeFixed32(creds.SignedIdentityKey.Private); err != nil {
+		return fmt.Errorf("invalid signedIdentityKey.private: %w", err)
+	}
+	if _, err := decodeFixed32(creds.SignedIdentityKey.Public); err != nil {
+		return fmt.Errorf("invalid signedIdentityKey.public: %w", err)
+	}
+	if _, err := decodeFixed32(creds.SignedPreKey.KeyPair.Private); err != nil {
+		return fmt.Errorf("invalid signedPreKey.keyPair.private: %w", err)
+	}
+	if _, err := decodeFixed32(creds.SignedPreKey.KeyPair.Public); err != nil {
+		return fmt.Errorf("invalid signedPreKey.keyPair.public: %w", err)
+	}
+	if _, err := decodeFixed64(creds.SignedPreKey.Signature); err != nil {
+		return fmt.Errorf("invalid signedPreKey.signature: %w", err)
+	}
+	if creds.SignedPreKey.KeyID == 0 {
+		return fmt.Errorf("whatsapp web creds missing signedPreKey.keyId")
+	}
+	if _, err := decodeRequiredBase64(creds.Account.AccountSignature); err != nil {
+		return fmt.Errorf("invalid account.accountSignature: %w", err)
+	}
+	if _, err := decodeRequiredBase64(creds.Account.AccountSignatureKey); err != nil {
+		return fmt.Errorf("invalid account.accountSignatureKey: %w", err)
+	}
+	if _, err := decodeRequiredBase64(creds.Account.Details); err != nil {
+		return fmt.Errorf("invalid account.details: %w", err)
+	}
+	if _, err := decodeRequiredBase64(creds.Account.DeviceSignature); err != nil {
+		return fmt.Errorf("invalid account.deviceSignature: %w", err)
+	}
+	return nil
 }
 
 func hasPayloadKey(payload map[string]json.RawMessage, keys ...string) bool {
@@ -222,6 +385,81 @@ func decodeSecureSessionFile(file secureSessionPayloadFile) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported store.db encoding %q", encoding)
 	}
 	return decodeStoreDBCandidate(value)
+}
+
+func decodeRequiredBase64(value string) ([]byte, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, fmt.Errorf("empty base64 value")
+	}
+	data, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty decoded value")
+	}
+	return data, nil
+}
+
+func decodeOptionalBase64(value string) []byte {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return []byte{}
+	}
+	data, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return []byte{}
+	}
+	return data
+}
+
+func decodeFixed32(value string) ([32]byte, error) {
+	data, err := decodeRequiredBase64(value)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	if len(data) != 32 {
+		return [32]byte{}, fmt.Errorf("expected 32 bytes, got %d", len(data))
+	}
+	var output [32]byte
+	copy(output[:], data)
+	return output, nil
+}
+
+func decodeFixed64(value string) ([64]byte, error) {
+	data, err := decodeRequiredBase64(value)
+	if err != nil {
+		return [64]byte{}, err
+	}
+	if len(data) != 64 {
+		return [64]byte{}, fmt.Errorf("expected 64 bytes, got %d", len(data))
+	}
+	var output [64]byte
+	copy(output[:], data)
+	return output, nil
+}
+
+func mustDecodeBase64(value string) []byte {
+	data, _ := decodeRequiredBase64(value)
+	return data
+}
+
+func mustDecodeFixed32(value string) [32]byte {
+	data, _ := decodeFixed32(value)
+	return data
+}
+
+func mustDecodeFixed64(value string) [64]byte {
+	data, _ := decodeFixed64(value)
+	return data
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (m *WhatsAppManager) restoreWhatsmeowSQLStore(ctx context.Context, req SecureSessionImportRequest, storeDB []byte) (ConnectionState, error) {

@@ -87,6 +87,12 @@ import {
 import { planGuard } from '@/plugins/planGuard';
 import { planStatus } from '@/plugins/planStatus';
 
+const secureConnectionHelperSessionBodyLimitBytes = Math.max(
+  8 * 1024 * 1024,
+  Number(process.env.SECURE_CONNECTION_HELPER_SESSION_BODY_LIMIT_BYTES) ||
+    160 * 1024 * 1024
+);
+
 export default function workerRoutes(server: FastifyInstance) {
   const workerController = container.resolve(WorkerController);
 
@@ -200,6 +206,7 @@ export default function workerRoutes(server: FastifyInstance) {
   });
 
   server.post('/worker/connection/secure-helper/:token/session', {
+    bodyLimit: secureConnectionHelperSessionBodyLimitBytes,
     schema: workerSecureConnectionHelperSessionSchema,
     handler: workerController.uploadSecureConnectionHelperSession,
   });
