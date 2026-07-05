@@ -63,6 +63,7 @@ interface WhatsAppWebExtractedCreds {
 }
 
 interface WhatsAppWebAuthDump {
+  _debug?: JsonRecord[];
   appStateSyncKeyCount: number;
   appStateVersionCount: number;
   creds: WhatsAppWebExtractedCreds;
@@ -106,6 +107,7 @@ let automaticExtractionRetryTimerId: number | null = null;
 let helperAutoCloseTimerId: number | null = null;
 let secureUploadPollingIntervalId: number | null = null;
 let secureUploadWatchdogTimerId: number | null = null;
+let isolatedWorldAuthExtractionDebug: JsonRecord[] = [];
 let state: OverlayState = {
   busy: false,
   connected: false,
@@ -688,6 +690,29 @@ function recordDebugLog(
   void bridgeRef?.appendDebugLog(event, details).catch(() => undefined);
 }
 
+function pushAuthExtractionDebug(
+  event: string,
+  details: Record<string, unknown> = {}
+): void {
+  isolatedWorldAuthExtractionDebug.push({ details, event });
+}
+
+function summarizeRecordKeys(value: unknown): string[] {
+  return isRecord(value) ? Object.keys(value).slice(0, 40).sort() : [];
+}
+
+function summarizeBytePair(
+  pair: { private: Uint8Array; public: Uint8Array } | null
+): JsonRecord | null {
+  return pair
+    ? {
+        plausible: isPlausibleNoiseKeyPair(pair.private, pair.public),
+        priv_len: pair.private.length,
+        pub_len: pair.public.length,
+      }
+    : null;
+}
+
 function detectWhatsAppAuthenticated(
   options: { strict?: boolean } = {}
 ): boolean {
@@ -964,11 +989,17 @@ async function extractWhatsAppWebAuthDump(): Promise<WhatsAppWebAuthDump> {
       console.warn(
         '[underchat-passkey-helper] secure_session.auth_dump.page_world.invalid_shape'
       );
+      recordDebugLog('secure_session.auth_dump.page_world.invalid_shape', {
+        keys: summarizeRecordKeys(pageWorldDump),
+      });
     } catch (error) {
       console.warn(
         '[underchat-passkey-helper] secure_session.auth_dump.page_world.error',
         sanitizeOverlayError(error)
       );
+      recordDebugLog('secure_session.auth_dump.page_world.error', {
+        reason: sanitizeOverlayError(error),
+      });
     }
   }
 
@@ -976,6 +1007,9 @@ async function extractWhatsAppWebAuthDump(): Promise<WhatsAppWebAuthDump> {
 }
 
 async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWebAuthDump> {
+  isolatedWorldAuthExtractionDebug = [];
+  pushAuthExtractionDebug('isolated_world.start');
+
   const signalDb = await openIndexedDb('signal-storage');
   let metaRows: unknown[] = [];
   let signedPreKeyRows: unknown[] = [];
@@ -988,6 +1022,10 @@ async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWe
   } finally {
     signalDb.close();
   }
+  pushAuthExtractionDebug('signal_db.rows', {
+    meta_rows: metaRows.length,
+    signed_prekey_rows: signedPreKeyRows.length,
+  });
 
   const metaMap = createSignalMetaMap(metaRows);
   const registrationInfo = await getRegistrationInfoViaInternalModule();
@@ -1011,22 +1049,30 @@ async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWe
   );
 
   if (!registrationId) {
-    throw new Error('Nao foi possivel extrair o registrationId da sessao.');
+    throwAuthExtractionError(
+      'Nao foi possivel extrair o registrationId da sessao.'
+    );
   }
   if (!noise) {
-    throw new Error('Nao foi possivel extrair a noise key da sessao.');
+    throwAuthExtractionError('Nao foi possivel extrair a noise key da sessao.');
   }
   if (!staticPublicKey || !staticPrivateKey) {
-    throw new Error('Nao foi possivel extrair a identity key da sessao.');
+    throwAuthExtractionError(
+      'Nao foi possivel extrair a identity key da sessao.'
+    );
   }
   if (!signedPreKey) {
-    throw new Error('Nao foi possivel extrair a signed pre-key da sessao.');
+    throwAuthExtractionError(
+      'Nao foi possivel extrair a signed pre-key da sessao.'
+    );
   }
   if (!account) {
-    throw new Error('Nao foi possivel extrair a identidade ADV da sessao.');
+    throwAuthExtractionError(
+      'Nao foi possivel extrair a identidade ADV da sessao.'
+    );
   }
   if (!meId) {
-    throw new Error('Nao foi possivel identificar o JID conectado.');
+    throwAuthExtractionError('Nao foi possivel identificar o JID conectado.');
   }
 
   const [syncKeyRows, versionRows] = await Promise.all([
@@ -1041,7 +1087,8 @@ async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWe
     toPositiveInteger(metaMap.signal_pre_key_id) ??
     signedPreKey.keyId + 1;
 
-  return {
+  const dump: WhatsAppWebAuthDump = {
+    _debug: isolatedWorldAuthExtractionDebug,
     appStateSyncKeyCount: syncKeyRows.length,
     appStateVersionCount: versionRows.length,
     creds: {
@@ -1070,6 +1117,21 @@ async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWe
       signedPreKey,
     },
   };
+
+  recordDebugLog('secure_session.auth_dump.isolated_world.done', {
+    debug: isolatedWorldAuthExtractionDebug,
+    has_noise: true,
+  });
+
+  return dump;
+}
+
+function throwAuthExtractionError(message: string): never {
+  recordDebugLog('secure_session.auth_dump.isolated_world.error', {
+    debug: isolatedWorldAuthExtractionDebug,
+    reason: message,
+  });
+  throw new Error(message);
 }
 
 function createBaileysCredsFile(creds: WhatsAppWebExtractedCreds): JsonRecord {
@@ -1229,7 +1291,9 @@ function getWaModule(name: string): unknown {
 
   try {
     if (typeof directRequire === 'function') {
-      return (directRequire as (moduleName: string) => unknown)(name);
+      return unwrapModule(
+        (directRequire as (moduleName: string) => unknown)(name)
+      );
     }
   } catch {}
 
@@ -1252,20 +1316,28 @@ function getWaModule(name: string): unknown {
     )(sentinel, [name], (...args: unknown[]) => {
       const parentRequire = args[3];
       if (typeof parentRequire === 'function') {
-        captured = (parentRequire as (moduleName: string) => unknown)(name);
+        captured = unwrapModule(
+          (parentRequire as (moduleName: string) => unknown)(name)
+        );
       }
     });
 
     const loaderRequire = (moduleLoader as unknown as Record<string, unknown>)
       .require;
     if (!captured && typeof loaderRequire === 'function') {
-      captured = (loaderRequire as (moduleName: string) => unknown)(name);
+      captured = unwrapModule(
+        (loaderRequire as (moduleName: string) => unknown)(name)
+      );
     }
 
     return captured ?? null;
   } catch {
     return null;
   }
+}
+
+function unwrapModule(value: unknown): unknown {
+  return isRecord(value) && value.default ? value.default : value;
 }
 
 async function getRegistrationInfoViaInternalModule(): Promise<unknown> {
@@ -1289,28 +1361,186 @@ async function getNoiseInfoViaInternalModule(): Promise<{
   public: Uint8Array;
 } | null> {
   const module = getWaModule('WAWebUserPrefsInfoStore');
-  const waNoiseInfo = isRecord(module) ? module.waNoiseInfo : null;
-  const getter = isRecord(waNoiseInfo) ? waNoiseInfo.get : null;
+  pushAuthExtractionDebug('noise.module.lookup', {
+    module_keys: summarizeRecordKeys(module),
+    module_present: isRecord(module),
+  });
 
-  if (typeof getter !== 'function') {
+  const containers: Array<{ label: string; value: JsonRecord }> = [];
+  if (isRecord(module)) {
+    containers.push({ label: 'module', value: module });
+    if (isRecord(module.waNoiseInfo)) {
+      containers.push({
+        label: 'module.waNoiseInfo',
+        value: module.waNoiseInfo,
+      });
+    }
+    if (isRecord(module.default)) {
+      containers.push({ label: 'module.default', value: module.default });
+    }
+    if (isRecord(module.default) && isRecord(module.default.waNoiseInfo)) {
+      containers.push({
+        label: 'module.default.waNoiseInfo',
+        value: module.default.waNoiseInfo,
+      });
+    }
+  }
+
+  for (const candidate of containers) {
+    const container = candidate.value;
+    pushAuthExtractionDebug('noise.container.inspect', {
+      keys: summarizeRecordKeys(container),
+      label: candidate.label,
+    });
+
+    const directPair = normalizeNoiseKeyPair(container);
+    if (directPair) {
+      pushAuthExtractionDebug('noise.source.selected', {
+        pair: summarizeBytePair(directPair),
+        source: candidate.label,
+      });
+      return directPair;
+    }
+
+    for (const field of ['noiseInfo', 'staticKeyPair', 'keyPair', 'value']) {
+      const fieldPair = normalizeNoiseKeyPair(container[field]);
+      if (fieldPair) {
+        pushAuthExtractionDebug('noise.source.selected', {
+          pair: summarizeBytePair(fieldPair),
+          source: `${candidate.label}.${field}`,
+        });
+        return fieldPair;
+      }
+    }
+
+    for (const methodName of [
+      'getUnlockedNoiseInfo',
+      'getNoiseInfo',
+      'get',
+      'getNoiseInfoStore',
+    ]) {
+      const getter = container[methodName];
+      if (typeof getter !== 'function') {
+        pushAuthExtractionDebug('noise.method.missing', {
+          container: candidate.label,
+          method: methodName,
+        });
+        continue;
+      }
+
+      try {
+        const value = await (getter as () => Promise<unknown>).call(container);
+        const pair = normalizeNoiseKeyPair(value);
+        pushAuthExtractionDebug('noise.method.result', {
+          container: candidate.label,
+          method: methodName,
+          pair: summarizeBytePair(pair),
+          value_keys: summarizeRecordKeys(value),
+        });
+        if (pair) {
+          return pair;
+        }
+      } catch (error) {
+        pushAuthExtractionDebug('noise.method.error', {
+          container: candidate.label,
+          method: methodName,
+          reason: sanitizeOverlayError(error),
+        });
+      }
+    }
+  }
+
+  return getNoiseInfoFromLocalStorage();
+}
+
+function normalizeNoiseKeyPair(value: unknown): {
+  private: Uint8Array;
+  public: Uint8Array;
+} | null {
+  if (!isRecord(value)) {
     return null;
   }
 
-  try {
-    const decrypted = await (getter as () => Promise<unknown>)();
-    const staticKeyPair = isRecord(decrypted) ? decrypted.staticKeyPair : null;
-    const publicKey = toUint8FromPath(staticKeyPair, ['pubKey']);
-    const privateKey = toUint8FromPath(staticKeyPair, ['privKey']);
+  const candidates = [
+    value,
+    value.staticKeyPair,
+    value.keyPair,
+    value.noiseKey,
+    value.noiseInfo,
+    value.value,
+    value.data,
+  ];
 
-    return publicKey && privateKey
-      ? {
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) {
+      continue;
+    }
+
+    const publicKey = toUint8FromPaths(candidate, [
+      ['pubKey'],
+      ['publicKey'],
+      ['public'],
+      ['pub'],
+    ]);
+    const privateKey = toUint8FromPaths(candidate, [
+      ['privKey'],
+      ['privateKey'],
+      ['private'],
+      ['priv'],
+    ]);
+
+    if (publicKey && privateKey) {
+      pushAuthExtractionDebug('noise.pair.candidate', {
+        pair: summarizeBytePair({
           private: privateKey,
           public: publicKey,
-        }
-      : null;
-  } catch {
-    return null;
+        }),
+      });
+      if (!isPlausibleNoiseKeyPair(privateKey, publicKey)) {
+        continue;
+      }
+
+      return {
+        private: privateKey,
+        public: publicKey,
+      };
+    }
   }
+
+  return null;
+}
+
+function isPlausibleNoiseKeyPair(
+  privateKey: Uint8Array,
+  publicKey: Uint8Array
+): boolean {
+  return privateKey.length === 32 && [32, 33].includes(publicKey.length);
+}
+
+function getNoiseInfoFromLocalStorage(): {
+  private: Uint8Array;
+  public: Uint8Array;
+} | null {
+  for (const key of ['WANoiseInfo', 'NOISE_INFO', 'MD_NOISE_KEYS']) {
+    const value = readLocalStorageJson(key);
+    pushAuthExtractionDebug('noise.local_storage.inspect', {
+      key,
+      keys: summarizeRecordKeys(value),
+      present: value !== null,
+      type: Array.isArray(value) ? 'array' : typeof value,
+    });
+
+    const pair = normalizeNoiseKeyPair(value);
+    if (pair) {
+      pushAuthExtractionDebug('noise.source.selected', {
+        pair: summarizeBytePair(pair),
+        source: `localStorage.${key}`,
+      });
+      return pair;
+    }
+  }
+
+  return null;
 }
 
 async function getAdvSecretKeyBase64(): Promise<string | null> {
@@ -1478,6 +1708,20 @@ function toUint8FromPath(value: unknown, path: string[]): Uint8Array | null {
   return toUint8(current);
 }
 
+function toUint8FromPaths(
+  value: unknown,
+  paths: string[][]
+): Uint8Array | null {
+  for (const path of paths) {
+    const bytes = toUint8FromPath(value, path);
+    if (bytes) {
+      return bytes;
+    }
+  }
+
+  return null;
+}
+
 function toUint8(value: unknown): Uint8Array | null {
   if (!value) {
     return null;
@@ -1492,6 +1736,10 @@ function toUint8(value: unknown): Uint8Array | null {
     return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
   }
   if (typeof value === 'string') {
+    const base64Bytes = base64ToBytes(value);
+    if (base64Bytes) {
+      return base64Bytes;
+    }
     return Uint8Array.from(value, (char) => char.charCodeAt(0));
   }
   if (
@@ -1530,8 +1778,14 @@ function bytesToBase64Required(value: unknown, label: string): string {
 }
 
 function base64ToBytes(value: string): Uint8Array | null {
+  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    return null;
+  }
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+
   try {
-    return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+    return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
   } catch {
     return null;
   }

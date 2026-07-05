@@ -339,14 +339,27 @@ function registerIpcHandlers(): void {
       }
     );
 
-    const dump = await withTimeout(
-      mainWindow.webContents.executeJavaScript(
-        EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
-        false
-      ),
-      WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
-      'Tempo excedido ao extrair credenciais do WhatsApp Web.'
-    );
+    let dump: unknown;
+
+    try {
+      dump = await withTimeout(
+        mainWindow.webContents.executeJavaScript(
+          EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
+          false
+        ),
+        WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+        'Tempo excedido ao extrair credenciais do WhatsApp Web.'
+      );
+    } catch (error) {
+      logEvent(
+        'secure_session.auth_dump.page_world.error',
+        currentPairing?.context,
+        {
+          reason: sanitizeError(error),
+        }
+      );
+      throw error;
+    }
 
     logEvent(
       'secure_session.auth_dump.page_world.done',
@@ -809,6 +822,7 @@ function summarizeAuthDump(dump: unknown): Record<string, unknown> {
   return {
     app_state_sync_key_count: root.appStateSyncKeyCount ?? null,
     app_state_version_count: root.appStateVersionCount ?? null,
+    debug: root._debug ?? null,
     has_creds: Boolean(root.creds),
     has_me: typeof me.id === 'string' && me.id.length > 0,
     has_noise_key:
@@ -822,8 +836,31 @@ function summarizeAuthDump(dump: unknown): Record<string, unknown> {
 
 const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
 (async () => {
+  const extractionDebug = [];
+
   function isRecord(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function pushDebug(event, details) {
+    extractionDebug.push({
+      details: details || {},
+      event
+    });
+  }
+
+  function summarizeRecordKeys(value) {
+    return isRecord(value) ? Object.keys(value).slice(0, 40).sort() : [];
+  }
+
+  function summarizePair(pair) {
+    return pair
+      ? {
+          priv_len: pair.private ? pair.private.length : 0,
+          pub_len: pair.public ? pair.public.length : 0,
+          plausible: isPlausibleNoiseKeyPair(pair.private, pair.public)
+        }
+      : null;
   }
 
   function bytesToBase64(value) {
@@ -851,6 +888,8 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
       return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
     }
     if (typeof value === 'string') {
+      const base64Bytes = base64ToBytes(value);
+      if (base64Bytes) return base64Bytes;
       return Uint8Array.from(value, function(char) { return char.charCodeAt(0); });
     }
     if (isRecord(value) && value.type === 'Buffer' && typeof value.data === 'string') {
@@ -861,6 +900,17 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
       }
     }
     return null;
+  }
+
+  function base64ToBytes(value) {
+    const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) return null;
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    try {
+      return Uint8Array.from(atob(padded), function(char) { return char.charCodeAt(0); });
+    } catch {
+      return null;
+    }
   }
 
   function getPath(value, path) {
@@ -993,30 +1043,148 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
 
   async function getNoiseInfoViaInternalModule() {
     const moduleValue = getWaModule('WAWebUserPrefsInfoStore');
-    const waNoiseInfo = isRecord(moduleValue) ? moduleValue.waNoiseInfo : null;
-    const getter = isRecord(waNoiseInfo) ? waNoiseInfo.get : null;
-    if (typeof getter !== 'function') return null;
+    pushDebug('noise.module.lookup', {
+      module_present: isRecord(moduleValue),
+      module_keys: summarizeRecordKeys(moduleValue)
+    });
 
-    try {
-      const decrypted = await getter();
-      const staticKeyPair =
-        getPath(decrypted, ['staticKeyPair']) ||
-        getPath(decrypted, ['keyPair']) ||
-        decrypted;
-      const publicKey = toUint8FromPaths(staticKeyPair, [
+    const containers = [];
+    if (isRecord(moduleValue)) {
+      containers.push({ label: 'module', value: moduleValue });
+      if (isRecord(moduleValue.waNoiseInfo)) {
+        containers.push({ label: 'module.waNoiseInfo', value: moduleValue.waNoiseInfo });
+      }
+      if (isRecord(moduleValue.default)) {
+        containers.push({ label: 'module.default', value: moduleValue.default });
+      }
+      if (isRecord(moduleValue.default) && isRecord(moduleValue.default.waNoiseInfo)) {
+        containers.push({ label: 'module.default.waNoiseInfo', value: moduleValue.default.waNoiseInfo });
+      }
+    }
+
+    for (const candidate of containers) {
+      const container = candidate.value;
+      pushDebug('noise.container.inspect', {
+        label: candidate.label,
+        keys: summarizeRecordKeys(container)
+      });
+      const directPair = normalizeNoiseKeyPair(container);
+      if (directPair) {
+        pushDebug('noise.source.selected', {
+          source: candidate.label,
+          pair: summarizePair(directPair)
+        });
+        return directPair;
+      }
+
+      for (const field of ['noiseInfo', 'staticKeyPair', 'keyPair', 'value']) {
+        const fieldPair = normalizeNoiseKeyPair(container[field]);
+        if (fieldPair) {
+          pushDebug('noise.source.selected', {
+            source: candidate.label + '.' + field,
+            pair: summarizePair(fieldPair)
+          });
+          return fieldPair;
+        }
+      }
+
+      for (const methodName of ['getUnlockedNoiseInfo', 'getNoiseInfo', 'get', 'getNoiseInfoStore']) {
+        const getter = container[methodName];
+        if (typeof getter !== 'function') {
+          pushDebug('noise.method.missing', {
+            container: candidate.label,
+            method: methodName
+          });
+          continue;
+        }
+        try {
+          const value = await getter.call(container);
+          const pair = normalizeNoiseKeyPair(value);
+          pushDebug('noise.method.result', {
+            container: candidate.label,
+            method: methodName,
+            pair: summarizePair(pair),
+            value_keys: summarizeRecordKeys(value)
+          });
+          if (pair) return pair;
+        } catch (error) {
+          pushDebug('noise.method.error', {
+            container: candidate.label,
+            method: methodName,
+            reason: error && error.message ? String(error.message) : String(error)
+          });
+        }
+      }
+    }
+
+    return getNoiseInfoFromLocalStorage();
+  }
+
+  function normalizeNoiseKeyPair(value) {
+    if (!isRecord(value)) return null;
+
+    const candidates = [
+      value,
+      value.staticKeyPair,
+      value.keyPair,
+      value.noiseKey,
+      value.noiseInfo,
+      value.value,
+      value.data
+    ];
+
+    for (const candidate of candidates) {
+      if (!isRecord(candidate)) continue;
+      const publicKey = toUint8FromPaths(candidate, [
         ['pubKey'],
         ['publicKey'],
-        ['public']
+        ['public'],
+        ['pub']
       ]);
-      const privateKey = toUint8FromPaths(staticKeyPair, [
+      const privateKey = toUint8FromPaths(candidate, [
         ['privKey'],
         ['privateKey'],
-        ['private']
+        ['private'],
+        ['priv']
       ]);
-      return publicKey && privateKey ? { private: privateKey, public: publicKey } : null;
-    } catch {
-      return null;
+      if (publicKey && privateKey) {
+        pushDebug('noise.pair.candidate', {
+          pair: summarizePair({ private: privateKey, public: publicKey })
+        });
+        if (!isPlausibleNoiseKeyPair(privateKey, publicKey)) {
+          continue;
+        }
+        return { private: privateKey, public: publicKey };
+      }
     }
+
+    return null;
+  }
+
+  function isPlausibleNoiseKeyPair(privateKey, publicKey) {
+    return privateKey.length === 32 && (publicKey.length === 32 || publicKey.length === 33);
+  }
+
+  function getNoiseInfoFromLocalStorage() {
+    for (const key of ['WANoiseInfo', 'NOISE_INFO', 'MD_NOISE_KEYS']) {
+      const value = readLocalStorageJson(key);
+      pushDebug('noise.local_storage.inspect', {
+        key,
+        keys: summarizeRecordKeys(value),
+        present: value !== null,
+        type: Array.isArray(value) ? 'array' : typeof value
+      });
+      const pair = normalizeNoiseKeyPair(value);
+      if (pair) {
+        pushDebug('noise.source.selected', {
+          source: 'localStorage.' + key,
+          pair: summarizePair(pair)
+        });
+        return pair;
+      }
+    }
+
+    return null;
   }
 
   async function getAdvSecretKeyBase64() {
@@ -1183,6 +1351,7 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
     signedPreKey.keyId + 1;
 
   return {
+    _debug: extractionDebug,
     appStateSyncKeyCount: syncKeyRows.length,
     appStateVersionCount: versionRows.length,
     creds: {

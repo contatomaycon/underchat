@@ -100,8 +100,8 @@ importers:
         specifier: ^3.6.4
         version: 3.6.4
       '@whiskeysockets/baileys':
-        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/237
-        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/237(audio-decode@3.11.0)(link-preview-js@4.0.4)(sharp@0.35.2)(supports-color@8.1.1)
+        specifier: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/239
+        version: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/239(audio-decode@3.11.0)(link-preview-js@4.0.4)(sharp@0.35.2)
       '@wwebjs/whatsapp-web.js':
         specifier: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/238
         version: https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/238(supports-color@8.1.1)(typescript@6.0.3)
@@ -536,7 +536,7 @@ importers:
         version: 26.1.0
       electron:
         specifier: 43.0.0
-        version: 43.0.0
+        version: 43.0.0(supports-color@8.1.1)
       electron-builder:
         specifier: ^26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
@@ -5097,8 +5097,8 @@ packages:
   '@wasm-audio-decoders/opus-ml@0.0.2':
     resolution: {integrity: sha512-58rWEqDGg+CKCyEeKm2KoxxSwTWtHh/NLTW9ObR4K8CGF6VwuuGudEI1CtniS/oSRmL1nJq/eh8MKARiluw4DQ==}
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/237':
-    resolution: {integrity: sha512-/Gfxg8j1U8Mc1Wmzm+uP9ewS3vgFVjyURtuFqWcWIEie1jdazf/9gelQuwOMWMvGS+iZHPxbvjJNuktqD2IL1Q==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/237}
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/239':
+    resolution: {integrity: sha512-H1K9v16ndLHY/zun0gob8S4H+W2R94rMycxbME9RcvBSxdWxtPtbaKO1CAcvIEg4aUIOQ8EV6flwQllLMm0DwA==, tarball: https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/239}
     version: 1.0.1
     engines: {node: '>=20.0.0'}
     peerDependencies:
@@ -13750,7 +13750,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron/get@5.0.0':
+  '@electron/get@5.0.0(supports-color@8.1.1)':
     dependencies:
       debug: 4.4.3(supports-color@8.1.1)
       env-paths: 3.0.0
@@ -17757,14 +17757,14 @@ snapshots:
     dependencies:
       '@wasm-audio-decoders/common': 9.0.7
 
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/237(audio-decode@3.11.0)(link-preview-js@4.0.4)(sharp@0.35.2)(supports-color@8.1.1)':
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/239(audio-decode@3.11.0)(link-preview-js@4.0.4)(sharp@0.35.2)':
     dependencies:
       '@cacheable/node-cache': 1.7.6
       '@hapi/boom': 9.1.4
       async-mutex: 0.5.0
       libsignal: 6.0.0
       lru-cache: 11.5.1
-      music-metadata: 11.13.0(supports-color@8.1.1)
+      music-metadata: 11.13.0
       p-queue: 9.3.0
       pino: 9.14.0
       protobufjs: 7.6.4
@@ -19637,10 +19637,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@43.0.0:
+  electron@43.0.0(supports-color@8.1.1):
     dependencies:
       '@electron-internal/extract-zip': 1.0.4
-      '@electron/get': 5.0.0
+      '@electron/get': 5.0.0(supports-color@8.1.1)
       '@types/node': 24.13.2
     transitivePeerDependencies:
       - supports-color
@@ -23105,7 +23105,7 @@ snapshots:
 
   murmurhash-js@1.0.0: {}
 
-  music-metadata@11.13.0(supports-color@8.1.1):
+  music-metadata@11.13.0:
     dependencies:
       '@borewit/text-codec': 0.2.2
       '@tokenizer/token': 0.3.0

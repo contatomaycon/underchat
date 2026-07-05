@@ -41,8 +41,8 @@ patchedDependencies:
 allowBuilds:
   '@parcel/watcher': true
   '@swc/core': true
-  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/236': true
   '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/237': true
+  '@whiskeysockets/baileys@https://gitea.devunder.com/underchat/-/packages/npm/@whiskeysockets%2Fbaileys/1.0.1/files/239': true
   '@wwebjs/whatsapp-web.js@https://gitea.devunder.com/underchat/-/packages/npm/@wwebjs%2Fwhatsapp-web.js/1.34.8/files/238': true
   core-js: true
   cpu-features: true

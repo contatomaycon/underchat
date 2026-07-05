@@ -17,6 +17,28 @@
     "connectionId": "https-sonarqube-devunder-com",
     "projectKey": "underchat"
   },
+  "search.followSymlinks": false,
+  "search.exclude": {
+    "**/.git/**": true,
+    "**/.pnpm-store/**": true,
+    "**/.turbo/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/build/**": true,
+    "**/coverage/**": true,
+    "**/wine-prefix/**": true
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/.pnpm-store/**": true,
+    "**/.turbo/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/build/**": true,
+    "**/coverage/**": true,
+    "**/wine-prefix/**": true
+  },
   "[json]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
