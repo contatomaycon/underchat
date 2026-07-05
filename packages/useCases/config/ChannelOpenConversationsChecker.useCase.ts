@@ -16,15 +16,15 @@ export class ChannelOpenConversationsCheckerUseCase {
     t: TFunction<'translation', undefined>,
     channelId: string
   ): Promise<number> {
-    const viewWorkerBalancer =
-      await this.configService.viewChannelBalancer(channelId);
+    const channelContext =
+      await this.configService.viewChannelContext(channelId);
 
-    if (!viewWorkerBalancer) {
+    if (!channelContext) {
       throw new Error(t('worker_not_found'));
     }
 
     return this.chatService.countOpenChatsByWorkerId(
-      viewWorkerBalancer.account_id,
+      channelContext.account_id,
       channelId
     );
   }

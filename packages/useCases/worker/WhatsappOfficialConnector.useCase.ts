@@ -76,15 +76,14 @@ export class WhatsappOfficialConnectorUseCase {
     workerId: string,
     input: ConnectWhatsappOfficialRequest
   ): Promise<ConnectWhatsappOfficialResponse> {
-    const [worker, workerBalancer, activeConnection] = await Promise.all([
+    const [worker, activeConnection] = await Promise.all([
       this.workerService.viewWorker(accountId, workerId),
-      this.workerService.viewWorkerBalancer(accountId, workerId),
       this.workerWhatsappOfficialConnectionRepository.findActiveByWorkerId(
         workerId
       ),
     ]);
 
-    if (!worker || !workerBalancer) {
+    if (!worker) {
       throw new Error(t('worker_not_found'));
     }
 
@@ -206,7 +205,7 @@ export class WhatsappOfficialConnectorUseCase {
     return {
       worker_id: workerId,
       account_id: accountId,
-      server_id: workerBalancer.server_id,
+      server_id: null,
       worker_type_id: EWorkerType.whatsapp,
       worker_status_id: EWorkerStatus.online,
       number,

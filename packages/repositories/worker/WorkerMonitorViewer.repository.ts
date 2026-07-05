@@ -3,7 +3,7 @@ import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { IWorkerMonitor } from '@core/common/interfaces/IWorkerMonitor';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 
@@ -33,6 +33,7 @@ export class WorkerMonitorViewerRepository {
       .where(
         and(
           isNull(worker.deleted_at),
+          isNotNull(worker.server_id),
           ne(worker.worker_status_id, EWorkerStatus.stopped),
           ne(worker.worker_type_id, EWorkerType.whatsapp)
         )
@@ -67,6 +68,7 @@ export class WorkerMonitorViewerRepository {
       .where(
         and(
           eq(worker.worker_id, workerId),
+          isNotNull(worker.server_id),
           ne(worker.worker_type_id, EWorkerType.whatsapp)
         )
       )

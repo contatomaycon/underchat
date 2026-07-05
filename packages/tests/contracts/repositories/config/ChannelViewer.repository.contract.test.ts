@@ -16,6 +16,28 @@ function createChain(result: unknown[]) {
 }
 
 describe('ChannelViewerRepository', () => {
+  it('returns channel context without requiring server data', async () => {
+    const chain = createChain([
+      {
+        worker_id: 'channel-1',
+        account_id: 'acc-1',
+        worker_type_id: 'whatsapp',
+        worker_status_id: 'online',
+        name: 'Official',
+      },
+    ]);
+    const dbRo = { select: chain.select };
+    const repository = new ChannelViewerRepository(dbRo as never);
+
+    await expect(repository.viewChannelContext('channel-1')).resolves.toEqual({
+      worker_id: 'channel-1',
+      account_id: 'acc-1',
+      worker_type_id: 'whatsapp',
+      worker_status_id: 'online',
+      name: 'Official',
+    });
+  });
+
   it('returns null when channel is not found', async () => {
     const chain = createChain([]);
     const dbRo = { select: chain.select };

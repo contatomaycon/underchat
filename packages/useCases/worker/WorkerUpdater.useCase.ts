@@ -348,27 +348,6 @@ export class WorkerUpdaterUseCase {
         name: input.name,
       };
 
-      if (input.server_id) {
-        const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
-          accountId,
-          input.worker_id
-        );
-
-        if (!viewWorkerBalancer?.server_id) {
-          throw new Error(t('worker_not_found'));
-        }
-
-        const shouldUpdateServer = await this.validateServerEligibility(
-          t,
-          input.server_id,
-          viewWorkerBalancer.server_id
-        );
-
-        if (shouldUpdateServer) {
-          inputUpdate.server_id = input.server_id;
-        }
-      }
-
       const updateWorkerById = await this.workerService.updateWorkerById(
         accountId,
         inputUpdate

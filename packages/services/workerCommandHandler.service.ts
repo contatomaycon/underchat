@@ -4285,6 +4285,15 @@ export class WorkerCommandHandlerService {
     serverId?: string,
     lifecycleOperationId?: string
   ): Promise<PublishResult> {
+    const currentWorker = await this.workerService.viewWorker(
+      accountId,
+      workerId
+    );
+
+    if (currentWorker?.type?.id === EWorkerType.whatsapp) {
+      return {} as PublishResult;
+    }
+
     const inputUpdate: IUpdateWorker = {
       worker_id: workerId,
       worker_status_id: EWorkerStatus.error,
@@ -5485,6 +5494,19 @@ export class WorkerCommandHandlerService {
     }
 
     const workerType = data.worker_type_id;
+    if (workerType === EWorkerType.whatsapp) {
+      this.logDebug('service.create_worker.skip_official', {
+        trace_id: data.debug_trace_id,
+        layer: 'service',
+        worker_id: data.worker_id,
+        account_id: data.account_id,
+        worker_type_id: workerType,
+        lifecycle_operation_id: data.lifecycle_operation_id,
+        reason: 'official_whatsapp_has_no_runtime',
+      });
+      return {} as PublishResult;
+    }
+
     if (!(await this.isLifecycleOperationCurrent(data))) {
       this.logDebug('service.create_worker.stale', {
         trace_id: data.debug_trace_id,

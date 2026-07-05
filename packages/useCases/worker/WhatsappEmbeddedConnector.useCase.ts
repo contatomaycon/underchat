@@ -3,7 +3,6 @@ import { TFunction } from 'i18next';
 import { v7 as uuidv7 } from 'uuid';
 import { AccountService } from '@core/services/account.service';
 import { PlanAccountService } from '@core/services/planAccount.service';
-import { WorkerService } from '@core/services/worker.service';
 import { CentrifugoService } from '@core/services/centrifugo.service';
 import { WhatsappEmbeddedService } from '@core/services/whatsappEmbedded.service';
 import {
@@ -16,8 +15,9 @@ import { ConnectWhatsappEmbeddedRequest } from '@core/schema/worker/connectWhats
 import { ConnectWhatsappEmbeddedResponse } from '@core/schema/worker/connectWhatsappEmbedded/response.schema';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { EWorkerAction } from '@core/common/enums/EWorkerAction';
-import { IWorkerPayload } from '@core/common/interfaces/IWorkerPayload';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { currentTime } from '@core/common/functions/currentTime';
 
@@ -28,8 +28,6 @@ export class WhatsappEmbeddedConnectorUseCase {
     private readonly accountService: AccountService,
     @inject(PlanAccountService)
     private readonly planAccountService: PlanAccountService,
-    @inject(WorkerService)
-    private readonly workerService: WorkerService,
     @inject(CentrifugoService)
     private readonly centrifugoService: CentrifugoService,
     @inject(WhatsappEmbeddedService)
@@ -54,21 +52,6 @@ export class WhatsappEmbeddedConnectorUseCase {
     }
 
     await this.planAccountService.validateCanCreateWorker(t, accountId);
-  }
-
-  private async resolveServerId(input: {
-    t: TFunction<'translation', undefined>;
-    accountId: string;
-  }): Promise<string> {
-    const viewWorkerServer = await this.workerService.viewWorkerServer(
-      input.accountId
-    );
-
-    if (!viewWorkerServer?.server_id) {
-      throw new Error(input.t('worker_server_not_disponible'));
-    }
-
-    return viewWorkerServer.server_id;
   }
 
   private normalizeNumber(displayPhoneNumber: string | null): string | null {
@@ -115,11 +98,6 @@ export class WhatsappEmbeddedConnectorUseCase {
     if (!name) {
       throw new Error(t('worker_name_required'));
     }
-
-    const serverId = await this.resolveServerId({
-      t,
-      accountId,
-    });
 
     const config = await this.whatsappEmbeddedService.viewInternalConfig(t);
 
@@ -186,7 +164,7 @@ export class WhatsappEmbeddedConnectorUseCase {
       worker_whatsapp_official_connection_id: uuidv7(),
       worker_id: workerId,
       account_id: accountId,
-      server_id: serverId,
+      server_id: null,
       worker_status_id: EWorkerStatus.online,
       worker_type_id: EWorkerType.whatsapp,
       name,
@@ -205,14 +183,20 @@ export class WhatsappEmbeddedConnectorUseCase {
       connected_at: connectedAt,
     });
 
-    const payload: IWorkerPayload = {
-      action: EWorkerAction.create,
+    const payload: IBaileysConnectionState = {
+      code: ECodeMessage.connectionEstablished,
+      status: EBaileysConnectionStatus.connected,
       worker_id: workerId,
       worker_status_id: EWorkerStatus.online,
       worker_type_id: EWorkerType.whatsapp,
-      server_id: serverId,
       account_id: accountId,
-      name,
+      worker_name: name,
+      phone: number ?? undefined,
+      session_ready: true,
+      can_send: true,
+      can_receive_runtime: true,
+      authenticated: true,
+      provider_state: 'connected',
     };
 
     await this.centrifugoService.publishSub(
@@ -223,7 +207,7 @@ export class WhatsappEmbeddedConnectorUseCase {
     return {
       worker_id: workerId,
       account_id: accountId,
-      server_id: serverId,
+      server_id: null,
       worker_type_id: EWorkerType.whatsapp,
       worker_status_id: EWorkerStatus.online,
       number,

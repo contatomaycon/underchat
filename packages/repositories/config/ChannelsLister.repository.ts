@@ -14,6 +14,7 @@ import {
   desc,
   eq,
   ilike,
+  isNotNull,
   isNull,
   ne,
   SQLWrapper,
@@ -32,6 +33,19 @@ export class ChannelsListerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
+
+  private readonly normalizeServer = (
+    input?: { id: string | null; name: string | null } | null
+  ): ListChannelsResponse['server'] => {
+    if (!input?.id) {
+      return null;
+    }
+
+    return {
+      id: input.id,
+      name: input.name,
+    };
+  };
 
   private readonly buildNameOrNumberFilter = (
     name?: string | null,
@@ -144,7 +158,7 @@ export class ChannelsListerRepository {
         workerType,
         eq(workerType.worker_type_id, worker.worker_type_id)
       )
-      .innerJoin(server, eq(server.server_id, worker.server_id))
+      .leftJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
       .where(
         and(isNull(worker.deleted_at), isNull(account.deleted_at), ...filters)
@@ -169,7 +183,7 @@ export class ChannelsListerRepository {
       number: item.number,
       status: item.status,
       type: item.type,
-      server: item.server,
+      server: this.normalizeServer(item.server),
       account: item.account,
       connection_date: item.connection_date,
       last_connection_check_at: item.last_connection_check_at,
@@ -194,7 +208,7 @@ export class ChannelsListerRepository {
         workerType,
         eq(workerType.worker_type_id, worker.worker_type_id)
       )
-      .innerJoin(server, eq(server.server_id, worker.server_id))
+      .leftJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
       .where(
         and(isNull(worker.deleted_at), isNull(account.deleted_at), ...filters)
@@ -219,6 +233,7 @@ export class ChannelsListerRepository {
     const filters: SQLWrapper[] = [
       isNull(worker.deleted_at),
       isNull(account.deleted_at),
+      isNotNull(worker.server_id),
       ne(workerType.worker_type_id, EWorkerType.whatsapp),
     ];
 
@@ -262,7 +277,7 @@ export class ChannelsListerRepository {
 
     return result.map((item) => ({
       worker_id: item.worker_id,
-      server_id: item.server_id,
+      server_id: item.server_id as string,
     }));
   };
 }

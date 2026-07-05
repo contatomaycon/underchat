@@ -12,7 +12,7 @@ import { ChannelOpenConversationsCheckerUseCase } from '@core/useCases/config/Ch
 describe('ChannelOpenConversationsCheckerUseCase', () => {
   it('throws when worker balancer is not found', async () => {
     const configService = {
-      viewChannelBalancer: jest.fn(async () => null),
+      viewChannelContext: jest.fn(async () => null),
     };
     const chatService = {
       countOpenChatsByWorkerId: jest.fn(),
@@ -31,7 +31,7 @@ describe('ChannelOpenConversationsCheckerUseCase', () => {
 
   it('returns open conversations count for channel', async () => {
     const configService = {
-      viewChannelBalancer: jest.fn(async () => ({ account_id: 'acc-1' })),
+      viewChannelContext: jest.fn(async () => ({ account_id: 'acc-1' })),
     };
     const chatService = {
       countOpenChatsByWorkerId: jest.fn(async () => 7),

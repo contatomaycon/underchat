@@ -30,11 +30,6 @@ function buildDeps() {
         name: 'Maycon',
         type: { id: EWorkerType.whatsapp },
       })),
-      viewWorkerBalancer: jest.fn(async () => ({
-        worker_id: 'worker-1',
-        server_id: 'server-1',
-        account_id: 'account-1',
-      })),
       deleteWorkerById: jest.fn(async () => true),
     },
     chatService: {

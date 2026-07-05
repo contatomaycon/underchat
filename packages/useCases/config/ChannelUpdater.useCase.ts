@@ -19,11 +19,11 @@ export class ChannelUpdaterUseCase {
     input: UpdateChannelRequest,
     debugTraceId?: string
   ): Promise<boolean | IWorkerLifecycleAck> {
-    const viewWorkerBalancer = await this.configService.viewChannelBalancer(
+    const channelContext = await this.configService.viewChannelContext(
       input.channel_id
     );
 
-    if (!viewWorkerBalancer) {
+    if (!channelContext) {
       throw new Error(t('channel_not_found'));
     }
 
@@ -37,7 +37,7 @@ export class ChannelUpdaterUseCase {
     if (debugTraceId) {
       return this.workerUpdaterUseCase.execute(
         t,
-        viewWorkerBalancer.account_id,
+        channelContext.account_id,
         workerInput,
         debugTraceId
       );
@@ -45,7 +45,7 @@ export class ChannelUpdaterUseCase {
 
     return this.workerUpdaterUseCase.execute(
       t,
-      viewWorkerBalancer.account_id,
+      channelContext.account_id,
       workerInput
     );
   }

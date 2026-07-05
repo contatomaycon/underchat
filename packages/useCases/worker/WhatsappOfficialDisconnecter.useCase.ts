@@ -30,12 +30,12 @@ export class WhatsappOfficialDisconnecterUseCase {
     accountId: string;
     workerId: string;
   }) {
-    const [worker, workerBalancer] = await Promise.all([
-      this.workerService.viewWorker(input.accountId, input.workerId),
-      this.workerService.viewWorkerBalancer(input.accountId, input.workerId),
-    ]);
+    const worker = await this.workerService.viewWorker(
+      input.accountId,
+      input.workerId
+    );
 
-    if (!worker || !workerBalancer) {
+    if (!worker) {
       throw new Error(input.t('worker_not_found'));
     }
 
@@ -56,7 +56,7 @@ export class WhatsappOfficialDisconnecterUseCase {
       );
     }
 
-    return { worker, workerBalancer };
+    return { worker };
   }
 
   async execute(
@@ -64,7 +64,7 @@ export class WhatsappOfficialDisconnecterUseCase {
     accountId: string,
     workerId: string
   ): Promise<DisconnectWhatsappOfficialResponse> {
-    const { worker, workerBalancer } = await this.assertCanDisconnect({
+    const { worker } = await this.assertCanDisconnect({
       t,
       accountId,
       workerId,
@@ -103,7 +103,7 @@ export class WhatsappOfficialDisconnecterUseCase {
       status: EBaileysConnectionStatus.disconnected,
       worker_id: workerId,
       worker_name: worker.name,
-      account_id: workerBalancer.account_id,
+      account_id: accountId,
       worker_type_id: EWorkerType.whatsapp,
       worker_status_id: EWorkerStatus.offline,
       disconnected_user: true,
@@ -115,7 +115,7 @@ export class WhatsappOfficialDisconnecterUseCase {
     };
 
     await this.centrifugoService.publishSub(
-      workerCentrifugoQueue(workerBalancer.account_id),
+      workerCentrifugoQueue(accountId),
       payload
     );
 

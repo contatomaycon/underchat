@@ -150,23 +150,30 @@ export class ChannelRecreatorUseCase {
       }
     );
 
+    const channelContext =
+      await this.configService.viewChannelContext(channelId);
+
+    if (!channelContext) {
+      throw new Error(t('worker_not_found'));
+    }
+
+    assertNonOfficialRuntimeFeature(
+      channelContext.worker_type_id,
+      t('whatsapp_official_runtime_action_not_supported')
+    );
+
+    await this.validate(t, channelContext.account_id);
+
     const viewWorkerBalancer =
       await this.configService.viewChannelBalancer(channelId);
 
     if (!viewWorkerBalancer) {
-      throw new Error(t('worker_not_found'));
+      throw new Error(t('worker_balancer_not_available'));
     }
 
-    await this.validate(t, viewWorkerBalancer.account_id);
-
     const viewWorker = await this.workerService.viewWorker(
-      viewWorkerBalancer.account_id,
+      channelContext.account_id,
       channelId
-    );
-
-    assertNonOfficialRuntimeFeature(
-      viewWorker?.type?.id,
-      t('whatsapp_official_runtime_action_not_supported')
     );
 
     const lifecycleOperationId = uuidv7();
@@ -174,7 +181,7 @@ export class ChannelRecreatorUseCase {
       action: EWorkerAction.recreate,
       worker_id: channelId,
       server_id: viewWorkerBalancer.server_id,
-      account_id: viewWorkerBalancer.account_id,
+      account_id: channelContext.account_id,
       worker_type_id: viewWorker?.type?.id as EWorkerType | undefined,
       worker_status_id: EWorkerStatus.recreating,
       lifecycle_operation_id: lifecycleOperationId,
@@ -190,7 +197,7 @@ export class ChannelRecreatorUseCase {
     };
 
     await this.workerService.updateWorkerById(
-      viewWorkerBalancer.account_id,
+      channelContext.account_id,
       inputUpdate
     );
     void this.connectionLifecycleDebugService.log(
@@ -199,7 +206,7 @@ export class ChannelRecreatorUseCase {
         trace_id: debugTraceId,
         layer: 'manager',
         worker_id: channelId,
-        account_id: viewWorkerBalancer.account_id,
+        account_id: channelContext.account_id,
         worker_type_id: inputRecreate.worker_type_id,
         lifecycle_operation_id: lifecycleOperationId,
         status: EWorkerStatus.recreating,
@@ -235,7 +242,7 @@ export class ChannelRecreatorUseCase {
         trace_id: debugTraceId,
         layer: 'manager',
         worker_id: channelId,
-        account_id: viewWorkerBalancer.account_id,
+        account_id: channelContext.account_id,
         worker_type_id: inputRecreate.worker_type_id,
         lifecycle_operation_id: lifecycleOperationId,
       }
@@ -246,7 +253,7 @@ export class ChannelRecreatorUseCase {
       status: 'queued',
       queued: true,
       worker_id: channelId,
-      account_id: viewWorkerBalancer.account_id,
+      account_id: channelContext.account_id,
       server_id: viewWorkerBalancer.server_id,
       worker_type_id: inputRecreate.worker_type_id,
       worker_status_id: EWorkerStatus.recreating,

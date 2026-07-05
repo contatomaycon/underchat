@@ -2,9 +2,10 @@ import * as schema from '@core/models';
 import { worker } from '@core/models';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IListWorkerActivities } from '@core/common/interfaces/IListWorkerActivities';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 
 @injectable()
 export class WorkerNewStatusListerRepository {
@@ -26,7 +27,9 @@ export class WorkerNewStatusListerRepository {
       .where(
         and(
           isNull(worker.deleted_at),
-          eq(worker.worker_status_id, EWorkerStatus.new)
+          isNotNull(worker.server_id),
+          eq(worker.worker_status_id, EWorkerStatus.new),
+          ne(worker.worker_type_id, EWorkerType.whatsapp)
         )
       )
       .execute();

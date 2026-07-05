@@ -221,19 +221,21 @@ export class WorkerRecreatorUseCase {
 
     await this.validate(t, accountId);
 
-    const [viewWorkerBalancer, viewWorker] = await Promise.all([
-      this.workerService.viewWorkerBalancer(accountId, workerId),
-      this.workerService.viewWorker(accountId, workerId),
-    ]);
-
-    if (!viewWorkerBalancer) {
-      throw new Error(t('worker_balancer_not_available'));
-    }
+    const viewWorker = await this.workerService.viewWorker(accountId, workerId);
 
     assertNonOfficialRuntimeFeature(
       viewWorker?.type?.id,
       t('whatsapp_official_runtime_action_not_supported')
     );
+
+    const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
+      accountId,
+      workerId
+    );
+
+    if (!viewWorkerBalancer) {
+      throw new Error(t('worker_balancer_not_available'));
+    }
 
     const inputRecreate: IWorkerPayload = {
       action: EWorkerAction.recreate,

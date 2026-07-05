@@ -17,13 +17,15 @@ jest.mock('@core/services/chat.service', () => ({
 }));
 
 import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { ChannelDeleterUseCase } from '@core/useCases/config/ChannelDeleter.useCase';
 
 describe('ChannelDeleterUseCase', () => {
   it('throws when worker balancer is not found during validation', async () => {
     const workerService = { deleteWorkerById: jest.fn() };
     const configService = {
-      viewChannelBalancer: jest.fn(async () => null),
+      viewChannelContext: jest.fn(async () => null),
     };
     const centrifugoService = {
       publishSub: jest.fn(),
@@ -53,9 +55,12 @@ describe('ChannelDeleterUseCase', () => {
   it('throws when channel has open conversations', async () => {
     const workerService = { deleteWorkerById: jest.fn() };
     const configService = {
-      viewChannelBalancer: jest.fn(async () => ({
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
         account_id: 'acc-1',
-        server_id: 'srv-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Channel',
       })),
     };
     const centrifugoService = {
@@ -86,13 +91,14 @@ describe('ChannelDeleterUseCase', () => {
   it('throws when worker balancer is missing after validation', async () => {
     const workerService = { deleteWorkerById: jest.fn() };
     const configService = {
-      viewChannelBalancer: jest
-        .fn()
-        .mockResolvedValueOnce({
-          account_id: 'acc-1',
-          server_id: 'srv-1',
-        })
-        .mockResolvedValueOnce(null),
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Channel',
+      })),
+      viewChannelBalancer: jest.fn(async () => null),
     };
     const centrifugoService = {
       publishSub: jest.fn(),
@@ -114,7 +120,7 @@ describe('ChannelDeleterUseCase', () => {
     const t = jest.fn((key: string) => key);
 
     await expect(useCase.execute(t as never, 'worker-1')).rejects.toThrow(
-      'worker_not_found'
+      'worker_balancer_not_available'
     );
     expect(workerService.deleteWorkerById).not.toHaveBeenCalled();
   });
@@ -122,11 +128,15 @@ describe('ChannelDeleterUseCase', () => {
   it('publishes deletion and deletes worker successfully', async () => {
     const workerService = {
       deleteWorkerById: jest.fn(async () => true),
-      viewWorker: jest.fn(async () => ({
-        type: { id: 'non-official-worker-type' },
-      })),
     };
     const configService = {
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Channel',
+      })),
       viewChannelBalancer: jest.fn(async () => ({
         account_id: 'acc-1',
         server_id: 'srv-1',
@@ -174,9 +184,67 @@ describe('ChannelDeleterUseCase', () => {
     );
   });
 
+  it('deletes official WhatsApp locally without grpc worker deletion', async () => {
+    const workerService = {
+      deleteWorkerById: jest.fn(async () => true),
+    };
+    const configService = {
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.whatsapp,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Official',
+      })),
+      viewChannelBalancer: jest.fn(),
+    };
+    const centrifugoService = {
+      publishSub: jest.fn(async () => undefined),
+      publish: jest.fn(async () => undefined),
+    };
+    const workerGrpcClientService = {
+      deleteWorker: jest.fn(async () => undefined),
+    };
+    const chatService = {
+      countOpenChatsByWorkerId: jest.fn(async () => 0),
+    };
+    const officialConnectionRepository = {
+      softDeleteByWorkerId: jest.fn(async () => true),
+    };
+    const useCase = new ChannelDeleterUseCase(
+      workerService as never,
+      configService as never,
+      centrifugoService as never,
+      workerGrpcClientService as never,
+      chatService as never,
+      officialConnectionRepository as never
+    );
+
+    await expect(useCase.execute(jest.fn() as never, 'worker-1')).resolves.toBe(
+      true
+    );
+
+    expect(configService.viewChannelBalancer).not.toHaveBeenCalled();
+    expect(workerGrpcClientService.deleteWorker).not.toHaveBeenCalled();
+    expect(
+      officialConnectionRepository.softDeleteByWorkerId
+    ).toHaveBeenCalledWith('worker-1');
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      'worker:account#acc-1',
+      expect.objectContaining({
+        worker_id: 'worker-1',
+        worker_type_id: EWorkerType.whatsapp,
+        worker_status_id: EWorkerStatus.delete,
+      })
+    );
+  });
+
   it('handles grpc delete errors without throwing from onChannelDeleted', async () => {
     const workerService = { deleteWorkerById: jest.fn() };
-    const configService = { viewChannelBalancer: jest.fn() };
+    const configService = {
+      viewChannelContext: jest.fn(),
+      viewChannelBalancer: jest.fn(),
+    };
     const centrifugoService = { publishSub: jest.fn(), publish: jest.fn() };
     const workerGrpcClientService = {
       deleteWorker: jest.fn(async () => {

@@ -222,6 +222,19 @@ export class WorkerCreatorUseCase {
       }
     );
 
+    const workerType = requestedWorkerType;
+    if (!Object.values(EWorkerType).includes(workerType)) {
+      throw new Error(t('worker_type_invalid'));
+    }
+
+    if (workerType === EWorkerType.whatsapp) {
+      throw new Error(t('whatsapp_official_connect_required'));
+    }
+
+    if (!input.name || input.name.trim().length === 0) {
+      throw new Error(t('worker_name_required'));
+    }
+
     let serverId: string;
 
     if (input.server_id) {
@@ -244,19 +257,6 @@ export class WorkerCreatorUseCase {
       }
 
       serverId = viewWorkerServer.server_id;
-    }
-
-    const workerType = requestedWorkerType;
-    if (!Object.values(EWorkerType).includes(workerType)) {
-      throw new Error(t('worker_type_invalid'));
-    }
-
-    if (workerType === EWorkerType.whatsapp) {
-      throw new Error(t('whatsapp_official_connect_required'));
-    }
-
-    if (!input.name || input.name.trim().length === 0) {
-      throw new Error(t('worker_name_required'));
     }
 
     const recreateAvailableAt = getWorkerRecreateAvailableAt();

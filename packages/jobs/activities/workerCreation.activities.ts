@@ -44,6 +44,10 @@ export class WorkerCreationActivity implements IWorkerCreationActivity {
       throw new Error('Worker name not found');
     }
 
+    if (viewWorkerType.worker_type_id === EWorkerType.whatsapp) {
+      return;
+    }
+
     const inputUpdateCreating: IUpdateWorker = {
       worker_id: input.worker_id,
       worker_status_id: EWorkerStatus.creating,

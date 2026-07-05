@@ -3,7 +3,7 @@ import { Static, Type } from '@sinclair/typebox';
 export const connectWhatsappEmbeddedResponseSchema = Type.Object({
   worker_id: Type.String(),
   account_id: Type.String(),
-  server_id: Type.String(),
+  server_id: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   worker_type_id: Type.String(),
   worker_status_id: Type.String(),
   number: Type.Union([Type.String(), Type.Null()]),

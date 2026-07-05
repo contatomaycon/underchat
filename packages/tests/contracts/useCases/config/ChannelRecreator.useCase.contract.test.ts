@@ -32,7 +32,7 @@ describe('ChannelRecreatorUseCase', () => {
   it('throws when worker balancer is not found', async () => {
     const workerService = { updateWorkerById: jest.fn() };
     const accountService = { existsAccountById: jest.fn() };
-    const configService = { viewChannelBalancer: jest.fn(async () => null) };
+    const configService = { viewChannelContext: jest.fn(async () => null) };
     const centrifugoService = { publishSub: jest.fn(), publish: jest.fn() };
     const workerGrpcClientService = { recreateWorker: jest.fn() };
     const workerLifecycleQueueService = { publish: jest.fn() };
@@ -54,6 +54,13 @@ describe('ChannelRecreatorUseCase', () => {
     const workerService = { updateWorkerById: jest.fn() };
     const accountService = { existsAccountById: jest.fn(async () => false) };
     const configService = {
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Channel',
+      })),
       viewChannelBalancer: jest.fn(async () => ({
         account_id: 'acc-1',
         server_id: 'srv-1',
@@ -86,6 +93,13 @@ describe('ChannelRecreatorUseCase', () => {
     };
     const accountService = { existsAccountById: jest.fn(async () => true) };
     const configService = {
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Channel',
+      })),
       viewChannelBalancer: jest.fn(async () => ({
         account_id: 'acc-1',
         server_id: 'srv-1',
@@ -141,6 +155,13 @@ describe('ChannelRecreatorUseCase', () => {
     };
     const accountService = { existsAccountById: jest.fn(async () => true) };
     const configService = {
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Channel',
+      })),
       viewChannelBalancer: jest.fn(async () => ({
         account_id: 'acc-1',
         server_id: 'srv-1',
@@ -220,6 +241,13 @@ describe('ChannelRecreatorUseCase', () => {
     };
     const accountService = { existsAccountById: jest.fn(async () => true) };
     const configService = {
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.whatsapp,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Official',
+      })),
       viewChannelBalancer: jest.fn(async () => ({
         account_id: 'acc-1',
         server_id: 'srv-1',
@@ -245,6 +273,7 @@ describe('ChannelRecreatorUseCase', () => {
       'whatsapp_official_runtime_action_not_supported'
     );
     expect(workerService.updateWorkerById).not.toHaveBeenCalled();
+    expect(configService.viewChannelBalancer).not.toHaveBeenCalled();
     expect(workerLifecycleQueueService.publish).not.toHaveBeenCalled();
   });
 
@@ -257,6 +286,13 @@ describe('ChannelRecreatorUseCase', () => {
     };
     const accountService = { existsAccountById: jest.fn(async () => true) };
     const configService = {
+      viewChannelContext: jest.fn(async () => ({
+        worker_id: 'worker-1',
+        account_id: 'acc-1',
+        worker_type_id: EWorkerType.baileys,
+        worker_status_id: EWorkerStatus.online,
+        name: 'Channel',
+      })),
       viewChannelBalancer: jest.fn(async () => ({
         account_id: 'acc-1',
         server_id: 'srv-1',

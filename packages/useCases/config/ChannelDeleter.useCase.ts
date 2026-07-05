@@ -13,6 +13,11 @@ import {
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
+import { IViewChannelContext } from '@core/common/interfaces/IViewChannelContext';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
 @injectable()
 export class ChannelDeleterUseCase {
@@ -36,16 +41,16 @@ export class ChannelDeleterUseCase {
   private async validate(
     t: TFunction<'translation', undefined>,
     channelId: string
-  ) {
-    const viewWorkerBalancer =
-      await this.configService.viewChannelBalancer(channelId);
+  ): Promise<IViewChannelContext> {
+    const channelContext =
+      await this.configService.viewChannelContext(channelId);
 
-    if (!viewWorkerBalancer) {
+    if (!channelContext) {
       throw new Error(t('worker_not_found'));
     }
 
     const openChatsCount = await this.chatService.countOpenChatsByWorkerId(
-      viewWorkerBalancer.account_id,
+      channelContext.account_id,
       channelId
     );
 
@@ -56,6 +61,8 @@ export class ChannelDeleterUseCase {
         })
       );
     }
+
+    return channelContext;
   }
 
   private async onChannelDeleted(payload: IWorkerPayload): Promise<void> {
@@ -68,26 +75,58 @@ export class ChannelDeleterUseCase {
     t: TFunction<'translation', undefined>,
     channelId: string
   ): Promise<boolean> {
-    await this.validate(t, channelId);
+    const channelContext = await this.validate(t, channelId);
+    const isOfficialWhatsapp =
+      channelContext.worker_type_id === EWorkerType.whatsapp;
+
+    if (isOfficialWhatsapp) {
+      const deleted = await this.workerService.deleteWorkerById(
+        channelContext.account_id,
+        channelId
+      );
+
+      if (deleted) {
+        await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
+          channelId
+        );
+      }
+
+      const statusPayload: IBaileysConnectionState = {
+        code: ECodeMessage.info,
+        status: EBaileysConnectionStatus.info,
+        worker_id: channelId,
+        worker_name: channelContext.name,
+        account_id: channelContext.account_id,
+        worker_type_id: EWorkerType.whatsapp,
+        worker_status_id: EWorkerStatus.delete,
+      };
+
+      await Promise.all([
+        this.centrifugoService.publishSub(
+          workerCentrifugoQueue(channelContext.account_id),
+          statusPayload
+        ),
+        this.centrifugoService.publish(
+          channelsConfigCentrifugo(),
+          statusPayload
+        ),
+      ]);
+
+      return deleted;
+    }
 
     const viewWorkerBalancer =
       await this.configService.viewChannelBalancer(channelId);
 
     if (!viewWorkerBalancer) {
-      throw new Error(t('worker_not_found'));
+      throw new Error(t('worker_balancer_not_available'));
     }
-
-    const viewWorker = await this.workerService.viewWorker(
-      viewWorkerBalancer.account_id,
-      channelId
-    );
-    const isOfficialWhatsapp = viewWorker?.type?.id === EWorkerType.whatsapp;
 
     const inputDeleter: IWorkerPayload = {
       action: EWorkerAction.delete,
       worker_id: channelId,
       server_id: viewWorkerBalancer.server_id,
-      account_id: viewWorkerBalancer.account_id,
+      account_id: channelContext.account_id,
     };
 
     await Promise.all([
@@ -99,19 +138,11 @@ export class ChannelDeleterUseCase {
     ]);
 
     const deleted = await this.workerService.deleteWorkerById(
-      viewWorkerBalancer.account_id,
+      channelContext.account_id,
       channelId
     );
 
-    if (deleted && isOfficialWhatsapp) {
-      await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
-        channelId
-      );
-    }
-
-    if (!isOfficialWhatsapp) {
-      this.onChannelDeleted(inputDeleter);
-    }
+    this.onChannelDeleted(inputDeleter);
 
     return deleted;
   }

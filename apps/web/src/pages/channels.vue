@@ -998,7 +998,7 @@ onUnmounted(async () => {
             </template>
 
             <template #item.server="{ item }">
-              <span>{{ item.server?.name }}</span>
+              <span>{{ item.server?.name ?? '-' }}</span>
             </template>
 
             <template #item.number="{ item }">

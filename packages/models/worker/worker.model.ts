@@ -23,9 +23,7 @@ export const worker = pgTable(
     worker_type_id: uuid()
       .references(() => workerType.worker_type_id)
       .notNull(),
-    server_id: uuid()
-      .references(() => server.server_id)
-      .notNull(),
+    server_id: uuid().references(() => server.server_id),
     account_id: uuid()
       .references(() => account.account_id)
       .notNull(),

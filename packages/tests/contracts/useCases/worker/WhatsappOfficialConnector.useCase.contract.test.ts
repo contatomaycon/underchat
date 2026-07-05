@@ -20,10 +20,7 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
       id: 'worker-1',
       name: 'Official Channel',
       type: { id: EWorkerType.whatsapp },
-    })),
-    viewWorkerBalancer: jest.fn(async () => ({
-      server_id: 'server-1',
-      account_id: 'account-1',
+      server: null,
     })),
   };
   const centrifugoService = {
@@ -98,7 +95,7 @@ describe('WhatsappOfficialConnectorUseCase', () => {
     ).resolves.toEqual({
       worker_id: 'worker-1',
       account_id: 'account-1',
-      server_id: 'server-1',
+      server_id: null,
       worker_type_id: EWorkerType.whatsapp,
       worker_status_id: EWorkerStatus.online,
       number: '5561999990000',
@@ -183,10 +180,6 @@ describe('WhatsappOfficialConnectorUseCase', () => {
           id: 'worker-1',
           name: 'Socket',
           type: { id: EWorkerType.baileys },
-        })),
-        viewWorkerBalancer: jest.fn(async () => ({
-          server_id: 'server-1',
-          account_id: 'account-1',
         })),
       },
     });

@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { WhatsappEmbeddedConnectorUseCase } from '@core/useCases/worker/WhatsappEmbeddedConnector.useCase';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
-import { EWorkerAction } from '@core/common/enums/EWorkerAction';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 
 const t = ((key: string) => key) as never;
 
@@ -12,10 +13,6 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
   };
   const planAccountService = {
     validateCanCreateWorker: jest.fn(async () => undefined),
-  };
-  const workerService = {
-    viewWorkerServer: jest.fn(async () => ({ server_id: 'server-1' })),
-    listWorkerServers: jest.fn(async () => [{ server_id: 'server-1' }]),
   };
   const centrifugoService = {
     publishSub: jest.fn(async () => undefined),
@@ -60,7 +57,6 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
   const deps = {
     accountService,
     planAccountService,
-    workerService,
     centrifugoService,
     whatsappEmbeddedService,
     metaWhatsappEmbeddedService,
@@ -72,7 +68,6 @@ function buildUseCase(overrides: Record<string, unknown> = {}) {
   const useCase = new WhatsappEmbeddedConnectorUseCase(
     deps.accountService as never,
     deps.planAccountService as never,
-    deps.workerService as never,
     deps.centrifugoService as never,
     deps.whatsappEmbeddedService as never,
     deps.metaWhatsappEmbeddedService as never,
@@ -164,7 +159,7 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
       useCase.execute(t, 'account-1', request)
     ).resolves.toMatchObject({
       account_id: 'account-1',
-      server_id: 'server-1',
+      server_id: null,
       worker_type_id: EWorkerType.whatsapp,
       worker_status_id: EWorkerStatus.online,
       number: '5561999990000',
@@ -179,7 +174,7 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
         worker_status_id: EWorkerStatus.online,
         worker_type_id: EWorkerType.whatsapp,
         account_id: 'account-1',
-        server_id: 'server-1',
+        server_id: null,
         name: 'Official Channel',
         waba_id: 'waba-1',
         phone_number_id: 'phone-1',
@@ -203,9 +198,12 @@ describe('WhatsappEmbeddedConnectorUseCase', () => {
     expect(deps.centrifugoService.publishSub).toHaveBeenCalledWith(
       'worker:account#account-1',
       expect.objectContaining({
-        action: EWorkerAction.create,
+        code: ECodeMessage.connectionEstablished,
+        status: EBaileysConnectionStatus.connected,
         worker_status_id: EWorkerStatus.online,
         worker_type_id: EWorkerType.whatsapp,
+        session_ready: true,
+        phone: '5561999990000',
       })
     );
   });

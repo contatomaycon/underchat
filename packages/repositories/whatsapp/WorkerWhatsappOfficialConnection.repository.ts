@@ -247,6 +247,7 @@ export class WorkerWhatsappOfficialConnectionRepository {
         .update(worker)
         .set({
           worker_status_id: EWorkerStatus.offline,
+          server_id: null,
           number: null,
           connection_date: null,
           last_connection_check_at: null,
@@ -292,9 +293,10 @@ export class WorkerWhatsappOfficialConnectionRepository {
         .update(worker)
         .set({
           worker_status_id: EWorkerStatus.online,
+          server_id: null,
           number: input.number,
           connection_date: input.connection_date,
-          last_connection_check_at: input.connection_date,
+          last_connection_check_at: null,
           updated_at: input.connection_date,
         })
         .where(

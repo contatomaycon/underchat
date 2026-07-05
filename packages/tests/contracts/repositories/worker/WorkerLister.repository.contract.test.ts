@@ -4,6 +4,7 @@ import { WorkerListerRepository } from '@core/repositories/worker/WorkerLister.r
 function createListWorkerSelect(result: unknown[]) {
   const chain: {
     innerJoin: jest.Mock;
+    leftJoin: jest.Mock;
     where: jest.Mock;
     orderBy: jest.Mock;
     limit: jest.Mock;
@@ -11,6 +12,7 @@ function createListWorkerSelect(result: unknown[]) {
     execute: jest.Mock;
   } = {
     innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
     limit: jest.fn(),
@@ -19,6 +21,7 @@ function createListWorkerSelect(result: unknown[]) {
   };
 
   chain.innerJoin.mockReturnValue(chain);
+  chain.leftJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.orderBy.mockReturnValue(chain);
   chain.limit.mockReturnValue(chain);
@@ -32,15 +35,18 @@ function createListWorkerSelect(result: unknown[]) {
 function createListWorkerTotalSelect(result: unknown[]) {
   const chain: {
     innerJoin: jest.Mock;
+    leftJoin: jest.Mock;
     where: jest.Mock;
     execute: jest.Mock;
   } = {
     innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
     where: jest.fn(),
     execute: jest.fn(async () => result),
   };
 
   chain.innerJoin.mockReturnValue(chain);
+  chain.leftJoin.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
 
   return {
@@ -104,6 +110,20 @@ describe('WorkerListerRepository', () => {
             created_at: '2026-04-20T10:00:00.000Z',
             updated_at: '2026-04-21T10:00:00.000Z',
           },
+          {
+            id: 'w-official',
+            name: 'Official',
+            number: '5561999990000',
+            status: { id: 'online', name: 'Online' },
+            type: { id: 'whatsapp', name: 'WhatsApp' },
+            server: null,
+            account: { id: 'a-1', name: 'Account 1' },
+            connection_date: '2026-07-03T00:13:47.000Z',
+            last_connection_check_at: null,
+            recreate_available_at: null,
+            created_at: '2026-07-02T23:39:59.000Z',
+            updated_at: '2026-07-05T07:50:26.000Z',
+          },
         ])
       ),
     } as never);
@@ -124,6 +144,20 @@ describe('WorkerListerRepository', () => {
         recreate_available_at: '2026-06-11T12:02:00.000Z',
         created_at: '2026-04-20T10:00:00.000Z',
         updated_at: '2026-04-21T10:00:00.000Z',
+      },
+      {
+        id: 'w-official',
+        name: 'Official',
+        number: '5561999990000',
+        status: { id: 'online', name: 'Online' },
+        type: { id: 'whatsapp', name: 'WhatsApp' },
+        server: null,
+        account: { id: 'a-1', name: 'Account 1' },
+        connection_date: '2026-07-03T00:13:47.000Z',
+        last_connection_check_at: null,
+        recreate_available_at: null,
+        created_at: '2026-07-02T23:39:59.000Z',
+        updated_at: '2026-07-05T07:50:26.000Z',
       },
     ]);
   });

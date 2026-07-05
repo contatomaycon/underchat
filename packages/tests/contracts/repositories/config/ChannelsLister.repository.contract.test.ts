@@ -6,6 +6,7 @@ import { EWorkerType } from '@core/common/enums/EWorkerType';
 function createListChain(result: unknown[]) {
   const queryBuilder = {
     innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
     limit: jest.fn(),
@@ -13,6 +14,7 @@ function createListChain(result: unknown[]) {
     execute: jest.fn(async () => result),
   } as any;
   queryBuilder.innerJoin.mockReturnValue(queryBuilder);
+  queryBuilder.leftJoin.mockReturnValue(queryBuilder);
   queryBuilder.where.mockReturnValue(queryBuilder);
   queryBuilder.orderBy.mockReturnValue(queryBuilder);
   queryBuilder.limit.mockReturnValue(queryBuilder);
@@ -29,9 +31,11 @@ function createCountChain(result: unknown[]) {
   const where = jest.fn(() => ({ execute }));
   const queryBuilder = {
     innerJoin: jest.fn(),
+    leftJoin: jest.fn(),
     where,
   } as any;
   queryBuilder.innerJoin.mockReturnValue(queryBuilder);
+  queryBuilder.leftJoin.mockReturnValue(queryBuilder);
   queryBuilder.where.mockReturnValue({ execute });
   const from = jest.fn(() => queryBuilder);
   const select = jest.fn(() => ({ from }));
@@ -93,6 +97,19 @@ describe('ChannelsListerRepository', () => {
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
+      {
+        id: 'w-official',
+        name: 'Official',
+        number: '5561999990000',
+        status: { id: 'online', name: 'Online' },
+        type: { id: 'whatsapp', name: 'WhatsApp' },
+        server: null,
+        account: { id: 'acc-1', name: 'Acc' },
+        connection_date: '2026-07-03',
+        last_connection_check_at: null,
+        created_at: '2026-07-02',
+        updated_at: '2026-07-05',
+      },
     ]);
     const dbRo = { select: chain.select };
     const repository = new ChannelsListerRepository(dbRo as never);
@@ -110,6 +127,19 @@ describe('ChannelsListerRepository', () => {
         last_connection_check_at: '2026-01-02',
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
+      },
+      {
+        id: 'w-official',
+        name: 'Official',
+        number: '5561999990000',
+        status: { id: 'online', name: 'Online' },
+        type: { id: 'whatsapp', name: 'WhatsApp' },
+        server: null,
+        account: { id: 'acc-1', name: 'Acc' },
+        connection_date: '2026-07-03',
+        last_connection_check_at: null,
+        created_at: '2026-07-02',
+        updated_at: '2026-07-05',
       },
     ]);
   });

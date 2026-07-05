@@ -17,6 +17,19 @@ export class WorkerViewerRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
+  private readonly normalizeServer = (
+    input?: { id: string | null; name: string | null } | null
+  ): ViewWorkerResponse['server'] => {
+    if (!input?.id) {
+      return null;
+    }
+
+    return {
+      id: input.id,
+      name: input.name,
+    };
+  };
+
   viewWorker = async (
     accountId: string,
     workerId: string
@@ -56,7 +69,7 @@ export class WorkerViewerRepository {
         workerType,
         eq(workerType.worker_type_id, worker.worker_type_id)
       )
-      .innerJoin(server, eq(server.server_id, worker.server_id))
+      .leftJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
       .where(
         and(
@@ -79,7 +92,7 @@ export class WorkerViewerRepository {
       number: item.number,
       status: item.status,
       type: item.type,
-      server: item.server,
+      server: this.normalizeServer(item.server),
       account: item.account,
       connection_date: item.connection_date,
       recreate_available_at: item.recreate_available_at,

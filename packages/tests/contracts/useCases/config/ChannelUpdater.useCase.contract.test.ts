@@ -12,7 +12,7 @@ import { ChannelUpdaterUseCase } from '@core/useCases/config/ChannelUpdater.useC
 describe('ChannelUpdaterUseCase', () => {
   it('throws when channel is not found', async () => {
     const configService = {
-      viewChannelBalancer: jest.fn(async () => null),
+      viewChannelContext: jest.fn(async () => null),
     };
     const workerUpdaterUseCase = {
       execute: jest.fn(),
@@ -37,7 +37,7 @@ describe('ChannelUpdaterUseCase', () => {
 
   it('delegates update to WorkerUpdaterUseCase', async () => {
     const configService = {
-      viewChannelBalancer: jest.fn(async () => ({ account_id: 'acc-1' })),
+      viewChannelContext: jest.fn(async () => ({ account_id: 'acc-1' })),
     };
     const workerUpdaterUseCase = {
       execute: jest.fn(async () => true),

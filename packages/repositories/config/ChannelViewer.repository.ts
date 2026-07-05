@@ -4,12 +4,35 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { inject, injectable } from 'tsyringe';
 import { and, eq, isNull } from 'drizzle-orm';
 import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
+import { IViewChannelContext } from '@core/common/interfaces/IViewChannelContext';
 
 @injectable()
 export class ChannelViewerRepository {
   constructor(
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
+
+  viewChannelContext = async (
+    channelId: string
+  ): Promise<IViewChannelContext | null> => {
+    const result = await this.dbRo
+      .select({
+        worker_id: worker.worker_id,
+        account_id: worker.account_id,
+        worker_type_id: worker.worker_type_id,
+        worker_status_id: worker.worker_status_id,
+        name: worker.name,
+      })
+      .from(worker)
+      .where(and(isNull(worker.deleted_at), eq(worker.worker_id, channelId)))
+      .execute();
+
+    if (!result?.length) {
+      return null;
+    }
+
+    return result[0] as IViewChannelContext;
+  };
 
   viewChannelBalancer = async (
     channelId: string

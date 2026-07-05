@@ -31,6 +31,19 @@ export class WorkerListerRepository {
     @inject('DatabaseRo') private readonly dbRo: NodePgDatabase<typeof schema>
   ) {}
 
+  private readonly normalizeServer = (
+    input?: { id: string | null; name: string | null } | null
+  ): ListWorkerResponse['server'] => {
+    if (!input?.id) {
+      return null;
+    }
+
+    return {
+      id: input.id,
+      name: input.name,
+    };
+  };
+
   private readonly setOrders = (query: ListWorkerRequest): SQL[] => {
     if (!query.sort_by?.length) {
       return [asc(worker.created_at), desc(worker.worker_id)];
@@ -125,7 +138,7 @@ export class WorkerListerRepository {
         workerType,
         eq(workerType.worker_type_id, worker.worker_type_id)
       )
-      .innerJoin(server, eq(server.server_id, worker.server_id))
+      .leftJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
       .where(
         and(
@@ -154,7 +167,7 @@ export class WorkerListerRepository {
       number: item.number,
       status: item.status,
       type: item.type,
-      server: item.server,
+      server: this.normalizeServer(item.server),
       account: item.account,
       connection_date: item.connection_date,
       last_connection_check_at: item.last_connection_check_at,
@@ -183,7 +196,7 @@ export class WorkerListerRepository {
         workerType,
         eq(workerType.worker_type_id, worker.worker_type_id)
       )
-      .innerJoin(server, eq(server.server_id, worker.server_id))
+      .leftJoin(server, eq(server.server_id, worker.server_id))
       .innerJoin(account, eq(account.account_id, worker.account_id))
       .where(
         and(

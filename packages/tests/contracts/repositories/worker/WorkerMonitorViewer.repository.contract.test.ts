@@ -72,6 +72,9 @@ describe('WorkerMonitorViewerRepository', () => {
     expect(collectSqlParts(dbMock.where.mock.calls[0][0]).join(' ')).toContain(
       EWorkerType.whatsapp
     );
+    expect(collectSqlParts(dbMock.where.mock.calls[0][0]).join(' ')).toContain(
+      'server_id'
+    );
   });
 
   it('viewWorker returns null when worker is not found', async () => {

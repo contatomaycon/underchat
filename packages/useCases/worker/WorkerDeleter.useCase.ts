@@ -8,6 +8,10 @@ import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service';
 import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { WorkerWhatsappOfficialConnectionRepository } from '@core/repositories/whatsapp/WorkerWhatsappOfficialConnection.repository';
+import { IBaileysConnectionState } from '@core/common/interfaces/IBaileysConnectionState';
+import { ECodeMessage } from '@core/common/enums/ECodeMessage';
+import { EBaileysConnectionStatus } from '@core/common/enums/EBaileysConnectionStatus';
+import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 
 @injectable()
 export class WorkerDeleterUseCase {
@@ -52,16 +56,48 @@ export class WorkerDeleterUseCase {
   ): Promise<boolean> {
     await this.validate(t, workerId, accountId);
 
-    const [viewWorkerBalancer, viewWorker] = await Promise.all([
-      this.workerService.viewWorkerBalancer(accountId, workerId),
-      this.workerService.viewWorker(accountId, workerId),
-    ]);
+    const viewWorker = await this.workerService.viewWorker(accountId, workerId);
+
+    const isOfficialWhatsapp = viewWorker?.type?.id === EWorkerType.whatsapp;
+
+    if (isOfficialWhatsapp) {
+      const deleted = await this.workerService.deleteWorkerById(
+        accountId,
+        workerId
+      );
+
+      if (deleted) {
+        await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
+          workerId
+        );
+      }
+
+      const statusPayload: IBaileysConnectionState = {
+        code: ECodeMessage.info,
+        status: EBaileysConnectionStatus.info,
+        worker_id: workerId,
+        worker_name: viewWorker?.name,
+        account_id: accountId,
+        worker_type_id: EWorkerType.whatsapp,
+        worker_status_id: EWorkerStatus.delete,
+      };
+
+      await this.centrifugoService.publishSub(
+        workerCentrifugoQueue(accountId),
+        statusPayload
+      );
+
+      return deleted;
+    }
+
+    const viewWorkerBalancer = await this.workerService.viewWorkerBalancer(
+      accountId,
+      workerId
+    );
 
     if (!viewWorkerBalancer) {
       throw new Error(t('worker_not_found'));
     }
-
-    const isOfficialWhatsapp = viewWorker?.type?.id === EWorkerType.whatsapp;
 
     const inputDeleter: IWorkerPayload = {
       action: EWorkerAction.delete,
@@ -80,15 +116,7 @@ export class WorkerDeleterUseCase {
       workerId
     );
 
-    if (deleted && isOfficialWhatsapp) {
-      await this.workerWhatsappOfficialConnectionRepository.softDeleteByWorkerId(
-        workerId
-      );
-    }
-
-    if (!isOfficialWhatsapp) {
-      this.onWorkerDeleted(inputDeleter);
-    }
+    this.onWorkerDeleted(inputDeleter);
 
     return deleted;
   }

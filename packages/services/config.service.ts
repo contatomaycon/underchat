@@ -8,6 +8,7 @@ import { IViewWorkerServer } from '@core/common/interfaces/IViewWorkerServer';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
 import { IConfigChannelsRecreateAllPayload } from '@core/common/interfaces/IConfigChannelsRecreateAllPayload';
 import { IConfigChannelRecreateTarget } from '@core/common/interfaces/IConfigChannelRecreateTarget';
+import { IViewChannelContext } from '@core/common/interfaces/IViewChannelContext';
 
 @injectable()
 export class ConfigService {
@@ -37,6 +38,12 @@ export class ConfigService {
     channelId: string
   ): Promise<IViewWorkerServer | null> => {
     return this.channelViewerRepository.viewChannelBalancer(channelId);
+  };
+
+  viewChannelContext = async (
+    channelId: string
+  ): Promise<IViewChannelContext | null> => {
+    return this.channelViewerRepository.viewChannelContext(channelId);
   };
 
   listAllNonDeletedChannelIds = async (

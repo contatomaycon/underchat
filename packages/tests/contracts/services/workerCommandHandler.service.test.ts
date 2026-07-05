@@ -190,7 +190,7 @@ function buildHandler(
     viewWorker: jest.fn(async () => ({
       id: 'worker-1',
       name: 'Canal 1',
-      server: { id: 'server-1' },
+      server: { id: 'server-1' } as { id: string } | null,
       type: { id: EWorkerType.wwebjs },
       status: { id: EWorkerStatus.disponible },
     })),
@@ -2513,6 +2513,60 @@ describe('WorkerCommandHandlerService connection', () => {
           getWorkerStatusFromUpdateInput(input) === EWorkerStatus.error
       )
     ).toBe(true);
+  });
+
+  it('does not create runtime for official whatsapp workers', async () => {
+    const deps = buildHandler();
+
+    await deps.handler.handle({
+      action: EWorkerAction.create,
+      worker_id: 'worker-1',
+      server_id: 'server-1',
+      account_id: 'account-1',
+      worker_type_id: EWorkerType.whatsapp,
+    });
+
+    expect(deps.workerService.updateWorkerById).not.toHaveBeenCalled();
+    expect(deps.kafkaBaileysQueueService.ensure).not.toHaveBeenCalled();
+    expect(deps.workerService.createContainerWorker).not.toHaveBeenCalled();
+    expect(
+      deps.workerBaileysGrpcClientService.waitForReady
+    ).not.toHaveBeenCalled();
+  });
+
+  it('does not mark official whatsapp workers as error when runtime handling fails', async () => {
+    const deps = buildHandler();
+    deps.workerService.viewWorker.mockResolvedValue({
+      id: 'worker-1',
+      name: 'Official',
+      server: null,
+      type: { id: EWorkerType.whatsapp },
+      status: { id: EWorkerStatus.online },
+    });
+    deps.workerBaileysGrpcClientService.waitForReady.mockRejectedValue(
+      new Error('gRPC unavailable')
+    );
+
+    await expect(
+      deps.handler.handle({
+        action: EWorkerAction.create,
+        worker_id: 'worker-1',
+        server_id: 'server-1',
+        account_id: 'account-1',
+        worker_type_id: EWorkerType.wwebjs,
+      })
+    ).rejects.toThrow('gRPC unavailable');
+
+    expect(
+      deps.workerService.updateWorkerById.mock.calls.some(
+        ([, input]) =>
+          getWorkerStatusFromUpdateInput(input) === EWorkerStatus.error
+      )
+    ).toBe(false);
+    expect(deps.centrifugoService.publishSub).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ worker_status_id: EWorkerStatus.error })
+    );
   });
 
   it('marks recreated workers available only after stable health and gRPC readiness', async () => {

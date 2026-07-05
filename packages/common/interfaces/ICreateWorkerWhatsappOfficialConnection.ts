@@ -5,7 +5,7 @@ export interface ICreateWorkerWhatsappOfficialConnection {
   worker_whatsapp_official_connection_id: string;
   worker_id: string;
   account_id: string;
-  server_id: string;
+  server_id: string | null;
   worker_status_id: EWorkerStatus;
   worker_type_id: EWorkerType;
   name: string;
