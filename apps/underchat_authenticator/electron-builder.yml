@@ -1,5 +1,5 @@
-appId: br.com.underchat.passkey-helper
-productName: Underchat Passkey Helper
+appId: br.com.underchat.authenticator
+productName: Underchat Authenticator
 copyright: Copyright (c) 2026 Underchat
 
 asar: true
@@ -19,9 +19,9 @@ extraMetadata:
   main: dist/main/index.js
 
 protocols:
-  - name: Underchat Passkey
+  - name: Underchat Authenticator
     schemes:
-      - underchat-passkey
+      - underchat-authenticator
 
 win:
   icon: build/icons/icon.ico
@@ -36,7 +36,7 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: Underchat-Passkey-Helper-${version}-${arch}.${ext}
+  artifactName: Underchat-Authenticator-${version}-${arch}.${ext}
 
 nsis:
   oneClick: false
@@ -45,7 +45,7 @@ nsis:
 
 linux:
   category: Network
-  executableName: underchat-passkey-helper
+  executableName: underchat-authenticator
   icon: build/icons/icon.png
   maintainer: Underchat <contato@underchat.com.br>
   syncDesktopName: true
@@ -56,4 +56,4 @@ linux:
     - target: deb
       arch:
         - x64
-  artifactName: Underchat-Passkey-Helper-${version}-${arch}.${ext}
+  artifactName: Underchat-Authenticator-${version}-${arch}.${ext}

@@ -27,7 +27,7 @@ import { WorkerGrpcClientService } from '@core/services/workerGrpcClient.service
 import { WorkerService } from '@core/services/worker.service';
 import { logConnectionFlowConsole } from '@core/common/functions/connectionFlowConsoleLog';
 
-const SECURE_HELPER_PROTOCOL = 'underchat-passkey';
+const SECURE_HELPER_PROTOCOL = 'underchat-authenticator';
 const SECURE_HELPER_HOST = 'secure';
 const SESSION_TTL_SECONDS = Math.max(
   300,
@@ -851,7 +851,6 @@ export class WorkerSecureConnectionSessionUseCase {
       connection_attempt_id: session.connection_attempt_id,
       runtime_generation: session.runtime_generation,
       expires_at: session.expires_at,
-      helper_download_url: process.env.PASSKEY_HELPER_DOWNLOAD_URL,
       message: session.fail_reason,
       error: session.error,
       phone: session.phone,

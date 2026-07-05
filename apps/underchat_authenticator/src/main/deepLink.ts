@@ -1,48 +1,50 @@
 import { createHash } from 'node:crypto';
 
-export const PASSKEY_PROTOCOL = 'underchat-passkey';
+export const AUTHENTICATOR_PROTOCOL = 'underchat-authenticator';
 export const DEV_MANAGER_API_URL = 'http://localhost:3002/v1';
 export const PROD_MANAGER_API_URL = 'https://api-manager.underchat.com.br/v1';
 export const DEFAULT_MANAGER_API_URL =
   import.meta.env.MAIN_VITE_UNDERCHAT_MANAGER_API_URL?.trim() ||
   (import.meta.env.DEV ? DEV_MANAGER_API_URL : PROD_MANAGER_API_URL);
 
-export interface PasskeyDeepLinkContext {
+export interface AuthenticatorDeepLinkContext {
   apiBaseUrl: string;
-  mode: 'pair' | 'secure';
+  mode: 'secure';
   token: string;
   tokenHash: string;
 }
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
-export function parsePasskeyDeepLink(rawUrl: string): PasskeyDeepLinkContext {
+export function parseAuthenticatorDeepLink(
+  rawUrl: string
+): AuthenticatorDeepLinkContext {
   let parsed: URL;
 
   try {
     parsed = new URL(rawUrl);
   } catch {
-    throw new Error('Link de passkey invalido.');
+    throw new Error('Link de chave de acesso inválido.');
   }
 
-  if (parsed.protocol !== `${PASSKEY_PROTOCOL}:`) {
-    throw new Error('Protocolo de passkey invalido.');
+  if (parsed.protocol !== `${AUTHENTICATOR_PROTOCOL}:`) {
+    throw new Error('Protocolo de chave de acesso inválido.');
   }
 
-  if (parsed.hostname !== 'pair' && parsed.hostname !== 'secure') {
-    throw new Error('Acao de passkey invalida.');
+  if (parsed.hostname !== 'secure') {
+    throw new Error('Ação do Underchat Authenticator inválida.');
   }
 
   const token = parsed.searchParams.get('token')?.trim();
   const apiBaseUrl = normalizeApiBaseUrl(parsed.searchParams.get('api'));
 
   if (!token || token.length < 16 || token.length > 512) {
-    throw new Error('Token de passkey invalido.');
+    throw new Error('Token de chave de acesso inválido.');
   }
 
   return {
     apiBaseUrl,
-    mode: parsed.hostname === 'secure' ? 'secure' : 'pair',
+    mode: 'secure',
     token,
     tokenHash: hashToken(token),
   };
@@ -56,7 +58,7 @@ export function normalizeApiBaseUrl(rawApi: string | null): string {
   try {
     apiUrl = new URL(apiValue);
   } catch {
-    throw new Error('API da Underchat invalida.');
+    throw new Error('API da Underchat inválida.');
   }
 
   const isHttps = apiUrl.protocol === 'https:';
@@ -65,7 +67,7 @@ export function normalizeApiBaseUrl(rawApi: string | null): string {
 
   if (!isHttps && !isLocalHttp) {
     throw new Error(
-      'A API precisa usar HTTPS. HTTP so e permitido em localhost.'
+      'A API precisa usar HTTPS. HTTP só é permitido em localhost.'
     );
   }
 
@@ -82,14 +84,14 @@ export function hashToken(token: string): string {
 
 export function extractDeepLinkFromArgv(argv: string[]): string | null {
   for (const arg of argv) {
-    if (arg.startsWith(`${PASSKEY_PROTOCOL}://`)) {
+    if (arg.startsWith(`${AUTHENTICATOR_PROTOCOL}://`)) {
       return arg;
     }
 
     if (arg.startsWith('--deep-link=')) {
       const value = arg.slice('--deep-link='.length);
 
-      if (value.startsWith(`${PASSKEY_PROTOCOL}://`)) {
+      if (value.startsWith(`${AUTHENTICATOR_PROTOCOL}://`)) {
         return value;
       }
     }
@@ -120,8 +122,7 @@ export function isAllowedHttpApiUrl(
 
   return (
     target.origin === api.origin &&
-    (targetPath.startsWith('/worker/connection/passkey-helper/') ||
-      targetPath.startsWith('/worker/connection/secure-helper/'))
+    targetPath.startsWith('/worker/connection/secure-helper/')
   );
 }
 
@@ -130,5 +131,5 @@ export function sanitizeError(error: unknown): string {
     return error.message;
   }
 
-  return 'Erro inesperado no helper de passkey.';
+  return 'Erro inesperado no Underchat Authenticator.';
 }

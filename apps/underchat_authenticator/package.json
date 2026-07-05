@@ -1,0 +1,42 @@
+{
+  "name": "underchat_authenticator",
+  "version": "1.0.0",
+  "description": "Underchat Authenticator for WhatsApp Web authentication.",
+  "homepage": "https://underchat.com.br",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/index.js",
+  "author": {
+    "name": "Underchat",
+    "email": "contato@underchat.com.br"
+  },
+  "desktopName": "underchat-authenticator",
+  "engines": {
+    "node": "24.12.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev --mode development",
+    "build": "pnpm run build:prod",
+    "build:dev": "UNDERCHAT_AUTHENTICATOR_CHANNEL=dev tsc --noEmit && UNDERCHAT_AUTHENTICATOR_CHANNEL=dev electron-vite build --mode development",
+    "build:prod": "UNDERCHAT_AUTHENTICATOR_CHANNEL=prod tsc --noEmit && UNDERCHAT_AUTHENTICATOR_CHANNEL=prod electron-vite build --mode production",
+    "icons": "node scripts/generate-desktop-icons.mjs",
+    "cert:win:self-signed": "node scripts/create-self-signed-windows-cert.mjs",
+    "package": "pnpm run package:prod",
+    "package:dev": "pnpm run icons && pnpm run build:dev && node scripts/package-with-signing.mjs --config.directories.output=release/dev && node scripts/sync-manager-downloads.mjs --channel dev",
+    "package:prod": "pnpm run icons && pnpm run build:prod && node scripts/package-with-signing.mjs --config.directories.output=release/prod && node scripts/sync-manager-downloads.mjs --channel prod",
+    "package:win": "pnpm run package:win:prod",
+    "package:win:dev": "pnpm run icons && pnpm run cert:win:self-signed && pnpm run build:dev && node scripts/package-with-signing.mjs --win nsis --config.directories.output=release/dev && node scripts/sync-manager-downloads.mjs --channel dev",
+    "package:win:prod": "pnpm run icons && pnpm run cert:win:self-signed && pnpm run build:prod && node scripts/package-with-signing.mjs --win nsis --config.directories.output=release/prod && node scripts/sync-manager-downloads.mjs --channel prod",
+    "package:linux": "pnpm run package:linux:prod",
+    "package:linux:dev": "pnpm run icons && pnpm run build:dev && node scripts/package-with-signing.mjs --linux AppImage deb --config.directories.output=release/dev && node scripts/sync-manager-downloads.mjs --channel dev",
+    "package:linux:prod": "pnpm run icons && pnpm run build:prod && node scripts/package-with-signing.mjs --linux AppImage deb --config.directories.output=release/prod && node scripts/sync-manager-downloads.mjs --channel prod"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "electron": "43.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^6.0.3",
+    "vite": "8.1.0"
+  }
+}

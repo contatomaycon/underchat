@@ -4,6 +4,6 @@ node_modules
 .cache
 coverage
 
-apps/passkey_helper/build
-apps/passkey_helper/release
-apps/passkey_helper/dist
+apps/underchat_authenticator/build
+apps/underchat_authenticator/release
+apps/underchat_authenticator/dist

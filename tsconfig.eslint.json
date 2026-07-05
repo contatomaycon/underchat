@@ -5,7 +5,7 @@
     "apps/manager_api/src/**/*.ts",
     "apps/mobile/**/*.ts",
     "apps/mobile/**/*.tsx",
-    "apps/passkey_helper/**/*.ts",
+    "apps/underchat_authenticator/**/*.ts",
     "apps/public_api/src/**/*.ts",
     "apps/schedule_api/src/**/*.ts",
     "apps/service_api/src/**/*.ts",

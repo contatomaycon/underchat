@@ -76,6 +76,7 @@ type ConnectionLifecycleDebugRequestOptions = {
 };
 
 type ChannelUpdateResult = boolean | IWorkerLifecycleAck;
+type AuthenticatorPlatform = 'linux' | 'windows';
 
 type OfficialWorkerProfileInfoPayload = {
   about?: string | null;
@@ -114,6 +115,22 @@ const createWebTraceId = (prefix: string): string | undefined =>
   isConnectionLifecycleDebugEnabled()
     ? createConnectionLifecycleDebugTraceId(prefix)
     : undefined;
+
+const extractAttachmentFilename = (
+  contentDisposition: string | undefined
+): string | null => {
+  if (!contentDisposition) {
+    return null;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/g, ''));
+  }
+
+  const asciiMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return asciiMatch?.[1]?.trim() || null;
+};
 
 const workerConfigForChatPendingModule: Record<
   string,
@@ -1165,6 +1182,56 @@ export const useChannelsStore = defineStore('channels', {
         return response?.data?.status ? (response.data.data ?? null) : null;
       } catch {
         return null;
+      }
+    },
+
+    async downloadAuthenticatorInstaller(
+      platform: AuthenticatorPlatform
+    ): Promise<boolean> {
+      const fallbackFilename =
+        platform === 'windows'
+          ? 'Underchat-Authenticator-windows.exe'
+          : 'Underchat-Authenticator-linux.deb';
+
+      try {
+        const response = await axios.get<Blob>(
+          `/worker/connection/authenticator/download/${platform}`,
+          {
+            responseType: 'blob',
+          }
+        );
+
+        const contentTypeHeader = response.headers['content-type'];
+        const contentType =
+          typeof contentTypeHeader === 'string'
+            ? contentTypeHeader
+            : 'application/octet-stream';
+        const filename =
+          extractAttachmentFilename(response.headers['content-disposition']) ??
+          fallbackFilename;
+        const blob = new Blob([response.data], { type: contentType });
+        const url = globalThis.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        globalThis.URL.revokeObjectURL(url);
+
+        return true;
+      } catch (error) {
+        let errorMessage = this.i18n.global.t(
+          'authenticator_install_download_error'
+        );
+
+        if (error instanceof AxiosError) {
+          errorMessage = error?.response?.data?.message ?? errorMessage;
+        }
+
+        this.showSnackbar(errorMessage, EColor.error);
+
+        return false;
       }
     },
 

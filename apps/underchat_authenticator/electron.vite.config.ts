@@ -4,10 +4,10 @@ import { defineConfig } from 'electron-vite';
 
 export default defineConfig(({ mode }) => {
   const channel =
-    process.env.UNDERCHAT_PASSKEY_HELPER_CHANNEL ??
+    process.env.UNDERCHAT_AUTHENTICATOR_CHANNEL ??
     (mode === 'development' ? 'dev' : 'prod');
   const define = {
-    __UNDERCHAT_PASSKEY_HELPER_CHANNEL__: JSON.stringify(channel),
+    __UNDERCHAT_AUTHENTICATOR_CHANNEL__: JSON.stringify(channel),
   };
 
   return {

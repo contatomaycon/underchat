@@ -1,8 +1,8 @@
 const { chmod, rename, stat, writeFile } = require('node:fs/promises');
 const { join } = require('node:path');
 
-const executableName = 'underchat-passkey-helper';
-const realExecutableName = 'underchat-passkey-helper-bin';
+const executableName = 'underchat-authenticator';
+const realExecutableName = 'underchat-authenticator-bin';
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'linux') {
@@ -17,7 +17,7 @@ exports.default = async function afterPack(context) {
 
   if (!currentStat?.isFile()) {
     console.warn(
-      '[passkey_helper] linux wrapper skipped: executable not found',
+      '[underchat_authenticator] linux wrapper skipped: executable not found',
       {
         executablePath,
       }
@@ -38,13 +38,13 @@ exports.default = async function afterPack(context) {
       'export XDG_SESSION_TYPE=x11',
       'export GDK_BACKEND=x11',
       'export ELECTRON_OZONE_PLATFORM_HINT=x11',
-      'exec "$APP_DIR/underchat-passkey-helper-bin" "$@"',
+      'exec "$APP_DIR/underchat-authenticator-bin" "$@"',
       '',
     ].join('\n')
   );
   await chmod(executablePath, 0o755);
 
-  console.log('[passkey_helper] linux X11 wrapper installed', {
+  console.log('[underchat_authenticator] linux X11 wrapper installed', {
     executablePath,
     realExecutablePath,
   });

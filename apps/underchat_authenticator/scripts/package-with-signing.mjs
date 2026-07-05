@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process';
 
 const appRoot = resolve(import.meta.dirname, '..');
 const certDir = resolve(appRoot, 'build/certs');
-const pfxPath = resolve(certDir, 'underchat-passkey-helper-self-signed.pfx');
+const pfxPath = resolve(certDir, 'underchat-authenticator-self-signed.pfx');
 const passwordPath = resolve(certDir, 'windows-codesign.password');
 const electronCacheRoot = resolve(
   process.env.HOME ?? '/home/maycon',
@@ -122,14 +122,14 @@ async function patchElectronBuilderNsisUninstallerReader() {
 
   if (!source.includes(wineBlock)) {
     console.warn(
-      '[passkey_helper] electron-builder NSIS Wine block was not found; skipping uninstaller reader patch.'
+      '[underchat_authenticator] electron-builder NSIS Wine block was not found; skipping uninstaller reader patch.'
     );
     return;
   }
 
   await writeFile(nsisTargetPath, source.replace(wineBlock, nativeFirstBlock));
   console.log(
-    '[passkey_helper] electron-builder NSIS uninstaller patch applied'
+    '[underchat_authenticator] electron-builder NSIS uninstaller patch applied'
   );
 }
 
@@ -148,7 +148,7 @@ async function prepareElectronDist(platformTag) {
   const fileName = `electron-v${electronVersion}-${platformTag}.zip`;
   const cacheZip = await findElectronZip(fileName);
   if (!cacheZip) {
-    console.warn('[passkey_helper] Electron ZIP was not found in cache', {
+    console.warn('[underchat_authenticator] Electron ZIP was not found in cache', {
       fileName,
       cache: electronCacheRoot,
     });
@@ -166,7 +166,7 @@ async function prepareElectronDist(platformTag) {
   await run('unzip', ['-q', cacheZip, '-d', outputDir]);
   await writeFile(markerPath, `${fileName}\n`);
 
-  console.log('[passkey_helper] Electron distribution prepared from cache', {
+  console.log('[underchat_authenticator] Electron distribution prepared from cache', {
     platform: platformTag,
     source: cacheZip,
     electronDist: outputDir,
@@ -199,12 +199,12 @@ if (shouldSignWindows) {
     env.CSC_KEY_PASSWORD = (await readFile(passwordPath, 'utf8')).trim();
     env.WIN_CSC_LINK = pfxPath;
     env.WIN_CSC_KEY_PASSWORD = env.CSC_KEY_PASSWORD;
-    console.log('[passkey_helper] Windows code signing enabled', {
+    console.log('[underchat_authenticator] Windows code signing enabled', {
       certificate: pfxPath,
     });
   } else {
     console.warn(
-      '[passkey_helper] Windows code signing certificate was not found; build will continue unsigned.'
+      '[underchat_authenticator] Windows code signing certificate was not found; build will continue unsigned.'
     );
   }
 }

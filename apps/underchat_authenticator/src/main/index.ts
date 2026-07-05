@@ -3,25 +3,25 @@ import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 import {
-  PasskeyHelperApiClient,
-  type PasskeyHelperSession,
+  AuthenticatorApiClient,
+  type AuthenticatorSession,
   type SecureSessionPackage,
 } from './apiClient';
 import {
   extractDeepLinkFromArgv,
   isAllowedHttpApiUrl,
-  parsePasskeyDeepLink,
-  PASSKEY_PROTOCOL,
+  parseAuthenticatorDeepLink,
+  AUTHENTICATOR_PROTOCOL,
   sanitizeError,
-  type PasskeyDeepLinkContext,
+  type AuthenticatorDeepLinkContext,
 } from './deepLink';
 
-declare const __UNDERCHAT_PASSKEY_HELPER_CHANNEL__: string;
+declare const __UNDERCHAT_AUTHENTICATOR_CHANNEL__: string;
 
 const appMainDir = import.meta.dirname;
 const WHATSAPP_WEB_ORIGIN = 'https://web.whatsapp.com';
-const WHATSAPP_WEB_STORAGE_PARTITION = 'persist:underchat-passkey-helper';
-const WHATSAPP_WEB_STORAGE_PARTITION_DIR = 'underchat-passkey-helper';
+const WHATSAPP_WEB_STORAGE_PARTITION = 'persist:underchat-authenticator';
+const WHATSAPP_WEB_STORAGE_PARTITION_DIR = 'underchat-authenticator';
 const CHROME_STABLE_VERSION = '150.0.7871.46';
 const CHROME_STABLE_MAJOR_VERSION =
   CHROME_STABLE_VERSION.split('.')[0] ?? '150';
@@ -51,14 +51,14 @@ const WWEBJS_PROFILE_SKIP_FILE_NAMES = new Set([
   'DevToolsActivePort',
 ]);
 const isDevelopment = !app.isPackaged;
-const helperBuildChannel = __UNDERCHAT_PASSKEY_HELPER_CHANNEL__;
-const diagnosticsEnabled = helperBuildChannel === 'dev' || isDevelopment;
+const authenticatorBuildChannel = __UNDERCHAT_AUTHENTICATOR_CHANNEL__;
+const diagnosticsEnabled = authenticatorBuildChannel === 'dev' || isDevelopment;
 const whatsAppWebUserAgent = getWhatsAppWebUserAgent();
 
 interface CurrentPairing {
-  context: PasskeyDeepLinkContext;
+  context: AuthenticatorDeepLinkContext;
   error: string | null;
-  session: PasskeyHelperSession | null;
+  session: AuthenticatorSession | null;
 }
 
 type SecureSessionProfileFile = {
@@ -84,24 +84,24 @@ let closeCleanupInFlight: Promise<void> | null = null;
 const diagnosticLogEntries: DiagnosticLogEntry[] = [];
 const MAX_DIAGNOSTIC_LOG_ENTRIES = 5000;
 
-const apiClient = new PasskeyHelperApiClient((event, context, details = {}) => {
+const apiClient = new AuthenticatorApiClient((event, context, details = {}) => {
   logEvent(event, context, details);
 });
 
-app.setName('Underchat Passkey Helper');
+app.setName('Underchat Authenticator');
 app.userAgentFallback = whatsAppWebUserAgent;
 app.setPath(
   'userData',
   process.platform === 'linux'
-    ? join(app.getPath('appData'), 'underchat-passkey-helper')
-    : join(app.getPath('appData'), 'Underchat Passkey Helper')
+    ? join(app.getPath('appData'), 'underchat-authenticator')
+    : join(app.getPath('appData'), 'Underchat Authenticator')
 );
 configureRuntimeSwitches();
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
-  console.log('[underchat-passkey-helper] single_instance.lock_denied', {
+  console.log('[underchat-authenticator] single_instance.lock_denied', {
     argvCount: process.argv.length,
     hasDeepLink: Boolean(extractDeepLinkFromArgv(process.argv)),
   });
@@ -114,8 +114,8 @@ if (!hasSingleInstanceLock) {
 
 function registerProtocol(): void {
   if (process.platform === 'linux') {
-    console.log('[underchat-passkey-helper] protocol.register.skipped_linux', {
-      protocol: PASSKEY_PROTOCOL,
+    console.log('[underchat-authenticator] protocol.register.skipped_linux', {
+      protocol: AUTHENTICATOR_PROTOCOL,
     });
     return;
   }
@@ -124,20 +124,20 @@ function registerProtocol(): void {
     const entrypoint = getDefaultAppProtocolEntrypoint();
 
     if (entrypoint) {
-      app.setAsDefaultProtocolClient(PASSKEY_PROTOCOL, process.execPath, [
+      app.setAsDefaultProtocolClient(AUTHENTICATOR_PROTOCOL, process.execPath, [
         resolve(entrypoint),
       ]);
-      console.log('[underchat-passkey-helper] protocol.register.default_app', {
-        protocol: PASSKEY_PROTOCOL,
+      console.log('[underchat-authenticator] protocol.register.default_app', {
+        protocol: AUTHENTICATOR_PROTOCOL,
       });
     }
 
     return;
   }
 
-  app.setAsDefaultProtocolClient(PASSKEY_PROTOCOL);
-  console.log('[underchat-passkey-helper] protocol.register.packaged', {
-    protocol: PASSKEY_PROTOCOL,
+  app.setAsDefaultProtocolClient(AUTHENTICATOR_PROTOCOL);
+  console.log('[underchat-authenticator] protocol.register.packaged', {
+    protocol: AUTHENTICATOR_PROTOCOL,
   });
 }
 
@@ -152,7 +152,7 @@ function configureRuntimeSwitches(): void {
   app.commandLine.appendSwitch('disable-gpu-compositing');
   app.commandLine.appendSwitch('disable-vulkan');
   app.commandLine.appendSwitch('disable-features', 'Vulkan');
-  console.log('[underchat-passkey-helper] runtime.switches.linux', {
+  console.log('[underchat-authenticator] runtime.switches.linux', {
     disableGpu: true,
     disableVulkan: true,
     ozonePlatform: 'x11',
@@ -163,7 +163,7 @@ function getDefaultAppProtocolEntrypoint(): string | null {
   for (const arg of process.argv.slice(1)) {
     if (
       arg.startsWith('-') ||
-      arg.startsWith(`${PASSKEY_PROTOCOL}://`) ||
+      arg.startsWith(`${AUTHENTICATOR_PROTOCOL}://`) ||
       arg.startsWith('--deep-link=')
     ) {
       continue;
@@ -179,7 +179,7 @@ function registerAppLifecycleHandlers(): void {
   app.on('second-instance', (_event, argv) => {
     const deepLink = extractDeepLinkFromArgv(argv);
 
-    console.log('[underchat-passkey-helper] second_instance.received', {
+    console.log('[underchat-authenticator] second_instance.received', {
       argvCount: argv.length,
       hasDeepLink: Boolean(deepLink),
     });
@@ -205,7 +205,7 @@ function registerAppLifecycleHandlers(): void {
   app.whenReady().then(async () => {
     const initialDeepLink = extractDeepLinkFromArgv(process.argv);
 
-    console.log('[underchat-passkey-helper] app.ready', {
+    console.log('[underchat-authenticator] app.ready', {
       argvCount: process.argv.length,
       hasDeepLink: Boolean(initialDeepLink),
       isPackaged: app.isPackaged,
@@ -248,13 +248,13 @@ function registerAppLifecycleHandlers(): void {
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle('underchat-passkey:get-diagnostics-info', async () => ({
-    channel: helperBuildChannel,
+  ipcMain.handle('underchat-authenticator:get-diagnostics-info', async () => ({
+    channel: authenticatorBuildChannel,
     enabled: diagnosticsEnabled,
   }));
 
   ipcMain.handle(
-    'underchat-passkey:append-debug-log',
+    'underchat-authenticator:append-debug-log',
     async (
       _event,
       input: {
@@ -271,10 +271,10 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('underchat-passkey:download-debug-log', async () => {
+  ipcMain.handle('underchat-authenticator:download-debug-log', async () => {
     if (!diagnosticsEnabled) {
       return {
-        message: 'Log de diagnostico disponivel apenas no release dev.',
+        message: 'Log de diagnóstico disponível apenas no release dev.',
         status: 'disabled',
       };
     }
@@ -282,7 +282,7 @@ function registerIpcHandlers(): void {
     return saveDiagnosticLog();
   });
 
-  ipcMain.handle('underchat-passkey:close-helper', async () => {
+  ipcMain.handle('underchat-authenticator:close-helper', async () => {
     logEvent('helper.close.requested', currentPairing?.context, {
       status: normalizeSessionStatus(currentPairing?.session ?? null),
     });
@@ -296,11 +296,11 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle('underchat-passkey:get-session', async () => {
+  ipcMain.handle('underchat-authenticator:get-session', async () => {
     if (!currentPairing) {
       return {
         error:
-          'Abra o helper pelo link da Underchat para iniciar a verificacao.',
+          'Abra o Underchat Authenticator pelo link da Underchat para iniciar a verificação.',
       };
     }
 
@@ -331,14 +331,14 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle('underchat-passkey:extract-wa-auth-dump', async () => {
+  ipcMain.handle('underchat-authenticator:extract-wa-auth-dump', async () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
-      throw new Error('Janela do WhatsApp Web nao esta aberta.');
+      throw new Error('Janela do WhatsApp Web não está aberta.');
     }
 
     const currentUrl = mainWindow.webContents.getURL();
     if (!currentUrl.startsWith(WHATSAPP_WEB_ORIGIN)) {
-      throw new Error('A janela atual nao esta no WhatsApp Web.');
+      throw new Error('A janela atual não está no WhatsApp Web.');
     }
 
     logEvent(
@@ -381,39 +381,7 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(
-    'underchat-passkey:send-response',
-    async (_event, passkeyResponse: unknown) => {
-      if (!currentPairing) {
-        throw new Error('Sessao de passkey nao iniciada.');
-      }
-
-      logEvent('passkey_response.send.start', currentPairing.context);
-      const result = await apiClient.sendPasskeyResponse(
-        currentPairing.context,
-        passkeyResponse
-      );
-      logEvent('passkey_response.send.done', currentPairing.context, {
-        status: result.status ?? result.code ?? null,
-      });
-      return result;
-    }
-  );
-
-  ipcMain.handle('underchat-passkey:confirm', async () => {
-    if (!currentPairing) {
-      throw new Error('Sessao de passkey nao iniciada.');
-    }
-
-    logEvent('passkey_confirmation.send.start', currentPairing.context);
-    const result = await apiClient.confirmPasskey(currentPairing.context);
-    logEvent('passkey_confirmation.send.done', currentPairing.context, {
-      status: result.status ?? result.code ?? null,
-    });
-    return result;
-  });
-
-  ipcMain.handle(
-    'underchat-passkey:update-secure-status',
+    'underchat-authenticator:update-secure-status',
     async (
       _event,
       statusPayload: {
@@ -423,7 +391,7 @@ function registerIpcHandlers(): void {
       }
     ) => {
       if (!currentPairing) {
-        throw new Error('Sessao segura nao iniciada.');
+        throw new Error('Sessão segura não iniciada.');
       }
 
       const previousStatus = normalizeSessionStatus(currentPairing.session);
@@ -444,10 +412,10 @@ function registerIpcHandlers(): void {
       ).catch(() => currentPairing?.session ?? null);
       const nextStatus =
         normalizeSessionStatus(currentPairing.session) ??
-        normalizeActionStatus(result.status ?? result.code);
+        normalizeActionStatus(result.status);
 
       if (nextStatus !== previousStatus) {
-        mainWindow?.webContents.send('underchat-passkey:session-updated');
+        mainWindow?.webContents.send('underchat-authenticator:session-updated');
       } else {
         logEvent(
           'secure_session.status.update.no_session_event',
@@ -468,10 +436,10 @@ function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
-    'underchat-passkey:upload-secure-session',
+    'underchat-authenticator:upload-secure-session',
     async (_event, sessionPackage: SecureSessionPackage) => {
       if (!currentPairing) {
-        throw new Error('Sessao segura nao iniciada.');
+        throw new Error('Sessão segura não iniciada.');
       }
 
       logEvent('secure_session.upload.start', currentPairing.context, {
@@ -497,10 +465,10 @@ function registerIpcHandlers(): void {
       if (nextStatus === 'connected' || result.connected === true) {
         scheduleConnectedCleanupAndClose('secure_session_connected');
       }
-      mainWindow?.webContents.send('underchat-passkey:session-updated');
+      mainWindow?.webContents.send('underchat-authenticator:session-updated');
       logEvent('secure_session.upload.done', currentPairing.context, {
         next_status: nextStatus,
-        status: result.status ?? result.code ?? null,
+        status: result.status ?? null,
       });
       return result;
     }
@@ -508,7 +476,7 @@ function registerIpcHandlers(): void {
 }
 
 function normalizeSessionStatus(
-  session: PasskeyHelperSession | null
+  session: AuthenticatorSession | null
 ): string | null {
   if (session?.status === undefined || session.status === null) {
     return null;
@@ -752,7 +720,7 @@ async function saveDiagnosticLog(): Promise<{
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const defaultPath = join(
     app.getPath('downloads'),
-    `underchat-passkey-helper-${tokenHash}-${timestamp}.json`
+    `underchat-authenticator-${tokenHash}-${timestamp}.json`
   );
 
   const saveDialogOptions = {
@@ -764,7 +732,7 @@ async function saveDiagnosticLog(): Promise<{
         name: 'JSON',
       },
     ],
-    title: 'Salvar log de diagnostico Underchat Passkey Helper',
+    title: 'Salvar log de diagnóstico Underchat Authenticator',
   };
   const result =
     mainWindow && !mainWindow.isDestroyed()
@@ -778,7 +746,7 @@ async function saveDiagnosticLog(): Promise<{
 
   const snapshot = {
     app: {
-      channel: helperBuildChannel,
+      channel: authenticatorBuildChannel,
       diagnostics_enabled: diagnosticsEnabled,
       electron: process.versions.electron,
       node: process.versions.node,
@@ -919,7 +887,7 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
 
   function bytesToBase64Required(value, label) {
     const base64 = bytesToBase64(value);
-    if (!base64) throw new Error('Nao foi possivel converter ' + label + ' para base64.');
+    if (!base64) throw new Error('Não foi possível converter ' + label + ' para base64.');
     return base64;
   }
 
@@ -1338,7 +1306,7 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
   }
 
   if (!location.origin.startsWith('https://web.whatsapp.com')) {
-    throw new Error('A janela atual nao esta no WhatsApp Web.');
+    throw new Error('A janela atual não está no WhatsApp Web.');
   }
 
   const signalDb = await openIndexedDb('signal-storage');
@@ -1379,12 +1347,12 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
   const meLid = widToJid(readLocalStorageJson('WALid')) || moduleMe.lid;
   const meDisplayName = normalizeOptionalString(readLocalStorageJson('me-display-name'));
 
-  if (!registrationId) throw new Error('Nao foi possivel extrair o registrationId da sessao.');
-  if (!noise) throw new Error('Nao foi possivel extrair a noise key da sessao.');
-  if (!staticPublicKey || !staticPrivateKey) throw new Error('Nao foi possivel extrair a identity key da sessao.');
-  if (!signedPreKey) throw new Error('Nao foi possivel extrair a signed pre-key da sessao.');
-  if (!account) throw new Error('Nao foi possivel extrair a identidade ADV da sessao.');
-  if (!meId) throw new Error('Nao foi possivel identificar o JID conectado.');
+  if (!registrationId) throw new Error('Não foi possível extrair o registrationId da sessão.');
+  if (!noise) throw new Error('Não foi possível extrair a noise key da sessão.');
+  if (!staticPublicKey || !staticPrivateKey) throw new Error('Não foi possível extrair a identity key da sessão.');
+  if (!signedPreKey) throw new Error('Não foi possível extrair a signed pre-key da sessão.');
+  if (!account) throw new Error('Não foi possível extrair a identidade ADV da sessão.');
+  if (!meId) throw new Error('Não foi possível identificar o JID conectado.');
 
   const syncKeyRows = await getModelTableRows('WAWebSchemaSyncKeys', 'getSyncKeysTable');
   const versionRows = await getModelTableRows('WAWebSchemaCollectionVersion', 'getCollectionVersionTable');
@@ -1613,15 +1581,15 @@ async function addProfileFile(input: {
 }
 
 async function handleDeepLink(rawUrl: string): Promise<void> {
-  let context: PasskeyDeepLinkContext;
+  let context: AuthenticatorDeepLinkContext;
 
   try {
-    context = parsePasskeyDeepLink(rawUrl);
+    context = parseAuthenticatorDeepLink(rawUrl);
   } catch (error) {
     currentPairing = {
       context: {
         apiBaseUrl: '',
-        mode: 'pair',
+        mode: 'secure',
         token: '',
         tokenHash: 'invalid-link',
       },
@@ -1645,28 +1613,24 @@ async function handleDeepLink(rawUrl: string): Promise<void> {
 
   try {
     currentPairing.session = await fetchPairingSession(context);
-    mainWindow?.webContents.send('underchat-passkey:session-updated');
+    mainWindow?.webContents.send('underchat-authenticator:session-updated');
   } catch (error) {
     currentPairing.error = sanitizeError(error);
     logEvent('session.fetch.error', context, { error: currentPairing.error });
-    mainWindow?.webContents.send('underchat-passkey:session-updated');
+    mainWindow?.webContents.send('underchat-authenticator:session-updated');
   }
 }
 
 async function fetchPairingSession(
-  context: PasskeyDeepLinkContext
-): Promise<PasskeyHelperSession> {
+  context: AuthenticatorDeepLinkContext
+): Promise<AuthenticatorSession> {
   logEvent('session.fetch.start', context);
   const session = await apiClient.fetchSession(context);
-  const publicKey =
-    session.publicKey ?? session.passkeyPublicKey ?? session.passkey_public_key;
   logEvent('session.fetch.done', context, {
-    hasConfirmationCode: Boolean(
-      session.confirmationCode ?? session.passkey_confirmation_code
-    ),
-    hasPublicKey: context.mode === 'secure' ? undefined : Boolean(publicKey),
     mode: context.mode,
     status: session.status ?? null,
+    worker_id: session.worker_id ?? null,
+    worker_type_id: session.worker_type_id ?? null,
   });
   return session;
 }
@@ -1679,7 +1643,7 @@ function createMainWindow(initialError?: string): void {
 
     mainWindow.loadURL(WHATSAPP_WEB_ORIGIN).catch((error: unknown) => {
       console.error(
-        '[underchat-passkey-helper] window.reload.error',
+        '[underchat-authenticator] window.reload.error',
         sanitizeError(error)
       );
     });
@@ -1687,7 +1651,7 @@ function createMainWindow(initialError?: string): void {
     return;
   }
 
-  console.log('[underchat-passkey-helper] window.create.start');
+  console.log('[underchat-authenticator] window.create.start');
   allowMainWindowClose = false;
   mainWindow = new BrowserWindow({
     backgroundColor: '#0f1519',
@@ -1696,7 +1660,7 @@ function createMainWindow(initialError?: string): void {
     minHeight: 560,
     minWidth: 760,
     show: false,
-    title: 'Underchat Passkey Helper',
+    title: 'Underchat Authenticator',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -1706,7 +1670,7 @@ function createMainWindow(initialError?: string): void {
     },
     width: 980,
   });
-  console.log('[underchat-passkey-helper] window.create.done');
+  console.log('[underchat-authenticator] window.create.done');
   mainWindow.setMenuBarVisibility(false);
   mainWindow.webContents.setUserAgent(whatsAppWebUserAgent);
   configureWhatsAppRequestHeaders(mainWindow);
@@ -1720,7 +1684,7 @@ function createMainWindow(initialError?: string): void {
     hasShownWindow = true;
     mainWindow.show();
     mainWindow.focus();
-    console.log('[underchat-passkey-helper] window.show', { reason });
+    console.log('[underchat-authenticator] window.show', { reason });
   };
 
   mainWindow.once('ready-to-show', () => {
@@ -1748,7 +1712,7 @@ function createMainWindow(initialError?: string): void {
   mainWindow.webContents.on(
     'did-fail-load',
     (_event, errorCode, errorDescription, validatedUrl) => {
-      console.error('[underchat-passkey-helper] window.load.failed', {
+      console.error('[underchat-authenticator] window.load.failed', {
         domain: getSafeDomain(validatedUrl),
         errorCode,
         errorDescription,
@@ -1757,7 +1721,7 @@ function createMainWindow(initialError?: string): void {
   );
 
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('[underchat-passkey-helper] renderer.gone', details);
+    console.error('[underchat-authenticator] renderer.gone', details);
   });
 
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
@@ -1787,7 +1751,7 @@ function createMainWindow(initialError?: string): void {
     currentPairing = {
       context: {
         apiBaseUrl: '',
-        mode: 'pair',
+        mode: 'secure',
         token: '',
         tokenHash: 'invalid-link',
       },
@@ -1796,7 +1760,7 @@ function createMainWindow(initialError?: string): void {
     };
   }
 
-  console.log('[underchat-passkey-helper] window.load.start', {
+  console.log('[underchat-authenticator] window.load.start', {
     domain: getSafeDomain(WHATSAPP_WEB_ORIGIN),
   });
   mainWindow
@@ -1805,14 +1769,14 @@ function createMainWindow(initialError?: string): void {
     })
     .catch((error: unknown) => {
       console.error(
-        '[underchat-passkey-helper] window.load.error',
+        '[underchat-authenticator] window.load.error',
         sanitizeError(error)
       );
     });
 
   if (isDevelopment) {
     mainWindow.webContents.on('did-finish-load', () => {
-      console.log('[underchat-passkey-helper] whatsapp.loaded');
+      console.log('[underchat-authenticator] whatsapp.loaded');
     });
   }
 }
@@ -1843,7 +1807,7 @@ function configureWhatsAppRequestHeaders(window: BrowserWindow): void {
     }
   );
 
-  console.log('[underchat-passkey-helper] whatsapp.headers.override', {
+  console.log('[underchat-authenticator] whatsapp.headers.override', {
     chromeVersion: CHROME_STABLE_VERSION,
     platform,
   });
@@ -1883,7 +1847,7 @@ function isAllowedNavigation(rawUrl: string): boolean {
 function logBlockedNavigation(rawUrl: string): void {
   const domain = getSafeDomain(rawUrl);
 
-  console.warn('[underchat-passkey-helper] navigation.blocked', { domain });
+  console.warn('[underchat-authenticator] navigation.blocked', { domain });
 }
 
 function getSafeDomain(rawUrl: string): string {
@@ -1900,7 +1864,7 @@ function getSafeDomain(rawUrl: string): string {
 
 function logEvent(
   event: string,
-  context: PasskeyDeepLinkContext | null | undefined,
+  context: AuthenticatorDeepLinkContext | null | undefined,
   details: Record<string, unknown> = {}
 ): void {
   const safeDetails = redactDiagnosticValue(details) as Record<string, unknown>;
@@ -1920,7 +1884,7 @@ function logEvent(
       diagnosticLogEntries.length - MAX_DIAGNOSTIC_LOG_ENTRIES
     );
   }
-  console.log('[underchat-passkey-helper]', event, output);
+  console.log('[underchat-authenticator]', event, output);
 }
 
 function redactDiagnosticValue(value: unknown, key = ''): unknown {

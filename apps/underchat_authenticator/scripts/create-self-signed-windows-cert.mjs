@@ -6,9 +6,9 @@ import { spawn } from 'node:child_process';
 const appRoot = resolve(import.meta.dirname, '..');
 const certDir = resolve(appRoot, 'build/certs');
 const passwordPath = resolve(certDir, 'windows-codesign.password');
-const keyPath = resolve(certDir, 'underchat-passkey-helper.key.pem');
-const certPath = resolve(certDir, 'underchat-passkey-helper.cert.pem');
-const pfxPath = resolve(certDir, 'underchat-passkey-helper-self-signed.pfx');
+const keyPath = resolve(certDir, 'underchat-authenticator.key.pem');
+const certPath = resolve(certDir, 'underchat-authenticator.cert.pem');
+const pfxPath = resolve(certDir, 'underchat-authenticator-self-signed.pfx');
 
 async function exists(path) {
   return Boolean(await stat(path).catch(() => undefined));
@@ -37,7 +37,7 @@ await mkdir(certDir, { recursive: true });
 
 if ((await exists(pfxPath)) && (await exists(passwordPath))) {
   console.log(
-    '[passkey_helper] Windows self-signed certificate already exists',
+    '[underchat_authenticator] Windows self-signed certificate already exists',
     {
       pfx: pfxPath,
     }
@@ -63,7 +63,7 @@ await run('openssl', [
   '-out',
   certPath,
   '-subj',
-  '/C=BR/ST=Sao Paulo/L=Sao Paulo/O=Underchat/OU=Desktop/CN=Underchat Passkey Helper',
+  '/C=BR/ST=Sao Paulo/L=Sao Paulo/O=Underchat/OU=Desktop/CN=Underchat Authenticator',
   '-addext',
   'extendedKeyUsage=codeSigning',
   '-addext',
@@ -80,7 +80,7 @@ await run('openssl', [
   '-out',
   pfxPath,
   '-name',
-  'Underchat Passkey Helper',
+  'Underchat Authenticator',
   '-passout',
   `file:${passwordPath}`,
 ]);
@@ -94,6 +94,6 @@ if (!savedPassword) {
   throw new Error('Generated Windows signing password is empty');
 }
 
-console.log('[passkey_helper] Windows self-signed certificate generated', {
+console.log('[underchat_authenticator] Windows self-signed certificate generated', {
   pfx: pfxPath,
 });

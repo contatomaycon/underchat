@@ -33,11 +33,14 @@ import {
 } from '@/@webcore/utils/connectionLifecycleDebug';
 import { logLocalConnectionStatus } from '@/@webcore/utils/localConnectionStatusLog';
 import ConnectionMethodChooser from './ConnectionMethodChooser.vue';
+import ConnectionAuthenticatorInstallPanel from './ConnectionAuthenticatorInstallPanel.vue';
 import ConnectionSecurePanel from './ConnectionSecurePanel.vue';
 
 const channelStore = useChannelsStore();
 
-type ConnectionMethod = 'method_selection' | 'qrcode' | 'secure';
+type ConnectionMethod =
+  'authenticator_install' | 'method_selection' | 'qrcode' | 'secure';
+type AuthenticatorPlatform = 'linux' | 'windows';
 
 type WorkerSecureConnectionPublication = {
   account_id?: string;
@@ -123,6 +126,7 @@ const secureSession = shallowRef<WorkerSecureConnectionSessionResponse | null>(
 );
 const isSecureSessionLoading = shallowRef(false);
 const isOpeningSecureHelper = shallowRef(false);
+const isDownloadingAuthenticator = shallowRef(false);
 const secureHelperOpenTimeoutId = shallowRef<number | null>(null);
 const securePollingIntervalId = shallowRef<number | null>(null);
 const securePollingInFlight = shallowRef(false);
@@ -170,7 +174,9 @@ const modalState = computed<WorkerConnectionModalState>(() =>
 
 const isConnected = computed(() => modalState.value === 'connected');
 const dialogMaxWidth = computed(() =>
-  selectedConnectionMethod.value === 'method_selection' && !isConnected.value
+  (selectedConnectionMethod.value === 'method_selection' ||
+    selectedConnectionMethod.value === 'authenticator_install') &&
+  !isConnected.value
     ? 760
     : 640
 );
@@ -550,6 +556,20 @@ async function startSecureConnection(options: { openHelper?: boolean } = {}) {
   }
 }
 
+async function continueAuthenticatorConnection() {
+  await startSecureConnection();
+}
+
+async function downloadAuthenticatorInstaller(platform: AuthenticatorPlatform) {
+  isDownloadingAuthenticator.value = true;
+
+  try {
+    await channelStore.downloadAuthenticatorInstaller(platform);
+  } finally {
+    isDownloadingAuthenticator.value = false;
+  }
+}
+
 async function cancelSecureConnection() {
   if (!channelId.value || !secureSession.value?.token) {
     selectedConnectionMethod.value = 'method_selection';
@@ -579,7 +599,7 @@ function returnToConnectionMethodSelection() {
 
 async function selectConnectionMethod(method: 'secure' | 'qrcode') {
   if (method === 'secure') {
-    await startSecureConnection();
+    selectedConnectionMethod.value = 'authenticator_install';
     return;
   }
 
@@ -598,12 +618,14 @@ function handleSecureConnectionPublication(
 }
 
 async function switchToSecureConnectionFromPasskeyRequirement() {
-  if (selectedConnectionMethod.value === 'secure') {
+  if (
+    selectedConnectionMethod.value === 'secure' ||
+    selectedConnectionMethod.value === 'authenticator_install'
+  ) {
     return;
   }
 
-  selectedConnectionMethod.value = 'secure';
-  await startSecureConnection();
+  selectedConnectionMethod.value = 'authenticator_install';
 }
 
 function resetPairingCodes() {
@@ -2065,6 +2087,18 @@ onUnmounted(() => {
         v-if="showConnectionChooser"
         :disabled="channelStore.loading || isSecureSessionLoading"
         @select="selectConnectionMethod"
+      />
+
+      <ConnectionAuthenticatorInstallPanel
+        v-else-if="
+          selectedConnectionMethod === 'authenticator_install' && !isConnected
+        "
+        :disabled="isSecureSessionLoading"
+        :downloading="isDownloadingAuthenticator"
+        @download="downloadAuthenticatorInstaller"
+        @continue="continueAuthenticatorConnection"
+        @back="returnToConnectionMethodSelection"
+        @cancel="returnToConnectionMethodSelection"
       />
 
       <ConnectionSecurePanel

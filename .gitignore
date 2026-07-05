@@ -95,12 +95,12 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
-apps/passkey_helper/release/
-apps/passkey_helper/build/certs/
-apps/passkey_helper/build/electron/
-apps/passkey_helper/build/electron-builder-cache/
-apps/passkey_helper/build/wine-prefix/
-apps/passkey_helper/build/wine-runtime/
+apps/underchat_authenticator/release/
+apps/underchat_authenticator/build/certs/
+apps/underchat_authenticator/build/electron/
+apps/underchat_authenticator/build/electron-builder-cache/
+apps/underchat_authenticator/build/wine-prefix/
+apps/underchat_authenticator/build/wine-runtime/
 
 # Gatsby files
 .cache/

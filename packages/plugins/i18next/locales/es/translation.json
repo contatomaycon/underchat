@@ -109,6 +109,7 @@
   "worker_secure_connection_provider_mismatch": "El provider del paquete de sesión no corresponde al canal.",
   "worker_secure_connection_checksum_invalid": "Checksum del paquete de sesión inválido.",
   "worker_secure_connection_session_already_uploaded": "La sesión segura ya fue enviada.",
+  "worker_authenticator_download_not_found": "Instalador de Underchat Authenticator no encontrado para este entorno.",
   "passkey_required_title": "Verificación por llave de acceso",
   "passkey_required_description": "Continúa para validar la llave de acceso de este WhatsApp en el navegador.",
   "passkey_confirmation_title": "Confirma en el celular",

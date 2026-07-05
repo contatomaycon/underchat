@@ -13,6 +13,10 @@ export const workerSecureConnectionHelperParamsSchema = Type.Object({
   token: Type.String(),
 });
 
+export const workerAuthenticatorDownloadParamsSchema = Type.Object({
+  platform: Type.Union([Type.Literal('linux'), Type.Literal('windows')]),
+});
+
 export const workerSecureConnectionHelperStatusBodySchema = Type.Object({
   status: Type.String(),
   helper_version: Type.Optional(Type.String()),
@@ -48,6 +52,10 @@ export type WorkerSecureConnectionTokenParams = Static<
 
 export type WorkerSecureConnectionHelperParams = Static<
   typeof workerSecureConnectionHelperParamsSchema
+>;
+
+export type WorkerAuthenticatorDownloadParams = Static<
+  typeof workerAuthenticatorDownloadParamsSchema
 >;
 
 export type WorkerSecureConnectionHelperStatusBody = Static<

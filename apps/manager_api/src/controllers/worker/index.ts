@@ -66,6 +66,7 @@ import { cancelSecureConnectionSession } from './methods/cancelSecureConnectionS
 import { viewSecureConnectionHelper } from './methods/viewSecureConnectionHelper';
 import { updateSecureConnectionHelperStatus } from './methods/updateSecureConnectionHelperStatus';
 import { uploadSecureConnectionHelperSession } from './methods/uploadSecureConnectionHelperSession';
+import { downloadAuthenticatorInstaller } from './methods/downloadAuthenticatorInstaller';
 
 @injectable()
 class WorkerController {
@@ -143,6 +144,7 @@ class WorkerController {
     updateSecureConnectionHelperStatus;
   public uploadSecureConnectionHelperSession =
     uploadSecureConnectionHelperSession;
+  public downloadAuthenticatorInstaller = downloadAuthenticatorInstaller;
 }
 
 export default WorkerController;

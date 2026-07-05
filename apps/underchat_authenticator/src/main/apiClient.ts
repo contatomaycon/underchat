@@ -1,37 +1,23 @@
-import type { PasskeyDeepLinkContext } from './deepLink';
+import type { AuthenticatorDeepLinkContext } from './deepLink';
 
-export interface PasskeyHelperSession {
+export interface AuthenticatorSession {
   channel_name?: string;
   channelName?: string;
-  confirmationCode?: string;
   connection_attempt_id?: string;
   error?: string;
   expires_at?: string;
   expiresAt?: string;
-  helper_download_url?: string;
   message?: string;
-  passkey_confirmation_code?: string;
-  passkey_public_key?: unknown;
-  passkey_skip_handoff_ux?: boolean;
-  passkeyPublicKey?: unknown;
-  publicKey?: unknown;
-  skipHandoffUX?: boolean;
   status?: number | string;
   token_hash?: string;
   worker_id?: string;
   worker_type_id?: string;
 }
 
-export interface PasskeyHelperActionResult {
-  code?: number;
-  confirmationCode?: string;
+export interface AuthenticatorActionResult {
   connected?: boolean;
   error?: string;
   message?: string;
-  passkey_confirmation_code?: string;
-  passkeyConfirmationCode?: string;
-  passkey_skip_handoff_ux?: boolean;
-  passkeySkipHandoffUX?: boolean;
   status?: number | string;
 }
 
@@ -54,56 +40,23 @@ interface ApiEnvelope<T> {
 
 type ApiLogFn = (
   event: string,
-  context: PasskeyDeepLinkContext,
+  context: AuthenticatorDeepLinkContext,
   details?: Record<string, unknown>
 ) => void;
 
-export class PasskeyHelperApiClient {
+export class AuthenticatorApiClient {
   constructor(private readonly log?: ApiLogFn) {}
 
   async fetchSession(
-    context: PasskeyDeepLinkContext
-  ): Promise<PasskeyHelperSession> {
-    return this.request<PasskeyHelperSession>(context, '', {
+    context: AuthenticatorDeepLinkContext
+  ): Promise<AuthenticatorSession> {
+    return this.request<AuthenticatorSession>(context, '', {
       method: 'GET',
     });
   }
 
-  async sendPasskeyResponse(
-    context: PasskeyDeepLinkContext,
-    passkeyResponse: unknown
-  ): Promise<PasskeyHelperActionResult> {
-    return this.request<PasskeyHelperActionResult>(
-      context,
-      '/passkey-response',
-      {
-        body: JSON.stringify(passkeyResponse),
-        headers: {
-          'content-type': 'application/json',
-        },
-        method: 'POST',
-      }
-    );
-  }
-
-  async confirmPasskey(
-    context: PasskeyDeepLinkContext
-  ): Promise<PasskeyHelperActionResult> {
-    return this.request<PasskeyHelperActionResult>(
-      context,
-      '/passkey-confirmation',
-      {
-        body: JSON.stringify({ confirmed: true }),
-        headers: {
-          'content-type': 'application/json',
-        },
-        method: 'POST',
-      }
-    );
-  }
-
   async updateSecureStatus(
-    context: PasskeyDeepLinkContext,
+    context: AuthenticatorDeepLinkContext,
     input: {
       error?: string;
       helper_platform?: string;
@@ -111,8 +64,8 @@ export class PasskeyHelperApiClient {
       message?: string;
       status: string;
     }
-  ): Promise<PasskeyHelperActionResult> {
-    return this.request<PasskeyHelperActionResult>(context, '/status', {
+  ): Promise<AuthenticatorActionResult> {
+    return this.request<AuthenticatorActionResult>(context, '/status', {
       body: JSON.stringify(input),
       headers: {
         'content-type': 'application/json',
@@ -122,10 +75,10 @@ export class PasskeyHelperApiClient {
   }
 
   async uploadSecureSession(
-    context: PasskeyDeepLinkContext,
+    context: AuthenticatorDeepLinkContext,
     sessionPackage: SecureSessionPackage
-  ): Promise<PasskeyHelperActionResult> {
-    return this.request<PasskeyHelperActionResult>(context, '/session', {
+  ): Promise<AuthenticatorActionResult> {
+    return this.request<AuthenticatorActionResult>(context, '/session', {
       body: JSON.stringify(sessionPackage),
       headers: {
         'content-type': 'application/json',
@@ -135,14 +88,11 @@ export class PasskeyHelperApiClient {
   }
 
   private async request<T>(
-    context: PasskeyDeepLinkContext,
+    context: AuthenticatorDeepLinkContext,
     suffix: string,
     init: RequestInit
   ): Promise<T> {
-    const basePath =
-      context.mode === 'secure'
-        ? '/worker/connection/secure-helper'
-        : '/worker/connection/passkey-helper';
+    const basePath = '/worker/connection/secure-helper';
     const endpoint = `${context.apiBaseUrl}${basePath}/${encodeURIComponent(
       context.token
     )}${suffix}`;

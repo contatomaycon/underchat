@@ -109,6 +109,7 @@
   "worker_secure_connection_provider_mismatch": "Session package provider does not match the channel.",
   "worker_secure_connection_checksum_invalid": "Invalid session package checksum.",
   "worker_secure_connection_session_already_uploaded": "The secure session was already uploaded.",
+  "worker_authenticator_download_not_found": "Underchat Authenticator installer was not found for this environment.",
   "passkey_required_title": "Passkey verification",
   "passkey_required_description": "Continue to verify this WhatsApp passkey in your browser.",
   "passkey_confirmation_title": "Confirm on your phone",

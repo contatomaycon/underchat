@@ -154,10 +154,11 @@ const canOpenHelper = computed(
 
       <VBtn
         v-if="session && session.status !== 'connected'"
-        variant="text"
+        variant="tonal"
         color="error"
         @click="emit('cancel')"
       >
+        <VIcon icon="tabler-x" start />
         {{ $t('cancel') }}
       </VBtn>
     </div>

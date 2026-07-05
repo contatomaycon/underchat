@@ -1,8 +1,7 @@
 import type {
-  PasskeyHelperActionResult,
-  PasskeyHelperSessionPayload,
+  AuthenticatorSessionPayload,
   SecureSessionPackage,
-  UnderchatPasskeyBridge,
+  UnderchatAuthenticatorBridge,
 } from '../preload';
 import overlayCss from './overlay.css?inline';
 
@@ -12,7 +11,7 @@ interface OverlayState {
   diagnosticsEnabled: boolean;
   diagnosticsMessage: string | null;
   error: string | null;
-  helperPayload: PasskeyHelperSessionPayload | null;
+  helperPayload: AuthenticatorSessionPayload | null;
   message: string | null;
   whatsappAuthenticated: boolean;
   whatsappReadinessReason: string | null;
@@ -81,8 +80,6 @@ interface WhatsAppReadinessSnapshot {
   syncing: boolean;
 }
 
-const CONNECTED_CODES = new Set([200, 201]);
-const CONFIRMATION_CODES = new Set([208]);
 const TERMINAL_SECURE_STATUSES = new Set([
   'connected',
   'failed',
@@ -117,7 +114,7 @@ const WORKER_TYPE_PROVIDER_MAP: Record<
   'e80ad183-2b46-4628-9105-a036f2d28720': 'whatsmeow',
 };
 
-let bridgeRef: UnderchatPasskeyBridge | null = null;
+let bridgeRef: UnderchatAuthenticatorBridge | null = null;
 let rootElement: HTMLElement | null = null;
 let readinessIntervalId: number | null = null;
 let currentTokenHash: string | null = null;
@@ -148,8 +145,8 @@ let state: OverlayState = {
   whatsappSyncing: false,
 };
 
-export function installUnderchatPasskeyOverlay(
-  bridge: UnderchatPasskeyBridge
+export function installUnderchatAuthenticatorOverlay(
+  bridge: UnderchatAuthenticatorBridge
 ): void {
   bridgeRef = bridge;
   injectStyles();
@@ -190,7 +187,7 @@ async function refreshSession(
     setState({
       busy: true,
       error: null,
-      message: 'Buscando dados da verificacao...',
+      message: 'Buscando dados da verificação...',
     });
   }
 
@@ -278,112 +275,6 @@ function startWhatsappReadinessProbe(): void {
   readinessIntervalId = window.setInterval(probe, 1800);
 }
 
-async function connectToUnderchat(): Promise<void> {
-  if (!bridgeRef) {
-    return;
-  }
-
-  const publicKey = getPublicKeyFromState();
-
-  if (!publicKey) {
-    setState({
-      error: 'A Underchat ainda nao enviou a chave publica de passkey.',
-      message: null,
-    });
-    return;
-  }
-
-  setState({
-    busy: true,
-    error: null,
-    message: 'Abra a chave de acesso e conclua a validacao do WhatsApp.',
-  });
-
-  try {
-    const credentialJson = await bridgeRef.getPasskeyAssertion(publicKey);
-    const result = await bridgeRef.sendPasskeyResponse(credentialJson);
-
-    applyActionResult(result);
-  } catch (error) {
-    setState({
-      busy: false,
-      error: sanitizeOverlayError(error),
-      message: null,
-    });
-  }
-}
-
-async function confirmPasskey(): Promise<void> {
-  if (!bridgeRef) {
-    return;
-  }
-
-  setState({
-    busy: true,
-    error: null,
-    message: 'Enviando confirmacao para a Underchat...',
-  });
-
-  try {
-    const result = await bridgeRef.confirmPasskey();
-
-    applyActionResult(result);
-  } catch (error) {
-    setState({
-      busy: false,
-      error: sanitizeOverlayError(error),
-      message: null,
-    });
-  }
-}
-
-function applyActionResult(result: PasskeyHelperActionResult): void {
-  const code = typeof result.status === 'number' ? result.status : result.code;
-
-  if (code && CONNECTED_CODES.has(code)) {
-    setState({
-      busy: false,
-      connected: true,
-      error: null,
-      message: 'Conexao validada. Voce pode voltar para a Underchat.',
-    });
-    return;
-  }
-
-  if (code && CONFIRMATION_CODES.has(code)) {
-    const confirmationCode =
-      result.confirmationCode ??
-      result.passkeyConfirmationCode ??
-      result.passkey_confirmation_code ??
-      state.helperPayload?.session?.confirmationCode ??
-      state.helperPayload?.session?.passkey_confirmation_code;
-
-    setState({
-      busy: false,
-      error: null,
-      helperPayload: {
-        ...state.helperPayload,
-        session: {
-          ...state.helperPayload?.session,
-          confirmationCode,
-          passkey_confirmation_code: confirmationCode,
-        },
-      },
-      message: 'Confirme no celular se o codigo exibido e o mesmo.',
-    });
-    return;
-  }
-
-  setState({
-    busy: false,
-    connected: Boolean(result.connected),
-    error: result.connected ? null : (result.message ?? null),
-    message: result.connected
-      ? 'Conexao validada. Voce pode voltar para a Underchat.'
-      : null,
-  });
-}
-
 function render(): void {
   if (!rootElement) {
     return;
@@ -394,84 +285,55 @@ function render(): void {
     return;
   }
 
+  renderAuthenticatorWaitingMode();
+}
+
+function renderAuthenticatorWaitingMode(): void {
+  if (!rootElement) {
+    return;
+  }
+
   const payload = state.helperPayload;
   const session = payload?.session;
-  const publicKey = getPublicKeyFromState();
-  const confirmationCode =
-    session?.confirmationCode ?? session?.passkey_confirmation_code;
-  const tone = state.error
-    ? 'error'
-    : state.connected
-      ? 'success'
-      : publicKey
-        ? 'ready'
-        : 'waiting';
-  const title = state.connected
-    ? 'Underchat conectada'
-    : confirmationCode
-      ? 'Confirmacao pendente'
-      : publicKey
-        ? 'Chave de acesso pronta'
-        : 'Aguardando passkey';
-  const text = state.error
-    ? state.error
-    : (state.message ??
-      (publicKey
-        ? 'Use a sessao aberta neste WhatsApp Web para validar a chave de acesso.'
-        : 'Abra este helper pelo botao da Underchat e mantenha o WhatsApp Web carregado.'));
+  const tone = state.error ? 'error' : 'waiting';
+  const title = state.error ? 'Não foi possível iniciar' : 'Aguardando sessão';
+  const text =
+    state.error ??
+    state.message ??
+    'Abra o Underchat Authenticator pelo botão da Underchat para iniciar a autenticação.';
 
   rootElement.innerHTML = `
-    <section class="underchat-passkey-panel" aria-live="polite">
-      <header class="underchat-passkey-header">
+    <section class="underchat-authenticator-panel" aria-live="polite">
+      <header class="underchat-authenticator-header">
         <div>
-          <h1 class="underchat-passkey-title">Underchat Passkey Helper</h1>
-          <p class="underchat-passkey-subtitle">Sessao local do WhatsApp Web para verificacao segura.</p>
+          <h1 class="underchat-authenticator-title">Underchat Authenticator</h1>
+          <p class="underchat-authenticator-subtitle">Sessão local do WhatsApp Web para verificação segura.</p>
         </div>
-        <span class="underchat-passkey-badge" title="${escapeHtml(payload?.tokenHash ?? 'sem-token')}">
+        <span class="underchat-authenticator-badge" title="${escapeHtml(payload?.tokenHash ?? 'sem-token')}">
           ${escapeHtml(payload?.tokenHash ?? 'sem token')}
         </span>
       </header>
-      <div class="underchat-passkey-body">
-        <div class="underchat-passkey-state" data-tone="${tone}">
-          <span class="underchat-passkey-state-dot"></span>
+      <div class="underchat-authenticator-body">
+        <div class="underchat-authenticator-state" data-tone="${tone}">
+          <span class="underchat-authenticator-state-dot"></span>
           <div>
-            <p class="underchat-passkey-state-title">${escapeHtml(title)}</p>
-            <p class="underchat-passkey-state-text">${escapeHtml(text)}</p>
+            <p class="underchat-authenticator-state-title">${escapeHtml(title)}</p>
+            <p class="underchat-authenticator-state-text">${escapeHtml(text)}</p>
           </div>
         </div>
-        ${confirmationCode ? renderConfirmationCode(confirmationCode) : ''}
-        <div class="underchat-passkey-actions">
-          ${
-            confirmationCode
-              ? `<button class="underchat-passkey-button" data-action="confirm" ${
-                  state.busy ? 'disabled' : ''
-                }>Confirmar codigo</button>`
-              : `<button class="underchat-passkey-button" data-action="connect" ${
-                  state.busy || !publicKey || state.connected ? 'disabled' : ''
-                }>Conectar a Underchat</button>`
-          }
-          <button class="underchat-passkey-button underchat-passkey-secondary" data-action="refresh" ${
+        <div class="underchat-authenticator-actions">
+          <button class="underchat-authenticator-button underchat-authenticator-secondary" data-action="refresh" ${
             state.busy ? 'disabled' : ''
           }>Atualizar</button>
         </div>
-        <div class="underchat-passkey-meta">
-          <span>Canal: ${escapeHtml(session?.channelName ?? session?.channel_name ?? 'nao informado')}</span>
-          <span>Expira: ${escapeHtml(session?.expiresAt ?? session?.expires_at ?? 'nao informado')}</span>
+        <div class="underchat-authenticator-meta">
+          <span>Canal: ${escapeHtml(session?.channelName ?? session?.channel_name ?? 'não informado')}</span>
+          <span>Expira: ${escapeHtml(session?.expiresAt ?? session?.expires_at ?? 'não informado')}</span>
         </div>
       </div>
     </section>
   `;
 
-  rootElement
-    .querySelector('[data-action="connect"]')
-    ?.addEventListener('click', () => {
-      connectToUnderchat();
-    });
-  rootElement
-    .querySelector('[data-action="confirm"]')
-    ?.addEventListener('click', () => {
-      confirmPasskey();
-    });
   rootElement
     .querySelector('[data-action="refresh"]')
     ?.addEventListener('click', () => {
@@ -512,23 +374,23 @@ function renderSecureMode(): void {
     ? state.error
     : (state.message ??
       (state.whatsappReady
-        ? 'Sessao pronta. A Underchat vai conectar automaticamente.'
+        ? 'Sessão pronta. A Underchat vai conectar automaticamente.'
         : state.whatsappSyncing
-          ? 'Mantenha o app aberto nos dois dispositivos ate o WhatsApp terminar a sincronizacao.'
+          ? 'Mantenha o app aberto nos dois dispositivos até o WhatsApp terminar a sincronização.'
           : state.whatsappAuthenticated
-            ? 'Aguarde a interface terminar de carregar antes de enviar a sessao.'
+            ? 'Aguarde a interface terminar de carregar antes de enviar a sessão.'
             : 'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.'));
 
   if (securePanelMinimized) {
     rootElement.innerHTML = `
-      <section class="underchat-passkey-panel underchat-passkey-panel-minimized" aria-live="polite">
-        <button class="underchat-passkey-restore" data-action="restore-panel" type="button" aria-label="Reabrir painel da conexao segura">
-          <span class="underchat-passkey-state-dot" data-tone="${tone}"></span>
+      <section class="underchat-authenticator-panel underchat-authenticator-panel-minimized" aria-live="polite">
+        <button class="underchat-authenticator-restore" data-action="restore-panel" type="button" aria-label="Reabrir painel do Underchat Authenticator">
+          <span class="underchat-authenticator-state-dot" data-tone="${tone}"></span>
           <span>
-            <strong>Conexao segura</strong>
+            <strong>Underchat Authenticator</strong>
             <small>${escapeHtml(title)}</small>
           </span>
-          <span class="underchat-passkey-restore-label">Reabrir</span>
+          <span class="underchat-authenticator-restore-label">Reabrir</span>
         </button>
       </section>
     `;
@@ -543,31 +405,31 @@ function renderSecureMode(): void {
   }
 
   rootElement.innerHTML = `
-    <section class="underchat-passkey-panel" aria-live="polite">
-      <header class="underchat-passkey-header">
+    <section class="underchat-authenticator-panel" aria-live="polite">
+      <header class="underchat-authenticator-header">
         <div>
-          <h1 class="underchat-passkey-title">Conexao segura Underchat</h1>
-          <p class="underchat-passkey-subtitle">WhatsApp Web nativo com suporte a passkey.</p>
+          <h1 class="underchat-authenticator-title">Underchat Authenticator</h1>
+          <p class="underchat-authenticator-subtitle">WhatsApp Web nativo com suporte a chave de acesso.</p>
         </div>
-        <div class="underchat-passkey-header-actions">
-          <span class="underchat-passkey-badge" title="${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem-token')}">
+        <div class="underchat-authenticator-header-actions">
+          <span class="underchat-authenticator-badge" title="${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem-token')}">
             ${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem token')}
           </span>
-          <button class="underchat-passkey-icon-button" data-action="minimize-panel" type="button" aria-label="Minimizar painel da conexao segura" title="Minimizar">
+          <button class="underchat-authenticator-icon-button" data-action="minimize-panel" type="button" aria-label="Minimizar painel do Underchat Authenticator" title="Minimizar">
             <span aria-hidden="true"></span>
           </button>
         </div>
       </header>
-      <div class="underchat-passkey-body">
-        <div class="underchat-passkey-state" data-tone="${tone}">
-          <span class="underchat-passkey-state-dot"></span>
+      <div class="underchat-authenticator-body">
+        <div class="underchat-authenticator-state" data-tone="${tone}">
+          <span class="underchat-authenticator-state-dot"></span>
           <div>
-            <p class="underchat-passkey-state-title">${escapeHtml(title)}</p>
-            <p class="underchat-passkey-state-text">${escapeHtml(text)}</p>
+            <p class="underchat-authenticator-state-title">${escapeHtml(title)}</p>
+            <p class="underchat-authenticator-state-text">${escapeHtml(text)}</p>
           </div>
         </div>
-        <div class="underchat-passkey-actions">
-          <button class="underchat-passkey-button" data-action="connect-secure" ${
+        <div class="underchat-authenticator-actions">
+          <button class="underchat-authenticator-button" data-action="connect-secure" ${
             state.busy ||
             secureConnectInFlight ||
             !state.whatsappReady ||
@@ -575,24 +437,24 @@ function renderSecureMode(): void {
             BUSY_SECURE_STATUSES.has(status)
               ? 'disabled'
               : ''
-          }>${secureConnectInFlight || BUSY_SECURE_STATUSES.has(status) ? 'Conectando...' : 'Conectar a Underchat'}</button>
-          <button class="underchat-passkey-button underchat-passkey-secondary" data-action="refresh" ${
+          }>${secureConnectInFlight || BUSY_SECURE_STATUSES.has(status) ? 'Conectando...' : 'Conectar à Underchat'}</button>
+          <button class="underchat-authenticator-button underchat-authenticator-secondary" data-action="refresh" ${
             state.busy ? 'disabled' : ''
           }>Atualizar</button>
           ${
             state.diagnosticsEnabled
-              ? `<button class="underchat-passkey-button underchat-passkey-secondary" data-action="download-log">Baixar log</button>`
+              ? `<button class="underchat-authenticator-button underchat-authenticator-secondary" data-action="download-log">Baixar log</button>`
               : ''
           }
         </div>
         ${
           state.diagnosticsMessage
-            ? `<p class="underchat-passkey-debug-message">${escapeHtml(state.diagnosticsMessage)}</p>`
+            ? `<p class="underchat-authenticator-debug-message">${escapeHtml(state.diagnosticsMessage)}</p>`
             : ''
         }
-        <div class="underchat-passkey-meta">
+        <div class="underchat-authenticator-meta">
           <span>Status: ${escapeHtml(status)}</span>
-          <span>Expira: ${escapeHtml(session?.expiresAt ?? session?.expires_at ?? 'nao informado')}</span>
+          <span>Expira: ${escapeHtml(session?.expiresAt ?? session?.expires_at ?? 'não informado')}</span>
         </div>
       </div>
     </section>
@@ -629,7 +491,7 @@ async function connectSecureSessionToUnderchat(
   }
 
   if (secureConnectInFlight) {
-    console.log('[underchat-passkey-helper] secure_session.connect.skipped', {
+    console.log('[underchat-authenticator] secure_session.connect.skipped', {
       reason: 'already_in_flight',
     });
     return;
@@ -644,8 +506,8 @@ async function connectSecureSessionToUnderchat(
     setState({
       error: null,
       message: readiness.syncing
-        ? 'Aguarde a sincronizacao inicial do WhatsApp Web antes de conectar a Underchat.'
-        : 'O WhatsApp Web ainda nao esta pronto nesta janela.',
+        ? 'Aguarde a sincronização inicial do WhatsApp Web antes de conectar à Underchat.'
+        : 'O WhatsApp Web ainda não está pronto nesta janela.',
       whatsappAuthenticated: readiness.authenticated,
       whatsappReadinessReason: readiness.reason,
       whatsappReady: false,
@@ -664,8 +526,8 @@ async function connectSecureSessionToUnderchat(
     diagnosticsMessage: null,
     error: null,
     message: options.automatic
-      ? 'WhatsApp detectado. Conectando automaticamente a Underchat...'
-      : 'Preparando pacote da sessao autenticada...',
+      ? 'WhatsApp detectado. Conectando automaticamente à Underchat...'
+      : 'Preparando pacote da sessão autenticada...',
   });
   startSecureUploadStatusPolling();
 
@@ -675,21 +537,21 @@ async function connectSecureSessionToUnderchat(
       status: getSecureSessionStatus(),
       tokenHash: getTokenHashFromState(),
     });
-    console.log('[underchat-passkey-helper] secure_session.connect.start', {
+    console.log('[underchat-authenticator] secure_session.connect.start', {
       automatic: Boolean(options.automatic),
       status: getSecureSessionStatus(),
       tokenHash: getTokenHashFromState(),
     });
     recordDebugLog('secure_session.package.collect.start');
     setState({
-      message: 'Extraindo a sessao autenticada do WhatsApp Web...',
+      message: 'Extraindo a sessão autenticada do WhatsApp Web...',
     });
     console.log(
-      '[underchat-passkey-helper] secure_session.package.collect.start'
+      '[underchat-authenticator] secure_session.package.collect.start'
     );
     const sessionPackage = await collectSecureSessionPackage();
     console.log(
-      '[underchat-passkey-helper] secure_session.package.collect.done',
+      '[underchat-authenticator] secure_session.package.collect.done',
       {
         hasPayload: sessionPackage.payload !== undefined,
         localStorageKeys: countPayloadLocalStorageKeys(sessionPackage.payload),
@@ -703,13 +565,13 @@ async function connectSecureSessionToUnderchat(
       webVersion: sessionPackage.web_version ?? null,
     });
     setState({
-      message: 'Enviando sessao autenticada para a Underchat...',
+      message: 'Enviando sessão autenticada para a Underchat...',
     });
     await bridgeRef.updateSecureStatus({ status: 'uploading' });
     const result = await bridgeRef.sendSecureSessionPackage(sessionPackage);
-    console.log('[underchat-passkey-helper] secure_session.upload.done', {
+    console.log('[underchat-authenticator] secure_session.upload.done', {
       connected: Boolean(result.connected),
-      status: result.status ?? result.code ?? null,
+      status: result.status ?? null,
     });
 
     const connected =
@@ -719,8 +581,8 @@ async function connectSecureSessionToUnderchat(
       connected,
       error: connected ? null : (result.error ?? result.message ?? null),
       message: connected
-        ? 'Sessao conectada na Underchat. Fechando o helper...'
-        : 'A Underchat recebeu a sessao, mas ainda nao confirmou a conexao.',
+        ? 'Sessão conectada na Underchat. Fechando o Underchat Authenticator...'
+        : 'A Underchat recebeu a sessão, mas ainda não confirmou a conexão.',
     });
     if (connected) {
       scheduleHelperAutoClose();
@@ -765,7 +627,7 @@ async function downloadDebugLog(): Promise<void> {
           ? `Log salvo em: ${result.message ?? 'arquivo selecionado'}`
           : result.status === 'cancelled'
             ? 'Download do log cancelado.'
-            : (result.message ?? 'Nao foi possivel salvar o log.'),
+            : (result.message ?? 'Não foi possível salvar o log.'),
     });
   } catch (error) {
     setState({
@@ -895,14 +757,14 @@ async function reportSecureStatus(
   }
 
   try {
-    console.log('[underchat-passkey-helper] secure_session.status.report', {
+    console.log('[underchat-authenticator] secure_session.status.report', {
       status,
       tokenHash: getTokenHashFromState(),
     });
     await bridgeRef.updateSecureStatus({ status });
   } catch (error) {
     console.warn(
-      '[underchat-passkey-helper] secure_session.status.report.error',
+      '[underchat-authenticator] secure_session.status.report.error',
       sanitizeOverlayError(error)
     );
   }
@@ -956,11 +818,11 @@ function startSecureUploadStatusPolling(): void {
       message:
         status === 'uploading' || BUSY_SECURE_STATUSES.has(status)
           ? state.diagnosticsEnabled
-            ? 'Importacao ainda em andamento. Se continuar assim, clique em Baixar log para analisar o fluxo.'
-            : 'Importacao ainda em andamento. Aguarde a resposta da Underchat.'
+            ? 'Importação ainda em andamento. Se continuar assim, clique em Baixar log para analisar o fluxo.'
+            : 'Importação ainda em andamento. Aguarde a resposta da Underchat.'
           : state.diagnosticsEnabled
-            ? 'Extracao da sessao demorou mais que o esperado. Clique em Baixar log se continuar assim.'
-            : 'Extracao da sessao demorou mais que o esperado.',
+            ? 'Extração da sessão demorou mais que o esperado. Clique em Baixar log se continuar assim.'
+            : 'Extração da sessão demorou mais que o esperado.',
     });
   }, 18_000);
 
@@ -986,7 +848,7 @@ function scheduleHelperAutoClose(): void {
     return;
   }
 
-  console.log('[underchat-passkey-helper] helper.auto_close.scheduled', {
+  console.log('[underchat-authenticator] helper.auto_close.scheduled', {
     tokenHash: getTokenHashFromState(),
     status: getSecureSessionStatus(),
   });
@@ -994,7 +856,7 @@ function scheduleHelperAutoClose(): void {
     helperAutoCloseTimerId = null;
     void bridgeRef?.closeHelper().catch((error) => {
       console.warn(
-        '[underchat-passkey-helper] helper.auto_close.error',
+        '[underchat-authenticator] helper.auto_close.error',
         sanitizeOverlayError(error)
       );
     });
@@ -1085,7 +947,7 @@ async function waitForWhatsAppHandoffReady(): Promise<WhatsAppReadinessSnapshot>
       busy: true,
       error: null,
       message: lastReadiness.syncing
-        ? 'Aguardando o WhatsApp Web terminar a sincronizacao inicial...'
+        ? 'Aguardando o WhatsApp Web terminar a sincronização inicial...'
         : 'Aguardando o WhatsApp Web ficar pronto...',
       whatsappAuthenticated: lastReadiness.authenticated,
       whatsappReadinessReason: lastReadiness.reason,
@@ -1098,8 +960,8 @@ async function waitForWhatsAppHandoffReady(): Promise<WhatsAppReadinessSnapshot>
 
   throw new Error(
     lastReadiness.syncing
-      ? 'O WhatsApp Web ainda esta sincronizando. Mantenha o app aberto nos dois dispositivos e tente novamente.'
-      : 'O WhatsApp Web ainda nao ficou pronto para transferir a sessao.'
+      ? 'O WhatsApp Web ainda está sincronizando. Mantenha o app aberto nos dois dispositivos e tente novamente.'
+      : 'O WhatsApp Web ainda não ficou pronto para transferir a sessão.'
   );
 }
 
@@ -1143,14 +1005,14 @@ async function extractWhatsAppWebAuthDump(): Promise<WhatsAppWebAuthDump> {
       }
 
       console.warn(
-        '[underchat-passkey-helper] secure_session.auth_dump.page_world.invalid_shape'
+        '[underchat-authenticator] secure_session.auth_dump.page_world.invalid_shape'
       );
       recordDebugLog('secure_session.auth_dump.page_world.invalid_shape', {
         keys: summarizeRecordKeys(pageWorldDump),
       });
     } catch (error) {
       console.warn(
-        '[underchat-passkey-helper] secure_session.auth_dump.page_world.error',
+        '[underchat-authenticator] secure_session.auth_dump.page_world.error',
         sanitizeOverlayError(error)
       );
       recordDebugLog('secure_session.auth_dump.page_world.error', {
@@ -1196,7 +1058,7 @@ async function extractWhatsAppWebAuthDumpWithRetry(): Promise<WhatsAppWebAuthDum
         error: null,
         message: readiness.syncing
           ? 'WhatsApp ainda sincronizando. Tentando extrair novamente em instantes...'
-          : 'A sessao ainda nao liberou todo o material criptografico. Tentando novamente...',
+          : 'A sessão ainda não liberou todo o material criptográfico. Tentando novamente...',
         whatsappAuthenticated: readiness.authenticated,
         whatsappReadinessReason: readiness.reason,
         whatsappReady: readiness.readyForHandoff,
@@ -1208,7 +1070,7 @@ async function extractWhatsAppWebAuthDumpWithRetry(): Promise<WhatsAppWebAuthDum
 
   throw lastError instanceof Error
     ? lastError
-    : new Error('Nao foi possivel extrair a sessao autenticada.');
+    : new Error('Não foi possível extrair a sessão autenticada.');
 }
 
 async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWebAuthDump> {
@@ -1255,29 +1117,29 @@ async function extractWhatsAppWebAuthDumpFromIsolatedWorld(): Promise<WhatsAppWe
 
   if (!registrationId) {
     throwAuthExtractionError(
-      'Nao foi possivel extrair o registrationId da sessao.'
+      'Não foi possível extrair o registrationId da sessão.'
     );
   }
   if (!noise) {
-    throwAuthExtractionError('Nao foi possivel extrair a noise key da sessao.');
+    throwAuthExtractionError('Não foi possível extrair a noise key da sessão.');
   }
   if (!staticPublicKey || !staticPrivateKey) {
     throwAuthExtractionError(
-      'Nao foi possivel extrair a identity key da sessao.'
+      'Não foi possível extrair a identity key da sessão.'
     );
   }
   if (!signedPreKey) {
     throwAuthExtractionError(
-      'Nao foi possivel extrair a signed pre-key da sessao.'
+      'Não foi possível extrair a signed pre-key da sessão.'
     );
   }
   if (!account) {
     throwAuthExtractionError(
-      'Nao foi possivel extrair a identidade ADV da sessao.'
+      'Não foi possível extrair a identidade ADV da sessão.'
     );
   }
   if (!meId) {
-    throwAuthExtractionError('Nao foi possivel identificar o JID conectado.');
+    throwAuthExtractionError('Não foi possível identificar o JID conectado.');
   }
 
   const [syncKeyRows, versionRows] = await Promise.all([
@@ -1976,7 +1838,7 @@ function bytesToBase64(value: unknown): string | null {
 function bytesToBase64Required(value: unknown, label: string): string {
   const base64 = bytesToBase64(value);
   if (!base64) {
-    throw new Error(`Nao foi possivel converter ${label} para base64.`);
+    throw new Error(`Não foi possível converter ${label} para base64.`);
   }
 
   return base64;
@@ -2039,7 +1901,7 @@ function getSecureSessionTargetProvider(): SecureSessionPackage['target_provider
 }
 
 function getSecureSessionStatus(
-  payload: PasskeyHelperSessionPayload | null = state.helperPayload
+  payload: AuthenticatorSessionPayload | null = state.helperPayload
 ): string {
   return String(payload?.session?.status ?? 'helper_opened');
 }
@@ -2074,7 +1936,7 @@ function resetSecureFlowRuntime(tokenHash: string): void {
   state.whatsappReadinessReason = null;
   state.whatsappReady = false;
   state.whatsappSyncing = false;
-  console.log('[underchat-passkey-helper] secure_session.runtime.reset', {
+  console.log('[underchat-authenticator] secure_session.runtime.reset', {
     tokenHash,
   });
 }
@@ -2105,28 +1967,6 @@ function readWhatsAppWebVersion(): string | undefined {
   return versionSource?.trim();
 }
 
-function renderConfirmationCode(code: string): string {
-  const cells = code
-    .slice(0, 12)
-    .split('')
-    .map(
-      (char) =>
-        `<span class="underchat-passkey-code-cell">${escapeHtml(char)}</span>`
-    )
-    .join('');
-
-  return `<div class="underchat-passkey-code" aria-label="Codigo de confirmacao">${cells}</div>`;
-}
-
-function getPublicKeyFromState(): unknown {
-  return (
-    state.helperPayload?.session?.publicKey ??
-    state.helperPayload?.session?.passkeyPublicKey ??
-    state.helperPayload?.session?.passkey_public_key ??
-    null
-  );
-}
-
 function setState(nextState: Partial<OverlayState>): void {
   state = {
     ...state,
@@ -2136,24 +1976,24 @@ function setState(nextState: Partial<OverlayState>): void {
 }
 
 function ensureRoot(): void {
-  rootElement = document.querySelector('#underchat-passkey-helper-root');
+  rootElement = document.querySelector('#underchat-authenticator-root');
 
   if (rootElement) {
     return;
   }
 
   rootElement = document.createElement('div');
-  rootElement.id = 'underchat-passkey-helper-root';
+  rootElement.id = 'underchat-authenticator-root';
   document.documentElement.appendChild(rootElement);
 }
 
 function injectStyles(): void {
-  if (document.querySelector('#underchat-passkey-helper-style')) {
+  if (document.querySelector('#underchat-authenticator-style')) {
     return;
   }
 
   const style = document.createElement('style');
-  style.id = 'underchat-passkey-helper-style';
+  style.id = 'underchat-authenticator-style';
   style.textContent = overlayCss;
   document.documentElement.appendChild(style);
 }
@@ -2165,13 +2005,13 @@ function sanitizeOverlayError(error: unknown): string {
         error.message
       )
     ) {
-      return 'Underchat indisponivel. Mantenha a tela aberta e tente atualizar.';
+      return 'Underchat indisponível. Mantenha a tela aberta e tente atualizar.';
     }
 
     return error.message;
   }
 
-  return 'Nao foi possivel concluir a verificacao.';
+  return 'Não foi possível concluir a verificação.';
 }
 
 function escapeHtml(value: string): string {

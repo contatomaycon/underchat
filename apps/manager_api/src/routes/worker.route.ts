@@ -77,6 +77,7 @@ import { connectWhatsappOfficialSchema } from '@core/schema/worker/connectWhatsa
 import { ensureWhatsappOfficialWebhookSubscriptionSchema } from '@core/schema/worker/ensureWhatsappOfficialWebhookSubscription';
 import { whatsappOfficialHealthSchema } from '@core/schema/worker/whatsappOfficialHealth';
 import {
+  workerAuthenticatorDownloadSchema,
   workerSecureConnectionCancelSchema,
   workerSecureConnectionCreateSchema,
   workerSecureConnectionHelperSessionSchema,
@@ -209,6 +210,17 @@ export default function workerRoutes(server: FastifyInstance) {
     bodyLimit: secureConnectionHelperSessionBodyLimitBytes,
     schema: workerSecureConnectionHelperSessionSchema,
     handler: workerController.uploadSecureConnectionHelperSession,
+  });
+
+  server.get('/worker/connection/authenticator/download/:platform', {
+    schema: workerAuthenticatorDownloadSchema,
+    handler: workerController.downloadAuthenticatorInstaller,
+    preHandler: [
+      (request, reply) =>
+        server.authenticateJwt(request, reply, workerCreatePermissions),
+      planGuard,
+      planStatus,
+    ],
   });
 
   server.post('/worker/:worker_id/external-connection-link', {

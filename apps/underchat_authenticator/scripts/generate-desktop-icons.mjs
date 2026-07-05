@@ -63,7 +63,7 @@ for (const size of icoSizes) {
 
 await writeFile(icoOutput, createIcoBuffer(icoImages));
 
-console.log('[passkey_helper] desktop icons generated', {
+console.log('[underchat_authenticator] desktop icons generated', {
   ico: icoOutput,
   png: pngOutput,
 });
