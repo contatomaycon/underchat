@@ -179,13 +179,20 @@ const modalState = computed<WorkerConnectionModalState>(() =>
 );
 
 const isConnected = computed(() => modalState.value === 'connected');
-const dialogMaxWidth = computed(() =>
-  (selectedConnectionMethod.value === 'method_selection' ||
-    selectedConnectionMethod.value === 'authenticator_install') &&
-  !isConnected.value
-    ? 760
-    : 640
-);
+const dialogMaxWidth = computed(() => {
+  if (selectedConnectionMethod.value === 'authenticator_install') {
+    return 820;
+  }
+
+  if (
+    selectedConnectionMethod.value === 'method_selection' &&
+    !isConnected.value
+  ) {
+    return 760;
+  }
+
+  return 640;
+});
 const isQrAttemptsExpired = computed(
   () => qrMaxAttempts.value > 0 && qrAttempt.value > qrMaxAttempts.value
 );
@@ -431,6 +438,12 @@ function isSecureConnectionTerminal(
   );
 }
 
+function hasSecureConnectionCredentials(
+  session: WorkerSecureConnectionSessionResponse | null
+): boolean {
+  return Boolean(session?.token && session.deep_link);
+}
+
 function shouldPollSecureConnectionSession(
   session: WorkerSecureConnectionSessionResponse | null
 ): boolean {
@@ -441,14 +454,46 @@ function shouldPollSecureConnectionSession(
 
 function hasActiveSecureConnectionAttempt(): boolean {
   return Boolean(
-    secureSession.value && !isSecureConnectionTerminal(secureSession.value)
+    secureSession.value &&
+    !isSecureConnectionTerminal(secureSession.value) &&
+    hasSecureConnectionCredentials(secureSession.value)
   );
+}
+
+function hasReusableSecureConnectionAttempt(): boolean {
+  return hasActiveSecureConnectionAttempt();
 }
 
 function isSecureConnectionMethodActive(): boolean {
   return (
     selectedConnectionMethod.value === 'secure' ||
     selectedConnectionMethod.value === 'authenticator_install'
+  );
+}
+
+function shouldApplySecureConnectionPublication(
+  session: WorkerSecureConnectionSessionResponse
+): boolean {
+  if (session.token) {
+    return true;
+  }
+
+  const current = secureSession.value;
+  if (!current) {
+    return session.status === 'connected_confirmed';
+  }
+
+  const sameAttempt =
+    session.connection_attempt_id === current.connection_attempt_id ||
+    session.token_hash === current.token_hash;
+
+  if (!sameAttempt) {
+    return false;
+  }
+
+  return (
+    hasSecureConnectionCredentials(current) ||
+    session.status === 'connected_confirmed'
   );
 }
 
@@ -579,7 +624,7 @@ async function startSecureConnection(options: { openHelper?: boolean } = {}) {
 
   selectedConnectionMethod.value = 'secure';
 
-  if (secureSession.value && !isSecureConnectionTerminal(secureSession.value)) {
+  if (hasReusableSecureConnectionAttempt()) {
     if (options.openHelper !== false) {
       openSecureHelper();
     }
@@ -587,6 +632,7 @@ async function startSecureConnection(options: { openHelper?: boolean } = {}) {
     return;
   }
 
+  secureSession.value = null;
   isSecureSessionLoading.value = true;
   const debugTraceId = ensureDebugTraceId('web_secure_connection_modal');
 
@@ -669,6 +715,24 @@ function handleSecureConnectionPublication(
   data: WorkerSecureConnectionPublication
 ) {
   if (!data.secure_connection || data.worker_id !== channelId.value) {
+    return;
+  }
+
+  if (!shouldApplySecureConnectionPublication(data.secure_connection)) {
+    logConnectionLifecycleDebug('web.secure_connection.publication_ignored', {
+      trace_id: activeDebugTraceId.value,
+      layer: 'web',
+      worker_id: data.worker_id,
+      account_id: accountId.value ?? undefined,
+      incoming_connection_attempt_id:
+        data.secure_connection.connection_attempt_id,
+      incoming_status: data.secure_connection.status,
+      incoming_token_hash: data.secure_connection.token_hash,
+      current_connection_attempt_id: secureSession.value?.connection_attempt_id,
+      current_status: secureSession.value?.status,
+      current_token_hash: secureSession.value?.token_hash,
+      reason: 'publication_without_reopen_credentials',
+    });
     return;
   }
 

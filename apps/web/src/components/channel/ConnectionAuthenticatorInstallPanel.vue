@@ -15,7 +15,21 @@ const emit = defineEmits<{
   download: [platform: AuthenticatorPlatform];
 }>();
 
-const selectedPlatform = shallowRef<AuthenticatorPlatform | null>(null);
+function detectAuthenticatorPlatform(): AuthenticatorPlatform | null {
+  const platform = globalThis.navigator?.platform?.toLowerCase() ?? '';
+  const userAgent = globalThis.navigator?.userAgent?.toLowerCase() ?? '';
+  const source = `${platform} ${userAgent}`;
+
+  if (source.includes('win')) return 'windows';
+  if (source.includes('mac')) return 'macos';
+  if (source.includes('linux') || source.includes('x11')) return 'linux';
+
+  return null;
+}
+
+const selectedPlatform = shallowRef<AuthenticatorPlatform | null>(
+  detectAuthenticatorPlatform()
+);
 
 const platforms: {
   descriptionKey: string;
@@ -51,15 +65,20 @@ const selectedPlatformMeta = computed(() =>
 <template>
   <div class="authenticator-install-panel">
     <div class="authenticator-install-heading">
-      <p class="text-overline text-primary mb-1">
-        {{ $t('authenticator_install_label') }}
-      </p>
-      <h3 class="text-h5 mb-2">
-        {{ $t('authenticator_install_title') }}
-      </h3>
-      <p class="text-body-2 text-medium-emphasis mb-0">
-        {{ $t('authenticator_install_description') }}
-      </p>
+      <div class="authenticator-install-mark">
+        <VIcon icon="tabler-shield-lock" size="28" />
+      </div>
+      <div class="authenticator-install-copy">
+        <p class="text-overline text-primary mb-1">
+          {{ $t('authenticator_install_label') }}
+        </p>
+        <h3 class="text-h5 mb-2">
+          {{ $t('authenticator_install_title') }}
+        </h3>
+        <p class="text-body-2 text-medium-emphasis mb-0">
+          {{ $t('authenticator_install_description') }}
+        </p>
+      </div>
     </div>
 
     <div class="authenticator-platform-grid">
@@ -75,21 +94,25 @@ const selectedPlatformMeta = computed(() =>
         :disabled="disabled || downloading"
         @click="selectedPlatform = platform.value"
       >
-        <span class="authenticator-platform-icon">
-          <VIcon :icon="platform.icon" size="34" />
+        <span class="authenticator-platform-check">
+          <VIcon
+            :icon="
+              selectedPlatform === platform.value
+                ? 'tabler-circle-check-filled'
+                : 'tabler-circle'
+            "
+            size="22"
+          />
         </span>
+
+        <span class="authenticator-platform-icon">
+          <VIcon :icon="platform.icon" size="32" />
+        </span>
+
         <span class="authenticator-platform-content">
           <strong>{{ $t(platform.labelKey) }}</strong>
           <small>{{ $t(platform.descriptionKey) }}</small>
         </span>
-        <VIcon
-          :icon="
-            selectedPlatform === platform.value
-              ? 'tabler-circle-check-filled'
-              : 'tabler-circle'
-          "
-          size="22"
-        />
       </button>
     </div>
 
@@ -98,13 +121,16 @@ const selectedPlatformMeta = computed(() =>
       class="authenticator-download-band"
       data-testid="authenticator-download-band"
     >
+      <div class="authenticator-download-icon">
+        <VIcon :icon="selectedPlatformMeta.icon" size="26" />
+      </div>
       <div class="authenticator-download-copy">
         <strong>{{ $t('authenticator_install_download_title') }}</strong>
         <span>{{ $t('authenticator_install_download_description') }}</span>
       </div>
       <VBtn
         color="primary"
-        variant="tonal"
+        variant="flat"
         :loading="downloading"
         :disabled="disabled || downloading"
         data-testid="authenticator-download"
@@ -116,20 +142,22 @@ const selectedPlatformMeta = computed(() =>
     </div>
 
     <div class="authenticator-install-actions">
-      <VBtn variant="tonal" color="secondary" @click="emit('back')">
-        <VIcon icon="tabler-arrow-left" start />
-        {{ $t('back') }}
-      </VBtn>
+      <div class="authenticator-install-secondary-actions">
+        <VBtn variant="tonal" color="secondary" @click="emit('back')">
+          <VIcon icon="tabler-arrow-left" start />
+          {{ $t('back') }}
+        </VBtn>
 
-      <VBtn
-        variant="tonal"
-        color="error"
-        :disabled="disabled || downloading"
-        @click="emit('cancel')"
-      >
-        <VIcon icon="tabler-x" start />
-        {{ $t('cancel') }}
-      </VBtn>
+        <VBtn
+          variant="tonal"
+          color="error"
+          :disabled="disabled || downloading"
+          @click="emit('cancel')"
+        >
+          <VIcon icon="tabler-x" start />
+          {{ $t('cancel') }}
+        </VBtn>
+      </div>
 
       <VBtn
         color="primary"
@@ -146,35 +174,67 @@ const selectedPlatformMeta = computed(() =>
 <style scoped lang="scss">
 .authenticator-install-panel {
   display: grid;
-  gap: 22px;
-  padding: 28px;
+  gap: 24px;
+  padding: 30px;
 }
 
 .authenticator-install-heading {
-  max-inline-size: 620px;
+  display: grid;
+  max-inline-size: 680px;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 16px;
+}
+
+.authenticator-install-mark {
+  display: grid;
+  block-size: 58px;
+  inline-size: 58px;
+  place-items: center;
+  border: 1px solid rgba(var(--v-theme-primary), 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(var(--v-theme-primary), 0.14),
+      rgba(var(--v-theme-primary), 0.04)
+    ),
+    rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-primary));
+}
+
+.authenticator-install-copy {
+  min-inline-size: 0;
 }
 
 .authenticator-platform-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .authenticator-platform-card {
+  position: relative;
   display: grid;
-  min-block-size: 138px;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 15px;
-  padding: 18px;
-  border: 1px solid rgba(var(--v-border-color), 0.18);
+  min-block-size: 178px;
+  align-content: start;
+  gap: 13px;
+  padding: 18px 18px 17px;
+  border: 1px solid rgba(var(--v-border-color), 0.2);
   border-radius: 8px;
-  background: rgb(var(--v-theme-surface));
+  background:
+    linear-gradient(
+      180deg,
+      rgba(var(--v-theme-surface), 0.98),
+      rgba(var(--v-theme-on-surface), 0.018)
+    ),
+    rgb(var(--v-theme-surface));
   color: rgb(var(--v-theme-on-surface));
   cursor: pointer;
   letter-spacing: 0;
   text-align: start;
   transition:
+    background-color 0.18s ease,
     border-color 0.18s ease,
     box-shadow 0.18s ease,
     transform 0.18s ease;
@@ -183,9 +243,19 @@ const selectedPlatformMeta = computed(() =>
 .authenticator-platform-card:hover:not(:disabled),
 .authenticator-platform-card:focus-visible,
 .authenticator-platform-card--selected {
-  border-color: rgba(var(--v-theme-primary), 0.46);
-  box-shadow: 0 16px 34px rgba(var(--v-theme-primary), 0.13);
+  border-color: rgba(var(--v-theme-primary), 0.5);
+  box-shadow: 0 18px 42px rgba(var(--v-theme-primary), 0.14);
   transform: translateY(-1px);
+}
+
+.authenticator-platform-card--selected {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(var(--v-theme-primary), 0.085),
+      rgba(var(--v-theme-primary), 0.025)
+    ),
+    rgb(var(--v-theme-surface));
 }
 
 .authenticator-platform-card:disabled {
@@ -193,10 +263,21 @@ const selectedPlatformMeta = computed(() =>
   opacity: 0.72;
 }
 
+.authenticator-platform-check {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  color: rgba(var(--v-theme-on-surface), 0.42);
+}
+
+.authenticator-platform-card--selected .authenticator-platform-check {
+  color: rgb(var(--v-theme-primary));
+}
+
 .authenticator-platform-icon {
   display: grid;
-  inline-size: 58px;
-  block-size: 58px;
+  inline-size: 54px;
+  block-size: 54px;
   place-items: center;
   border-radius: 8px;
   background: rgba(var(--v-theme-primary), 0.1);
@@ -205,7 +286,8 @@ const selectedPlatformMeta = computed(() =>
 
 .authenticator-platform-content {
   display: grid;
-  gap: 6px;
+  gap: 7px;
+  padding-inline-end: 8px;
 }
 
 .authenticator-platform-content strong {
@@ -221,14 +303,31 @@ const selectedPlatformMeta = computed(() =>
 }
 
 .authenticator-download-band {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px;
-  border: 1px solid rgba(var(--v-theme-primary), 0.2);
+  gap: 15px;
+  padding: 15px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.24);
   border-radius: 8px;
-  background: rgba(var(--v-theme-primary), 0.06);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(var(--v-theme-primary), 0.1),
+      rgba(var(--v-theme-primary), 0.035)
+    ),
+    rgb(var(--v-theme-surface));
+}
+
+.authenticator-download-icon {
+  display: grid;
+  block-size: 44px;
+  inline-size: 44px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-primary));
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-primary), 0.16);
 }
 
 .authenticator-download-copy {
@@ -240,7 +339,13 @@ const selectedPlatformMeta = computed(() =>
 .authenticator-install-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.authenticator-install-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -249,13 +354,32 @@ const selectedPlatformMeta = computed(() =>
     padding: 22px;
   }
 
+  .authenticator-install-heading {
+    grid-template-columns: 1fr;
+  }
+
   .authenticator-platform-grid {
     grid-template-columns: 1fr;
   }
 
   .authenticator-download-band {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: auto 1fr;
+  }
+
+  .authenticator-download-band :deep(.v-btn) {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+
+  .authenticator-install-actions,
+  .authenticator-install-secondary-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .authenticator-install-actions :deep(.v-btn),
+  .authenticator-install-secondary-actions :deep(.v-btn) {
+    inline-size: 100%;
   }
 }
 </style>

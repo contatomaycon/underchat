@@ -7,6 +7,8 @@ import { IWorkerRuntimeHealthResponseProto } from '@core/common/interfaces/IWork
 import { workerCentrifugoQueue } from '@core/common/functions/centrifugoQueue';
 
 const sessionKey = (token: string) => `connection:secure:session:${token}`;
+const activeSessionKey = (workerId: string, workerTypeId: string) =>
+  `connection:secure:active:${workerTypeId}:${workerId}`;
 
 const buildRedis = (store = new Map<string, string>()) => ({
   store,
@@ -347,5 +349,93 @@ describe('WorkerSecureConnectionSessionUseCase secure import readiness', () => {
     });
     expect(savedSession.error).toBeUndefined();
     expect(savedSession.fail_reason).toBeUndefined();
+  });
+
+  it('allows the helper to cancel a pre-upload session when the native app closes', async () => {
+    const redis = buildRedis();
+    const session: ISecureConnectionSession = {
+      ...buildSession(EWorkerType.baileys),
+      status: 'wa_ready',
+    };
+    redis.store.set(sessionKey(session.token), JSON.stringify(session));
+    redis.store.set(
+      activeSessionKey(session.worker_id, session.worker_type_id as string),
+      session.token
+    );
+    const { useCase, centrifugoService } = buildUseCase({
+      redis: redis.client,
+    });
+
+    const response = await useCase.updateHelperStatus(
+      ((key: string) => key) as never,
+      {
+        token: session.token,
+        status: 'cancelled',
+      }
+    );
+
+    expect(response.status).toBe('cancelled');
+    expect(response.message).toBe('helper_closed');
+    expect(
+      redis.store.has(
+        activeSessionKey(session.worker_id, session.worker_type_id as string)
+      )
+    ).toBe(false);
+    expect(
+      JSON.parse(redis.store.get(sessionKey(session.token)) ?? '{}')
+    ).toMatchObject({
+      status: 'cancelled',
+      fail_reason: 'helper_closed',
+    });
+    expect(centrifugoService.publishSub).toHaveBeenCalledWith(
+      workerCentrifugoQueue(session.account_id),
+      expect.objectContaining({
+        secure_connection: expect.objectContaining({
+          status: 'cancelled',
+          token_hash: session.token_hash,
+        }),
+      })
+    );
+  });
+
+  it('does not let helper cancellation override a manager-owned import', async () => {
+    const redis = buildRedis();
+    const session: ISecureConnectionSession = {
+      ...buildSession(EWorkerType.whatsmeow),
+      status: 'importing',
+      upload_received_at: '2026-01-01T00:01:00.000Z',
+    };
+    redis.store.set(sessionKey(session.token), JSON.stringify(session));
+    const { useCase, workerGrpcClientService } = buildUseCase({
+      redis: redis.client,
+      workerGrpcClientService: {
+        runtimeHealth: jest.fn(async () =>
+          buildReadyHealth(EWorkerType.whatsmeow, {
+            session_ready: false,
+            can_send: false,
+            can_receive_runtime: false,
+          })
+        ),
+      },
+    });
+
+    const response = await useCase.updateHelperStatus(
+      ((key: string) => key) as never,
+      {
+        token: session.token,
+        status: 'cancelled',
+      }
+    );
+
+    expect(response.status).toBe('importing');
+    expect(workerGrpcClientService.runtimeHealth).toHaveBeenCalledWith(
+      'server-1',
+      { worker_id: 'worker-1' }
+    );
+    expect(
+      JSON.parse(redis.store.get(sessionKey(session.token)) ?? '{}')
+    ).toMatchObject({
+      status: 'importing',
+    });
   });
 });

@@ -62,6 +62,7 @@ const SECURE_CONNECTION_HELPER_STATUSES_SET = new Set<string>([
   'wa_ready',
   'uploading',
   'failed',
+  'cancelled',
 ]);
 const SECURE_CONNECTION_STATUS_ORDER: Record<SecureConnectionStatus, number> = {
   created: 0,
@@ -373,6 +374,27 @@ export class WorkerSecureConnectionSessionUseCase {
       return this.toResponse(recovered);
     }
 
+    if (
+      nextStatus === 'cancelled' &&
+      this.isManagerOwnedImportStatus(session.status)
+    ) {
+      const recovered = await this.recoverImportedRuntimeIfReady(
+        t,
+        session,
+        'helper_status_cancelled'
+      );
+      this.logFlow(
+        'manager.secure_connection.helper_status.ignored_manager_owned_cancelled',
+        recovered,
+        {
+          requested_status: input.status,
+          current_status: session.status,
+          recovered_status: recovered.status,
+        }
+      );
+      return this.toResponse(recovered);
+    }
+
     if (!SECURE_CONNECTION_HELPER_STATUSES_SET.has(nextStatus)) {
       this.logFlow('manager.secure_connection.helper_status.invalid', session, {
         requested_status: input.status,
@@ -419,7 +441,12 @@ export class WorkerSecureConnectionSessionUseCase {
       helper_version: input.helperVersion,
       helper_platform: input.helperPlatform,
       error: input.error,
-      fail_reason: input.error ? 'helper_error' : session.fail_reason,
+      fail_reason:
+        nextStatus === 'cancelled'
+          ? 'helper_closed'
+          : input.error
+            ? 'helper_error'
+            : session.fail_reason,
     });
 
     await this.publishStatus(next, { message: input.message });

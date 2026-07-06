@@ -82,6 +82,13 @@ const SECURE_SESSION_TERMINAL_STATUSES = new Set([
   'expired',
   'cancelled',
 ]);
+const SECURE_SESSION_HELPER_CANCELLABLE_STATUSES = new Set([
+  'created',
+  'helper_opened',
+  'wa_authenticated',
+  'wa_syncing',
+  'wa_ready',
+]);
 const isDevelopment = !app.isPackaged;
 const authenticatorBuildChannel = __UNDERCHAT_AUTHENTICATOR_CHANNEL__;
 const diagnosticsEnabled = authenticatorBuildChannel === 'dev' || isDevelopment;
@@ -2181,6 +2188,7 @@ async function closeHelperAfterCleanup(reason: string): Promise<void> {
       status: normalizeSessionStatus(currentPairing?.session ?? null),
     });
 
+    await cancelActiveSecureSessionOnClose(reason);
     await clearWhatsAppWebLocalSession(reason);
     await cleanupActiveControlledBrowser(reason);
 
@@ -2199,6 +2207,43 @@ async function closeHelperAfterCleanup(reason: string): Promise<void> {
     });
 
   await closeCleanupInFlight;
+}
+
+async function cancelActiveSecureSessionOnClose(reason: string): Promise<void> {
+  const pairing = currentPairing;
+
+  if (!pairing || pairing.context.mode !== 'secure') {
+    return;
+  }
+
+  pairing.session = await fetchPairingSession(pairing.context).catch(
+    (error) => {
+      logEvent('helper.close.cancel_status.fetch_error', pairing.context, {
+        reason: sanitizeError(error),
+      });
+      return pairing.session;
+    }
+  );
+
+  const status = normalizeSessionStatus(pairing.session);
+  if (!status || !SECURE_SESSION_HELPER_CANCELLABLE_STATUSES.has(status)) {
+    logEvent('helper.close.cancel_status.skipped', pairing.context, {
+      close_reason: reason,
+      status,
+    });
+    return;
+  }
+
+  await updateSecureStatusFromMain({
+    message: 'Underchat Authenticator fechado antes da conclusão.',
+    status: 'cancelled',
+  }).catch((error) => {
+    logEvent('helper.close.cancel_status.error', pairing.context, {
+      close_reason: reason,
+      reason: sanitizeError(error),
+      status,
+    });
+  });
 }
 
 function closeMainWindowAndQuit(): void {
