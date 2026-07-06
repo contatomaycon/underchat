@@ -18,6 +18,12 @@
     "projectKey": "underchat"
   },
   "search.followSymlinks": false,
+  "task.autoDetect": "off",
+  "npm.autoDetect": "off",
+  "grunt.autoDetect": "off",
+  "gulp.autoDetect": "off",
+  "jake.autoDetect": "off",
+  "typescript.tsc.autoDetect": "off",
   "search.exclude": {
     "**/.git/**": true,
     "**/.pnpm-store/**": true,
