@@ -7,7 +7,17 @@ const sourceIcon = resolve(appRoot, '../mobile/assets/icon.png');
 const outputDir = resolve(appRoot, 'build/icons');
 const pngOutput = resolve(outputDir, 'icon.png');
 const icoOutput = resolve(outputDir, 'icon.ico');
+const icnsOutput = resolve(outputDir, 'icon.icns');
 const icoSizes = [16, 24, 32, 48, 64, 128, 256];
+const icnsSizes = [
+  { size: 16, type: 'icp4' },
+  { size: 32, type: 'icp5' },
+  { size: 64, type: 'icp6' },
+  { size: 128, type: 'ic07' },
+  { size: 256, type: 'ic08' },
+  { size: 512, type: 'ic09' },
+  { size: 1024, type: 'ic10' },
+];
 
 function createIcoBuffer(images) {
   const headerSize = 6;
@@ -41,6 +51,22 @@ function createIcoBuffer(images) {
   ]);
 }
 
+function createIcnsBuffer(images) {
+  const entries = images.map((image) => {
+    const entryHeader = Buffer.alloc(8);
+    entryHeader.write(image.type, 0, 4, 'ascii');
+    entryHeader.writeUInt32BE(image.buffer.length + entryHeader.length, 4);
+
+    return Buffer.concat([entryHeader, image.buffer]);
+  });
+  const totalLength = 8 + entries.reduce((sum, entry) => sum + entry.length, 0);
+  const header = Buffer.alloc(8);
+  header.write('icns', 0, 4, 'ascii');
+  header.writeUInt32BE(totalLength, 4);
+
+  return Buffer.concat([header, ...entries]);
+}
+
 async function buildIconPng(size) {
   const buffer = await sharp(sourceIcon)
     .resize(size, size, { fit: 'cover' })
@@ -48,6 +74,15 @@ async function buildIconPng(size) {
     .toBuffer();
 
   return { size, buffer };
+}
+
+async function buildIcnsImage({ size, type }) {
+  const buffer = await sharp(sourceIcon)
+    .resize(size, size, { fit: 'cover' })
+    .png()
+    .toBuffer();
+
+  return { buffer, type };
 }
 
 await mkdir(dirname(pngOutput), { recursive: true });
@@ -61,9 +96,16 @@ for (const size of icoSizes) {
   icoImages.push(await buildIconPng(size));
 }
 
+const icnsImages = [];
+for (const icon of icnsSizes) {
+  icnsImages.push(await buildIcnsImage(icon));
+}
+
 await writeFile(icoOutput, createIcoBuffer(icoImages));
+await writeFile(icnsOutput, createIcnsBuffer(icnsImages));
 
 console.log('[underchat_authenticator] desktop icons generated', {
+  icns: icnsOutput,
   ico: icoOutput,
   png: pngOutput,
 });

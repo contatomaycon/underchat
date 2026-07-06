@@ -32,6 +32,18 @@ const nsisTargetPath = resolve(
   '../../node_modules/app-builder-lib/out/targets/nsis/NsisTarget.js'
 );
 const args = process.argv.slice(2);
+const explicitPlatformTarget = ['--win', '--linux', '--mac'].some((arg) =>
+  args.includes(arg)
+);
+const shouldBuildWindows =
+  args.includes('--win') ||
+  (!explicitPlatformTarget && process.platform === 'win32');
+const shouldBuildLinux =
+  args.includes('--linux') ||
+  (!explicitPlatformTarget && process.platform === 'linux');
+const shouldBuildMac =
+  args.includes('--mac') ||
+  (!explicitPlatformTarget && process.platform === 'darwin');
 
 async function exists(path) {
   return Boolean(await stat(path).catch(() => undefined));
@@ -148,10 +160,13 @@ async function prepareElectronDist(platformTag) {
   const fileName = `electron-v${electronVersion}-${platformTag}.zip`;
   const cacheZip = await findElectronZip(fileName);
   if (!cacheZip) {
-    console.warn('[underchat_authenticator] Electron ZIP was not found in cache', {
-      fileName,
-      cache: electronCacheRoot,
-    });
+    console.warn(
+      '[underchat_authenticator] Electron ZIP was not found in cache',
+      {
+        fileName,
+        cache: electronCacheRoot,
+      }
+    );
     return null;
   }
 
@@ -166,13 +181,86 @@ async function prepareElectronDist(platformTag) {
   await run('unzip', ['-q', cacheZip, '-d', outputDir]);
   await writeFile(markerPath, `${fileName}\n`);
 
-  console.log('[underchat_authenticator] Electron distribution prepared from cache', {
-    platform: platformTag,
-    source: cacheZip,
-    electronDist: outputDir,
-  });
+  console.log(
+    '[underchat_authenticator] Electron distribution prepared from cache',
+    {
+      platform: platformTag,
+      source: cacheZip,
+      electronDist: outputDir,
+    }
+  );
 
   return outputDir;
+}
+
+function hasConfigOverride(configKey) {
+  return args.some(
+    (arg) =>
+      arg === `--config.${configKey}` ||
+      arg.startsWith(`--config.${configKey}=`)
+  );
+}
+
+function hasMacNotarizationCredentials(env) {
+  return (
+    Boolean(
+      env.APPLE_API_KEY && env.APPLE_API_KEY_ID && env.APPLE_API_ISSUER
+    ) ||
+    Boolean(
+      env.APPLE_ID && env.APPLE_APP_SPECIFIC_PASSWORD && env.APPLE_TEAM_ID
+    ) ||
+    Boolean(env.APPLE_KEYCHAIN && env.APPLE_KEYCHAIN_PROFILE)
+  );
+}
+
+function exitWithConfigurationError(message) {
+  console.error(`[underchat_authenticator] ${message}`);
+  process.exit(1);
+}
+
+function configureMacPackaging(env) {
+  if (!shouldBuildMac) {
+    return;
+  }
+
+  if (process.platform !== 'darwin') {
+    exitWithConfigurationError(
+      'macOS packaging must run on macOS because DMG creation, Developer ID signing, and notarization require Apple tooling.'
+    );
+  }
+
+  if (env.UNDERCHAT_REQUIRE_MAC_SIGNING === 'true') {
+    if (!hasMacNotarizationCredentials(env)) {
+      exitWithConfigurationError(
+        [
+          'macOS production packaging requires Apple notarization credentials.',
+          'Set APPLE_API_KEY, APPLE_API_KEY_ID and APPLE_API_ISSUER; or APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID; or APPLE_KEYCHAIN and APPLE_KEYCHAIN_PROFILE.',
+        ].join(' ')
+      );
+    }
+
+    console.log(
+      '[underchat_authenticator] macOS signing and notarization enabled'
+    );
+    return;
+  }
+
+  if (!hasConfigOverride('mac.identity')) {
+    args.push('--config.mac.identity=null');
+  }
+
+  if (!hasConfigOverride('mac.notarize')) {
+    args.push('--config.mac.notarize=false');
+  }
+
+  if (!hasConfigOverride('mac.hardenedRuntime')) {
+    args.push('--config.mac.hardenedRuntime=false');
+  }
+
+  env.CSC_IDENTITY_AUTO_DISCOVERY = env.CSC_IDENTITY_AUTO_DISCOVERY ?? 'false';
+  console.warn(
+    '[underchat_authenticator] macOS development package will be unsigned and not notarized; Gatekeeper may require manual approval.'
+  );
 }
 
 const env = { ...process.env };
@@ -182,12 +270,13 @@ if (env.UNDERCHAT_USE_LOCAL_BUILDER_CACHE === 'true') {
   env.ELECTRON_BUILDER_CACHE =
     env.ELECTRON_BUILDER_CACHE ?? electronBuilderCacheRoot;
 }
-const shouldSignWindows = args.includes('--win');
 const hasExplicitElectronDist = args.some((arg) =>
   arg.startsWith('--config.electronDist')
 );
 
-if (shouldSignWindows) {
+configureMacPackaging(env);
+
+if (shouldBuildWindows) {
   env.ELECTRON_BUILDER_OFFLINE = env.ELECTRON_BUILDER_OFFLINE ?? 'true';
   env.ELECTRON_BUILDER_CACHE =
     env.ELECTRON_BUILDER_CACHE ?? electronBuilderCacheRoot;
@@ -210,9 +299,9 @@ if (shouldSignWindows) {
 }
 
 if (!hasExplicitElectronDist) {
-  const platformTag = args.includes('--win')
+  const platformTag = shouldBuildWindows
     ? 'win32-x64'
-    : args.includes('--linux') || process.platform === 'linux'
+    : shouldBuildLinux
       ? 'linux-x64'
       : null;
   const electronDist = platformTag

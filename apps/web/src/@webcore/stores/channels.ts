@@ -76,7 +76,7 @@ type ConnectionLifecycleDebugRequestOptions = {
 };
 
 type ChannelUpdateResult = boolean | IWorkerLifecycleAck;
-type AuthenticatorPlatform = 'linux' | 'windows';
+type AuthenticatorPlatform = 'linux' | 'macos' | 'windows';
 
 type OfficialWorkerProfileInfoPayload = {
   about?: string | null;
@@ -1188,10 +1188,13 @@ export const useChannelsStore = defineStore('channels', {
     async downloadAuthenticatorInstaller(
       platform: AuthenticatorPlatform
     ): Promise<boolean> {
-      const fallbackFilename =
-        platform === 'windows'
-          ? 'Underchat-Authenticator-windows.exe'
-          : 'Underchat-Authenticator-linux.deb';
+      const fallbackFilenameByPlatform: Record<AuthenticatorPlatform, string> =
+        {
+          linux: 'Underchat-Authenticator-linux.deb',
+          macos: 'Underchat-Authenticator-macos.dmg',
+          windows: 'Underchat-Authenticator-windows.exe',
+        };
+      const fallbackFilename = fallbackFilenameByPlatform[platform];
 
       try {
         const response = await axios.get<Blob>(

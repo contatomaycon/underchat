@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue';
 
-type AuthenticatorPlatform = 'linux' | 'windows';
+type AuthenticatorPlatform = 'linux' | 'macos' | 'windows';
 
 defineProps<{
   disabled?: boolean;
@@ -28,6 +28,12 @@ const platforms: {
     icon: 'tabler-brand-ubuntu',
     labelKey: 'authenticator_install_linux',
     value: 'linux',
+  },
+  {
+    descriptionKey: 'authenticator_install_macos_description',
+    icon: 'tabler-brand-apple',
+    labelKey: 'authenticator_install_macos',
+    value: 'macos',
   },
   {
     descriptionKey: 'authenticator_install_windows_description',
@@ -150,7 +156,7 @@ const selectedPlatformMeta = computed(() =>
 
 .authenticator-platform-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 14px;
 }
 

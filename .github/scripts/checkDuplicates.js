@@ -1,4 +1,4 @@
-const fs = require('fs');
+import fs from 'node:fs';
 
 function checkDuplicatesInFile(filePath) {
   const fileIdentity = filePath.split('/').slice(-2).join('/');

@@ -14,7 +14,11 @@ export const workerSecureConnectionHelperParamsSchema = Type.Object({
 });
 
 export const workerAuthenticatorDownloadParamsSchema = Type.Object({
-  platform: Type.Union([Type.Literal('linux'), Type.Literal('windows')]),
+  platform: Type.Union([
+    Type.Literal('linux'),
+    Type.Literal('macos'),
+    Type.Literal('windows'),
+  ]),
 });
 
 export const workerSecureConnectionHelperStatusBodySchema = Type.Object({

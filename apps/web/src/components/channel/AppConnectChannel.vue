@@ -40,7 +40,7 @@ const channelStore = useChannelsStore();
 
 type ConnectionMethod =
   'authenticator_install' | 'method_selection' | 'qrcode' | 'secure';
-type AuthenticatorPlatform = 'linux' | 'windows';
+type AuthenticatorPlatform = 'linux' | 'macos' | 'windows';
 
 type WorkerSecureConnectionPublication = {
   account_id?: string;

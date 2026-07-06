@@ -40,6 +40,21 @@
       "outputs": ["release/**"],
       "cache": false
     },
+    "package:mac": {
+      "dependsOn": ["build"],
+      "outputs": ["release/**"],
+      "cache": false
+    },
+    "package:mac:dev": {
+      "dependsOn": ["build:dev"],
+      "outputs": ["release/**"],
+      "cache": false
+    },
+    "package:mac:prod": {
+      "dependsOn": ["build:prod"],
+      "outputs": ["release/**"],
+      "cache": false
+    },
     "sonar": {
       "outputs": [],
       "cache": false

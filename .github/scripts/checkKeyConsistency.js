@@ -1,4 +1,4 @@
-const fs = require('fs');
+import fs from 'node:fs';
 
 function checkKeyConsistency(baseFilePath, comparisonFilePath) {
   const baseFilePathIdentity = baseFilePath.split('/').slice(-2).join('/');
