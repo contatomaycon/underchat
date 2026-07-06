@@ -125,6 +125,7 @@ let lastReportedWhatsAppStatus: string | null = null;
 let whatsappReadyStableSinceMs: number | null = null;
 let autoConnectStarted = false;
 let secureConnectInFlight = false;
+let controlledBrowserInFlight = false;
 let sessionRefreshInFlight = false;
 let pendingSessionRefresh = false;
 let automaticExtractionRetryTimerId: number | null = null;
@@ -391,7 +392,7 @@ function renderSecureMode(): void {
             : 'waiting';
   let title = 'Entre no WhatsApp Web';
   let fallbackText =
-    'Use esta janela para entrar no WhatsApp Web. Se o WhatsApp pedir passkey, conclua normalmente aqui.';
+    'Use Abrir Chrome/Edge para autenticar com smartphone ou tablet. Se preferir USB, conclua nesta janela.';
 
   if (connectedConfirmed) {
     title = 'Underchat conectada';
@@ -410,7 +411,8 @@ function renderSecureMode(): void {
     fallbackText = 'A sessão autenticada está sendo enviada para a Underchat.';
   } else if (state.whatsappReady) {
     title = 'WhatsApp Web pronto';
-    fallbackText = 'Sessão pronta. A Underchat vai conectar automaticamente.';
+    fallbackText =
+      'Sessão pronta nesta janela. A Underchat vai conectar automaticamente.';
   } else if (state.whatsappSyncing) {
     title = 'Sincronizando WhatsApp Web';
     fallbackText =
@@ -451,7 +453,7 @@ function renderSecureMode(): void {
       <header class="underchat-authenticator-header">
         <div>
           <h1 class="underchat-authenticator-title">Underchat Authenticator</h1>
-          <p class="underchat-authenticator-subtitle">WhatsApp Web nativo com suporte a chave de acesso.</p>
+          <p class="underchat-authenticator-subtitle">WhatsApp Web com Chrome/Edge controlado para passkey por smartphone ou tablet.</p>
         </div>
         <div class="underchat-authenticator-header-actions">
           <span class="underchat-authenticator-badge" title="${escapeHtml(payload?.tokenHash ?? session?.token_hash ?? 'sem-token')}">
@@ -471,9 +473,19 @@ function renderSecureMode(): void {
           </div>
         </div>
         <div class="underchat-authenticator-actions">
+          <button class="underchat-authenticator-button" data-action="start-controlled-browser" ${
+            state.busy ||
+            controlledBrowserInFlight ||
+            secureConnectInFlight ||
+            terminal ||
+            BUSY_SECURE_STATUSES.has(status)
+              ? 'disabled'
+              : ''
+          }>${controlledBrowserInFlight ? 'Abrindo Chrome/Edge...' : 'Abrir Chrome/Edge'}</button>
           <button class="underchat-authenticator-button" data-action="connect-secure" ${
             state.busy ||
             secureConnectInFlight ||
+            controlledBrowserInFlight ||
             !state.whatsappReady ||
             terminal ||
             BUSY_SECURE_STATUSES.has(status)
@@ -503,6 +515,11 @@ function renderSecureMode(): void {
   `;
 
   rootElement
+    .querySelector('[data-action="start-controlled-browser"]')
+    ?.addEventListener('click', () => {
+      startControlledBrowserSession();
+    });
+  rootElement
     .querySelector('[data-action="connect-secure"]')
     ?.addEventListener('click', () => {
       connectSecureSessionToUnderchat({ automatic: false });
@@ -523,6 +540,60 @@ function renderSecureMode(): void {
       securePanelMinimized = true;
       render();
     });
+}
+
+async function startControlledBrowserSession(): Promise<void> {
+  if (!bridgeRef || controlledBrowserInFlight || secureConnectInFlight) {
+    return;
+  }
+
+  if (TERMINAL_SECURE_STATUSES.has(getSecureSessionStatus())) {
+    return;
+  }
+
+  controlledBrowserInFlight = true;
+  autoConnectStarted = true;
+  setState({
+    busy: true,
+    diagnosticsMessage: null,
+    error: null,
+    message:
+      'Abrindo Chrome/Edge para autenticar a passkey por smartphone ou tablet...',
+  });
+  startSecureUploadStatusPolling();
+
+  try {
+    recordDebugLog('secure_session.controlled_browser.start', {
+      status: getSecureSessionStatus(),
+      tokenHash: getTokenHashFromState(),
+    });
+    const result = await bridgeRef.startControlledBrowser();
+    const connected = result.status === 'connected_confirmed';
+    setState({
+      busy: false,
+      connected,
+      error: connected ? null : (result.error ?? null),
+      message: connected
+        ? 'Sessão conectada na Underchat. Fechando o Underchat Authenticator...'
+        : (result.message ??
+          'A Underchat recebeu a sessão e ainda está validando o canal.'),
+    });
+
+    if (connected) {
+      scheduleHelperAutoClose();
+    }
+  } catch (error) {
+    autoConnectStarted = false;
+    setState({
+      busy: false,
+      error: sanitizeOverlayError(error),
+      message: null,
+    });
+  } finally {
+    controlledBrowserInFlight = false;
+    stopSecureUploadStatusPolling();
+    render();
+  }
 }
 
 async function connectSecureSessionToUnderchat(
@@ -823,6 +894,7 @@ function maybeAutoConnectSecureSession(): void {
     state.helperPayload?.mode !== 'secure' ||
     autoConnectStarted ||
     secureConnectInFlight ||
+    controlledBrowserInFlight ||
     !state.whatsappReady
   ) {
     return;
@@ -2014,6 +2086,7 @@ function resetSecureFlowRuntime(tokenHash: string): void {
   whatsappReadyStableSinceMs = null;
   autoConnectStarted = false;
   secureConnectInFlight = false;
+  controlledBrowserInFlight = false;
   securePanelMinimized = false;
   state.whatsappAuthenticated = false;
   state.whatsappReadinessReason = null;

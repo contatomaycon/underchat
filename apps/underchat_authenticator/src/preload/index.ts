@@ -59,6 +59,7 @@ export interface UnderchatAuthenticatorBridge {
   sendSecureSessionPackage: (
     sessionPackage: SecureSessionPackage
   ) => Promise<AuthenticatorActionResult>;
+  startControlledBrowser: () => Promise<AuthenticatorActionResult>;
   updateSecureStatus: (statusPayload: {
     error?: string;
     message?: string;
@@ -108,6 +109,10 @@ const bridge: UnderchatAuthenticatorBridge = {
     ipcRenderer.invoke(
       'underchat-authenticator:upload-secure-session',
       sessionPackage
+    ) as Promise<AuthenticatorActionResult>,
+  startControlledBrowser: () =>
+    ipcRenderer.invoke(
+      'underchat-authenticator:start-controlled-browser'
     ) as Promise<AuthenticatorActionResult>,
   updateSecureStatus: (statusPayload) =>
     ipcRenderer.invoke(

@@ -1,9 +1,19 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { spawn, type ChildProcess } from 'node:child_process';
+import {
+  access,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 import {
   AuthenticatorApiClient,
+  type AuthenticatorActionResult,
   type AuthenticatorSession,
   type SecureSessionPackage,
 } from './apiClient';
@@ -32,6 +42,7 @@ const WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES = new Set([
   'Cookies-journal',
   'IndexedDB',
   'Local Storage',
+  'Network',
   'Network Persistent State',
   'Preferences',
   'Service Worker',
@@ -50,6 +61,27 @@ const WWEBJS_PROFILE_SKIP_FILE_NAMES = new Set([
   'SingletonSocket',
   'DevToolsActivePort',
 ]);
+const CONTROLLED_BROWSER_PROFILE_DIR = 'ControlledBrowser';
+const CONTROLLED_BROWSER_DEVTOOLS_TIMEOUT_MS = 20_000;
+const CONTROLLED_BROWSER_TARGET_TIMEOUT_MS = 45_000;
+const CONTROLLED_BROWSER_HANDOFF_TIMEOUT_MS = 10 * 60_000;
+const CONTROLLED_BROWSER_HANDOFF_POLL_MS = 2_000;
+const CONTROLLED_BROWSER_STABLE_WINDOW_MS = 30_000;
+const CONTROLLED_BROWSER_EXIT_TIMEOUT_MS = 6_000;
+const CONTROLLED_BROWSER_PROVIDER_MAP: Record<
+  string,
+  SecureSessionPackage['target_provider']
+> = {
+  '019a930d-c6f6-766d-9c84-53307d4159a1': 'baileys',
+  '019a930d-c6f6-766d-9c84-62b9c3e7d1f0': 'wwebjs',
+  'e80ad183-2b46-4628-9105-a036f2d28720': 'whatsmeow',
+};
+const SECURE_SESSION_TERMINAL_STATUSES = new Set([
+  'connected_confirmed',
+  'failed',
+  'expired',
+  'cancelled',
+]);
 const isDevelopment = !app.isPackaged;
 const authenticatorBuildChannel = __UNDERCHAT_AUTHENTICATOR_CHANNEL__;
 const diagnosticsEnabled = authenticatorBuildChannel === 'dev' || isDevelopment;
@@ -67,6 +99,95 @@ type SecureSessionProfileFile = {
 };
 
 type SecureSessionProfileFiles = Record<string, SecureSessionProfileFile>;
+type JsonRecord = Record<string, unknown>;
+type ControlledBrowserKind = 'chrome' | 'edge';
+type ControlledBrowserInfo = {
+  executablePath: string;
+  kind: ControlledBrowserKind;
+  name: string;
+  version?: string | null;
+};
+type ControlledBrowserInstance = ControlledBrowserInfo & {
+  child: ChildProcess;
+  debugPort: number;
+  profileRoot: string;
+  webSocketPath: string;
+};
+type CdpTarget = {
+  id?: string;
+  title?: string;
+  type?: string;
+  url?: string;
+  webSocketDebuggerUrl?: string;
+};
+type CdpEvaluationResult<T = unknown> = {
+  exceptionDetails?: unknown;
+  result?: {
+    description?: string;
+    subtype?: string;
+    type?: string;
+    value?: T;
+  };
+};
+type ControlledBrowserPageContext = {
+  href: string;
+  indexedDbNames: string[];
+  userAgent: string;
+  webVersion?: string;
+};
+type BufferJsonWrapper = {
+  data: string;
+  type: 'Buffer';
+};
+type WhatsAppWebExtractedCreds = {
+  account: {
+    accountSignature: string;
+    accountSignatureKey: string;
+    details: string;
+    deviceSignature: string;
+  };
+  advSecretKey: string | null;
+  firstUnuploadedPreKeyId: number;
+  me: {
+    id: string;
+    lid?: string;
+    name?: string | null;
+    username?: string | null;
+  };
+  nextPreKeyId: number;
+  noiseKey: {
+    private: string;
+    public: string;
+  };
+  platform: 'web';
+  registrationId: number;
+  signedIdentityKey: {
+    private: string;
+    public: string;
+  };
+  signedPreKey: {
+    keyId: number;
+    keyPair: {
+      private: string;
+      public: string;
+    };
+    signature: string;
+  };
+};
+type WhatsAppWebAuthDump = {
+  _debug?: JsonRecord[];
+  appStateSyncKeyCount: number;
+  appStateVersionCount: number;
+  creds: WhatsAppWebExtractedCreds;
+};
+type WhatsAppReadinessSnapshot = {
+  authenticated: boolean;
+  hasBlockingLoginUi: boolean;
+  hasChatUi: boolean;
+  readyForHandoff: boolean;
+  reason: string;
+  syncing: boolean;
+};
 type DiagnosticLogEntry = {
   details: Record<string, unknown>;
   event: string;
@@ -81,6 +202,9 @@ let localSessionClearedTokenHash: string | null = null;
 let connectedCleanupCloseTimer: NodeJS.Timeout | null = null;
 let allowMainWindowClose = false;
 let closeCleanupInFlight: Promise<void> | null = null;
+let activeControlledBrowser: ControlledBrowserInstance | null = null;
+let controlledBrowserFlowInFlight: Promise<AuthenticatorActionResult> | null =
+  null;
 const diagnosticLogEntries: DiagnosticLogEntry[] = [];
 const MAX_DIAGNOSTIC_LOG_ENTRIES = 5000;
 
@@ -381,6 +505,48 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(
+    'underchat-authenticator:start-controlled-browser',
+    async () => {
+      if (!currentPairing) {
+        throw new Error('Sessão segura não iniciada.');
+      }
+
+      if (controlledBrowserFlowInFlight) {
+        logEvent(
+          'secure_session.controlled_browser.start.skipped',
+          currentPairing.context,
+          {
+            reason: 'already_in_flight',
+          }
+        );
+        return {
+          message:
+            'O Chrome/Edge controlado já está aberto para esta verificação.',
+          status: 'already_running',
+        };
+      }
+
+      controlledBrowserFlowInFlight = runControlledBrowserSecureSession()
+        .catch((error) => {
+          const message = sanitizeError(error);
+          logEvent(
+            'secure_session.controlled_browser.flow.error',
+            currentPairing?.context,
+            {
+              reason: message,
+            }
+          );
+          throw error;
+        })
+        .finally(() => {
+          controlledBrowserFlowInFlight = null;
+        });
+
+      return controlledBrowserFlowInFlight;
+    }
+  );
+
+  ipcMain.handle(
     'underchat-authenticator:update-secure-status',
     async (
       _event,
@@ -390,48 +556,7 @@ function registerIpcHandlers(): void {
         status: string;
       }
     ) => {
-      if (!currentPairing) {
-        throw new Error('Sessão segura não iniciada.');
-      }
-
-      const previousStatus = normalizeSessionStatus(currentPairing.session);
-      logEvent('secure_session.status.update.start', currentPairing.context, {
-        previous_status: previousStatus,
-        requested_status: statusPayload.status,
-      });
-      const result = await apiClient.updateSecureStatus(
-        currentPairing.context,
-        {
-          ...statusPayload,
-          helper_platform: process.platform,
-          helper_version: app.getVersion(),
-        }
-      );
-      currentPairing.session = await fetchPairingSession(
-        currentPairing.context
-      ).catch(() => currentPairing?.session ?? null);
-      const nextStatus =
-        normalizeSessionStatus(currentPairing.session) ??
-        normalizeActionStatus(result.status);
-
-      if (nextStatus !== previousStatus) {
-        mainWindow?.webContents.send('underchat-authenticator:session-updated');
-      } else {
-        logEvent(
-          'secure_session.status.update.no_session_event',
-          currentPairing.context,
-          {
-            status: nextStatus,
-          }
-        );
-      }
-
-      logEvent('secure_session.status.update.done', currentPairing.context, {
-        next_status: nextStatus,
-        previous_status: previousStatus,
-        requested_status: statusPayload.status,
-      });
-      return result;
+      return updateSecureStatusFromMain(statusPayload);
     }
   );
 
@@ -523,6 +648,1488 @@ function countElectronCookies(payload: unknown): number {
   return Array.isArray(cookies) ? cookies.length : 0;
 }
 
+async function updateSecureStatusFromMain(statusPayload: {
+  error?: string;
+  message?: string;
+  status: string;
+}): Promise<AuthenticatorActionResult> {
+  if (!currentPairing) {
+    throw new Error('Sessão segura não iniciada.');
+  }
+
+  const previousStatus = normalizeSessionStatus(currentPairing.session);
+  logEvent('secure_session.status.update.start', currentPairing.context, {
+    previous_status: previousStatus,
+    requested_status: statusPayload.status,
+  });
+  const result = await apiClient.updateSecureStatus(currentPairing.context, {
+    ...statusPayload,
+    helper_platform: process.platform,
+    helper_version: app.getVersion(),
+  });
+  currentPairing.session = await fetchPairingSession(
+    currentPairing.context
+  ).catch(() => currentPairing?.session ?? null);
+  const nextStatus =
+    normalizeSessionStatus(currentPairing.session) ??
+    normalizeActionStatus(result.status);
+
+  if (nextStatus !== previousStatus) {
+    mainWindow?.webContents.send('underchat-authenticator:session-updated');
+  } else {
+    logEvent(
+      'secure_session.status.update.no_session_event',
+      currentPairing.context,
+      {
+        status: nextStatus,
+      }
+    );
+  }
+
+  logEvent('secure_session.status.update.done', currentPairing.context, {
+    next_status: nextStatus,
+    previous_status: previousStatus,
+    requested_status: statusPayload.status,
+  });
+  return result;
+}
+
+function assertSecureSessionStillActive(): void {
+  const status = normalizeSessionStatus(currentPairing?.session ?? null);
+  if (status && SECURE_SESSION_TERMINAL_STATUSES.has(status)) {
+    throw new Error(`Sessão segura encerrada com status ${status}.`);
+  }
+}
+
+const CONTROLLED_BROWSER_READINESS_SCRIPT = String.raw`
+(() => {
+  function hasWhatsAppSyncBlockingText() {
+    const text = document.body && document.body.innerText ? document.body.innerText : '';
+    if (!text) return false;
+    return [
+      /mantenha\s+o\s+app\s+aberto\s+nos\s+dois\s+dispositivos/i,
+      /keep\s+(?:the\s+)?app\s+open\s+on\s+both\s+devices/i,
+      /keep\s+whatsapp\s+open\s+on\s+both\s+devices/i,
+      /sincronizando\s+(?:suas\s+)?mensagens/i,
+      /syncing\s+(?:your\s+)?messages/i,
+      /carregando\s+(?:suas\s+)?mensagens/i,
+      /loading\s+(?:your\s+)?messages/i
+    ].some(function(pattern) { return pattern.test(text); });
+  }
+
+  if (!location.origin.startsWith('https://web.whatsapp.com')) {
+    return {
+      authenticated: false,
+      hasBlockingLoginUi: false,
+      hasChatUi: false,
+      readyForHandoff: false,
+      reason: 'not_whatsapp_web',
+      syncing: false
+    };
+  }
+
+  const blockingSelectors = [
+    'canvas[aria-label*="Scan"]',
+    '[data-testid="qrcode"]',
+    '[data-ref] canvas',
+    'input[name="phone"]'
+  ];
+  const hasBlockingLoginUi = blockingSelectors.some(function(selector) {
+    return document.querySelector(selector);
+  });
+  const hasSyncBlockingText = hasWhatsAppSyncBlockingText();
+  const selectors = [
+    '#side',
+    '[data-testid="chat-list"]',
+    '[data-testid="conversation-list"]',
+    '[data-testid="conversation-panel-wrapper"]',
+    '[aria-label="Chat list"]',
+    '[aria-label="Lista de conversas"]',
+    '[contenteditable="true"][role="textbox"]'
+  ];
+  const hasChatUi = selectors.some(function(selector) {
+    return document.querySelector(selector);
+  });
+  const authenticated = !hasBlockingLoginUi && hasChatUi;
+  const readyForHandoff = authenticated && !hasSyncBlockingText;
+  const reason = hasBlockingLoginUi
+    ? 'login_required'
+    : hasSyncBlockingText
+      ? 'whatsapp_web_syncing'
+      : hasChatUi
+        ? 'ready_for_handoff'
+        : 'waiting_for_chat_ui';
+
+  return {
+    authenticated,
+    hasBlockingLoginUi,
+    hasChatUi,
+    readyForHandoff,
+    reason,
+    syncing: authenticated && hasSyncBlockingText
+  };
+})()
+`;
+
+const CONTROLLED_BROWSER_PAGE_CONTEXT_SCRIPT = String.raw`
+(async () => {
+  const indexedDbNames =
+    typeof indexedDB.databases === 'function'
+      ? await indexedDB
+          .databases()
+          .then(function(databases) {
+            return databases
+              .map(function(database) { return database.name; })
+              .filter(function(name) { return Boolean(name); });
+          })
+          .catch(function() { return []; })
+      : [];
+  const versionSource = [
+    document.querySelector('meta[name="version"]') &&
+      document.querySelector('meta[name="version"]').getAttribute('content'),
+    document.documentElement.getAttribute('data-app-version')
+  ].find(function(value) { return value && value.trim(); });
+
+  return {
+    href: location.href,
+    indexedDbNames,
+    userAgent: navigator.userAgent,
+    webVersion: versionSource ? versionSource.trim() : undefined
+  };
+})()
+`;
+
+async function runControlledBrowserSecureSession(): Promise<AuthenticatorActionResult> {
+  const pairing = currentPairing;
+  if (!pairing || pairing.context.mode !== 'secure') {
+    throw new Error('Sessão segura não iniciada.');
+  }
+
+  await cleanupActiveControlledBrowser('controlled_browser_restart');
+  pairing.session = await fetchPairingSession(pairing.context).catch(
+    () => pairing.session
+  );
+  assertSecureSessionStillActive();
+
+  const browser = await findControlledBrowser();
+  logEvent(
+    'secure_session.controlled_browser.browser.selected',
+    pairing.context,
+    {
+      browser_kind: browser.kind,
+      browser_name: browser.name,
+      browser_path: browser.executablePath,
+      browser_version: browser.version ?? null,
+    }
+  );
+
+  await updateSecureStatusFromMain({
+    message:
+      'Abrindo Chrome/Edge controlado para concluir a passkey por smartphone ou tablet.',
+    status: 'helper_opened',
+  });
+  assertSecureSessionStillActive();
+
+  let instance: ControlledBrowserInstance | null = null;
+  let pageSession: CdpSession | null = null;
+
+  try {
+    instance = await launchControlledBrowser(
+      browser,
+      pairing.context.tokenHash
+    );
+    const target = await waitForWhatsAppCdpTarget(instance);
+    if (!target.webSocketDebuggerUrl) {
+      throw new Error('O Chrome/Edge não expôs o alvo CDP do WhatsApp Web.');
+    }
+
+    pageSession = await CdpSession.connect(target.webSocketDebuggerUrl);
+    await pageSession.send('Runtime.enable').catch(() => undefined);
+
+    await waitForControlledBrowserHandoffReady(pageSession, instance);
+    const sessionPackage = await collectControlledBrowserSecureSessionPackage(
+      pageSession,
+      instance
+    );
+    let uploadPackage = sessionPackage;
+
+    if (shouldIncludeWwebjsProfile(sessionPackage.target_provider)) {
+      await closeControlledBrowserProcess(
+        instance,
+        'controlled_browser_profile_export'
+      );
+      pageSession.close();
+      pageSession = null;
+
+      const wwebjsLocalAuthFiles =
+        await collectControlledBrowserWwebjsLocalAuthProfileFiles(
+          instance.profileRoot,
+          sessionPackage.target_provider
+        );
+      if (wwebjsLocalAuthFiles) {
+        const payload = isRecord(sessionPackage.payload)
+          ? sessionPackage.payload
+          : {};
+        uploadPackage = {
+          ...sessionPackage,
+          payload: {
+            ...payload,
+            wwebjs_local_auth: {
+              files: wwebjsLocalAuthFiles,
+            },
+          },
+        };
+      }
+    }
+
+    await updateSecureStatusFromMain({ status: 'uploading' });
+    logEvent(
+      'secure_session.controlled_browser.upload.start',
+      pairing.context,
+      {
+        has_payload: uploadPackage.payload !== undefined,
+        target_provider: uploadPackage.target_provider,
+      }
+    );
+    const result = await apiClient.uploadSecureSession(
+      pairing.context,
+      uploadPackage
+    );
+    pairing.session = await fetchPairingSession(pairing.context).catch(
+      () => pairing.session
+    );
+    const nextStatus = normalizeSessionStatus(pairing.session);
+    if (nextStatus === 'connected_confirmed') {
+      scheduleConnectedCleanupAndClose(
+        'secure_session_controlled_browser_connected'
+      );
+    }
+    mainWindow?.webContents.send('underchat-authenticator:session-updated');
+    logEvent('secure_session.controlled_browser.upload.done', pairing.context, {
+      next_status: nextStatus,
+      status: result.status ?? null,
+    });
+
+    return result;
+  } finally {
+    pageSession?.close();
+    if (instance) {
+      await cleanupControlledBrowserInstance(
+        instance,
+        'controlled_browser_flow_finally'
+      );
+    }
+  }
+}
+
+async function findControlledBrowser(): Promise<ControlledBrowserInfo> {
+  const overridePath =
+    process.env.UNDERCHAT_AUTHENTICATOR_BROWSER_PATH?.trim() ?? '';
+  if (overridePath) {
+    if (!(await pathExists(overridePath))) {
+      throw new Error(
+        'O caminho em UNDERCHAT_AUTHENTICATOR_BROWSER_PATH não existe. Ajuste o caminho ou instale Chrome/Edge.'
+      );
+    }
+
+    const kind = inferControlledBrowserKind(overridePath);
+    return {
+      executablePath: overridePath,
+      kind,
+      name: kind === 'edge' ? 'Microsoft Edge' : 'Google Chrome',
+      version: await readControlledBrowserVersion(overridePath),
+    };
+  }
+
+  for (const candidate of getControlledBrowserCandidates()) {
+    if (!(await pathExists(candidate.executablePath))) {
+      continue;
+    }
+
+    return {
+      ...candidate,
+      version: await readControlledBrowserVersion(candidate.executablePath),
+    };
+  }
+
+  throw new Error(
+    'Não encontrei Chrome nem Edge para usar passkey por smartphone/tablet. Instale Chrome/Edge ou defina UNDERCHAT_AUTHENTICATOR_BROWSER_PATH. Você ainda pode concluir por USB nesta janela.'
+  );
+}
+
+function getControlledBrowserCandidates(): ControlledBrowserInfo[] {
+  const candidates: ControlledBrowserInfo[] = [];
+  const addCandidate = (
+    executablePath: string | undefined,
+    kind: ControlledBrowserKind,
+    name: string
+  ) => {
+    if (!executablePath) {
+      return;
+    }
+    candidates.push({ executablePath, kind, name });
+  };
+
+  if (process.platform === 'win32') {
+    const programFiles = process.env.ProgramFiles;
+    const programFilesX86 = process.env['ProgramFiles(x86)'];
+    const localAppData = process.env.LOCALAPPDATA;
+
+    addCandidate(
+      programFiles
+        ? join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe')
+        : undefined,
+      'chrome',
+      'Google Chrome'
+    );
+    addCandidate(
+      programFilesX86
+        ? join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe')
+        : undefined,
+      'chrome',
+      'Google Chrome'
+    );
+    addCandidate(
+      localAppData
+        ? join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe')
+        : undefined,
+      'chrome',
+      'Google Chrome'
+    );
+    addCandidate(
+      programFiles
+        ? join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+        : undefined,
+      'edge',
+      'Microsoft Edge'
+    );
+    addCandidate(
+      programFilesX86
+        ? join(
+            programFilesX86,
+            'Microsoft',
+            'Edge',
+            'Application',
+            'msedge.exe'
+          )
+        : undefined,
+      'edge',
+      'Microsoft Edge'
+    );
+    addCandidate(
+      localAppData
+        ? join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
+        : undefined,
+      'edge',
+      'Microsoft Edge'
+    );
+  } else if (process.platform === 'darwin') {
+    const home = process.env.HOME;
+    addCandidate(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      'chrome',
+      'Google Chrome'
+    );
+    addCandidate(
+      home
+        ? join(
+            home,
+            'Applications',
+            'Google Chrome.app',
+            'Contents',
+            'MacOS',
+            'Google Chrome'
+          )
+        : undefined,
+      'chrome',
+      'Google Chrome'
+    );
+    addCandidate(
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      'edge',
+      'Microsoft Edge'
+    );
+    addCandidate(
+      home
+        ? join(
+            home,
+            'Applications',
+            'Microsoft Edge.app',
+            'Contents',
+            'MacOS',
+            'Microsoft Edge'
+          )
+        : undefined,
+      'edge',
+      'Microsoft Edge'
+    );
+  } else {
+    [
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/snap/bin/chromium',
+    ].forEach((executablePath) =>
+      addCandidate(executablePath, 'chrome', 'Google Chrome')
+    );
+    [
+      '/usr/bin/microsoft-edge',
+      '/usr/bin/microsoft-edge-stable',
+      '/opt/microsoft/msedge/msedge',
+    ].forEach((executablePath) =>
+      addCandidate(executablePath, 'edge', 'Microsoft Edge')
+    );
+  }
+
+  for (const executablePath of getPathExecutableCandidates([
+    'google-chrome',
+    'google-chrome-stable',
+    'chrome',
+    'chromium',
+    'chromium-browser',
+  ])) {
+    addCandidate(executablePath, 'chrome', 'Google Chrome');
+  }
+  for (const executablePath of getPathExecutableCandidates([
+    'msedge',
+    'microsoft-edge',
+    'microsoft-edge-stable',
+  ])) {
+    addCandidate(executablePath, 'edge', 'Microsoft Edge');
+  }
+
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = candidate.executablePath.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function getPathExecutableCandidates(names: string[]): string[] {
+  const delimiter = process.platform === 'win32' ? ';' : ':';
+  const extensions =
+    process.platform === 'win32' ? ['', '.exe', '.cmd', '.bat'] : [''];
+  const pathDirs = (process.env.PATH ?? '')
+    .split(delimiter)
+    .filter((entry) => entry.trim());
+
+  return pathDirs.flatMap((dir) =>
+    names.flatMap((name) =>
+      extensions.map((extension) => join(dir, `${name}${extension}`))
+    )
+  );
+}
+
+function inferControlledBrowserKind(
+  executablePath: string
+): ControlledBrowserKind {
+  return /(?:edge|msedge)/i.test(executablePath) ? 'edge' : 'chrome';
+}
+
+async function readControlledBrowserVersion(
+  executablePath: string
+): Promise<string | null> {
+  return new Promise((resolveVersion) => {
+    const child = spawn(executablePath, ['--version'], {
+      windowsHide: true,
+    });
+    let output = '';
+    let settled = false;
+    const resolveOnce = (value: string | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolveVersion(value);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      resolveOnce(null);
+    }, 3_000);
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      output += chunk.toString('utf8');
+    });
+    child.on('error', () => resolveOnce(null));
+    child.on('close', () => resolveOnce(output.trim() || null));
+  });
+}
+
+async function launchControlledBrowser(
+  browser: ControlledBrowserInfo,
+  tokenHash: string
+): Promise<ControlledBrowserInstance> {
+  const profileRoot = join(
+    app.getPath('userData'),
+    CONTROLLED_BROWSER_PROFILE_DIR,
+    sanitizeProfileKey(tokenHash)
+  );
+  await rm(profileRoot, { force: true, recursive: true });
+  await mkdir(profileRoot, { recursive: true });
+
+  const args = [
+    `--user-data-dir=${profileRoot}`,
+    '--profile-directory=Default',
+    '--remote-debugging-port=0',
+    '--remote-debugging-address=127.0.0.1',
+    '--no-first-run',
+    '--no-default-browser-check',
+    WHATSAPP_WEB_ORIGIN,
+  ];
+
+  logEvent(
+    'secure_session.controlled_browser.launch.start',
+    currentPairing?.context,
+    {
+      browser_kind: browser.kind,
+      browser_name: browser.name,
+      browser_path: browser.executablePath,
+      profile_root: profileRoot,
+    }
+  );
+
+  const child = spawn(browser.executablePath, args, {
+    detached: false,
+    stdio: 'ignore',
+    windowsHide: false,
+  });
+  let devTools: { port: number; webSocketPath: string };
+  try {
+    devTools = await waitForDevToolsActivePort(profileRoot, child);
+  } catch (error) {
+    child.kill();
+    await waitForChildExit(child, 2_000).catch(() => false);
+    await rm(profileRoot, { force: true, recursive: true }).catch(
+      () => undefined
+    );
+    throw error;
+  }
+  const instance: ControlledBrowserInstance = {
+    ...browser,
+    child,
+    debugPort: devTools.port,
+    profileRoot,
+    webSocketPath: devTools.webSocketPath,
+  };
+  activeControlledBrowser = instance;
+
+  logEvent(
+    'secure_session.controlled_browser.launch.done',
+    currentPairing?.context,
+    {
+      browser_kind: browser.kind,
+      debug_port: devTools.port,
+      profile_root: profileRoot,
+    }
+  );
+
+  return instance;
+}
+
+async function waitForDevToolsActivePort(
+  profileRoot: string,
+  child: ChildProcess
+): Promise<{ port: number; webSocketPath: string }> {
+  const activePortPath = join(profileRoot, 'DevToolsActivePort');
+  const startedAt = Date.now();
+  let spawnError: unknown = null;
+  child.once('error', (error) => {
+    spawnError = error;
+  });
+
+  while (Date.now() - startedAt <= CONTROLLED_BROWSER_DEVTOOLS_TIMEOUT_MS) {
+    if (spawnError) {
+      throw spawnError;
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(
+        `Chrome/Edge encerrou antes de abrir o DevTools remoto (${child.exitCode ?? child.signalCode}).`
+      );
+    }
+
+    const content = await readFile(activePortPath, 'utf8').catch(() => null);
+    if (content) {
+      const [portLine, webSocketPathLine] = content.trim().split(/\r?\n/);
+      const port = Number(portLine);
+      if (
+        Number.isInteger(port) &&
+        port > 0 &&
+        webSocketPathLine?.startsWith('/devtools/')
+      ) {
+        return {
+          port,
+          webSocketPath: webSocketPathLine,
+        };
+      }
+    }
+
+    await sleep(250);
+  }
+
+  throw new Error(
+    'Chrome/Edge abriu, mas não expôs a porta DevTools para controle.'
+  );
+}
+
+async function waitForWhatsAppCdpTarget(
+  instance: ControlledBrowserInstance
+): Promise<CdpTarget> {
+  const startedAt = Date.now();
+  let lastTargets: CdpTarget[] = [];
+
+  while (Date.now() - startedAt <= CONTROLLED_BROWSER_TARGET_TIMEOUT_MS) {
+    lastTargets = await fetchCdpTargets(instance.debugPort).catch(() => []);
+    const target = lastTargets.find(
+      (candidate) =>
+        candidate.type === 'page' &&
+        typeof candidate.url === 'string' &&
+        candidate.url.startsWith(WHATSAPP_WEB_ORIGIN) &&
+        typeof candidate.webSocketDebuggerUrl === 'string'
+    );
+    if (target) {
+      logEvent(
+        'secure_session.controlled_browser.target.ready',
+        currentPairing?.context,
+        {
+          browser_kind: instance.kind,
+          domain: getSafeDomain(target.url ?? ''),
+          title: target.title ?? null,
+        }
+      );
+      return target;
+    }
+
+    await sleep(500);
+  }
+
+  logEvent(
+    'secure_session.controlled_browser.target.timeout',
+    currentPairing?.context,
+    {
+      browser_kind: instance.kind,
+      targets: lastTargets.map((target) => ({
+        domain: getSafeDomain(target.url ?? ''),
+        type: target.type ?? null,
+      })),
+    }
+  );
+  throw new Error('Não consegui anexar ao WhatsApp Web no Chrome/Edge.');
+}
+
+async function fetchCdpTargets(port: number): Promise<CdpTarget[]> {
+  const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error(`CDP target list retornou HTTP ${response.status}.`);
+  }
+
+  const targets = await response.json();
+  return Array.isArray(targets) ? (targets as CdpTarget[]) : [];
+}
+
+async function waitForControlledBrowserHandoffReady(
+  pageSession: CdpSession,
+  instance: ControlledBrowserInstance
+): Promise<WhatsAppReadinessSnapshot> {
+  const startedAt = Date.now();
+  let stableSince: number | null = null;
+  let lastReadiness = createDefaultReadiness('waiting_for_chat_ui');
+  let lastReportedStatus: string | null = null;
+
+  while (Date.now() - startedAt <= CONTROLLED_BROWSER_HANDOFF_TIMEOUT_MS) {
+    const evaluatedReadiness =
+      await evaluateCdpExpression<WhatsAppReadinessSnapshot>(
+        pageSession,
+        CONTROLLED_BROWSER_READINESS_SCRIPT,
+        WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+        'Não foi possível verificar o estado do WhatsApp Web no Chrome/Edge.'
+      );
+    lastReadiness = normalizeWhatsAppReadinessSnapshot(evaluatedReadiness);
+
+    if (lastReadiness.readyForHandoff) {
+      stableSince ??= Date.now();
+    } else {
+      stableSince = null;
+    }
+
+    const stableElapsedMs = stableSince === null ? 0 : Date.now() - stableSince;
+    const nextStatus = lastReadiness.authenticated
+      ? lastReadiness.syncing
+        ? 'wa_syncing'
+        : lastReadiness.readyForHandoff
+          ? 'wa_ready'
+          : 'wa_authenticated'
+      : 'helper_opened';
+
+    if (nextStatus !== lastReportedStatus) {
+      lastReportedStatus = nextStatus;
+      await updateSecureStatusFromMain({
+        message:
+          nextStatus === 'helper_opened'
+            ? 'Aguardando autenticação no Chrome/Edge controlado.'
+            : nextStatus === 'wa_syncing'
+              ? 'WhatsApp Web autenticado no Chrome/Edge. Aguardando sincronização.'
+              : nextStatus === 'wa_ready'
+                ? 'WhatsApp Web pronto no Chrome/Edge controlado.'
+                : 'WhatsApp Web autenticado no Chrome/Edge controlado.',
+        status: nextStatus,
+      }).catch((error) => {
+        logEvent(
+          'secure_session.controlled_browser.status_error',
+          currentPairing?.context,
+          {
+            reason: sanitizeError(error),
+            status: nextStatus,
+          }
+        );
+      });
+    }
+    assertSecureSessionStillActive();
+
+    logEvent(
+      'secure_session.controlled_browser.handoff_probe',
+      currentPairing?.context,
+      {
+        authenticated: lastReadiness.authenticated,
+        browser_kind: instance.kind,
+        ready_for_handoff: lastReadiness.readyForHandoff,
+        reason: lastReadiness.reason,
+        stable_elapsed_ms: stableElapsedMs,
+        syncing: lastReadiness.syncing,
+      }
+    );
+
+    if (
+      lastReadiness.readyForHandoff &&
+      stableElapsedMs >= CONTROLLED_BROWSER_STABLE_WINDOW_MS
+    ) {
+      return lastReadiness;
+    }
+
+    await sleep(CONTROLLED_BROWSER_HANDOFF_POLL_MS);
+  }
+
+  throw new Error(
+    lastReadiness.syncing
+      ? 'O WhatsApp Web no Chrome/Edge ainda está sincronizando. Mantenha o app aberto nos dois dispositivos e tente novamente.'
+      : 'O WhatsApp Web no Chrome/Edge ainda não ficou pronto para transferir a sessão.'
+  );
+}
+
+async function collectControlledBrowserSecureSessionPackage(
+  pageSession: CdpSession,
+  instance: ControlledBrowserInstance
+): Promise<SecureSessionPackage> {
+  const targetProvider = getControlledBrowserTargetProvider();
+  const pageContext = normalizeControlledBrowserPageContext(
+    await evaluateCdpExpression<ControlledBrowserPageContext>(
+      pageSession,
+      CONTROLLED_BROWSER_PAGE_CONTEXT_SCRIPT,
+      WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+      'Não foi possível ler o contexto do WhatsApp Web no Chrome/Edge.'
+    )
+  );
+  const needsWhatsAppWebCreds = targetProvider !== 'wwebjs';
+  const authDump = needsWhatsAppWebCreds
+    ? normalizeWhatsAppWebAuthDump(
+        await evaluateCdpExpression<unknown>(
+          pageSession,
+          EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
+          WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
+          'Tempo excedido ao extrair credenciais do WhatsApp Web no Chrome/Edge.'
+        )
+      )
+    : null;
+
+  if (needsWhatsAppWebCreds && !authDump) {
+    throw new Error(
+      'O Chrome/Edge autenticou, mas não retornou o pacote de credenciais do WhatsApp Web.'
+    );
+  }
+
+  logEvent(
+    'secure_session.controlled_browser.package.collect.done',
+    currentPairing?.context,
+    {
+      auth_dump: authDump ? summarizeAuthDump(authDump) : null,
+      browser_kind: instance.kind,
+      indexed_db_count: pageContext.indexedDbNames.length,
+      target_provider: targetProvider,
+    }
+  );
+
+  const payload: JsonRecord = {
+    controlled_browser: {
+      kind: instance.kind,
+      name: instance.name,
+      version: instance.version ?? null,
+    },
+    href: pageContext.href,
+    indexed_db_names: pageContext.indexedDbNames,
+    user_agent: pageContext.userAgent,
+  };
+
+  if (authDump) {
+    payload.whatsapp_web_creds = authDump.creds;
+    payload.whatsapp_web_session_summary = {
+      app_state_sync_key_count: authDump.appStateSyncKeyCount,
+      app_state_version_count: authDump.appStateVersionCount,
+      has_account: Boolean(authDump.creds.account.accountSignatureKey),
+      has_lid: Boolean(authDump.creds.me.lid),
+      has_me: Boolean(authDump.creds.me.id),
+      has_noise_key: Boolean(authDump.creds.noiseKey.private),
+      has_signed_identity_key: Boolean(
+        authDump.creds.signedIdentityKey.private
+      ),
+      has_signed_pre_key: Boolean(authDump.creds.signedPreKey.signature),
+      registration_id_present: authDump.creds.registrationId > 0,
+    };
+  }
+
+  if (authDump && (targetProvider === 'baileys' || targetProvider === 'auto')) {
+    payload.baileys_multi_file_auth_state = {
+      files: {
+        'creds.json': JSON.stringify(createBaileysCredsFile(authDump.creds)),
+      },
+      source: 'whatsapp_web_creds',
+    };
+  }
+
+  return {
+    account_hint: authDump?.creds.me.id,
+    created_at: new Date().toISOString(),
+    format_version: 'underchat-wa-web-session-v1',
+    payload,
+    source: 'whatsapp_web',
+    target_provider: targetProvider,
+    web_version: pageContext.webVersion,
+  };
+}
+
+async function collectControlledBrowserWwebjsLocalAuthProfileFiles(
+  profileRoot: string,
+  targetProvider: SecureSessionPackage['target_provider']
+): Promise<SecureSessionProfileFiles | null> {
+  if (!shouldIncludeWwebjsProfile(targetProvider)) {
+    return null;
+  }
+
+  const defaultProfileRoot = join(profileRoot, 'Default');
+  const files: SecureSessionProfileFiles = {};
+  const budget = { totalBytes: 0 };
+
+  for (const entryName of WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES) {
+    const entryPath = join(defaultProfileRoot, entryName);
+    const entryStat = await stat(entryPath).catch(() => null);
+    if (!entryStat) {
+      continue;
+    }
+
+    if (entryStat.isDirectory()) {
+      await collectProfileEntryFiles({
+        budget,
+        files,
+        profileRoot: defaultProfileRoot,
+        targetPath: entryPath,
+      });
+      continue;
+    }
+
+    if (entryStat.isFile()) {
+      await addProfileFile({
+        budget,
+        files,
+        profileRoot: defaultProfileRoot,
+        targetPath: entryPath,
+      });
+    }
+  }
+
+  const localStatePath = join(profileRoot, 'Local State');
+  if (await stat(localStatePath).catch(() => null)) {
+    await addProfileFile({
+      budget,
+      files,
+      outputPrefix: '',
+      profileRoot,
+      targetPath: localStatePath,
+    });
+  }
+
+  logEvent(
+    'secure_session.controlled_browser.profile_export.done',
+    currentPairing?.context,
+    {
+      file_count: Object.keys(files).length,
+      total_bytes: budget.totalBytes,
+      target_provider: targetProvider,
+    }
+  );
+
+  return Object.keys(files).length ? files : null;
+}
+
+function shouldIncludeWwebjsProfile(
+  targetProvider: SecureSessionPackage['target_provider']
+): boolean {
+  return targetProvider === 'wwebjs' || targetProvider === 'auto';
+}
+
+function getControlledBrowserTargetProvider(): SecureSessionPackage['target_provider'] {
+  const workerTypeId = currentPairing?.session?.worker_type_id;
+  if (!workerTypeId) {
+    return 'auto';
+  }
+
+  return CONTROLLED_BROWSER_PROVIDER_MAP[workerTypeId] ?? 'auto';
+}
+
+function normalizeControlledBrowserPageContext(
+  value: unknown
+): ControlledBrowserPageContext {
+  const pageContext = isRecord(value) ? value : {};
+  const indexedDbNames = Array.isArray(pageContext.indexedDbNames)
+    ? pageContext.indexedDbNames.filter(
+        (name): name is string => typeof name === 'string' && Boolean(name)
+      )
+    : [];
+
+  return {
+    href:
+      typeof pageContext.href === 'string'
+        ? pageContext.href
+        : WHATSAPP_WEB_ORIGIN,
+    indexedDbNames,
+    userAgent:
+      typeof pageContext.userAgent === 'string'
+        ? pageContext.userAgent
+        : whatsAppWebUserAgent,
+    webVersion:
+      typeof pageContext.webVersion === 'string'
+        ? pageContext.webVersion
+        : undefined,
+  };
+}
+
+function normalizeWhatsAppReadinessSnapshot(
+  value: unknown
+): WhatsAppReadinessSnapshot {
+  if (!isRecord(value)) {
+    return createDefaultReadiness('invalid_readiness_snapshot');
+  }
+
+  return {
+    authenticated: value.authenticated === true,
+    hasBlockingLoginUi: value.hasBlockingLoginUi === true,
+    hasChatUi: value.hasChatUi === true,
+    readyForHandoff: value.readyForHandoff === true,
+    reason: typeof value.reason === 'string' ? value.reason : 'unknown',
+    syncing: value.syncing === true,
+  };
+}
+
+function createDefaultReadiness(reason: string): WhatsAppReadinessSnapshot {
+  return {
+    authenticated: false,
+    hasBlockingLoginUi: false,
+    hasChatUi: false,
+    readyForHandoff: false,
+    reason,
+    syncing: false,
+  };
+}
+
+function normalizeWhatsAppWebAuthDump(
+  value: unknown
+): WhatsAppWebAuthDump | null {
+  if (!isRecord(value) || !isRecord(value.creds)) {
+    return null;
+  }
+
+  const creds = value.creds;
+  if (
+    !isRecord(creds.account) ||
+    !isRecord(creds.me) ||
+    !isRecord(creds.noiseKey) ||
+    !isRecord(creds.signedIdentityKey) ||
+    !isRecord(creds.signedPreKey) ||
+    !isRecord(creds.signedPreKey.keyPair) ||
+    typeof creds.me.id !== 'string' ||
+    typeof creds.noiseKey.private !== 'string' ||
+    typeof creds.noiseKey.public !== 'string' ||
+    typeof creds.signedIdentityKey.private !== 'string' ||
+    typeof creds.signedIdentityKey.public !== 'string' ||
+    typeof creds.signedPreKey.signature !== 'string' ||
+    typeof creds.registrationId !== 'number'
+  ) {
+    return null;
+  }
+
+  return value as WhatsAppWebAuthDump;
+}
+
+function createBaileysCredsFile(creds: WhatsAppWebExtractedCreds): JsonRecord {
+  const accountSignatureKey = base64ToBytes(creds.account.accountSignatureKey);
+  const signalIdentities =
+    accountSignatureKey && creds.me.lid
+      ? [
+          {
+            identifier: {
+              deviceId: 0,
+              name: creds.me.lid,
+            },
+            identifierKey: bufferWrap(
+              bytesToBase64Required(
+                prefixSignalPublicKey(accountSignatureKey),
+                'account signature key'
+              )
+            ),
+          },
+        ]
+      : [];
+
+  return {
+    account: {
+      accountSignature: bufferWrap(creds.account.accountSignature),
+      accountSignatureKey: bufferWrap(creds.account.accountSignatureKey),
+      details: bufferWrap(creds.account.details),
+      deviceSignature: bufferWrap(creds.account.deviceSignature),
+    },
+    accountSettings: {
+      unarchiveChats: false,
+    },
+    accountSyncCounter: 0,
+    advSecretKey: creds.advSecretKey ?? '',
+    firstUnuploadedPreKeyId: creds.firstUnuploadedPreKeyId,
+    me: creds.me,
+    nextPreKeyId: creds.nextPreKeyId,
+    noiseKey: {
+      private: bufferWrap(creds.noiseKey.private),
+      public: bufferWrap(creds.noiseKey.public),
+    },
+    pairingEphemeralKeyPair: {
+      private: bufferWrap(creds.noiseKey.private),
+      public: bufferWrap(creds.noiseKey.public),
+    },
+    platform: creds.platform,
+    processedHistoryMessages: [],
+    registered: true,
+    registrationId: creds.registrationId,
+    signalIdentities,
+    signedIdentityKey: {
+      private: bufferWrap(creds.signedIdentityKey.private),
+      public: bufferWrap(creds.signedIdentityKey.public),
+    },
+    signedPreKey: {
+      keyId: creds.signedPreKey.keyId,
+      keyPair: {
+        private: bufferWrap(creds.signedPreKey.keyPair.private),
+        public: bufferWrap(creds.signedPreKey.keyPair.public),
+      },
+      signature: bufferWrap(creds.signedPreKey.signature),
+    },
+  };
+}
+
+function base64ToBytes(value: string): Uint8Array | null {
+  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    return null;
+  }
+
+  try {
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    return Uint8Array.from(Buffer.from(padded, 'base64'));
+  } catch {
+    return null;
+  }
+}
+
+function bytesToBase64Required(
+  value: Uint8Array | null,
+  label: string
+): string {
+  if (!value) {
+    throw new Error(`Não foi possível converter ${label} para base64.`);
+  }
+
+  return Buffer.from(value).toString('base64');
+}
+
+function prefixSignalPublicKey(value: Uint8Array): Uint8Array {
+  if (value.length === 33) {
+    return value;
+  }
+
+  const output = new Uint8Array(value.length + 1);
+  output[0] = 5;
+  output.set(value, 1);
+  return output;
+}
+
+function bufferWrap(base64: string): BufferJsonWrapper {
+  return {
+    data: base64,
+    type: 'Buffer',
+  };
+}
+
+async function cleanupActiveControlledBrowser(reason: string): Promise<void> {
+  const instance = activeControlledBrowser;
+  if (!instance) {
+    return;
+  }
+
+  await cleanupControlledBrowserInstance(instance, reason);
+}
+
+async function cleanupControlledBrowserInstance(
+  instance: ControlledBrowserInstance,
+  reason: string
+): Promise<void> {
+  await closeControlledBrowserProcess(instance, reason).catch((error) => {
+    logEvent(
+      'secure_session.controlled_browser.close.error',
+      currentPairing?.context,
+      {
+        browser_kind: instance.kind,
+        reason: sanitizeError(error),
+      }
+    );
+  });
+
+  await removeControlledBrowserProfile(instance, reason);
+
+  if (activeControlledBrowser === instance) {
+    activeControlledBrowser = null;
+  }
+}
+
+async function closeControlledBrowserProcess(
+  instance: ControlledBrowserInstance,
+  reason: string
+): Promise<void> {
+  if (instance.child.exitCode !== null || instance.child.signalCode !== null) {
+    return;
+  }
+
+  logEvent(
+    'secure_session.controlled_browser.close.start',
+    currentPairing?.context,
+    {
+      browser_kind: instance.kind,
+      reason,
+    }
+  );
+
+  const browserCdpUrl = `ws://127.0.0.1:${instance.debugPort}${instance.webSocketPath}`;
+  const browserSession = await CdpSession.connect(browserCdpUrl).catch(
+    () => null
+  );
+  if (browserSession) {
+    await browserSession.send('Browser.close').catch(() => undefined);
+    browserSession.close();
+  }
+
+  const exited = await waitForChildExit(
+    instance.child,
+    CONTROLLED_BROWSER_EXIT_TIMEOUT_MS
+  );
+  if (!exited) {
+    instance.child.kill();
+    await waitForChildExit(instance.child, 2_000);
+  }
+
+  logEvent(
+    'secure_session.controlled_browser.close.done',
+    currentPairing?.context,
+    {
+      browser_kind: instance.kind,
+      reason,
+    }
+  );
+}
+
+async function removeControlledBrowserProfile(
+  instance: ControlledBrowserInstance,
+  reason: string
+): Promise<void> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await rm(instance.profileRoot, { force: true, recursive: true });
+      logEvent(
+        'secure_session.controlled_browser.profile.removed',
+        currentPairing?.context,
+        {
+          attempt,
+          browser_kind: instance.kind,
+          profile_root: instance.profileRoot,
+          reason,
+        }
+      );
+      return;
+    } catch (error) {
+      if (attempt >= 3) {
+        logEvent(
+          'secure_session.controlled_browser.profile.remove_error',
+          currentPairing?.context,
+          {
+            attempt,
+            browser_kind: instance.kind,
+            profile_root: instance.profileRoot,
+            reason: sanitizeError(error),
+          }
+        );
+        return;
+      }
+      await sleep(500);
+    }
+  }
+}
+
+function waitForChildExit(
+  child: ChildProcess,
+  timeoutMs: number
+): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolveExit) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      resolveExit(false);
+    }, timeoutMs);
+    const onExit = () => {
+      cleanup();
+      resolveExit(true);
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      child.removeListener('exit', onExit);
+      child.removeListener('close', onExit);
+    };
+    child.once('exit', onExit);
+    child.once('close', onExit);
+  });
+}
+
+async function evaluateCdpExpression<T>(
+  session: CdpSession,
+  expression: string,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<T> {
+  const response = await withTimeout(
+    session.send<CdpEvaluationResult<T>>('Runtime.evaluate', {
+      awaitPromise: true,
+      expression,
+      returnByValue: true,
+    }),
+    timeoutMs,
+    timeoutMessage
+  );
+
+  if (response.exceptionDetails) {
+    throw new Error(describeCdpException(response.exceptionDetails));
+  }
+
+  return response.result?.value as T;
+}
+
+function describeCdpException(exceptionDetails: unknown): string {
+  if (!isRecord(exceptionDetails)) {
+    return 'O Chrome/Edge retornou erro ao executar CDP.';
+  }
+
+  const exception = isRecord(exceptionDetails.exception)
+    ? exceptionDetails.exception
+    : {};
+  const description =
+    typeof exception.description === 'string'
+      ? exception.description
+      : typeof exceptionDetails.text === 'string'
+        ? exceptionDetails.text
+        : null;
+  return description ?? 'O Chrome/Edge retornou erro ao executar CDP.';
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  return access(filePath)
+    .then(() => true)
+    .catch(() => false);
+}
+
+function sanitizeProfileKey(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128) || 'session';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => {
+    setTimeout(resolveSleep, ms);
+  });
+}
+
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+class CdpSession {
+  private nextId = 1;
+  private readonly pending = new Map<
+    number,
+    {
+      reject: (reason?: unknown) => void;
+      resolve: (value: unknown) => void;
+    }
+  >();
+
+  private constructor(private readonly socket: WebSocket) {
+    this.socket.addEventListener('message', (event) => {
+      this.handleMessage(event.data);
+    });
+    this.socket.addEventListener('close', () => {
+      this.rejectPending(new Error('Conexão CDP encerrada.'));
+    });
+    this.socket.addEventListener('error', () => {
+      this.rejectPending(new Error('Erro na conexão CDP.'));
+    });
+  }
+
+  static connect(url: string): Promise<CdpSession> {
+    if (typeof WebSocket === 'undefined') {
+      return Promise.reject(
+        new Error('Runtime sem suporte a WebSocket para CDP.')
+      );
+    }
+
+    return new Promise((resolveConnect, rejectConnect) => {
+      const socket = new WebSocket(url);
+      let settled = false;
+      const fail = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        rejectConnect(
+          new Error('Não consegui conectar ao CDP do Chrome/Edge.')
+        );
+      };
+
+      socket.addEventListener('open', () => {
+        settled = true;
+        resolveConnect(new CdpSession(socket));
+      });
+      socket.addEventListener('error', fail);
+      socket.addEventListener('close', fail);
+    });
+  }
+
+  send<T = unknown>(method: string, params: JsonRecord = {}): Promise<T> {
+    if (this.socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('Conexão CDP não está aberta.'));
+    }
+
+    const id = this.nextId;
+    this.nextId += 1;
+
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, {
+        reject,
+        resolve: (value: unknown) => resolve(value as T),
+      });
+      this.socket.send(
+        JSON.stringify({
+          id,
+          method,
+          params,
+        })
+      );
+    });
+  }
+
+  close(): void {
+    if (
+      this.socket.readyState === WebSocket.OPEN ||
+      this.socket.readyState === WebSocket.CONNECTING
+    ) {
+      this.socket.close();
+    }
+    this.rejectPending(new Error('Conexão CDP encerrada.'));
+  }
+
+  private handleMessage(data: unknown): void {
+    const text = stringifyWebSocketData(data);
+    if (!text) {
+      return;
+    }
+
+    let message: JsonRecord;
+    try {
+      message = JSON.parse(text) as JsonRecord;
+    } catch {
+      return;
+    }
+
+    if (typeof message.id !== 'number') {
+      return;
+    }
+
+    const pending = this.pending.get(message.id);
+    if (!pending) {
+      return;
+    }
+
+    this.pending.delete(message.id);
+    if (isRecord(message.error)) {
+      pending.reject(
+        new Error(
+          typeof message.error.message === 'string'
+            ? message.error.message
+            : 'CDP retornou erro.'
+        )
+      );
+      return;
+    }
+
+    pending.resolve(message.result);
+  }
+
+  private rejectPending(error: Error): void {
+    for (const pending of this.pending.values()) {
+      pending.reject(error);
+    }
+    this.pending.clear();
+  }
+}
+
+function stringifyWebSocketData(data: unknown): string | null {
+  if (typeof data === 'string') {
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data).toString('utf8');
+  }
+  if (ArrayBuffer.isView(data)) {
+    const view = data as ArrayBufferView;
+    return Buffer.from(
+      new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+    ).toString('utf8');
+  }
+
+  return null;
+}
+
 function scheduleConnectedCleanupAndClose(reason: string): void {
   if (connectedCleanupCloseTimer) {
     return;
@@ -538,15 +2145,23 @@ function scheduleConnectedCleanupAndClose(reason: string): void {
 
   connectedCleanupCloseTimer = setTimeout(() => {
     connectedCleanupCloseTimer = null;
-    void clearWhatsAppWebLocalSession(reason)
-      .catch((error) => {
-        logEvent(
-          'secure_session.local_session.clear.schedule_error',
-          currentPairing?.context,
-          {
-            reason: sanitizeError(error),
-          }
+    void Promise.allSettled([
+      clearWhatsAppWebLocalSession(reason),
+      cleanupActiveControlledBrowser(reason),
+    ])
+      .then((results) => {
+        const failedSteps = results.filter(
+          (result) => result.status === 'rejected'
         );
+        if (failedSteps.length > 0) {
+          logEvent(
+            'secure_session.connected_cleanup.schedule_error',
+            currentPairing?.context,
+            {
+              failed_steps: failedSteps.length,
+            }
+          );
+        }
       })
       .finally(() => {
         closeMainWindowAndQuit();
@@ -567,6 +2182,7 @@ async function closeHelperAfterCleanup(reason: string): Promise<void> {
     });
 
     await clearWhatsAppWebLocalSession(reason);
+    await cleanupActiveControlledBrowser(reason);
 
     logEvent('helper.close.cleanup.done', currentPairing?.context, {
       reason,
