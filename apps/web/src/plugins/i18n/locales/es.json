@@ -729,6 +729,8 @@
   "authenticator_install_description": "Descarga e instala Underchat Authenticator en este computador. Después de instalarlo, haz clic en Continuar para abrir WhatsApp Web en la aplicación nativa.",
   "authenticator_install_linux": "Linux",
   "authenticator_install_linux_description": "Descarga el paquete de instalación para distribuciones compatibles con Debian y Ubuntu.",
+  "authenticator_install_macos": "macOS",
+  "authenticator_install_macos_description": "Descarga el instalador para Macs con Apple Silicon o Intel.",
   "authenticator_install_windows": "Windows",
   "authenticator_install_windows_description": "Descarga el instalador firmado para Windows 10 o superior.",
   "authenticator_install_download_title": "Descarga, instala y mantén la app abierta",

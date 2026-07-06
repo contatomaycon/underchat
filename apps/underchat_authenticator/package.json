@@ -29,7 +29,10 @@
     "package:win:prod": "pnpm run icons && pnpm run cert:win:self-signed && pnpm run build:prod && node scripts/package-with-signing.mjs --win nsis --config.directories.output=release/prod && node scripts/sync-manager-downloads.mjs --channel prod",
     "package:linux": "pnpm run package:linux:prod",
     "package:linux:dev": "pnpm run icons && pnpm run build:dev && node scripts/package-with-signing.mjs --linux AppImage deb --config.directories.output=release/dev && node scripts/sync-manager-downloads.mjs --channel dev",
-    "package:linux:prod": "pnpm run icons && pnpm run build:prod && node scripts/package-with-signing.mjs --linux AppImage deb --config.directories.output=release/prod && node scripts/sync-manager-downloads.mjs --channel prod"
+    "package:linux:prod": "pnpm run icons && pnpm run build:prod && node scripts/package-with-signing.mjs --linux AppImage deb --config.directories.output=release/prod && node scripts/sync-manager-downloads.mjs --channel prod",
+    "package:mac": "pnpm run package:mac:prod",
+    "package:mac:dev": "pnpm run icons && pnpm run build:dev && node scripts/package-with-signing.mjs --mac dmg zip --universal --config.directories.output=release/dev && node scripts/sync-manager-downloads.mjs --channel dev",
+    "package:mac:prod": "pnpm run icons && pnpm run build:prod && UNDERCHAT_REQUIRE_MAC_SIGNING=true node scripts/package-with-signing.mjs --mac dmg zip --universal --config.directories.output=release/prod && node scripts/sync-manager-downloads.mjs --channel prod"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

@@ -20,6 +20,10 @@ const platformConfig = {
     contentType: 'application/vnd.debian.binary-package',
     extensions: ['.deb'],
   },
+  macos: {
+    contentType: 'application/x-apple-diskimage',
+    extensions: ['.dmg'],
+  },
   windows: {
     contentType: 'application/vnd.microsoft.portable-executable',
     extensions: ['.exe'],

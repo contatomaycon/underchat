@@ -6,7 +6,14 @@ const managerDownloadRoot = resolve(
   appRoot,
   '../manager_api/downloads/underchat-authenticator'
 );
-const supportedExtensions = new Set(['.AppImage', '.blockmap', '.deb', '.exe']);
+const supportedExtensions = new Set([
+  '.AppImage',
+  '.blockmap',
+  '.deb',
+  '.dmg',
+  '.exe',
+  '.zip',
+]);
 
 function parseChannel() {
   const channelIndex = process.argv.indexOf('--channel');

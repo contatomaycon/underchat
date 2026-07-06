@@ -1,0 +1,225 @@
+name: Underchat Authenticator Packages
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/underchat-authenticator-packages.yml'
+      - 'apps/underchat_authenticator/**'
+      - 'apps/manager_api/downloads/underchat-authenticator/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'turbo.json'
+  workflow_dispatch:
+
+env:
+  VERSION_NODE: 24.12.0
+  PNPM_VERSION: 11.9.0
+
+jobs:
+  package:
+    name: ${{ matrix.platform }} ${{ matrix.channel }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            channel: dev
+            runner: ubuntu-latest
+            package_script: package:win:dev
+          - platform: windows
+            channel: prod
+            runner: ubuntu-latest
+            package_script: package:win:prod
+          - platform: linux
+            channel: dev
+            runner: ubuntu-latest
+            package_script: package:linux:dev
+          - platform: linux
+            channel: prod
+            runner: ubuntu-latest
+            package_script: package:linux:prod
+          - platform: macos
+            channel: dev
+            runner: macos-latest
+            package_script: package:mac:dev
+          - platform: macos
+            channel: prod
+            runner: macos-latest
+            package_script: package:mac:prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.VERSION_NODE }}
+
+      - name: Setup pnpm
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare pnpm@${PNPM_VERSION} --activate
+          pnpm config set verify-store-integrity false
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-${{ matrix.platform }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.platform }}-pnpm-
+            ${{ runner.os }}-pnpm-
+
+      - name: Configure npm registry
+        shell: bash
+        run: |
+          cat > ~/.npmrc << 'EOF'
+          @underchat:registry=https://gitea.devunder.com/api/packages/underchat/npm/
+          //gitea.devunder.com/api/packages/underchat/npm/:_authToken=${{ secrets.NPM_TOKEN }}
+          EOF
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osslsigncode openssl unzip
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install
+
+      - name: Package Underchat Authenticator
+        id: package
+        shell: bash
+        env:
+          ELECTRON_BUILDER_OFFLINE: 'false'
+          CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
+          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ matrix.platform }}" == "macos" && "${{ matrix.channel }}" == "prod" ]]; then
+            has_notary_credentials=false
+            if [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER:-}" ]]; then
+              has_notary_credentials=true
+            elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+              has_notary_credentials=true
+            elif [[ -n "${APPLE_KEYCHAIN:-}" && -n "${APPLE_KEYCHAIN_PROFILE:-}" ]]; then
+              has_notary_credentials=true
+            fi
+
+            if [[ -n "${CSC_LINK:-}" && -n "${CSC_KEY_PASSWORD:-}" && "${has_notary_credentials}" == "true" ]]; then
+              pnpm --filter underchat_authenticator run package:mac:prod
+            else
+              echo "macos_signing=unsigned" >> "$GITHUB_OUTPUT"
+              echo "::warning::macOS prod package will be unsigned because Apple Developer signing/notarization secrets are incomplete."
+              pnpm --dir apps/underchat_authenticator run icons
+              pnpm --dir apps/underchat_authenticator run build:prod
+              (
+                cd apps/underchat_authenticator
+                node scripts/package-with-signing.mjs --mac dmg zip --universal --config.directories.output=release/prod
+                node scripts/sync-manager-downloads.mjs --channel prod
+              )
+            fi
+          else
+            pnpm --filter underchat_authenticator run ${{ matrix.package_script }}
+          fi
+
+      - name: List package files
+        id: files
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="apps/underchat_authenticator/release/${{ matrix.channel }}"
+          files=$(find "$release_dir" -maxdepth 1 -type f -name 'Underchat-Authenticator-*' | sort)
+
+          if [[ -z "$files" ]]; then
+            echo "No package files were produced in $release_dir" >&2
+            exit 1
+          fi
+
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$files" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## ${{ matrix.platform }} ${{ matrix.channel }}"
+            echo
+            echo '| File | Size |'
+            echo '| --- | ---: |'
+            while IFS= read -r file; do
+              size=$(du -h "$file" | awk '{print $1}')
+              echo "| $(basename "$file") | $size |"
+            done <<< "$files"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: underchat-authenticator-${{ matrix.platform }}-${{ matrix.channel }}
+          path: apps/underchat_authenticator/release/${{ matrix.channel }}/Underchat-Authenticator-*
+          if-no-files-found: error
+          retention-days: 30
+
+  summary:
+    name: Available downloads
+    runs-on: ubuntu-latest
+    needs: package
+    if: always()
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: artifacts
+
+      - name: Show available downloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          mkdir -p artifacts
+          files=$(find artifacts -type f -name 'Underchat-Authenticator-*' | sort)
+
+          {
+            echo '# Underchat Authenticator downloads'
+            echo
+            echo "Artifacts page: ${run_url}"
+            echo
+            echo '| Artifact | File | Size |'
+            echo '| --- | --- | ---: |'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ -z "$files" ]]; then
+            echo '| No artifact uploaded | - | - |' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          while IFS= read -r file; do
+            artifact=$(basename "$(dirname "$file")")
+            size=$(du -h "$file" | awk '{print $1}')
+            echo "| ${artifact} | $(basename "$file") | ${size} |" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$files"
