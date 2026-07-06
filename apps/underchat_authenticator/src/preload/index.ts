@@ -34,17 +34,6 @@ export interface AuthenticatorDiagnosticsInfo {
   enabled: boolean;
 }
 
-export interface SecureSessionPackage {
-  account_hint?: string;
-  created_at: string;
-  format_version: string;
-  payload?: unknown;
-  payload_ref?: string;
-  source: 'whatsapp_web';
-  target_provider: 'auto' | 'baileys' | 'wwebjs' | 'whatsmeow';
-  web_version?: string;
-}
-
 export interface UnderchatAuthenticatorBridge {
   appendDebugLog: (
     event: string,
@@ -52,13 +41,10 @@ export interface UnderchatAuthenticatorBridge {
   ) => Promise<AuthenticatorActionResult>;
   closeHelper: () => Promise<AuthenticatorActionResult>;
   downloadDebugLog: () => Promise<AuthenticatorActionResult>;
-  extractWhatsAppWebAuthDump: () => Promise<unknown>;
   getDiagnosticsInfo: () => Promise<AuthenticatorDiagnosticsInfo>;
   getSession: () => Promise<AuthenticatorSessionPayload>;
   onSessionUpdated: (callback: () => void) => () => void;
-  sendSecureSessionPackage: (
-    sessionPackage: SecureSessionPackage
-  ) => Promise<AuthenticatorActionResult>;
+  openChromeDownloadPage: () => Promise<AuthenticatorActionResult>;
   startControlledBrowser: () => Promise<AuthenticatorActionResult>;
   updateSecureStatus: (statusPayload: {
     error?: string;
@@ -81,10 +67,6 @@ const bridge: UnderchatAuthenticatorBridge = {
     ipcRenderer.invoke(
       'underchat-authenticator:download-debug-log'
     ) as Promise<AuthenticatorActionResult>,
-  extractWhatsAppWebAuthDump: () =>
-    ipcRenderer.invoke(
-      'underchat-authenticator:extract-wa-auth-dump'
-    ) as Promise<unknown>,
   getDiagnosticsInfo: () =>
     ipcRenderer.invoke(
       'underchat-authenticator:get-diagnostics-info'
@@ -105,10 +87,9 @@ const bridge: UnderchatAuthenticatorBridge = {
       );
     };
   },
-  sendSecureSessionPackage: (sessionPackage) =>
+  openChromeDownloadPage: () =>
     ipcRenderer.invoke(
-      'underchat-authenticator:upload-secure-session',
-      sessionPackage
+      'underchat-authenticator:open-chrome-download-page'
     ) as Promise<AuthenticatorActionResult>,
   startControlledBrowser: () =>
     ipcRenderer.invoke(

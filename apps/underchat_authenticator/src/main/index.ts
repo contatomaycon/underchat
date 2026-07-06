@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import {
   access,
@@ -19,7 +19,6 @@ import {
 } from './apiClient';
 import {
   extractDeepLinkFromArgv,
-  isAllowedHttpApiUrl,
   parseAuthenticatorDeepLink,
   AUTHENTICATOR_PROTOCOL,
   sanitizeError,
@@ -30,11 +29,6 @@ declare const __UNDERCHAT_AUTHENTICATOR_CHANNEL__: string;
 
 const appMainDir = import.meta.dirname;
 const WHATSAPP_WEB_ORIGIN = 'https://web.whatsapp.com';
-const WHATSAPP_WEB_STORAGE_PARTITION = 'persist:underchat-authenticator';
-const WHATSAPP_WEB_STORAGE_PARTITION_DIR = 'underchat-authenticator';
-const CHROME_STABLE_VERSION = '150.0.7871.46';
-const CHROME_STABLE_MAJOR_VERSION =
-  CHROME_STABLE_VERSION.split('.')[0] ?? '150';
 const WWEBJS_PROFILE_MAX_BYTES = 80 * 1024 * 1024;
 const WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS = 45_000;
 const WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES = new Set([
@@ -92,7 +86,6 @@ const SECURE_SESSION_HELPER_CANCELLABLE_STATUSES = new Set([
 const isDevelopment = !app.isPackaged;
 const authenticatorBuildChannel = __UNDERCHAT_AUTHENTICATOR_CHANNEL__;
 const diagnosticsEnabled = authenticatorBuildChannel === 'dev' || isDevelopment;
-const whatsAppWebUserAgent = getWhatsAppWebUserAgent();
 
 interface CurrentPairing {
   context: AuthenticatorDeepLinkContext;
@@ -107,7 +100,7 @@ type SecureSessionProfileFile = {
 
 type SecureSessionProfileFiles = Record<string, SecureSessionProfileFile>;
 type JsonRecord = Record<string, unknown>;
-type ControlledBrowserKind = 'chrome' | 'edge';
+type ControlledBrowserKind = 'chrome';
 type ControlledBrowserInfo = {
   executablePath: string;
   kind: ControlledBrowserKind;
@@ -220,7 +213,6 @@ const apiClient = new AuthenticatorApiClient((event, context, details = {}) => {
 });
 
 app.setName('Underchat Authenticator');
-app.userAgentFallback = whatsAppWebUserAgent;
 app.setPath(
   'userData',
   process.platform === 'linux'
@@ -462,55 +454,6 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle('underchat-authenticator:extract-wa-auth-dump', async () => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      throw new Error('Janela do WhatsApp Web não está aberta.');
-    }
-
-    const currentUrl = mainWindow.webContents.getURL();
-    if (!currentUrl.startsWith(WHATSAPP_WEB_ORIGIN)) {
-      throw new Error('A janela atual não está no WhatsApp Web.');
-    }
-
-    logEvent(
-      'secure_session.auth_dump.page_world.start',
-      currentPairing?.context,
-      {
-        domain: getSafeDomain(currentUrl),
-      }
-    );
-
-    let dump: unknown;
-
-    try {
-      dump = await withTimeout(
-        mainWindow.webContents.executeJavaScript(
-          EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
-          false
-        ),
-        WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
-        'Tempo excedido ao extrair credenciais do WhatsApp Web.'
-      );
-    } catch (error) {
-      logEvent(
-        'secure_session.auth_dump.page_world.error',
-        currentPairing?.context,
-        {
-          reason: sanitizeError(error),
-        }
-      );
-      throw error;
-    }
-
-    logEvent(
-      'secure_session.auth_dump.page_world.done',
-      currentPairing?.context,
-      summarizeAuthDump(dump)
-    );
-
-    return dump;
-  });
-
   ipcMain.handle(
     'underchat-authenticator:start-controlled-browser',
     async () => {
@@ -528,7 +471,7 @@ function registerIpcHandlers(): void {
         );
         return {
           message:
-            'O Chrome/Edge controlado já está aberto para esta verificação.',
+            'O Google Chrome controlado já está aberto para esta verificação.',
           status: 'already_running',
         };
       }
@@ -568,41 +511,10 @@ function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
-    'underchat-authenticator:upload-secure-session',
-    async (_event, sessionPackage: SecureSessionPackage) => {
-      if (!currentPairing) {
-        throw new Error('Sessão segura não iniciada.');
-      }
-
-      logEvent('secure_session.upload.start', currentPairing.context, {
-        format_version: sessionPackage.format_version,
-        has_payload: sessionPackage.payload !== undefined,
-        has_payload_ref: Boolean(sessionPackage.payload_ref),
-        target_provider: sessionPackage.target_provider,
-      });
-      const enrichedPackage = await enrichSecureSessionPackage(sessionPackage);
-      logEvent('secure_session.upload.package_ready', currentPairing.context, {
-        cookie_count: countElectronCookies(enrichedPackage.payload),
-        has_payload: enrichedPackage.payload !== undefined,
-        has_payload_ref: Boolean(enrichedPackage.payload_ref),
-      });
-      const result = await apiClient.uploadSecureSession(
-        currentPairing.context,
-        enrichedPackage
-      );
-      currentPairing.session = await fetchPairingSession(
-        currentPairing.context
-      ).catch(() => currentPairing?.session ?? null);
-      const nextStatus = normalizeSessionStatus(currentPairing.session);
-      if (nextStatus === 'connected_confirmed') {
-        scheduleConnectedCleanupAndClose('secure_session_connected');
-      }
-      mainWindow?.webContents.send('underchat-authenticator:session-updated');
-      logEvent('secure_session.upload.done', currentPairing.context, {
-        next_status: nextStatus,
-        status: result.status ?? null,
-      });
-      return result;
+    'underchat-authenticator:open-chrome-download-page',
+    async () => {
+      await shell.openExternal('https://www.google.com/chrome/');
+      return { status: 'opened' };
     }
   );
 }
@@ -644,15 +556,6 @@ async function withTimeout<T>(
       clearTimeout(timer);
     }
   }
-}
-
-function countElectronCookies(payload: unknown): number {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return 0;
-  }
-
-  const cookies = (payload as Record<string, unknown>).electron_cookies;
-  return Array.isArray(cookies) ? cookies.length : 0;
 }
 
 async function updateSecureStatusFromMain(statusPayload: {
@@ -832,7 +735,7 @@ async function runControlledBrowserSecureSession(): Promise<AuthenticatorActionR
 
   await updateSecureStatusFromMain({
     message:
-      'Abrindo Chrome/Edge controlado para concluir a passkey por smartphone ou tablet.',
+      'Abrindo Google Chrome para concluir a passkey por smartphone ou tablet.',
     status: 'helper_opened',
   });
   assertSecureSessionStillActive();
@@ -847,7 +750,7 @@ async function runControlledBrowserSecureSession(): Promise<AuthenticatorActionR
     );
     const target = await waitForWhatsAppCdpTarget(instance);
     if (!target.webSocketDebuggerUrl) {
-      throw new Error('O Chrome/Edge não expôs o alvo CDP do WhatsApp Web.');
+      throw new Error('O Google Chrome não expôs o alvo CDP do WhatsApp Web.');
     }
 
     pageSession = await CdpSession.connect(target.webSocketDebuggerUrl);
@@ -935,15 +838,14 @@ async function findControlledBrowser(): Promise<ControlledBrowserInfo> {
   if (overridePath) {
     if (!(await pathExists(overridePath))) {
       throw new Error(
-        'O caminho em UNDERCHAT_AUTHENTICATOR_BROWSER_PATH não existe. Ajuste o caminho ou instale Chrome/Edge.'
+        'O caminho em UNDERCHAT_AUTHENTICATOR_BROWSER_PATH não existe. Ajuste o caminho ou instale o Google Chrome.'
       );
     }
 
-    const kind = inferControlledBrowserKind(overridePath);
     return {
       executablePath: overridePath,
-      kind,
-      name: kind === 'edge' ? 'Microsoft Edge' : 'Google Chrome',
+      kind: 'chrome',
+      name: 'Google Chrome',
       version: await readControlledBrowserVersion(overridePath),
     };
   }
@@ -960,7 +862,7 @@ async function findControlledBrowser(): Promise<ControlledBrowserInfo> {
   }
 
   throw new Error(
-    'Não encontrei Chrome nem Edge para usar passkey por smartphone/tablet. Instale Chrome/Edge ou defina UNDERCHAT_AUTHENTICATOR_BROWSER_PATH. Você ainda pode concluir por USB nesta janela.'
+    'Google Chrome não encontrado. Instale o Chrome e tente novamente.'
   );
 }
 
@@ -1003,33 +905,6 @@ function getControlledBrowserCandidates(): ControlledBrowserInfo[] {
       'chrome',
       'Google Chrome'
     );
-    addCandidate(
-      programFiles
-        ? join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
-        : undefined,
-      'edge',
-      'Microsoft Edge'
-    );
-    addCandidate(
-      programFilesX86
-        ? join(
-            programFilesX86,
-            'Microsoft',
-            'Edge',
-            'Application',
-            'msedge.exe'
-          )
-        : undefined,
-      'edge',
-      'Microsoft Edge'
-    );
-    addCandidate(
-      localAppData
-        ? join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe')
-        : undefined,
-      'edge',
-      'Microsoft Edge'
-    );
   } else if (process.platform === 'darwin') {
     const home = process.env.HOME;
     addCandidate(
@@ -1051,41 +926,10 @@ function getControlledBrowserCandidates(): ControlledBrowserInfo[] {
       'chrome',
       'Google Chrome'
     );
-    addCandidate(
-      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-      'edge',
-      'Microsoft Edge'
-    );
-    addCandidate(
-      home
-        ? join(
-            home,
-            'Applications',
-            'Microsoft Edge.app',
-            'Contents',
-            'MacOS',
-            'Microsoft Edge'
-          )
-        : undefined,
-      'edge',
-      'Microsoft Edge'
-    );
   } else {
-    [
-      '/usr/bin/google-chrome',
-      '/usr/bin/google-chrome-stable',
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-      '/snap/bin/chromium',
-    ].forEach((executablePath) =>
-      addCandidate(executablePath, 'chrome', 'Google Chrome')
-    );
-    [
-      '/usr/bin/microsoft-edge',
-      '/usr/bin/microsoft-edge-stable',
-      '/opt/microsoft/msedge/msedge',
-    ].forEach((executablePath) =>
-      addCandidate(executablePath, 'edge', 'Microsoft Edge')
+    ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'].forEach(
+      (executablePath) =>
+        addCandidate(executablePath, 'chrome', 'Google Chrome')
     );
   }
 
@@ -1093,17 +937,8 @@ function getControlledBrowserCandidates(): ControlledBrowserInfo[] {
     'google-chrome',
     'google-chrome-stable',
     'chrome',
-    'chromium',
-    'chromium-browser',
   ])) {
     addCandidate(executablePath, 'chrome', 'Google Chrome');
-  }
-  for (const executablePath of getPathExecutableCandidates([
-    'msedge',
-    'microsoft-edge',
-    'microsoft-edge-stable',
-  ])) {
-    addCandidate(executablePath, 'edge', 'Microsoft Edge');
   }
 
   const seen = new Set<string>();
@@ -1130,12 +965,6 @@ function getPathExecutableCandidates(names: string[]): string[] {
       extensions.map((extension) => join(dir, `${name}${extension}`))
     )
   );
-}
-
-function inferControlledBrowserKind(
-  executablePath: string
-): ControlledBrowserKind {
-  return /(?:edge|msedge)/i.test(executablePath) ? 'edge' : 'chrome';
 }
 
 async function readControlledBrowserVersion(
@@ -1259,7 +1088,7 @@ async function waitForDevToolsActivePort(
     }
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(
-        `Chrome/Edge encerrou antes de abrir o DevTools remoto (${child.exitCode ?? child.signalCode}).`
+        `Google Chrome encerrou antes de abrir o DevTools remoto (${child.exitCode ?? child.signalCode}).`
       );
     }
 
@@ -1283,7 +1112,7 @@ async function waitForDevToolsActivePort(
   }
 
   throw new Error(
-    'Chrome/Edge abriu, mas não expôs a porta DevTools para controle.'
+    'Google Chrome abriu, mas não expôs a porta DevTools para controle.'
   );
 }
 
@@ -1329,7 +1158,7 @@ async function waitForWhatsAppCdpTarget(
       })),
     }
   );
-  throw new Error('Não consegui anexar ao WhatsApp Web no Chrome/Edge.');
+  throw new Error('Não consegui anexar ao WhatsApp Web no Google Chrome.');
 }
 
 async function fetchCdpTargets(port: number): Promise<CdpTarget[]> {
@@ -1359,7 +1188,7 @@ async function waitForControlledBrowserHandoffReady(
         pageSession,
         CONTROLLED_BROWSER_READINESS_SCRIPT,
         WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
-        'Não foi possível verificar o estado do WhatsApp Web no Chrome/Edge.'
+        'Não foi possível verificar o estado do WhatsApp Web no Google Chrome.'
       );
     lastReadiness = normalizeWhatsAppReadinessSnapshot(evaluatedReadiness);
 
@@ -1383,12 +1212,12 @@ async function waitForControlledBrowserHandoffReady(
       await updateSecureStatusFromMain({
         message:
           nextStatus === 'helper_opened'
-            ? 'Aguardando autenticação no Chrome/Edge controlado.'
+            ? 'Aguardando autenticação no Google Chrome.'
             : nextStatus === 'wa_syncing'
-              ? 'WhatsApp Web autenticado no Chrome/Edge. Aguardando sincronização.'
+              ? 'WhatsApp Web autenticado no Google Chrome. Aguardando sincronização.'
               : nextStatus === 'wa_ready'
-                ? 'WhatsApp Web pronto no Chrome/Edge controlado.'
-                : 'WhatsApp Web autenticado no Chrome/Edge controlado.',
+                ? 'WhatsApp Web pronto no Google Chrome.'
+                : 'WhatsApp Web autenticado no Google Chrome.',
         status: nextStatus,
       }).catch((error) => {
         logEvent(
@@ -1428,8 +1257,8 @@ async function waitForControlledBrowserHandoffReady(
 
   throw new Error(
     lastReadiness.syncing
-      ? 'O WhatsApp Web no Chrome/Edge ainda está sincronizando. Mantenha o app aberto nos dois dispositivos e tente novamente.'
-      : 'O WhatsApp Web no Chrome/Edge ainda não ficou pronto para transferir a sessão.'
+      ? 'O WhatsApp Web no Google Chrome ainda está sincronizando. Mantenha o app aberto nos dois dispositivos e tente novamente.'
+      : 'O WhatsApp Web no Google Chrome ainda não ficou pronto para transferir a sessão.'
   );
 }
 
@@ -1443,7 +1272,7 @@ async function collectControlledBrowserSecureSessionPackage(
       pageSession,
       CONTROLLED_BROWSER_PAGE_CONTEXT_SCRIPT,
       WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
-      'Não foi possível ler o contexto do WhatsApp Web no Chrome/Edge.'
+      'Não foi possível ler o contexto do WhatsApp Web no Google Chrome.'
     )
   );
   const needsWhatsAppWebCreds = targetProvider !== 'wwebjs';
@@ -1453,14 +1282,14 @@ async function collectControlledBrowserSecureSessionPackage(
           pageSession,
           EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT,
           WHATSAPP_WEB_AUTH_DUMP_TIMEOUT_MS,
-          'Tempo excedido ao extrair credenciais do WhatsApp Web no Chrome/Edge.'
+          'Tempo excedido ao extrair credenciais do WhatsApp Web no Google Chrome.'
         )
       )
     : null;
 
   if (needsWhatsAppWebCreds && !authDump) {
     throw new Error(
-      'O Chrome/Edge autenticou, mas não retornou o pacote de credenciais do WhatsApp Web.'
+      'O Google Chrome autenticou, mas não retornou o pacote de credenciais do WhatsApp Web.'
     );
   }
 
@@ -1620,7 +1449,7 @@ function normalizeControlledBrowserPageContext(
     userAgent:
       typeof pageContext.userAgent === 'string'
         ? pageContext.userAgent
-        : whatsAppWebUserAgent,
+        : 'Google Chrome',
     webVersion:
       typeof pageContext.webVersion === 'string'
         ? pageContext.webVersion
@@ -1956,7 +1785,7 @@ async function evaluateCdpExpression<T>(
 
 function describeCdpException(exceptionDetails: unknown): string {
   if (!isRecord(exceptionDetails)) {
-    return 'O Chrome/Edge retornou erro ao executar CDP.';
+    return 'O Google Chrome retornou erro ao executar CDP.';
   }
 
   const exception = isRecord(exceptionDetails.exception)
@@ -1968,7 +1797,7 @@ function describeCdpException(exceptionDetails: unknown): string {
       : typeof exceptionDetails.text === 'string'
         ? exceptionDetails.text
         : null;
-  return description ?? 'O Chrome/Edge retornou erro ao executar CDP.';
+  return description ?? 'O Google Chrome retornou erro ao executar CDP.';
 }
 
 async function pathExists(filePath: string): Promise<boolean> {
@@ -2029,7 +1858,7 @@ class CdpSession {
         }
         settled = true;
         rejectConnect(
-          new Error('Não consegui conectar ao CDP do Chrome/Edge.')
+          new Error('Não consegui conectar ao CDP do Google Chrome.')
         );
       };
 
@@ -2259,10 +2088,6 @@ function closeMainWindowAndQuit(): void {
 }
 
 async function clearWhatsAppWebLocalSession(reason: string): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
   const tokenHash = currentPairing?.context.tokenHash ?? null;
   if (tokenHash && localSessionClearedTokenHash === tokenHash) {
     return;
@@ -2287,69 +2112,18 @@ async function clearWhatsAppWebLocalSession(reason: string): Promise<void> {
 async function clearWhatsAppWebLocalSessionInternal(
   reason: string
 ): Promise<void> {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
   logEvent(
-    'secure_session.local_session.clear.start',
+    'secure_session.legacy_partition.clear.start',
     currentPairing?.context,
     {
       reason,
-      partition: WHATSAPP_WEB_STORAGE_PARTITION,
     }
   );
-
-  try {
-    mainWindow.webContents.stop();
-    if (!mainWindow.webContents.getURL().startsWith('about:blank')) {
-      await mainWindow.webContents.loadURL('about:blank');
-    }
-  } catch (error) {
-    logEvent(
-      'secure_session.local_session.clear.navigate_error',
-      currentPairing?.context,
-      {
-        reason: sanitizeError(error),
-      }
-    );
-  }
-
-  const webSession = mainWindow.webContents.session;
-  const clearResults = await Promise.allSettled([
-    webSession.clearStorageData({
-      origin: WHATSAPP_WEB_ORIGIN,
-      storages: [
-        'cachestorage',
-        'cookies',
-        'filesystem',
-        'indexdb',
-        'localstorage',
-        'serviceworkers',
-        'shadercache',
-      ],
-    }),
-    webSession.clearCache(),
-    webSession.cookies
-      .get({ url: WHATSAPP_WEB_ORIGIN })
-      .then((cookies) =>
-        Promise.all(
-          cookies.map((cookie) =>
-            webSession.cookies.remove(
-              `${WHATSAPP_WEB_ORIGIN}${cookie.path || '/'}`,
-              cookie.name
-            )
-          )
-        )
-      ),
-  ]);
-
-  await Promise.resolve(webSession.flushStorageData()).catch(() => undefined);
 
   const partitionRoot = getWhatsAppWebPartitionRoot();
   await rm(partitionRoot, { recursive: true, force: true }).catch((error) => {
     logEvent(
-      'secure_session.local_session.clear.profile_remove_error',
+      'secure_session.legacy_partition.clear.remove_error',
       currentPairing?.context,
       {
         reason: sanitizeError(error),
@@ -2357,20 +2131,18 @@ async function clearWhatsAppWebLocalSessionInternal(
     );
   });
 
-  logEvent('secure_session.local_session.clear.done', currentPairing?.context, {
-    failed_steps: clearResults.filter((result) => result.status === 'rejected')
-      .length,
-    partition_removed: true,
-    reason,
-  });
+  logEvent(
+    'secure_session.legacy_partition.clear.done',
+    currentPairing?.context,
+    {
+      partition_removed: true,
+      reason,
+    }
+  );
 }
 
 function getWhatsAppWebPartitionRoot(): string {
-  return join(
-    app.getPath('userData'),
-    'Partitions',
-    WHATSAPP_WEB_STORAGE_PARTITION_DIR
-  );
+  return join(app.getPath('userData'), 'Partitions', 'underchat-authenticator');
 }
 
 async function saveDiagnosticLog(): Promise<{
@@ -2433,9 +2205,8 @@ async function saveDiagnosticLog(): Promise<{
       ? redactDiagnosticValue(currentPairing.session)
       : null,
     storage: {
-      partition: WHATSAPP_WEB_STORAGE_PARTITION,
-      partition_root: getWhatsAppWebPartitionRoot(),
-      local_session_cleared_for_token_hash: localSessionClearedTokenHash,
+      legacy_partition_root: getWhatsAppWebPartitionRoot(),
+      legacy_partition_removed_for_token_hash: localSessionClearedTokenHash,
     },
     events: diagnosticLogEntries,
   };
@@ -2463,6 +2234,9 @@ function redactApiBaseUrl(value: string): string {
 function sanitizeUrlForDiagnostics(value: string): string {
   try {
     const parsed = new URL(value);
+    if (parsed.protocol === 'data:') {
+      return 'underchat-authenticator://local-ui';
+    }
     parsed.search = '';
     parsed.hash = '';
     return parsed.toString();
@@ -3052,132 +2826,6 @@ const EXTRACT_WHATSAPP_WEB_AUTH_DUMP_SCRIPT = String.raw`
 })()
 `;
 
-async function enrichSecureSessionPackage(
-  sessionPackage: SecureSessionPackage
-): Promise<SecureSessionPackage> {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return sessionPackage;
-  }
-
-  const cookies = await mainWindow.webContents.session.cookies
-    .get({ url: WHATSAPP_WEB_ORIGIN })
-    .catch(() => []);
-  const wwebjsLocalAuthFiles = await collectWwebjsLocalAuthProfileFiles(
-    sessionPackage
-  ).catch((error) => {
-    logEvent('secure_session.profile_export.error', currentPairing?.context, {
-      reason: sanitizeError(error),
-      target_provider: sessionPackage.target_provider,
-    });
-    return null;
-  });
-  const payload =
-    sessionPackage.payload &&
-    typeof sessionPackage.payload === 'object' &&
-    !Array.isArray(sessionPackage.payload)
-      ? (sessionPackage.payload as Record<string, unknown>)
-      : {};
-
-  return {
-    ...sessionPackage,
-    payload: {
-      ...payload,
-      electron_cookies: cookies.map((cookie) => ({
-        domain: cookie.domain,
-        expirationDate: cookie.expirationDate,
-        httpOnly: cookie.httpOnly,
-        name: cookie.name,
-        path: cookie.path,
-        sameSite: cookie.sameSite,
-        secure: cookie.secure,
-        session: cookie.session,
-        value: cookie.value,
-      })),
-      electron_partition: WHATSAPP_WEB_STORAGE_PARTITION,
-      ...(wwebjsLocalAuthFiles
-        ? {
-            wwebjs_local_auth: {
-              files: wwebjsLocalAuthFiles,
-            },
-          }
-        : {}),
-    },
-  };
-}
-
-async function collectWwebjsLocalAuthProfileFiles(
-  sessionPackage: SecureSessionPackage
-): Promise<SecureSessionProfileFiles | null> {
-  if (
-    sessionPackage.target_provider !== 'wwebjs' &&
-    sessionPackage.target_provider !== 'auto'
-  ) {
-    return null;
-  }
-
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return null;
-  }
-
-  try {
-    await Promise.resolve(mainWindow.webContents.session.flushStorageData());
-  } catch {}
-
-  const partitionRoot = join(
-    app.getPath('userData'),
-    'Partitions',
-    WHATSAPP_WEB_STORAGE_PARTITION_DIR
-  );
-  const files: SecureSessionProfileFiles = {};
-  const budget = { totalBytes: 0 };
-
-  for (const entryName of WWEBJS_PROFILE_INCLUDE_ROOT_ENTRIES) {
-    const entryPath = join(partitionRoot, entryName);
-    const entryStat = await stat(entryPath).catch(() => null);
-    if (!entryStat) {
-      continue;
-    }
-
-    if (entryStat.isDirectory()) {
-      await collectProfileEntryFiles({
-        budget,
-        files,
-        profileRoot: partitionRoot,
-        targetPath: entryPath,
-      });
-      continue;
-    }
-
-    if (entryStat.isFile()) {
-      await addProfileFile({
-        budget,
-        files,
-        profileRoot: partitionRoot,
-        targetPath: entryPath,
-      });
-    }
-  }
-
-  const localStatePath = join(app.getPath('userData'), 'Local State');
-  if (await stat(localStatePath).catch(() => null)) {
-    await addProfileFile({
-      budget,
-      files,
-      profileRoot: app.getPath('userData'),
-      targetPath: localStatePath,
-      outputPrefix: '',
-    });
-  }
-
-  logEvent('secure_session.profile_export.done', currentPairing?.context, {
-    file_count: Object.keys(files).length,
-    total_bytes: budget.totalBytes,
-    target_provider: sessionPackage.target_provider,
-  });
-
-  return Object.keys(files).length ? files : null;
-}
-
 async function collectProfileEntryFiles(input: {
   budget: { totalBytes: number };
   files: SecureSessionProfileFiles;
@@ -3302,7 +2950,7 @@ function createMainWindow(initialError?: string): void {
       currentPairing.error = initialError;
     }
 
-    mainWindow.loadURL(WHATSAPP_WEB_ORIGIN).catch((error: unknown) => {
+    loadAuthenticatorShell(mainWindow).catch((error: unknown) => {
       console.error(
         '[underchat-authenticator] window.reload.error',
         sanitizeError(error)
@@ -3315,26 +2963,23 @@ function createMainWindow(initialError?: string): void {
   console.log('[underchat-authenticator] window.create.start');
   allowMainWindowClose = false;
   mainWindow = new BrowserWindow({
-    backgroundColor: '#0f1519',
+    backgroundColor: '#f4efe7',
     autoHideMenuBar: true,
-    height: 720,
-    minHeight: 560,
-    minWidth: 760,
+    height: 560,
+    minHeight: 500,
+    minWidth: 380,
     show: false,
     title: 'Underchat Authenticator',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      partition: WHATSAPP_WEB_STORAGE_PARTITION,
       preload: join(appMainDir, '../preload/index.js'),
       sandbox: false,
     },
-    width: 980,
+    width: 420,
   });
   console.log('[underchat-authenticator] window.create.done');
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.webContents.setUserAgent(whatsAppWebUserAgent);
-  configureWhatsAppRequestHeaders(mainWindow);
 
   let hasShownWindow = false;
   const showMainWindow = (reason: string): void => {
@@ -3386,7 +3031,7 @@ function createMainWindow(initialError?: string): void {
   });
 
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    if (!isAllowedNavigation(navigationUrl)) {
+    if (!navigationUrl.startsWith('data:text/html')) {
       event.preventDefault();
       logBlockedNavigation(navigationUrl);
     }
@@ -3396,17 +3041,6 @@ function createMainWindow(initialError?: string): void {
     logBlockedNavigation(url);
     return { action: 'deny' };
   });
-
-  mainWindow.webContents.session.setPermissionRequestHandler(
-    (_webContents, permission, callback, details) => {
-      const requestingUrl = details.requestingUrl || '';
-      const allowed =
-        requestingUrl.startsWith(WHATSAPP_WEB_ORIGIN) &&
-        permission === 'clipboard-read';
-
-      callback(allowed);
-    }
-  );
 
   if (initialError) {
     currentPairing = {
@@ -3422,87 +3056,44 @@ function createMainWindow(initialError?: string): void {
   }
 
   console.log('[underchat-authenticator] window.load.start', {
-    domain: getSafeDomain(WHATSAPP_WEB_ORIGIN),
+    domain: 'local-authenticator-ui',
   });
-  mainWindow
-    .loadURL(WHATSAPP_WEB_ORIGIN, {
-      userAgent: whatsAppWebUserAgent,
-    })
-    .catch((error: unknown) => {
-      console.error(
-        '[underchat-authenticator] window.load.error',
-        sanitizeError(error)
-      );
-    });
+  loadAuthenticatorShell(mainWindow).catch((error: unknown) => {
+    console.error(
+      '[underchat-authenticator] window.load.error',
+      sanitizeError(error)
+    );
+  });
 
   if (isDevelopment) {
     mainWindow.webContents.on('did-finish-load', () => {
-      console.log('[underchat-authenticator] whatsapp.loaded');
+      console.log('[underchat-authenticator] ui.loaded');
     });
   }
 }
 
-function configureWhatsAppRequestHeaders(window: BrowserWindow): void {
-  const platform = getUserAgentPlatform();
-  const clientHintsPlatform =
-    process.platform === 'win32'
-      ? 'Windows'
-      : process.platform === 'darwin'
-        ? 'macOS'
-        : 'Linux';
-
-  window.webContents.session.webRequest.onBeforeSendHeaders(
-    {
-      urls: [`${WHATSAPP_WEB_ORIGIN}/*`],
-    },
-    (details, callback) => {
-      details.requestHeaders['User-Agent'] = whatsAppWebUserAgent;
-      details.requestHeaders['sec-ch-ua'] =
-        `"Google Chrome";v="${CHROME_STABLE_MAJOR_VERSION}", "Chromium";v="${CHROME_STABLE_MAJOR_VERSION}", "Not_A Brand";v="99"`;
-      details.requestHeaders['sec-ch-ua-mobile'] = '?0';
-      details.requestHeaders['sec-ch-ua-platform'] = `"${clientHintsPlatform}"`;
-
-      callback({
-        requestHeaders: details.requestHeaders,
-      });
-    }
+async function loadAuthenticatorShell(window: BrowserWindow): Promise<void> {
+  await window.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(getAuthenticatorShellHtml())}`
   );
-
-  console.log('[underchat-authenticator] whatsapp.headers.override', {
-    chromeVersion: CHROME_STABLE_VERSION,
-    platform,
-  });
 }
 
-function getWhatsAppWebUserAgent(): string {
-  return `Mozilla/5.0 (${getUserAgentPlatform()}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_STABLE_VERSION} Safari/537.36`;
-}
-
-function getUserAgentPlatform(): string {
-  if (process.platform === 'win32') {
-    return 'Windows NT 10.0; Win64; x64';
-  }
-
-  if (process.platform === 'darwin') {
-    return 'Macintosh; Intel Mac OS X 10_15_7';
-  }
-
-  return 'X11; Linux x86_64';
-}
-
-function isAllowedNavigation(rawUrl: string): boolean {
-  if (rawUrl.startsWith(WHATSAPP_WEB_ORIGIN)) {
-    return true;
-  }
-
-  if (
-    currentPairing?.context.apiBaseUrl &&
-    isAllowedHttpApiUrl(rawUrl, currentPairing.context.apiBaseUrl)
-  ) {
-    return true;
-  }
-
-  return rawUrl === 'about:blank';
+function getAuthenticatorShellHtml(): string {
+  return `<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; img-src data:; connect-src 'none';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Underchat Authenticator</title>
+  </head>
+  <body>
+    <main id="underchat-authenticator-root"></main>
+  </body>
+</html>`;
 }
 
 function logBlockedNavigation(rawUrl: string): void {
@@ -3515,7 +3106,9 @@ function getSafeDomain(rawUrl: string): string {
   let domain = 'invalid-url';
 
   try {
-    domain = new URL(rawUrl).hostname;
+    const parsed = new URL(rawUrl);
+    domain =
+      parsed.protocol === 'data:' ? 'local-authenticator-ui' : parsed.hostname;
   } catch {
     // keep sanitized fallback
   }
