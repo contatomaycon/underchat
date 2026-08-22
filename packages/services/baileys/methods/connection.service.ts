@@ -226,6 +226,18 @@ const PROVIDER_HANDOFF_RECONNECT_RETRY_MS = readBoundedIntEnv(
   250,
   15_000
 );
+const SECURE_IMPORT_RECOVERY_TIMEOUT_MS = readBoundedIntEnv(
+  'BAILEYS_SECURE_IMPORT_RECOVERY_TIMEOUT_MS',
+  45_000,
+  5_000,
+  90_000
+);
+const SECURE_IMPORT_RECOVERY_POLL_MS = readBoundedIntEnv(
+  'BAILEYS_SECURE_IMPORT_RECOVERY_POLL_MS',
+  100,
+  25,
+  1_000
+);
 const QR_DATA_URL_GENERATION_TIMEOUT_MS = readBoundedIntEnv(
   'CONNECTION_QR_DATAURL_TIMEOUT_MS',
   1_500,
@@ -828,6 +840,7 @@ export class BaileysConnectionService {
   private activeProxyUrl: string | null = null;
   private activeProxyAgent?: HttpsAgent;
   private reconnectRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  private reconnectRetryFlight: Promise<void> | undefined;
   private qrRenewalTimer: ReturnType<typeof setTimeout> | undefined;
   private transientDisconnectStatusTimer:
     ReturnType<typeof setTimeout> | undefined;
@@ -1738,7 +1751,7 @@ export class BaileysConnectionService {
         account_hint_present: Boolean(sessionPackage.account_hint),
       });
 
-      const connectedState = await this.connect({
+      let connectedState = await this.connect({
         initial_connection: true,
         allow_restore: true,
         force_new: true,
@@ -1751,8 +1764,17 @@ export class BaileysConnectionService {
       });
       if (
         stagedPostgresRevision &&
-        (connectedState.status !== Status.connected ||
-          connectedState.session_ready === false)
+        !this.isPostgresImportConnectionReady(connectedState)
+      ) {
+        connectedState = await this.awaitPostgresImportCandidateOutcome(
+          stagedPostgresRevision,
+          connectedState
+        );
+      }
+      if (
+        stagedPostgresRevision &&
+        !this.isPostgresImportConnectionReady(connectedState) &&
+        !this.isPostgresImportCandidatePromoted(stagedPostgresRevision)
       ) {
         const readinessFailure = [
           connectedState.error,
@@ -1769,7 +1791,10 @@ export class BaileysConnectionService {
       }
       return connectedState;
     } catch (error) {
-      if (stagedPostgresRevision && this.postgresAuthStore) {
+      if (
+        stagedPostgresRevision &&
+        this.postgresAuthStore?.hasPendingHandoff() === true
+      ) {
         await this.safeLogout(false).catch(() => undefined);
         this.cancelAttempt(false);
         try {
@@ -1786,6 +1811,150 @@ export class BaileysConnectionService {
       }
       return this.failSecureSessionImport(input, error);
     }
+  }
+
+  private isPostgresImportConnectionReady(
+    state: IBaileysConnectionState
+  ): boolean {
+    return state.status === Status.connected && state.session_ready !== false;
+  }
+
+  private isPostgresImportCandidatePromoted(
+    candidate: BaileysStagedSessionRevision
+  ): boolean {
+    const revision = this.postgresAuthStore?.getRevisionInfoCached();
+    return (
+      revision?.revisionId === String(candidate.revisionId) &&
+      revision.status === 'active'
+    );
+  }
+
+  /**
+   * A browser-session takeover may receive one or more recoverable 428 closes
+   * while WhatsApp retires the browser transport. onClose already owns the
+   * bounded provider reconnect policy; the secure-import request must join
+   * that lifecycle instead of rolling its still-valid candidate back after
+   * the first socket closes.
+   */
+  private async awaitPostgresImportCandidateOutcome(
+    candidate: BaileysStagedSessionRevision,
+    initialState: IBaileysConnectionState
+  ): Promise<IBaileysConnectionState> {
+    const startedAt = Date.now();
+    const deadlineAt = startedAt + SECURE_IMPORT_RECOVERY_TIMEOUT_MS;
+    let latestState = initialState;
+
+    this.logDebug('baileys.provider.secure_session_import.recovery_wait', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: this.connectionAttemptId,
+      runtime_generation: this.runtimeGeneration,
+      candidate_revision_id: candidate.revisionId,
+      initial_status: initialState.status,
+      initial_code: initialState.code,
+      timeout_ms: SECURE_IMPORT_RECOVERY_TIMEOUT_MS,
+    });
+
+    while (Date.now() <= deadlineAt) {
+      if (this.isPostgresImportConnectionReady(latestState)) {
+        return latestState;
+      }
+
+      if (
+        this.status === Status.connected &&
+        this.connectionEstablished &&
+        this.centralOnlineAcknowledged
+      ) {
+        latestState = await this.reportConnected();
+        if (this.isPostgresImportConnectionReady(latestState)) {
+          this.logDebug(
+            'baileys.provider.secure_session_import.recovery_ready',
+            {
+              trace_id: this.debugTraceId,
+              layer: 'baileys',
+              worker_id: getWorker(),
+              account_id: getAccount(),
+              worker_type_id: EWorkerType.baileys,
+              connection_attempt_id: this.connectionAttemptId,
+              runtime_generation: this.runtimeGeneration,
+              candidate_revision_id: candidate.revisionId,
+              elapsed_ms: Date.now() - startedAt,
+              retry_count: this.retryCount,
+            }
+          );
+          return latestState;
+        }
+      }
+
+      if (this.isPostgresImportCandidatePromoted(candidate)) {
+        // Promotion is irreversible at this layer. The manager's existing
+        // strong runtime-health window owns Kafka/central-ACK convergence.
+        return latestState;
+      }
+
+      const candidatePending =
+        this.postgresAuthStore?.hasPendingHandoff() === true;
+      const terminal =
+        this.userRequestedDisconnect ||
+        this.isTerminalSessionDisconnectCode(this.code);
+      const recoveryScheduled = Boolean(
+        this.connecting ||
+        this.currentPromise ||
+        this.reconnectRetryTimer ||
+        this.reconnectRetryFlight ||
+        this.readyConfirmationFlight ||
+        this.kafkaReadinessRetryTimer ||
+        this.kafkaReadinessRetryFlight
+      );
+
+      if (!candidatePending || terminal || !recoveryScheduled) {
+        return latestState;
+      }
+
+      const connectionFlight =
+        this.readyConfirmationFlight?.promise ?? this.currentPromise;
+      if (connectionFlight) {
+        const poll = new Promise<void>((resolve) => {
+          setTimeout(() => resolve(), SECURE_IMPORT_RECOVERY_POLL_MS);
+        });
+        const observed = await Promise.race([
+          connectionFlight
+            .then((state) => state)
+            .catch((error) =>
+              this.state(undefined, undefined, {
+                error: getErrorMessage(error),
+              })
+            ),
+          poll,
+        ]);
+        if (observed) {
+          latestState = observed;
+        }
+      } else {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, SECURE_IMPORT_RECOVERY_POLL_MS);
+        });
+      }
+    }
+
+    this.logDebug('baileys.provider.secure_session_import.recovery_timeout', {
+      trace_id: this.debugTraceId,
+      layer: 'baileys',
+      worker_id: getWorker(),
+      account_id: getAccount(),
+      worker_type_id: EWorkerType.baileys,
+      connection_attempt_id: this.connectionAttemptId,
+      runtime_generation: this.runtimeGeneration,
+      candidate_revision_id: candidate.revisionId,
+      elapsed_ms: Date.now() - startedAt,
+      retry_count: this.retryCount,
+      status: this.status,
+      code: this.code,
+    });
+    throw new Error('baileys_postgres_import_recovery_timeout');
   }
 
   private assertSecureSessionImportContext(
@@ -2314,7 +2483,7 @@ export class BaileysConnectionService {
       if (!this.shouldScheduleRetryAfterClose(allowActiveQrLifecycle)) {
         return;
       }
-      this.connect({
+      const flight = this.connect({
         initial_connection: this.initialConnection,
         from_disconnect_restart: true,
         force_new: true,
@@ -2324,16 +2493,24 @@ export class BaileysConnectionService {
         connection_attempt_id: this.connectionAttemptId,
         debug_trace_id: this.debugTraceId,
         runtime_generation: this.runtimeGeneration,
-      }).catch(() => {
-        this.saveLogWppConnection({
-          worker_id: getWorker(),
-          status: this.status ?? Status.disconnected,
-          code: this.code ?? ECodeMessage.connectionLost,
-          message: `Reconnect failed after ${delayMs}ms retry`,
-          date: new Date(),
+      })
+        .then(() => undefined)
+        .catch(() => {
+          this.saveLogWppConnection({
+            worker_id: getWorker(),
+            status: this.status ?? Status.disconnected,
+            code: this.code ?? ECodeMessage.connectionLost,
+            message: `Reconnect failed after ${delayMs}ms retry`,
+            date: new Date(),
+          });
+          this.scheduleNextReconnectAttempt(allowActiveQrLifecycle);
+        })
+        .finally(() => {
+          if (this.reconnectRetryFlight === flight) {
+            this.reconnectRetryFlight = undefined;
+          }
         });
-        this.scheduleNextReconnectAttempt(allowActiveQrLifecycle);
-      });
+      this.reconnectRetryFlight = flight;
     }, delayMs);
     this.reconnectRetryTimer.unref?.();
   }

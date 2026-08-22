@@ -20,6 +20,9 @@ jest.mock('@whiskeysockets/baileys', () => ({
     version: [2, 3000, 0],
   })),
   makeWASocket: jest.fn(),
+  normalizeWhatsAppWebSessionPackageToBaileysAuthRecords: jest.fn(() => [
+    { category: 'creds', id: 'creds', value: {} },
+  ]),
   useMultiFileAuthState: jest.fn(async () => ({
     state: {},
     saveCreds: jest.fn(async () => undefined),
@@ -67,6 +70,7 @@ import { EBaileysConnectionStatus as Status } from '@core/common/enums/EBaileysC
 import { EBaileysConnectionType } from '@core/common/enums/EBaileysConnectionType';
 import { ECodeMessage } from '@core/common/enums/ECodeMessage';
 import { EWorkerStatus } from '@core/common/enums/EWorkerStatus';
+import { EWorkerType } from '@core/common/enums/EWorkerType';
 import { EWhatsappConnectionStatus } from '@core/common/enums/EWhatsappConnectionStatus';
 import {
   isWorkerKafkaDispatchAuthorized,
@@ -134,6 +138,8 @@ type BaileysConnectionServicePrivate = {
     loadAuthenticationState?: () => Promise<unknown>;
     hasRestorableSessionCached?: () => boolean;
     hasPendingHandoff?: () => boolean;
+    getRevisionInfoCached?: () =>
+      { revisionId: string; status: string } | undefined;
     authorizeHandoff?: (input: unknown) => Promise<unknown>;
     beginPostQuantumServerRollback?: (input: unknown) => Promise<unknown>;
     persistPostQuantumServerRollback?: (
@@ -208,6 +214,14 @@ type BaileysConnectionServicePrivate = {
   handleSocketCreateFailure: (error: unknown) => IBaileysConnectionState;
   connectExclusive: (
     input: IBaileysConnection
+  ) => Promise<IBaileysConnectionState>;
+  awaitPostgresImportCandidateOutcome: (
+    candidate: {
+      revisionId: number;
+      previousActiveRevisionId: number | null;
+      previousRevisionId: number | null;
+    },
+    initialState: IBaileysConnectionState
   ) => Promise<IBaileysConnectionState>;
   handleReadyRuntimeFailure: (
     context: Record<string, unknown>,
@@ -394,6 +408,186 @@ describe('BaileysConnectionService', () => {
       expect.objectContaining({ connection_attempt_id: 'attempt-b' })
     );
     expect(connectExclusive).toHaveBeenCalledTimes(2);
+  });
+
+  it('joins a recoverable secure-import reconnect instead of rejecting its candidate after the first 428', async () => {
+    const { servicePrivate } = makeService();
+    servicePrivate.postgresAuthStore = {
+      close: jest.fn(async () => undefined),
+      hasPendingHandoff: jest.fn(() => true),
+      getRevisionInfoCached: jest.fn(() => ({
+        revisionId: '3475',
+        status: 'validating',
+      })),
+    };
+    servicePrivate.initialConnection = true;
+    servicePrivate.connecting = true;
+    servicePrivate.status = Status.connecting;
+    servicePrivate.code = ECodeMessage.awaitConnection;
+    let resolveRecovery!: (state: IBaileysConnectionState) => void;
+    servicePrivate.currentPromise = new Promise<IBaileysConnectionState>(
+      (resolve) => {
+        resolveRecovery = resolve;
+      }
+    );
+
+    const waiting = servicePrivate.awaitPostgresImportCandidateOutcome(
+      {
+        revisionId: 3475,
+        previousActiveRevisionId: 3474,
+        previousRevisionId: 3474,
+      },
+      {
+        status: Status.connecting,
+        code: ECodeMessage.awaitConnection,
+        worker_id: 'worker-b',
+        account_id: 'account-b',
+      }
+    );
+    let settled = false;
+    void waiting.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    resolveRecovery({
+      status: Status.connected,
+      code: ECodeMessage.connectionEstablished,
+      worker_id: 'worker-b',
+      account_id: 'account-b',
+      worker_status_id: EWorkerStatus.online,
+      session_ready: true,
+      authenticated: true,
+      can_send: true,
+      can_receive_runtime: true,
+    });
+
+    await expect(waiting).resolves.toEqual(
+      expect.objectContaining({
+        status: Status.connected,
+        session_ready: true,
+      })
+    );
+  });
+
+  it('returns a terminal secure-import candidate state without waiting or retrying it', async () => {
+    const { servicePrivate } = makeService();
+    servicePrivate.postgresAuthStore = {
+      close: jest.fn(async () => undefined),
+      hasPendingHandoff: jest.fn(() => true),
+      getRevisionInfoCached: jest.fn(() => ({
+        revisionId: '3475',
+        status: 'validating',
+      })),
+    };
+    servicePrivate.status = Status.disconnected;
+    servicePrivate.code = ECodeMessage.loggedOut;
+    const terminal = {
+      status: Status.disconnected,
+      code: ECodeMessage.loggedOut,
+      worker_id: 'worker-b',
+      account_id: 'account-b',
+      degraded_reason: 'logged_out',
+    } as IBaileysConnectionState;
+
+    await expect(
+      servicePrivate.awaitPostgresImportCandidateOutcome(
+        {
+          revisionId: 3475,
+          previousActiveRevisionId: 3474,
+          previousRevisionId: 3474,
+        },
+        terminal
+      )
+    ).resolves.toBe(terminal);
+  });
+
+  it('keeps the staged secure-import revision while its recoverable reconnect reaches ready', async () => {
+    const previousStorage = process.env.WORKER_SESSION_STORAGE;
+    process.env.WORKER_SESSION_STORAGE = 'postgres';
+    try {
+      const { service, servicePrivate } = makeService();
+      const staged = {
+        revisionId: 3475,
+        previousActiveRevisionId: 3474,
+        previousRevisionId: 3474,
+      };
+      const rollbackImport = jest.fn(async () => undefined);
+      const store = {
+        close: jest.fn(async () => undefined),
+        stageImport: jest.fn(async () => staged),
+        rollbackImport,
+        hasPendingHandoff: jest.fn(() => true),
+        getRevisionInfoCached: jest.fn(() => ({
+          revisionId: '3475',
+          status: 'validating',
+        })),
+      };
+      (servicePrivate as any).getPostgresAuthStore = jest.fn(() => store);
+      jest
+        .spyOn(servicePrivate as any, 'resolveSecureSessionPackage')
+        .mockResolvedValue({
+          created_at: '2026-08-22T14:23:58.000Z',
+          format_version: 'underchat-wa-web-session-v1',
+          payload: {
+            baileys_multi_file_auth_state: {
+              files: { 'creds.json': '{}' },
+            },
+          },
+          source: 'whatsapp_web',
+          target_provider: 'baileys',
+        });
+      jest.spyOn(servicePrivate, 'safeLogout').mockResolvedValue(undefined);
+      jest
+        .spyOn(servicePrivate, 'cancelAttempt')
+        .mockImplementation(() => undefined);
+      jest.spyOn(service, 'connect').mockResolvedValue({
+        status: Status.connecting,
+        code: ECodeMessage.awaitConnection,
+        worker_id: 'worker-b',
+        account_id: 'account-b',
+      });
+      const ready = {
+        status: Status.connected,
+        code: ECodeMessage.connectionEstablished,
+        worker_id: 'worker-b',
+        account_id: 'account-b',
+        worker_status_id: EWorkerStatus.online,
+        session_ready: true,
+        authenticated: true,
+        can_send: true,
+        can_receive_runtime: true,
+      } as IBaileysConnectionState;
+      jest
+        .spyOn(servicePrivate, 'awaitPostgresImportCandidateOutcome')
+        .mockResolvedValue(ready);
+
+      await expect(
+        service.importSecureSession({
+          worker_id: 'worker-b',
+          account_id: 'account-b',
+          worker_type_id: EWorkerType.baileys,
+          connection_attempt_id: '22222222-2222-4222-8222-222222222222',
+          runtime_generation: 17,
+          format_version: 'underchat-wa-web-session-v1',
+          source: 'whatsapp_web',
+          target_provider: 'baileys',
+          payload_json: '{}',
+        })
+      ).resolves.toBe(ready);
+
+      expect(store.stageImport).toHaveBeenCalledTimes(1);
+      expect(
+        servicePrivate.awaitPostgresImportCandidateOutcome
+      ).toHaveBeenCalledWith(staged, expect.objectContaining({ code: 203 }));
+      expect(rollbackImport).not.toHaveBeenCalled();
+    } finally {
+      if (previousStorage === undefined) {
+        delete process.env.WORKER_SESSION_STORAGE;
+      } else {
+        process.env.WORKER_SESSION_STORAGE = previousStorage;
+      }
+    }
   });
 
   it('keeps a tombstoned bootstrap dormant without opening the auth store', async () => {

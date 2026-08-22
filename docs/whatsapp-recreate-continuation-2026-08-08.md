@@ -14524,3 +14524,129 @@ Gitea atualizado. A verificação posterior confirmou o mesmo tree SHA
 `4933c8797460d88593232c30b2a8947c3ebf1476`, diff vazio entre as duas árvores e
 `underchat_authenticator@1.0.2` no GitHub. A atualização documental subsequente
 segue o mesmo modelo de snapshot sem arquivos de release.
+
+## 2026-08-22 — Baileys: o primeiro `428` do Authenticator cancelava a própria recuperação
+
+### Evidência do pacote e do runtime
+
+O diagnóstico exportado pelo Authenticator `1.0.2`, token com hash curto
+`8d900e33657f`, separou a captura do erro do provider. O Chrome controlado
+alcançou `ready_for_handoff`, permaneceu estável por `30.080 ms`, produziu o
+pacote compartilhado com `13` bancos IndexedDB, encerrou o navegador e enviou
+o payload ao Manager. O upload foi aceito e chegou ao Worker Baileys; portanto,
+`baileys_postgres_import_candidate_not_ready` não foi causado pelo Electron,
+pelo CDP, pelo builder compartilhado ou pelo transporte HTTP.
+
+No Server 2, a tentativa da generation `16` criou e validou a revisão
+`secure_import` `3475` sobre o draft `3474`. O `creds.json` importado passou na
+validação canônica sem campo obrigatório ausente. `adv_secret` apareceu somente
+em `missing_optional_fields`, condição já modelada como capability opcional e
+que não participa do login Noise restaurado. Às `14:23:58.996Z` o socket foi
+criado; `811 ms` depois ele recebeu `428 Connection Terminated`, publicou
+`transport_interrupted`, manteve `authenticated=true`, `sessionValid=true` e
+`recoverable=true`, e agendou corretamente a tentativa `1/10` com atraso zero.
+
+A falha estava uma camada acima dessa política. `importSecureSession()`
+aguardava apenas a Promise do primeiro socket. Quando o close recuperável a
+resolvia em `connecting`, o método tratava qualquer retorno diferente de
+`connected/session_ready` como falha terminal. Treze milissegundos depois do
+agendamento da reconexão, ele executava rollback da revisão `3475`, restaurava
+o draft incompleto `3474` e cancelava a recuperação que o próprio `onClose()`
+acabava de autorizar. O Manager então observava por `60 s` um runtime sem
+socket e apresentava o código genérico `baileys_postgres_import_candidate_not_ready`.
+
+### Correção sem outro fluxo de importação
+
+O pacote do Authenticator não recebeu um conversor alternativo e o fork não foi
+alterado. A correção fica no coordenador Baileys já compartilhado pela extensão
+e pelo Authenticator:
+
+- depois de um primeiro resultado não pronto, a importação PostgreSQL passa a
+  acompanhar a candidata e a mesma política de reconnect de `onClose()`;
+- a janela interna é limitada a `45 s`, configurável por
+  `BAILEYS_SECURE_IMPORT_RECOVERY_TIMEOUT_MS` entre `5 s` e `90 s`, com poll
+  padrão de `100 ms` por `BAILEYS_SECURE_IMPORT_RECOVERY_POLL_MS`;
+- o primeiro retry continua imediato e os seguintes continuam usando os `2 s`
+  já definidos para handoff; não foi criado um retry concorrente;
+- a tentativa de reconnect agora fica explicitamente registrada como flight,
+  fechando a janela entre retirar o timer e terminar preload/fence antes da
+  criação do próximo socket;
+- erro terminal continua encerrando imediatamente; timeout com candidata ainda
+  pendente fecha o socket e executa rollback cercado;
+- uma revisão que já chegou a `active` nunca é submetida a rollback tardio. A
+  validação forte já existente do Manager continua responsável por
+  provider/Kafka/ACK após a promoção.
+
+As cercas de generation, connection epoch, lease, fencing token, checksum,
+identidade, fingerprint, PQ bootstrap, promoção transacional e rollback não
+foram relaxadas. O erro `428` também não foi reclassificado globalmente: a
+espera adicional existe somente enquanto a revisão exata de `secure_import`
+permanece candidata e o serviço confirma que há reconnect em andamento.
+
+### Provas locais antes do rollout
+
+Foram adicionadas regressões comportamentais que comprovam os três limites:
+
+- `428/connecting` não resolve a importação nem remove a candidata enquanto o
+  reconnect autorizado está em curso;
+- a conexão seguinte pode chegar a `connected/session_ready` pela mesma
+  candidata sem chamar rollback;
+- códigos terminais continuam retornando imediatamente para o caminho de falha.
+
+O contrato integral do serviço Baileys passou **91/91**. TypeScript global,
+build Turborepo filtrado de `worker_baileys`, ESLint seletivo, Prettier e
+`git diff --check` também passaram. Os contratos cruzados do store PostgreSQL,
+caso de uso de importação segura e servidor gRPC passaram **3 suites / 57
+testes**; por fim, toda a árvore de contratos do serviço Baileys passou **26
+suites / 279 testes**. Não há alteração de schema, migração, Manager,
+Authenticator, extensão, WhatsMeow ou WWebJS nesta correção. O aceite
+operacional descrito a seguir foi executado sem alterar os outros providers.
+
+### Rollout e aceite operacional concluídos
+
+A correção foi registrada no commit Gitea
+`9a5b5730fe387e45314f73d536001f4ee9c892f4`. O build exclusivo do Worker
+Baileys concluiu no job `01a029f5-2d12-7123-a358-bd5d4c445b38`, gerou a versão
+`v20260822145208850` (catálogo `01a029f9-6d28-715d-ad4c-6f791a1c0195`) e a
+imagem
+`harbor.devunder.com/underchat/balance/under-worker-baileys:v20260822145208850`,
+cujo content ID é
+`sha256:c176d35e5ee5194f79938536f9759bef58d5f6968a5b72dee96b8b8d164b670c`.
+O bundle dentro da imagem foi inspecionado e contém o evento novo
+`baileys.provider.secure_session_import.recovery_wait`.
+
+O Server 2 foi atualizado pela operação
+`01a029fa-1d1c-72ff-b7c9-6ec9a7a2cfed`. Os quatro warms antigos foram
+substituídos pelos pools `01a029fc-25ef-710d-9a2e-78f11084cdec`,
+`01a029fc-25d3-7099-adef-9d0f08f1e38e`,
+`01a029fc-25b7-7173-820b-0c3597843e16` e
+`01a029fc-252d-73ca-bad1-b34439c957ea`; todos ficaram `ready`,
+running/healthy, com restart zero e no mesmo digest. Como o canal de aceite não
+possuía sessão válida, ele foi recriado de forma limpa pela operação
+`01a029fd-3456-7345-9fa2-52cd71701732`, chegando à generation `17`. Seu
+container ativo `12afadb9f7894161a25552de1d3932acc6a1aa1486089ff855b3f9d8c6516855`
+também permaneceu running/healthy, restart zero e no digest novo.
+
+O aceite real usou o Authenticator `1.0.2`, token com hash curto
+`7b7f5c8468db` e tentativa
+`01a02a01-d8dc-77c8-ac77-ca7253eb6562`. O Chrome controlado detectou a sessão,
+cumpriu integralmente os `30.068 ms` de estabilidade, capturou `13` bancos
+IndexedDB e enviou um corpo HTTP de `235.363` bytes para o alvo Baileys. O
+worker recebeu o import às `15:06:54.714Z`, validou a revisão candidata `3477`
+sem campo obrigatório ausente e publicou `online/connection_validated` às
+`15:06:59.997Z`, aproximadamente `5,3 s` depois. Nesta execução o transporte
+abriu diretamente, sem devolver `428`; o caminho de recuperação do primeiro
+`428` permanece coberto pelas regressões comportamentais acima.
+
+A promoção transacional terminou às `15:07:00.732Z`: a revisão `3477`, origem
+`secure_import`, ficou `active`; a revisão draft `3476` ficou `retired`; o
+handoff `12988373-eb4a-43be-b402-77eeea436eaf` ficou `completed`, sem
+`error_code`; e `whatsapp_session` ficou `ready`, generation `17`, sem
+`last_error_at`. O device ativo contém JID, LID e todos os campos canônicos
+obrigatórios de identidade, Noise e ADV. Depois da janela forte já existente
+do Manager, o canal ficou online com o número `556192037138`, status nativo
+conectado/autenticado/válido, ACK central verdadeiro e sem QR disponível. Uma
+segunda leitura após a conclusão confirmou que esses estados permaneceram
+estáveis e que o container continuava saudável, sem reinício. O Authenticator
+recebeu `connected_confirmed`, removeu o perfil temporário na primeira
+tentativa e encerrou com código zero.
