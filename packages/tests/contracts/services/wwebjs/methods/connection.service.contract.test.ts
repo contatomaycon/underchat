@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 
 const mockImportWhatsAppWebSessionToLocalAuth = jest.fn();
 const mockBrowserProjectionFromWhatsAppWebProfile = jest.fn();
@@ -6733,6 +6734,142 @@ describe('WwebjsConnectionService', () => {
         profilePath: expect.stringContaining('.underchat-extension-import-'),
       });
       expect(stageExternalBrowserProjection).not.toHaveBeenCalled();
+      const stagedProfilePath =
+        stageExternalCanonicalProjection.mock.calls[0]?.[0].profilePath;
+      expect(stagedProfilePath).toBeDefined();
+      expect(fs.existsSync(stagedProfilePath as string)).toBe(false);
+      await jest.advanceTimersByTimeAsync(0);
+    } finally {
+      if (previousStorage === undefined) {
+        delete process.env.WORKER_SESSION_STORAGE;
+      } else {
+        process.env.WORKER_SESSION_STORAGE = previousStorage;
+      }
+    }
+  });
+
+  it('keeps the lossless LocalAuth profile and routes its portable projections through the fenced external candidate', async () => {
+    const previousStorage = process.env.WORKER_SESSION_STORAGE;
+    process.env.WORKER_SESSION_STORAGE = 'postgres';
+    try {
+      const { service, servicePrivate } = makeService();
+      const webVersion = '2.3000.1027934701';
+      const browserProjection = {
+        schema_version: 2 as const,
+        web_version: webVersion,
+        complete: true,
+        lossy_records: 0,
+        size_bytes: 17,
+        indexeddb_stores: [],
+        records: [],
+      };
+      const canonicalProjection =
+        createWwebjsCanonicalBrowserProjection(webVersion);
+      const securePackage = {
+        format_version: 'underchat-wa-web-session-v1',
+        source: 'whatsapp_web',
+        target_provider: 'wwebjs',
+        web_version: webVersion,
+        payload: {
+          chrome_extension: { version: '1.0.4' },
+          wwebjs_local_auth: {
+            files: {
+              'Default/Cookies': {
+                data: 'cookie-data',
+                encoding: 'utf8',
+              },
+            },
+          },
+          whatsapp_web_profile: {
+            complete: true,
+            lossyRecordCount: 0,
+            serializationFormat: 'wwebjs-browser-value-v1',
+            localStorage: {},
+            signalStorage: {
+              databaseName: 'signal-storage',
+              stores: [],
+            },
+          },
+          wwebjs_canonical_projection: canonicalProjection,
+        },
+      };
+      (
+        service as unknown as { redis: { get: jest.Mock } }
+      ).redis.get.mockResolvedValueOnce(JSON.stringify(securePackage));
+      mockBrowserProjectionFromWhatsAppWebProfile.mockReturnValueOnce(
+        browserProjection
+      );
+      mockImportWhatsAppWebSessionToLocalAuth.mockImplementationOnce(
+        async () => {
+          const sessionPath = fs.mkdtempSync(
+            `${os.tmpdir()}/wwebjs-physical-import-`
+          );
+          fs.mkdirSync(`${sessionPath}/Default`, { recursive: true });
+          fs.writeFileSync(`${sessionPath}/Default/Cookies`, 'cookie-data');
+          return {
+            formatVersion: securePackage.format_version,
+            importedFiles: ['Default/Cookies'],
+            sessionPath,
+          };
+        }
+      );
+      jest.spyOn(servicePrivate, 'cancelAttempt').mockImplementation(() => {});
+      jest
+        .spyOn(servicePrivate, 'waitForPendingTeardown')
+        .mockResolvedValue(undefined);
+      jest
+        .spyOn(servicePrivate, 'clearChromiumProfileLock')
+        .mockImplementation(() => {});
+      jest.spyOn(servicePrivate, 'prepareFolder').mockImplementation(() => {});
+      const stageExternalCanonicalProjection = jest.fn(
+        async (input: { profilePath: string }) => {
+          expect(
+            fs.readFileSync(`${input.profilePath}/Default/Cookies`)
+          ).toEqual(Buffer.from('cookie-data'));
+          return '12';
+        }
+      );
+      const stageCandidate = jest.fn(async () => '12');
+      servicePrivate.postgresSessionStore = {
+        stageExternalCanonicalProjection,
+        stageCandidate,
+        failCandidate: jest.fn(async () => undefined),
+      } as unknown as PostgresWwebjsSessionStore;
+      jest.spyOn(service, 'connect').mockResolvedValue({
+        status: Status.connected,
+        code: ECodeMessage.connectionEstablished,
+        worker_id: 'worker-w',
+        account_id: 'account-w',
+        session_ready: true,
+      });
+
+      const result = await service.importSecureSession({
+        account_id: 'account-w',
+        connection_attempt_id: 'attempt-physical-canonical',
+        format_version: securePackage.format_version,
+        payload_ref: 'payload-ref-physical-canonical',
+        source: 'whatsapp_web',
+        target_provider: 'wwebjs',
+        worker_id: 'worker-w',
+        worker_type_id: '019a930d-c6f6-766d-9c84-62b9c3e7d1f0' as never,
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          reason: 'secure_import_restore_started',
+        })
+      );
+      expect(mockImportWhatsAppWebSessionToLocalAuth).toHaveBeenCalledTimes(1);
+      expect(mockBrowserProjectionFromWhatsAppWebProfile).toHaveBeenCalledWith(
+        securePackage
+      );
+      expect(stageExternalCanonicalProjection).toHaveBeenCalledWith({
+        session: 'RemoteAuth-worker-w',
+        browserProjection,
+        canonicalProjection,
+        profilePath: expect.stringContaining('wwebjs-physical-import-'),
+      });
+      expect(stageCandidate).not.toHaveBeenCalled();
       const stagedProfilePath =
         stageExternalCanonicalProjection.mock.calls[0]?.[0].profilePath;
       expect(stagedProfilePath).toBeDefined();

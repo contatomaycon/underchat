@@ -3950,6 +3950,18 @@ export class WwebjsConnectionService {
     sessionPackage: ISecureConnectionSessionPackage
   ): { importer: WwebjsSecureSessionImporter; source: string } {
     const payload = this.getSecureSessionPayloadRecord(sessionPackage);
+    const whatsappWebProfile =
+      payload.whatsapp_web_profile &&
+      typeof payload.whatsapp_web_profile === 'object' &&
+      !Array.isArray(payload.whatsapp_web_profile)
+        ? (payload.whatsapp_web_profile as Record<string, unknown>)
+        : undefined;
+    const canonicalProjection =
+      payload.wwebjs_canonical_projection &&
+      typeof payload.wwebjs_canonical_projection === 'object' &&
+      !Array.isArray(payload.wwebjs_canonical_projection)
+        ? (payload.wwebjs_canonical_projection as WwebjsCanonicalBrowserProjection)
+        : undefined;
     const localAuth =
       payload.wwebjs_local_auth &&
       typeof payload.wwebjs_local_auth === 'object' &&
@@ -3970,24 +3982,43 @@ export class WwebjsConnectionService {
       if (typeof importer !== 'function') {
         throw new Error('wwebjs_secure_session_importer_unavailable');
       }
+      if (whatsappWebProfile && usesPostgresSessionStorage()) {
+        const converter = importApi?.browserProjectionFromWhatsAppWebProfile;
+        if (typeof converter !== 'function') {
+          throw new Error('wwebjs_secure_session_importer_unavailable');
+        }
+        return {
+          importer: async (input) => {
+            // Validate the portable projections before mutating the target
+            // profile. The physical LocalAuth tree remains the lossless
+            // Chromium restore source; both projections must travel with it
+            // so PostgreSQL uses the fenced external-import candidate path.
+            const browserProjection = (
+              converter as (
+                value: ISecureConnectionSessionPackage
+              ) => WwebjsBrowserProjection
+            )(input.sessionPackage);
+            const normalizedCanonicalProjection = canonicalProjection
+              ? normalizeCanonicalProjection(canonicalProjection)
+              : undefined;
+            const imported = await (importer as WwebjsSecureSessionImporter)(
+              input
+            );
+            return {
+              ...imported,
+              browserProjection,
+              canonicalProjection: normalizedCanonicalProjection,
+            };
+          },
+          source: 'wwebjs_local_auth+whatsapp_web_profile',
+        };
+      }
       return {
         importer: importer as WwebjsSecureSessionImporter,
         source: 'wwebjs_local_auth',
       };
     }
 
-    const whatsappWebProfile =
-      payload.whatsapp_web_profile &&
-      typeof payload.whatsapp_web_profile === 'object' &&
-      !Array.isArray(payload.whatsapp_web_profile)
-        ? (payload.whatsapp_web_profile as Record<string, unknown>)
-        : undefined;
-    const canonicalProjection =
-      payload.wwebjs_canonical_projection &&
-      typeof payload.wwebjs_canonical_projection === 'object' &&
-      !Array.isArray(payload.wwebjs_canonical_projection)
-        ? (payload.wwebjs_canonical_projection as WwebjsCanonicalBrowserProjection)
-        : undefined;
     if (whatsappWebProfile) {
       if (!usesPostgresSessionStorage()) {
         throw new Error(

@@ -14283,16 +14283,16 @@ gRPC.
 Os tempos abaixo usam os eventos do worker, as linhas de handoff/revisão e o
 outbox PostgreSQL. Horários estão em UTC:
 
-| Marco | Horário | Duração relevante |
-| --- | --- | ---: |
-| pacote recebido e restore assíncrono iniciado | `22:40:15.996`–`22:40:16.181` | `185 ms` |
-| primeira inicialização WWebJS | `22:40:16.197`–`22:40:50.779` | `34,582 s` |
-| segunda inicialização WWebJS | `22:40:50.807`–`22:42:27.202` | `96,395 s` |
-| handoff criado até revisão promovida/persistida | `22:40:16.052`–`22:42:21.664` | `125,612 s` |
-| pacote recebido até readiness forte do worker | `22:40:15.996`–`22:42:27.201` | `131,205 s` |
-| primeiro RuntimeHealth totalmente pronto | `22:42:29.034` | `~1,8 s` após o ONLINE nativo |
-| status outbox publicado | `22:42:29.374` | `160 ms` após criação |
-| projeção legada do worker confirmada pelo Manager | `22:42:50.643` | `~21,6 s` após o primeiro health pronto |
+| Marco                                             | Horário                       |                       Duração relevante |
+| ------------------------------------------------- | ----------------------------- | --------------------------------------: |
+| pacote recebido e restore assíncrono iniciado     | `22:40:15.996`–`22:40:16.181` |                                `185 ms` |
+| primeira inicialização WWebJS                     | `22:40:16.197`–`22:40:50.779` |                              `34,582 s` |
+| segunda inicialização WWebJS                      | `22:40:50.807`–`22:42:27.202` |                              `96,395 s` |
+| handoff criado até revisão promovida/persistida   | `22:40:16.052`–`22:42:21.664` |                             `125,612 s` |
+| pacote recebido até readiness forte do worker     | `22:40:15.996`–`22:42:27.201` |                             `131,205 s` |
+| primeiro RuntimeHealth totalmente pronto          | `22:42:29.034`                |           `~1,8 s` após o ONLINE nativo |
+| status outbox publicado                           | `22:42:29.374`                |                   `160 ms` após criação |
+| projeção legada do worker confirmada pelo Manager | `22:42:50.643`                | `~21,6 s` após o primeiro health pronto |
 
 A primeira inicialização não foi uma espera artificial. Depois das duas
 importações offline e da promoção, o socket encerrou com `sync_failure`; o
@@ -14650,3 +14650,164 @@ segunda leitura após a conclusão confirmou que esses estados permaneceram
 estáveis e que o container continuava saudável, sem reinício. O Authenticator
 recebeu `connected_confirmed`, removeu o perfil temporário na primeira
 tentativa e encerrou com código zero.
+
+## 2026-08-22 — WWebJS: o perfil físico ocultava as projeções validadas do Authenticator
+
+### Diagnóstico do erro `whatsapp_artifact_profile_incomplete`
+
+O diagnóstico do Authenticator `1.0.2` com hash curto `198e11247274`
+comprovou que a captura não estava incompleta. O Chrome controlado permaneceu
+estável por `30.100 ms`, coletou `13` bancos IndexedDB e produziu um snapshot
+físico com `57` arquivos e `18.290.341` bytes. O corpo HTTP de `24.862.449`
+bytes continha simultaneamente `wwebjs_local_auth`, `whatsapp_web_profile` e
+`wwebjs_canonical_projection` e foi aceito pelo Manager em `31.191 ms`.
+
+A perda ocorria somente na seleção do importador do Worker. Quando o pacote
+possuía `wwebjs_local_auth`, `resolveWwebjsSecureSessionImporter()` priorizava o
+importador físico do fork. O resultado preservava os arquivos Chromium, mas
+descartava as duas projeções já validadas presentes no mesmo pacote. No storage
+PostgreSQL, `stagePostgresSecureImportCandidate()` recebia então apenas um
+perfil físico e caía no caminho legado `stageCandidate()` sobre a revisão de
+pairing vazia. Esse caminho tentava gerar checkpoint sem o fingerprint de
+ownership exigido pelo fluxo de importação externa e falhava fechado com
+`whatsapp_artifact_profile_incomplete`, antes da criação do cliente WWebJS.
+
+O fork `@wwebjs/whatsapp-web.js@1.34.150` já implementava o caminho correto de
+importação externa: criar o fingerprint sobre o pairing exatamente vazio,
+criar a candidata `secure_import`, rebinder o fingerprint, persistir perfil e
+projeção canônica e promover somente após o restore validado. Portanto, não foi
+criado outro persistidor e não foi publicada uma versão nova do fork.
+
+### Correção sem duplicação
+
+Quando um pacote PostgreSQL contém o snapshot físico e a projeção browser, o
+serviço agora:
+
+- valida e converte `whatsapp_web_profile` antes de alterar o perfil alvo;
+- normaliza `wwebjs_canonical_projection` pelo mesmo contrato estrito;
+- importa o `wwebjs_local_auth` lossless pelo importador físico existente;
+- agrega as duas projeções validadas ao resultado físico, identificando a
+  origem como `wwebjs_local_auth+whatsapp_web_profile`;
+- entrega esse resultado ao mesmo `stageExternalCanonicalProjection()` já
+  usado pela importação externa, com as mesmas cercas, fingerprint, checkpoint,
+  promoção e rollback.
+
+Pacotes antigos somente com LocalAuth e workers `legacy_volume` conservam o
+comportamento anterior. A regressão adicionada monta exatamente o pacote
+combinado do Authenticator, confirma que o cookie físico já existe no staging,
+exige `stageExternalCanonicalProjection()` e proíbe a chamada ao
+`stageCandidate()` legado.
+
+O contrato integral da conexão WWebJS passou **136/136**. Os contratos do store
+PostgreSQL e do pacote seguro do Authenticator passaram **2 suites / 60
+testes**, totalizando **196 testes relevantes**. Typecheck global, ESLint
+seletivo, Prettier, `git diff --check` e o build filtrado e não cacheado de
+`worker_wwebjs` também passaram.
+
+### Rollout e dois aceites reais
+
+A correção foi registrada no commit Gitea
+`15cbb0b38` e gerou o job `01a02a0f-c91c-70ee-936c-ac5d872cca8c`, versão
+`v20260822152112732`, catálogo `01a02a14-805c-74c3-9e55-453651aa9ad1` e imagem
+`harbor.devunder.com/underchat/balance/under-worker-wwebjs:v20260822152112732`.
+O content ID confirmado no Server 1 é
+`sha256:198e441180b04856560f1a5dc9ec66ba14ff9b2aff43ff46ea0bc948bb17cf26`.
+O reinstall oficial do servidor concluiu, os warms
+`01a02a17-dbce-73cb-bfa1-21fdfd45c584` e
+`01a02a17-db9b-77a3-8a6a-721278484146` ficaram running/healthy no novo digest,
+e o canal foi recriado pela operação
+`01a02a18-a089-763a-9eca-1101e672c500`.
+
+O primeiro aceite real após o rollout usou o hash curto `d578787fc71a`, a
+tentativa `01a02a19-b0fd-73de-b4c8-9bbc03a61f0b` e a generation `20`. O worker
+recebeu o pacote combinado às `15:32:49.663Z`, criou e rebindeou o fingerprint,
+persistiu a candidata externa e a projeção canônica e concluiu
+`connected_confirmed` às `15:34:09.744Z`, com o número `556192037138` e sem
+erro. O perfil controlado foi removido.
+
+Para verificar também o estado que o modal havia mostrado durante uma nova
+rodada, foi realizado um segundo aceite completo. Uma tentativa auxiliar com
+hash `bca811145b3a` foi encerrada como `cancelled/helper_closed` quando o front
+criou a tentativa efetivamente exibida, hash `8ae1bfabe946`; ela não chegou ao
+importador e não representa falha do WWebJS. A tentativa válida
+`01a02a21-6505-7309-bb48-379be946f131`, generation `22`, foi criada às
+`15:40:26.756Z`. O Worker recebeu o upload às `15:41:12.475Z`, resolveu `53`
+arquivos físicos e as duas projeções em `106 ms`, criou a revisão candidata
+`3484`, fez o staging browser/canônico e iniciou o restore às `15:41:13.016Z`.
+
+Durante o staging, duas MACs de mutações futuras foram removidas pela
+normalização modelada e as cinco coleções foram materializadas; isso é o reparo
+esperado que evita o erro antigo
+`whatsapp_session_app_state_snapshot_resync_future_mutation_mac`, não uma falha.
+A revisão `3484` foi validada e promovida às `15:41:44.390Z`. O handoff
+`c3085389-fe85-437f-b0cb-e277b6baa291` terminou às `15:42:22.701Z`, sem
+`error_code`, e o provider publicou `connected`, `session_ready`,
+`authenticated`, `can_send` e `can_receive_runtime` às `15:42:24.992Z`. O
+Manager fechou a sessão como `connected_confirmed` às `15:42:25.172Z`.
+
+No estado final, `whatsapp_session` está `ready`, generation `22`, revisão
+ativa `3484` de origem `secure_import`, revisão anterior `3483` aposentada,
+fingerprint v2 e `last_error_at = NULL`. O runtime possui ACK nativo verdadeiro,
+status público e privado online/autenticado/válido e QR indisponível. O
+container `d743be4bed92979f6bbc2c459f80b8ffee82f6f1358fb99c4faf5dfbf2c7dbd4`
+permaneceu running/healthy, restart zero e no digest novo. Três probes
+consecutivos posteriores ficaram saudáveis, com latências de `245 ms`, `241
+ms` e `282 ms`, sem desconexão transitória. Não restou diretório nem processo
+do Chrome controlado.
+
+O tempo total de aproximadamente `118,4 s` entre criar a tentativa e confirmar
+o canal inclui a captura e estabilidade do Authenticator e a validação forte do
+handoff. Do recebimento do pacote pelo Worker até o estado conectado foram
+aproximadamente `72,5 s`. Nenhum timeout ou espera foi reduzido nesta correção:
+as janelas permanecem necessárias para o primeiro checkpoint físico, o restore
+do Chromium, a sincronização canônica, a promoção cercada, Kafka e o ACK
+central. As duas execuções reais confirmaram que o modal intermediário pode
+permanecer em “WhatsApp Web pronto” enquanto essas etapas terminam, mas não
+houve erro terminal depois da correção.
+
+## 2026-08-22 — publicação dos pacotes do Underchat Authenticator em dev e prod
+
+Os seis bundles gerados em
+`apps/underchat_authenticator/release/packages` foram validados com
+`unzip -t` e seus artefatos internos foram publicados nos caminhos estáveis do
+bucket público `underchat`. Foram substituídos os seis destinos configurados no
+painel para cada ambiente, totalizando **12 objetos**:
+
+- `linux.deb`;
+- `linux.AppImage`;
+- `macos.dmg`;
+- `macos.zip`;
+- `windows.exe`;
+- `windows.exe.blockmap`.
+
+O upload foi multipart, com partes de 8 MiB, `Cache-Control: no-cache,
+no-store, must-revalidate`, versão `1.0.2`, commit de origem `3d6ae82d6` e o
+SHA-256 de cada arquivo gravado como metadado. Um primeiro envio de
+`dev/linux.deb` terminou corretamente; a execução foi interrompida antes dos
+demais porque os nomes internos de macOS diferiam do nome presumido. Não ficou
+multipart pendente. Os nomes reais de todos os arquivos foram então validados
+em um pré-flight completo, o objeto já concluído foi reconhecido pelo SHA e os
+11 restantes foram publicados sem reenvio ou sobrescrita desnecessária.
+
+| Ambiente | Destino                | Bytes       | SHA-256                                                            | ETag                                  |
+| -------- | ---------------------- | ----------- | ------------------------------------------------------------------ | ------------------------------------- |
+| dev      | `linux.deb`            | 106.357.056 | `bdffb5c6f23a983e83c68a8bd6e1d6f016ebf68b09005a845cf311d4cd6806ec` | `81219853c1af517aa6c8507e286d58c4-13` |
+| dev      | `linux.AppImage`       | 139.689.638 | `88f4d6e424e7099eeb8b5e2d91ade01518572e088b93fa591a677988070bada8` | `64abb0cfb7c12e1580d9dcef1df0770b-17` |
+| dev      | `macos.dmg`            | 228.155.528 | `f5b221be238528150859a9c2910aabced3c803d8cd8f16a7649232c10da914a2` | `e8f4140cd3193da34b770408b564dbed-28` |
+| dev      | `macos.zip`            | 228.247.375 | `a9bfa288088e5e2e61768d78eda3d56ae7eebe3ca4ca6c10847f0aa89886873e` | `ac3dd3a8dffd81fda8eeb2597828890b-28` |
+| dev      | `windows.exe`          | 110.655.704 | `e927920d25139f770245005cbfc66327c33a4603981b584ec6a57a51c6e7c184` | `4ccb15777eaf73d9263593846bf92d34-14` |
+| dev      | `windows.exe.blockmap` | 116.463     | `8cd6b56a9790da886f53853ebfabfcf25d864412a99d468b683263e35de876da` | `6234fefe1998dbf8f86a7a731faea54d-1`  |
+| prod     | `linux.deb`            | 106.357.260 | `7e8cae3985ca6eea6e9857ffac8fa88d1b3dc590e9e89d5eccacaaa73a6f7210` | `f2def4e356d7b4b75a21b3d4e59e7dda-13` |
+| prod     | `linux.AppImage`       | 139.689.653 | `b5161e236f4f622f398a1474a76f841b0d911548045a416f3fa454c84549dfc6` | `51853b359a69cf72c9edb58fff317a62-17` |
+| prod     | `macos.dmg`            | 229.370.082 | `824490a1fd65587097aebe6821ecd3810d6a7e43a16b8af9bfede767cf3d7ff2` | `8cfefc4582c4ac16ab94a19256c4eb14-28` |
+| prod     | `macos.zip`            | 228.909.733 | `e704b8fcac61ee9ea6af6041d24ebb1b81d75a41439007e79d9b94899082085a` | `89aa2f19db4cdc06169163c06c7a6ff2-28` |
+| prod     | `windows.exe`          | 110.655.832 | `6dee843f7903ad92978b1e64b77f618f4e7abde2437140d15ceacee0b98a5d1c` | `3a628f9630daec23882ca5f8d81dd0c3-14` |
+| prod     | `windows.exe.blockmap` | 116.369     | `02d5ef2aa9fa5547fbb9a2e2dd4fd8989ee3df8509e195fe81791a042c11df68` | `422b68b0d6186e89a9790fa0c0f14b08-1`  |
+
+Após o `HEAD` autenticado confirmar tamanho, metadados e ETag, os **12 links
+públicos** em
+`https://minio.devunder.com/underchat/downloads/underchat-authenticator/{dev|prod}/`
+foram baixados integralmente com cache-buster. Os 12 downloads retornaram HTTP
+200 e reproduziram exatamente os tamanhos e SHA-256 da tabela. A publicação foi
+concluída às `2026-08-22T13:11:27-03:00`; portanto, os links já configurados no
+painel de Downloads não precisam ser alterados ou salvos novamente.
