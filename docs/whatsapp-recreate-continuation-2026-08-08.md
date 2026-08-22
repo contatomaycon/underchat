@@ -14488,3 +14488,39 @@ aceite operacional final do Authenticator continua sendo uma importação real
 com a versão `1.0.2` para cada provider, exigindo a mesma candidata
 `secure_import`, promoção, readiness forte, ACK central e limpeza local somente
 depois da confirmação já documentados para a extensão.
+
+### Publicação de produção e sincronização dos repositórios
+
+O código foi registrado no `main` do Gitea pelo commit `3d6ae82d6` e enviado
+ao `origin`. Os artefatos Linux e Windows foram então publicados nos quatro
+objetos estáveis consumidos pelo catálogo:
+
+- `underchat/downloads/underchat-authenticator/prod/linux.deb`;
+- `underchat/downloads/underchat-authenticator/prod/linux.AppImage`;
+- `underchat/downloads/underchat-authenticator/prod/windows.exe`;
+- `underchat/downloads/underchat-authenticator/prod/windows.exe.blockmap`.
+
+Um `PutObject` único foi recusado pelo proxy com HTTP `413` antes de qualquer
+mutação. A publicação efetiva usou multipart S3 de `8 MiB`, respectivamente
+com `13`, `17`, `14` e `1` partes. Todos os objetos registram nos metadados a
+versão `1.0.2`, o source commit `3d6ae82d6` e o SHA-256 do artefato. Os ETags
+finais são `e270160cb7603f5fab075c2cad14c89f-13`,
+`d1f5d7ad1b6aee7646c61f7ac006cddf-17`,
+`fb5383ef3f409b3e8ae1d1296fcd2264-14` e
+`4c68accb9190c8364f41c6e1153a7dce-1`, na ordem acima.
+
+Depois da escrita, os quatro objetos foram baixados pela URL pública com cache
+buster e recalculados por streaming. Os hashes remotos coincidiram exatamente
+com os quatro hashes locais documentados acima. Antes desta publicação, Linux
+apontava para `1.0.1` e o instalador Windows ainda era a geração antiga de
+julho; ambos agora servem `1.0.2`. Os objetos macOS permaneceram inalterados.
+
+O `github/main` estava divergente: possuía 20 commits próprios, enquanto o
+`main` atual carregava centenas de commits adicionais e objetos históricos de
+instaladores acima do limite de `100 MB` do GitHub. Não houve force-push nem
+reintrodução desses binários. Foi criado um commit fast-forward sobre o próprio
+`github/main`, preservando seus commits e usando exatamente a árvore do commit
+Gitea atualizado. A verificação posterior confirmou o mesmo tree SHA
+`4933c8797460d88593232c30b2a8947c3ebf1476`, diff vazio entre as duas árvores e
+`underchat_authenticator@1.0.2` no GitHub. A atualização documental subsequente
+segue o mesmo modelo de snapshot sem arquivos de release.
